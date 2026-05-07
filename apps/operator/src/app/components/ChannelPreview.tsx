@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import gsap from "gsap";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { useStore } from "@/lib/store";
@@ -8,6 +9,7 @@ import { useWs } from "@/lib/useWs";
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
+const CROSSFADE_MS = 400;
 
 type Props = {
   config: ChannelConfig;
@@ -73,7 +75,16 @@ export function ChannelPreview({ config, state }: Props) {
     function triggerOut(m: MountedTemplate): Promise<void> {
       if (outStartedRef.current.has(m)) return Promise.resolve();
       outStartedRef.current.add(m);
-      return m.playOut();
+      const tweenP = new Promise<void>((resolve) => {
+        gsap.to(m.root, {
+          opacity: 0,
+          duration: CROSSFADE_MS / 1000,
+          ease: "power2.in",
+          onComplete: () => resolve(),
+        });
+      });
+      m.playOut().catch(() => {});
+      return tweenP;
     }
 
     if (!active) {
@@ -99,6 +110,13 @@ export function ChannelPreview({ config, state }: Props) {
 
       const m = mountTemplate(stageRef.current, tpl, active.data);
       mountedRef.current = m;
+      // Root-level crossfade — see Renderer.tsx for rationale.
+      m.root.style.opacity = "0";
+      gsap.to(m.root, {
+        opacity: 1,
+        duration: CROSSFADE_MS / 1000,
+        ease: "power2.out",
+      });
       m.playIn().catch(() => {});
 
       if (previous) {

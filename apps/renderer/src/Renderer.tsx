@@ -1,7 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import gsap from "gsap";
 import type { Template, ChannelState, ChannelConfig } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
+
+const CROSSFADE_MS = 400;
 
 type Props = {
   channel: string;
@@ -84,7 +87,24 @@ export function Renderer({ channel, debug = false }: Props) {
     function triggerOut(m: MountedTemplate): Promise<void> {
       if (outStartedRef.current.has(m)) return Promise.resolve();
       outStartedRef.current.add(m);
-      return m.playOut();
+      // Root-level crossfade: fade the entire mount root regardless of what
+      // template-level animations the OUT timeline does. This guarantees the
+      // mount becomes transparent (so the new mount underneath/on-top can
+      // be visible) even if the template doesn't animate every layer's
+      // opacity. The template's playOut still runs alongside for any
+      // additional motion (slide-out, etc.).
+      const tweenP = new Promise<void>((resolve) => {
+        gsap.to(m.root, {
+          opacity: 0,
+          duration: CROSSFADE_MS / 1000,
+          ease: "power2.in",
+          onComplete: () => resolve(),
+        });
+      });
+      // Run the template's own out animation in parallel — its result
+      // doesn't gate the destroy; the root fade does.
+      m.playOut().catch(() => {});
+      return tweenP;
     }
 
     async function applyState(state: ChannelState) {
@@ -116,6 +136,15 @@ export function Renderer({ channel, debug = false }: Props) {
         const tpl = await ensureTemplate(templateId);
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
+        // Root-level crossfade: start the new mount fully transparent and
+        // tween its root opacity up. Independent of the template's playIn
+        // (which animates layer properties inside) — both run in parallel.
+        m.root.style.opacity = "0";
+        gsap.to(m.root, {
+          opacity: 1,
+          duration: CROSSFADE_MS / 1000,
+          ease: "power2.out",
+        });
         m.playIn().catch(() => {});
 
         if (previous) {
