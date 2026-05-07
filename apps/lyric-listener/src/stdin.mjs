@@ -61,7 +61,11 @@ ws.on("close", () => {
 });
 
 ws.on("error", (err) => {
-  console.error("[lyric-listener] ws error:", err.message);
+  const msg = err?.message || err?.code || "unknown";
+  console.error(`[lyric-listener] ws error: ${msg}`);
+  if (err?.code === "ECONNREFUSED" || !err?.message) {
+    console.error(`[lyric-listener] couldn't connect to ${URL} — is the OverlaySys server running? (try 'pnpm dev' in another terminal)`);
+  }
   process.exit(1);
 });
 
