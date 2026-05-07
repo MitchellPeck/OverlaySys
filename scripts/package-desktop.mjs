@@ -78,10 +78,18 @@ async function main() {
     await run("pnpm", ["--filter", "@overlaysys/desktop", "build"]);
   });
 
-  // 4. Reset the staged dir, then pnpm-deploy the server with prod deps.
-  await step("pnpm deploy server", async () => {
+  // 4. Reset the staged dir.
+  await step("reset staged dir", async () => {
     await fs.rm(STAGED, { recursive: true, force: true });
     await fs.mkdir(STAGED, { recursive: true });
+  });
+
+  // 5. pnpm-deploy server and lyric-listener as self-contained trees with
+  // their own prod node_modules. Each gets its own node_modules so Node's
+  // ESM resolver can find bare specifiers (e.g. `import { WebSocket } from
+  // "ws"`) from the daemon's own directory — NODE_PATH doesn't help with
+  // ESM bare imports the way it does for CommonJS.
+  await step("pnpm deploy server", async () => {
     const serverTarget = path.join(STAGED, "server");
     await run(
       "pnpm",
@@ -101,20 +109,23 @@ async function main() {
     );
   });
 
-  // 5. Stage runtime assets next to the deployed server.
-  await step("stage runtime assets", async () => {
-    // Lyric-listener daemon. It imports `ws`, which the server's
-    // node_modules already provides; we set NODE_PATH at spawn time so
-    // the listener finds it.
-    await copyDir(
-      path.join(REPO_ROOT, "apps", "lyric-listener", "src"),
-      path.join(STAGED, "apps", "lyric-listener", "src"),
+  await step("pnpm deploy lyric-listener", async () => {
+    const listenerTarget = path.join(STAGED, "apps", "lyric-listener");
+    await run(
+      "pnpm",
+      [
+        "--filter",
+        "@overlaysys/lyric-listener",
+        "deploy",
+        "--prod",
+        "--legacy",
+        path.relative(REPO_ROOT, listenerTarget),
+      ],
     );
-    await fs.copyFile(
-      path.join(REPO_ROOT, "apps", "lyric-listener", "package.json"),
-      path.join(STAGED, "apps", "lyric-listener", "package.json"),
-    );
+  });
 
+  // 6. Stage non-deployed assets (static frontends, fixtures).
+  await step("stage runtime assets", async () => {
     // Static frontend builds.
     await copyDir(
       path.join(REPO_ROOT, "apps", "operator", "out"),
