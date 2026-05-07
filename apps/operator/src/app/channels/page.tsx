@@ -59,8 +59,8 @@ export default function ChannelsPage() {
   return (
     <>
       <AppHeader />
-      <main style={{ position: "fixed", inset: 0, overflow: "auto", padding: 24, paddingTop: 0 }}>
-      <div style={{ maxWidth: 980, margin: "0 auto", paddingTop: 24 }}>
+      <main style={{ padding: 24 }}>
+      <div style={{ maxWidth: 980, margin: "0 auto" }}>
 
         <p style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
           Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
