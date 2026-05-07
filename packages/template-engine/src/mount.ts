@@ -87,12 +87,19 @@ export function mountTemplate(
     playIn() {
       return new Promise<void>((resolve) => {
         inTl.eventCallback("onComplete", () => resolve());
+        // Invalidate before restarting: GSAP caches each tween's "rendered"
+        // state internally, and on subsequent restarts will skip re-applying
+        // the from values if it thinks they were already written. Calling
+        // invalidate() drops the cache so restart(true) actually re-renders
+        // each tween's start values, including the all-important t=0 from.
+        inTl.invalidate();
         inTl.restart(true);
       });
     },
     playOut() {
       return new Promise<void>((resolve) => {
         outTl.eventCallback("onComplete", () => resolve());
+        outTl.invalidate();
         outTl.restart(true);
       });
     },
