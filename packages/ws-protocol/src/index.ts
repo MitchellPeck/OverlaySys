@@ -5,6 +5,8 @@ import {
   TemplateSchema,
   ShowSchema,
   SongSchema,
+  SttSpawnerConfigSchema,
+  SttSpawnerStatusSchema,
   type TemplateMeta,
 } from "@overlaysys/core";
 
@@ -110,6 +112,13 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     text: z.string(),
     t: z.number(),
   }),
+  z.object({ type: z.literal("stt_spawner_get_config") }),
+  z.object({
+    type: z.literal("stt_spawner_save_config"),
+    config: SttSpawnerConfigSchema,
+  }),
+  z.object({ type: z.literal("stt_spawner_start") }),
+  z.object({ type: z.literal("stt_spawner_stop") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -204,6 +213,14 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
       .nullable(),
     confidence: z.number().min(0).max(1),
     hypothesis: z.string(),
+  }),
+  z.object({
+    type: z.literal("stt_spawner_status"),
+    status: SttSpawnerStatusSchema,
+  }),
+  z.object({
+    type: z.literal("stt_spawner_config"),
+    config: SttSpawnerConfigSchema,
   }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
