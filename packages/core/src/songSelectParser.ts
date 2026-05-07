@@ -84,7 +84,31 @@ function extractMeta(preamble: string[], footer: string[]): SongSelectMeta {
   return meta;
 }
 
-export const _internal = { splitFooter, extractMeta, extractTitle };
+// Matches ChordPro inline chord markers like [G], [Cmaj7], [F#m], [Eb/G],
+// [Bb] while deliberately leaving section headers like [Verse 1], [Chorus],
+// [Bridge] intact.
+//
+// A chord token starts with a note letter (A–G, case-insensitive), an
+// optional accidental (#/b), then a qualifier. Section headers are
+// distinguished by having 4+ consecutive pure-lowercase letters with no
+// digits in the qualifier (e.g. "horus" in Chorus, "ridge" in Bridge).
+// Real chord qualifiers are either short (≤3 chars) or contain a digit
+// (maj7, sus4, add9, m7b5, etc.).
+//
+// The regex uses a negative lookahead: after root+accidental, if the next
+// chars are 4+ lowercase letters with no digit before the ']', treat as a
+// section label and skip. Otherwise match as a chord.
+const CHORD_RE =
+  /\[[A-Ga-g][#b]?(?![a-z]{4,}\])(?:[a-z0-9]*)(?:\/[A-Ga-g][#b]?)?\]/g;
+
+function stripChords(line: string): string {
+  return line
+    .replace(CHORD_RE, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+export const _internal = { splitFooter, extractMeta, extractTitle, stripChords };
 
 export function parseSongSelectText(_text: string): SongSelectParseResult {
   throw new Error("parseSongSelectText: not yet implemented");

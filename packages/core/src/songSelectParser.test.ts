@@ -141,3 +141,26 @@ describe("_internal.extractTitle", () => {
     expect(_internal.extractTitle(["", "  "])).toBeUndefined();
   });
 });
+
+describe("_internal.stripChords", () => {
+  it("removes simple chord markers", () => {
+    expect(_internal.stripChords("[G]Amazing [C]grace"))
+      .toBe("Amazing grace");
+  });
+  it("removes complex chord markers", () => {
+    expect(_internal.stripChords("[Cmaj7]how [F#m]sweet [Eb/G]the [Bb]sound"))
+      .toBe("how sweet the sound");
+  });
+  it("does NOT remove section header brackets like [Verse 1]", () => {
+    expect(_internal.stripChords("[Verse 1]")).toBe("[Verse 1]");
+    expect(_internal.stripChords("[Chorus]")).toBe("[Chorus]");
+    expect(_internal.stripChords("[Bridge]")).toBe("[Bridge]");
+  });
+  it("collapses runs of whitespace introduced by stripping", () => {
+    expect(_internal.stripChords("[G]   [C]Amazing"))
+      .toBe("Amazing");
+  });
+  it("trims leading/trailing whitespace", () => {
+    expect(_internal.stripChords("  [G]hello [C]  ")).toBe("hello");
+  });
+});
