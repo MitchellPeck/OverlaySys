@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 // Minimal STT hypothesis source for OverlaySys.
 //
-// Reads one line of recognized text per stdin line and forwards each as an
-// `stt_hypothesis` WS message. The server-side matcher does the rest.
+// Reads recognized text from stdin and forwards each non-empty segment as
+// an `stt_hypothesis` WS message. The server-side matcher does the rest.
 //
-// Real-world usage:
-//   whisper-cli --model models/ggml-base.en.bin --no-timestamps --stream \
+// Handles two stdin formats:
+//   1. One transcript per LF-terminated line (manual test, basic STT tools).
+//   2. whisper-stream-style output that uses CR (\r) to overwrite the
+//      current line in-place. We split on \r as well as \n, strip ANSI
+//      escapes, and dedupe consecutive identical segments — so the matcher
+//      only sees finalized transcripts, not partial overdraws.
+//
+// Real-world usage (whisper.cpp's stream example):
+//   whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000 \
 //     | node apps/lyric-listener/src/stdin.mjs
 //
 // Manual test:
@@ -13,11 +20,10 @@
 //
 // Environment:
 //   WS_URL          Default ws://localhost:4000/ws
-//   AUDIO_SOURCE_ID Default 'stdin'
+//   AUDIO_SOURCE_ID Default 'stdin-<hostname>'
 //   LABEL           Default 'stdin'
 
 import { WebSocket } from "ws";
-import { createInterface } from "node:readline";
 import os from "node:os";
 
 const URL = process.env.WS_URL ?? "ws://localhost:4000/ws";
@@ -59,18 +65,38 @@ ws.on("error", (err) => {
   process.exit(1);
 });
 
-const rl = createInterface({ input: process.stdin });
-rl.on("line", (line) => {
-  const text = line.trim();
-  if (!text) return;
+// ANSI/CSI escape sequences (color, cursor moves, line erases).
+const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
+
+let buffer = "";
+let lastSent = "";
+
+function emit(segment) {
+  const cleaned = segment.replace(ANSI_RE, "").trim();
+  if (!cleaned) return;
+  if (cleaned === lastSent) return; // dedupe consecutive duplicates
+  lastSent = cleaned;
   if (ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({
     type: "stt_hypothesis",
     audioSourceId: AUDIO_SOURCE_ID,
-    text,
+    text: cleaned,
     t: Date.now(),
   }));
+}
+
+process.stdin.on("data", (chunk) => {
+  buffer += chunk.toString();
+  // Split on any combination of CR and LF. Whisper-stream uses \r to
+  // overwrite the current line as it refines the partial transcript;
+  // a final segment is followed by \n. Treating both as separators
+  // means each refinement becomes its own emit() call (deduped below).
+  const parts = buffer.split(/[\r\n]+/);
+  buffer = parts.pop() ?? "";
+  for (const part of parts) emit(part);
 });
-rl.on("close", () => {
+
+process.stdin.on("end", () => {
+  if (buffer) emit(buffer);
   ws.close();
 });

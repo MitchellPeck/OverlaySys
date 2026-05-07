@@ -150,7 +150,6 @@ whisper-stream \
   --length 5000 \
   --keep 200 \
   -t 4 \
-  --no-timestamps \
   | node apps/lyric-listener/src/stdin.mjs
 ```
 
@@ -160,9 +159,8 @@ Flag rundown:
 - `--length 5000` — each transcript is computed over a 5-second window
 - `--keep 200` — context overlap; smooths sudden phrase boundaries
 - `-t 4` — threads. Bump up if your CPU has spare cores
-- `--no-timestamps` — keep stdout clean for the daemon
 
-The daemon's stdin will receive partial transcripts every 500ms. Each line is forwarded as `stt_hypothesis`; the matcher scores each one against the current song and emits an `stt_match`.
+`whisper-stream` writes refined partial transcripts to stdout using carriage returns to overwrite the current line, then `\n` when a segment finalizes. The daemon understands this — it splits on `\r` as well as `\n`, strips ANSI escapes, and dedupes consecutive identical segments — so the matcher sees clean hypotheses without re-processing the same partial repeatedly.
 
 ### Option B — Sliding `sox` chunks + `whisper-cli`
 
