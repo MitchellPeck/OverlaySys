@@ -1,0 +1,73 @@
+{
+  "id": "amazing-grace",
+  "title": "Amazing Grace",
+  "author": "John Newton",
+  "copyright": "Public Domain",
+  "ccliNumber": "22025",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Amazing grace how sweet the sound",
+            "That saved a wretch like me"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "I once was lost but now am found",
+            "Was blind but now I see"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "'Twas grace that taught my heart to fear",
+            "And grace my fears relieved"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "How precious did that grace appear",
+            "The hour I first believed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c",
+      "kind": "chorus",
+      "label": "Chorus",
+      "slides": [
+        {
+          "id": "c1",
+          "lines": [
+            "My chains are gone I've been set free",
+            "My God my Savior has ransomed me"
+          ]
+        },
+        {
+          "id": "c2",
+          "lines": [
+            "And like a flood His mercy reigns",
+            "Unending love amazing grace"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": ["v1", "v2", "c", "c"]
+}
