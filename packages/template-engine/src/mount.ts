@@ -63,22 +63,20 @@ export function mountTemplate(
   // and similar passive hosts can't accidentally interact.
   if (mode === "edit") root.style.pointerEvents = "auto";
 
-  const inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
+  // Construction order matters: GSAP fromTo tweens immediate-render their
+  // "from" values, so whichever timeline is built LAST wins on shared
+  // properties. Build OUT first, IN second — the IN timeline's t=0
+  // values (opacity=0, x=-75, etc.) end up applied to the DOM at mount
+  // time, so the layer is already at its in-start state before the first
+  // paint. Without this, the layer would briefly show its static design
+  // pose (opacity=1) until playIn() drove the timeline forward, making
+  // the in-animation look like a snap.
+  //
+  // Edit-mode callers drive initial scrubbing explicitly via seek() so
+  // they own the "design pose" semantics — they're unaffected by the
+  // ordering choice.
   const outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
-  // In live mode, snap the IN timeline to t=0 right away so the layer's
-  // properties reflect the IN's start state (e.g. opacity=0) before the
-  // first paint. Without this, the layer briefly shows its static design
-  // pose between mount and the first call to playIn() — for templates
-  // whose static opacity is 1, the new mount appears fully visible an
-  // instant before its in-animation starts, making the in look like a
-  // hard cut. Edit-mode callers do their own explicit seek and shouldn't
-  // be primed.
-  if (mode === "live") {
-    inTl.seek(0);
-    inTl.pause(); // seek leaves the timeline playing — re-pause it
-  }
-  // Note: edit-mode callers (the Canvas component) drive initial scrub
-  // explicitly via seek() so they own the "design pose" semantics.
+  const inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
 
   let currentData = merged;
 
