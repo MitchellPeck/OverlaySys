@@ -5,13 +5,12 @@ import { type SttSpawnerConfig, type SttSpawnerStatus } from "@overlaysys/core";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
-const LISTENER_PATH = path.resolve(
-  REPO_ROOT,
-  "apps",
-  "lyric-listener",
-  "src",
-  "stdin.mjs",
-);
+// In dev, the listener lives in the workspace under apps/lyric-listener.
+// In packaged Electron, the host sets OVERLAYSYS_LISTENER_PATH to the
+// daemon's path inside the app resources bundle.
+const LISTENER_PATH = process.env["OVERLAYSYS_LISTENER_PATH"]
+  ? path.resolve(process.env["OVERLAYSYS_LISTENER_PATH"])
+  : path.resolve(REPO_ROOT, "apps", "lyric-listener", "src", "stdin.mjs");
 
 const RECENT_LOG_LIMIT = 100;
 

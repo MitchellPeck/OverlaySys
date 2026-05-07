@@ -19,17 +19,33 @@ import {
 // Resolve repo root (../../ from server/src). Templates and shows live at <root>/data.
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
-const DATA_ROOT = path.resolve(REPO_ROOT, "data");
+// In dev / source-run, data lives at <repo>/data. In packaged Electron,
+// the host sets OVERLAYSYS_DATA_DIR to a per-user writable location
+// (e.g. app.getPath('userData') + '/data') so user content survives
+// reinstalls and isn't trapped inside the read-only resources bundle.
+const DATA_ROOT = process.env["OVERLAYSYS_DATA_DIR"]
+  ? path.resolve(process.env["OVERLAYSYS_DATA_DIR"])
+  : path.resolve(REPO_ROOT, "data");
 const TEMPLATES_DIR = path.join(DATA_ROOT, "templates");
 const SHOWS_DIR = path.join(DATA_ROOT, "shows");
 const CHANNELS_DIR = path.join(DATA_ROOT, "channels");
 const SONGS_DIR = path.join(DATA_ROOT, "songs");
 const STT_DIR = path.join(DATA_ROOT, "stt");
 const STT_CONFIG_FILE = path.join(STT_DIR, "config.json");
-const TEMPLATE_FIXTURES_DIR = path.join(TEMPLATES_DIR, "fixtures");
-const SHOW_FIXTURES_DIR = path.join(SHOWS_DIR, "fixtures");
-const CHANNEL_FIXTURES_DIR = path.join(CHANNELS_DIR, "fixtures");
-const SONG_FIXTURES_DIR = path.join(SONGS_DIR, "fixtures");
+
+// Fixture directories used to seed empty live folders. In dev they sit
+// alongside the live data ({DATA_ROOT}/<kind>/fixtures). In packaged
+// Electron, the live data lives in userData but the fixtures ship in
+// the app's resources; OVERLAYSYS_FIXTURES_DIR is set by the Electron
+// host to that resources path. When unset, fixtures share the same
+// root as live data (the existing dev convention).
+const FIXTURES_ROOT = process.env["OVERLAYSYS_FIXTURES_DIR"]
+  ? path.resolve(process.env["OVERLAYSYS_FIXTURES_DIR"])
+  : DATA_ROOT;
+const TEMPLATE_FIXTURES_DIR = path.join(FIXTURES_ROOT, "templates", "fixtures");
+const SHOW_FIXTURES_DIR = path.join(FIXTURES_ROOT, "shows", "fixtures");
+const CHANNEL_FIXTURES_DIR = path.join(FIXTURES_ROOT, "channels", "fixtures");
+const SONG_FIXTURES_DIR = path.join(FIXTURES_ROOT, "songs", "fixtures");
 
 async function ensureDir(p: string): Promise<void> {
   await fs.mkdir(p, { recursive: true });

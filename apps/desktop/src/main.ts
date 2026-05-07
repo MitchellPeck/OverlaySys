@@ -1,32 +1,32 @@
 // OverlaySys Electron host.
 //
-// Runs the operator UI as the main BrowserWindow and lets the operator
-// pop open additional BrowserWindows for individual channels (each
-// loading the renderer URL with ?channel=<id>). Channel windows can be
-// frameless / always-on-top / transparent for in-house projection.
+// Two modes:
 //
-// Dev mode (default): expects `pnpm dev` to already be running so the
-// operator and renderer URLs are reachable on localhost. Set via env
-// vars OPERATOR_URL and RENDERER_URL (with sensible defaults).
+// **Dev** (env OVERLAYSYS_DESKTOP_DEV=1): assumes `pnpm dev` is already
+// running. Loads the operator from http://localhost:3000 and renderer
+// from http://localhost:3001. Useful for iterating on UI without
+// touching the Electron host.
 //
-// Production mode (TODO): Electron main spawns the Fastify server as a
-// child process, sets OVERLAYSYS_DATA_DIR to userData, and serves the
-// statically-exported operator + renderer from packaged resources.
+// **Production** (default in packaged builds): the host fork-spawns the
+// Fastify server using Electron's own Node (via ELECTRON_RUN_AS_NODE),
+// pointing it at OS-assigned port 0 so two running instances don't
+// collide. The server serves the operator and renderer static builds
+// from the same origin, so window URLs are
+// http://localhost:<port>/operator/ and /renderer/?channel=<id>. Data
+// lives at app.getPath('userData')/data so it survives reinstalls.
 //
-// IPC channels exposed to the operator (via preload.ts):
-//   overlaysys.openChannelWindow(channelId)  → open or focus a window
-//   overlaysys.closeChannelWindow(channelId) → close a specific window
-//   overlaysys.listChannelWindows()          → array of open channel ids
-//   overlaysys.setChannelWindowOptions(id, opts)
-//                                            → toggle frameless / always-
-//                                              on-top / fullscreen at runtime
+// IPC channels are unchanged from the dev-only version — see preload.ts.
 
 import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
+import http from "node:http";
 
 const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
-const OPERATOR_URL = process.env["OPERATOR_URL"] ?? "http://localhost:3000";
-const RENDERER_URL = process.env["RENDERER_URL"] ?? "http://localhost:3001";
+
+let serverChild: ChildProcess | null = null;
+let serverPort = 4000;
+let serverHost = "127.0.0.1";
 
 let operatorWindow: BrowserWindow | null = null;
 const channelWindows = new Map<string, BrowserWindow>();
@@ -37,6 +37,140 @@ interface ChannelWindowOptions {
   fullscreen?: boolean;
   transparent?: boolean;
 }
+
+function operatorUrl(): string {
+  if (isDev) {
+    const dev = process.env["OPERATOR_URL"] ?? "http://localhost:3000";
+    return `${dev}/?server=ws://localhost:4000/ws`;
+  }
+  return `http://${serverHost}:${serverPort}/operator/?server=ws://${serverHost}:${serverPort}/ws`;
+}
+
+function rendererChannelUrl(channelId: string): string {
+  if (isDev) {
+    const dev = process.env["RENDERER_URL"] ?? "http://localhost:3001";
+    const u = new URL(dev);
+    u.searchParams.set("channel", channelId);
+    return u.toString();
+  }
+  return `http://${serverHost}:${serverPort}/renderer/?channel=${encodeURIComponent(
+    channelId,
+  )}&server=ws://${serverHost}:${serverPort}/ws`;
+}
+
+// ── Server lifecycle ─────────────────────────────────────────────────────────
+
+function spawnServer(): Promise<{ port: number }> {
+  // Resolve the bundled server, fixtures, and lyric-listener paths.
+  // In packaged Electron, app resources sit in `process.resourcesPath`;
+  // we ship the workspace tree under `resources/app` and the
+  // pre-installed node_modules under `resources/app/node_modules`.
+  const resourcesRoot = process.resourcesPath;
+  const appRoot = path.join(resourcesRoot, "app");
+  const serverEntry = path.join(appRoot, "server", "src", "index.ts");
+  const fixturesDir = path.join(appRoot, "data");
+  const listenerPath = path.join(
+    appRoot,
+    "apps",
+    "lyric-listener",
+    "src",
+    "stdin.mjs",
+  );
+  const operatorStatic = path.join(appRoot, "apps", "operator", "out");
+  const rendererStatic = path.join(appRoot, "apps", "renderer", "dist");
+  const userDataDir = path.join(app.getPath("userData"), "data");
+
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: "1",
+    PORT: "0",
+    HOST: "127.0.0.1",
+    OVERLAYSYS_DATA_DIR: userDataDir,
+    OVERLAYSYS_FIXTURES_DIR: fixturesDir,
+    OVERLAYSYS_LISTENER_PATH: listenerPath,
+    OVERLAYSYS_STATIC_OPERATOR_DIR: operatorStatic,
+    OVERLAYSYS_STATIC_RENDERER_DIR: rendererStatic,
+    NODE_ENV: "production",
+  };
+
+  return new Promise<{ port: number }>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", serverEntry],
+      { env, cwd: appRoot, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    serverChild = child;
+
+    let resolved = false;
+    let buffer = "";
+    const timeout = setTimeout(() => {
+      if (!resolved) reject(new Error("server boot timed out"));
+    }, 30_000);
+
+    child.stdout?.on("data", (chunk) => {
+      const s = chunk.toString();
+      process.stdout.write(`[server] ${s}`);
+      buffer += s;
+      // Look for the magic OVERLAYSYS_PORT=<n> line emitted by the server
+      // once it's fully bound.
+      const m = /OVERLAYSYS_PORT=(\d+)/.exec(buffer);
+      if (m && m[1] && !resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve({ port: Number(m[1]) });
+      }
+    });
+    child.stderr?.on("data", (chunk) => {
+      process.stderr.write(`[server] ${chunk.toString()}`);
+    });
+
+    child.on("exit", (code, signal) => {
+      console.error(`[server] exited code=${code} signal=${signal}`);
+      serverChild = null;
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(new Error(`server exited before ready (code ${code})`));
+      }
+    });
+    child.on("error", (err) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
+    });
+  });
+}
+
+function killServer(): void {
+  if (!serverChild) return;
+  try {
+    serverChild.kill("SIGTERM");
+  } catch {
+    // ignore
+  }
+  serverChild = null;
+}
+
+function pingHealth(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host, port, path: "/health", timeout: timeoutMs },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+// ── Window creation ──────────────────────────────────────────────────────────
 
 function createOperatorWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -54,25 +188,22 @@ function createOperatorWindow(): BrowserWindow {
     },
   });
 
-  win.loadURL(OPERATOR_URL);
+  win.loadURL(operatorUrl());
 
-  // Open external links in the system browser, not inside Electron.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(OPERATOR_URL) || url.startsWith(RENDERER_URL)) {
-      // Internal app links — let them open in new BrowserWindows
-      // (e.g., a manually-typed renderer URL).
-      return { action: "allow" };
-    }
+    const sameOrigin =
+      url.startsWith(`http://${serverHost}:${serverPort}`) ||
+      url.startsWith("http://localhost:3000") ||
+      url.startsWith("http://localhost:3001");
+    if (sameOrigin) return { action: "allow" };
     shell.openExternal(url);
     return { action: "deny" };
   });
 
   win.on("closed", () => {
     operatorWindow = null;
-    // Closing the operator window closes the whole app on macOS too —
-    // the user can re-open via the dock if they want it back, but in
-    // practice if the operator is gone there's no point keeping channel
-    // windows live.
+    // Closing the operator window closes the whole app — channel windows
+    // become orphans without anywhere to drive them from.
     for (const w of channelWindows.values()) {
       if (!w.isDestroyed()) w.close();
     }
@@ -83,9 +214,6 @@ function createOperatorWindow(): BrowserWindow {
 }
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
-  const url = new URL(RENDERER_URL);
-  url.searchParams.set("channel", channelId);
-
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -101,7 +229,7 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
     },
   });
 
-  win.loadURL(url.toString());
+  win.loadURL(rendererChannelUrl(channelId));
 
   win.on("closed", () => {
     channelWindows.delete(channelId);
@@ -113,9 +241,9 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   return win;
 }
 
+// ── Native menu ──────────────────────────────────────────────────────────────
+
 function buildMenu(): void {
-  // Minimal menu — File / View / Window / Help. The operator UI carries
-  // the bulk of in-app actions; this is just for native conventions.
   const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(isMac
@@ -136,9 +264,7 @@ function buildMenu(): void {
       : []),
     {
       label: "File",
-      submenu: [
-        isMac ? { role: "close" } : { role: "quit" },
-      ],
+      submenu: [isMac ? { role: "close" } : { role: "quit" }],
     },
     {
       label: "View",
@@ -160,16 +286,15 @@ function buildMenu(): void {
         { role: "minimize" },
         { role: "zoom" },
         ...(isMac
-          ? ([
-              { type: "separator" },
-              { role: "front" },
-            ] as Electron.MenuItemConstructorOptions[])
+          ? ([{ type: "separator" }, { role: "front" }] as Electron.MenuItemConstructorOptions[])
           : ([{ role: "close" }] as Electron.MenuItemConstructorOptions[])),
       ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
+
+// ── IPC ──────────────────────────────────────────────────────────────────────
 
 function registerIpc(): void {
   ipcMain.handle(
@@ -193,23 +318,19 @@ function registerIpc(): void {
     if (w && !w.isDestroyed()) w.close();
   });
 
-  ipcMain.handle("overlaysys:list-channel-windows", () => {
-    return Array.from(channelWindows.keys());
-  });
+  ipcMain.handle("overlaysys:list-channel-windows", () =>
+    Array.from(channelWindows.keys()),
+  );
 
   ipcMain.handle(
     "overlaysys:set-channel-window-options",
     (_event, channelId: string, opts: ChannelWindowOptions) => {
       const w = channelWindows.get(channelId);
       if (!w || w.isDestroyed()) return false;
-      // alwaysOnTop, fullscreen, frame can be toggled at runtime; transparent
-      // requires a window recreate so we skip it here.
       if (opts.alwaysOnTop !== undefined) w.setAlwaysOnTop(opts.alwaysOnTop);
       if (opts.fullscreen !== undefined) w.setFullScreen(opts.fullscreen);
       if (opts.frameless !== undefined) {
-        // Electron doesn't allow toggling frame on a live window; we'd
-        // need to close and recreate. For now, return false to signal
-        // that frameless can only be set at open time.
+        // Electron doesn't allow toggling frame on a live window; need recreate.
         return false;
       }
       return true;
@@ -218,27 +339,52 @@ function registerIpc(): void {
 
   ipcMain.handle("overlaysys:get-mode", () => ({
     isDev,
-    operatorUrl: OPERATOR_URL,
-    rendererUrl: RENDERER_URL,
+    operatorUrl: operatorUrl(),
+    rendererUrl: isDev
+      ? process.env["RENDERER_URL"] ?? "http://localhost:3001"
+      : `http://${serverHost}:${serverPort}/renderer/`,
+    serverPort,
   }));
 }
 
-app.whenReady().then(() => {
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
+async function boot(): Promise<void> {
+  if (!isDev) {
+    try {
+      const { port } = await spawnServer();
+      serverPort = port;
+      // Verify the health endpoint responds (sanity check).
+      const ok = await pingHealth(serverHost, serverPort, 5000);
+      if (!ok) throw new Error("server health check failed");
+      console.log(`[desktop] server ready on ${serverHost}:${serverPort}`);
+    } catch (err) {
+      console.error("[desktop] server failed to start:", err);
+      app.quit();
+      return;
+    }
+  }
   buildMenu();
   registerIpc();
   operatorWindow = createOperatorWindow();
+}
 
-  app.on("activate", () => {
-    // macOS: re-create the operator window if dock icon is clicked and
-    // no windows are open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      operatorWindow = createOperatorWindow();
-    }
-  });
+app.whenReady().then(boot);
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0 && !isDev) {
+    operatorWindow = createOperatorWindow();
+  }
 });
 
 app.on("window-all-closed", () => {
-  // Quit on all non-mac platforms; macOS keeps the app alive in the dock
-  // until Cmd+Q.
   if (process.platform !== "darwin") app.quit();
+});
+
+app.on("before-quit", () => {
+  killServer();
+});
+
+process.on("exit", () => {
+  killServer();
 });

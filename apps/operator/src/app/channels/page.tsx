@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelRenderMode } from "@overlaysys/core";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
+import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 
 const BG_PRESETS: { label: string; value: string }[] = [

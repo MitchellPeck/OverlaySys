@@ -7,8 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "OVERLAYSYS_DESKTOP_DEV=1 OPERATOR_URL=http://localhost:3000 RENDERER_URL=http://localhost:3001 pnpm build && electron dist/main.js",
+    "package": "node ../../scripts/package-desktop.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+    "clean": "rm -rf dist build .turbo *.tsbuildinfo"
   },
   "dependencies": {
     "@overlaysys/core": "workspace:*"
@@ -16,6 +17,38 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "typescript": "^5.6.0"
+  },
+  "build": {
+    "appId": "com.overlaysys.desktop",
+    "productName": "OverlaySys",
+    "directories": {
+      "output": "build/release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/staged",
+        "to": "app",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ]
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }]
+    }
   }
 }
