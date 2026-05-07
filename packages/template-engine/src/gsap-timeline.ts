@@ -35,36 +35,18 @@ export function buildGsapTimeline(
 
     // Sort just in case authoring order is not chronological.
     const kfs = [...track.keyframes].sort((a, b) => a.t - b.t);
+
+    // First keyframe sets the initial value at its time.
     if (kfs.length === 0) continue;
-
     const first = kfs[0]!;
+    tl.set(el, { [gsapProp]: first.value }, first.t);
 
-    // Single keyframe → just snap to that value at its time.
-    if (kfs.length === 1) {
-      tl.set(el, { [gsapProp]: first.value }, first.t);
-      continue;
-    }
-
-    // Multi-keyframe: emit one fromTo tween per segment. fromTo locks both
-    // start and end values explicitly so the segment is independent of any
-    // other tween (or the layer's static design pose) that might be on
-    // the same property. This replaces the previous set+to-at-same-position
-    // pattern, where two tweens at position 0 fought over the rendering
-    // and caused IN animations to look like hard cuts rather than fades.
-    //
-    // Default immediateRender (true) means GSAP applies the "from" values
-    // when the tween is constructed — so for a timeline like the IN, the
-    // first segment's `from` (opacity=0, x=-75) is written to the DOM at
-    // construction. mount.ts orders construction so the IN is built last
-    // and its t=0 state is the final mounted state, rather than the layer's
-    // static design pose.
     for (let i = 1; i < kfs.length; i++) {
       const prev = kfs[i - 1]!;
       const cur = kfs[i]!;
       const dur = cur.t - prev.t;
-      tl.fromTo(
+      tl.to(
         el,
-        { [gsapProp]: prev.value },
         {
           [gsapProp]: cur.value,
           duration: dur,

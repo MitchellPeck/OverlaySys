@@ -63,20 +63,10 @@ export function mountTemplate(
   // and similar passive hosts can't accidentally interact.
   if (mode === "edit") root.style.pointerEvents = "auto";
 
-  // Construction order matters: GSAP fromTo tweens immediate-render their
-  // "from" values, so whichever timeline is built LAST wins on shared
-  // properties. Build OUT first, IN second — the IN timeline's t=0
-  // values (opacity=0, x=-75, etc.) end up applied to the DOM at mount
-  // time, so the layer is already at its in-start state before the first
-  // paint. Without this, the layer would briefly show its static design
-  // pose (opacity=1) until playIn() drove the timeline forward, making
-  // the in-animation look like a snap.
-  //
-  // Edit-mode callers drive initial scrubbing explicitly via seek() so
-  // they own the "design pose" semantics — they're unaffected by the
-  // ordering choice.
-  const outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
   const inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
+  const outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
+  // Note: edit-mode callers (the Canvas component) drive initial scrub
+  // explicitly via seek() so they own the "design pose" semantics.
 
   let currentData = merged;
 
@@ -87,24 +77,13 @@ export function mountTemplate(
     playIn() {
       return new Promise<void>((resolve) => {
         inTl.eventCallback("onComplete", () => resolve());
-        // Force a fresh render at t=0 then play forward. invalidate() drops
-        // GSAP's per-tween rendered-state cache; pause(0) forces the
-        // timeline to render at time 0 (applying the fromTo's "from" values
-        // synchronously to the DOM); play() resumes forward playback. This
-        // sequence is more reliable than restart(true) for repeated runs
-        // of the same animation: restart can short-circuit the t=0 render
-        // when the tween thinks it has already rendered there.
-        inTl.invalidate();
-        inTl.pause(0);
-        inTl.play();
+        inTl.restart(true);
       });
     },
     playOut() {
       return new Promise<void>((resolve) => {
         outTl.eventCallback("onComplete", () => resolve());
-        outTl.invalidate();
-        outTl.pause(0);
-        outTl.play();
+        outTl.restart(true);
       });
     },
     seek(which, time) {
