@@ -5,9 +5,13 @@
 //   1. Build the operator as a static export (Next.js with NEXT_BUILD_STATIC=1).
 //   2. Build the renderer (Vite).
 //   3. Compile the Electron main / preload (tsc).
-//   4. Stage everything we need at runtime under apps/desktop/build/staged
-//      — that becomes the `app/` folder inside the packaged Resources.
-//   5. Run electron-builder.
+//   4. `pnpm deploy` the server with prod deps into a self-contained tree.
+//      This is the canonical way to extract a workspace package + its
+//      transitive prod dependencies into a directory that runs without
+//      the surrounding workspace.
+//   5. Stage the rest (lyric-listener, static frontends, fixtures) next
+//      to the deployed server under apps/desktop/build/staged/.
+//   6. Run electron-builder.
 //
 // Run from the repo root: `pnpm --filter @overlaysys/desktop package`
 
@@ -25,7 +29,7 @@ function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       stdio: "inherit",
-      cwd: REPO_ROOT,
+      cwd: opts.cwd ?? REPO_ROOT,
       env: { ...process.env, ...(opts.env ?? {}) },
       shell: false,
     });
@@ -47,6 +51,15 @@ async function copyDir(src, dst) {
   await fs.cp(src, dst, { recursive: true });
 }
 
+async function exists(p) {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   // 1. Operator static export.
   await step("operator → static export", async () => {
@@ -65,34 +78,34 @@ async function main() {
     await run("pnpm", ["--filter", "@overlaysys/desktop", "build"]);
   });
 
-  // 4. Stage runtime assets.
-  await step("stage runtime tree", async () => {
+  // 4. Reset the staged dir, then pnpm-deploy the server with prod deps.
+  await step("pnpm deploy server", async () => {
     await fs.rm(STAGED, { recursive: true, force: true });
     await fs.mkdir(STAGED, { recursive: true });
-
-    // Server source (tsx will transform at runtime).
-    await copyDir(
-      path.join(REPO_ROOT, "server", "src"),
-      path.join(STAGED, "server", "src"),
+    const serverTarget = path.join(STAGED, "server");
+    await run(
+      "pnpm",
+      [
+        "--filter",
+        "@overlaysys/server",
+        "deploy",
+        "--prod",
+        // pnpm v10+ defaults to "injected workspace deps" mode for deploy;
+        // --legacy keeps the older behavior that materializes workspace
+        // deps directly, which is what we want here.
+        "--legacy",
+        // Must use a relative path; absolute paths confuse pnpm deploy
+        // about whether the target sits inside the workspace.
+        path.relative(REPO_ROOT, serverTarget),
+      ],
     );
-    await fs.copyFile(
-      path.join(REPO_ROOT, "server", "package.json"),
-      path.join(STAGED, "server", "package.json"),
-    );
+  });
 
-    // Workspace packages the server imports (TS source).
-    for (const pkg of ["core", "ws-protocol", "template-engine"]) {
-      await copyDir(
-        path.join(REPO_ROOT, "packages", pkg, "src"),
-        path.join(STAGED, "packages", pkg, "src"),
-      );
-      await fs.copyFile(
-        path.join(REPO_ROOT, "packages", pkg, "package.json"),
-        path.join(STAGED, "packages", pkg, "package.json"),
-      );
-    }
-
-    // Lyric-listener daemon.
+  // 5. Stage runtime assets next to the deployed server.
+  await step("stage runtime assets", async () => {
+    // Lyric-listener daemon. It imports `ws`, which the server's
+    // node_modules already provides; we set NODE_PATH at spawn time so
+    // the listener finds it.
     await copyDir(
       path.join(REPO_ROOT, "apps", "lyric-listener", "src"),
       path.join(STAGED, "apps", "lyric-listener", "src"),
@@ -116,52 +129,23 @@ async function main() {
     for (const kind of ["templates", "shows", "channels", "songs"]) {
       const src = path.join(REPO_ROOT, "data", kind, "fixtures");
       const dst = path.join(STAGED, "data", kind, "fixtures");
-      try {
+      if (await exists(src)) {
         await copyDir(src, dst);
-      } catch {
-        // Fixtures dir may not exist for every kind; skip silently.
       }
-    }
-
-    // Workspace metadata so pnpm install resolves the workspace
-    // dependencies inside the staged tree.
-    await fs.copyFile(
-      path.join(REPO_ROOT, "pnpm-workspace.yaml"),
-      path.join(STAGED, "pnpm-workspace.yaml"),
-    );
-    await fs.copyFile(
-      path.join(REPO_ROOT, "package.json"),
-      path.join(STAGED, "package.json"),
-    );
-    if (await exists(path.join(REPO_ROOT, ".npmrc"))) {
-      await fs.copyFile(
-        path.join(REPO_ROOT, ".npmrc"),
-        path.join(STAGED, ".npmrc"),
-      );
     }
   });
 
-  // 5. electron-builder.
-  // Note: the staged tree references workspace packages by symlink. For a
-  // shippable bundle, we'd typically run `pnpm install --prod --shamefully-hoist`
-  // INSIDE the staged tree to materialize node_modules with all
-  // dependencies resolved. That's a TODO — for now electron-builder will
-  // include the staged tree as-is and the developer can iterate from the
-  // unpacked output before turning on installer codepaths.
+  // 6. electron-builder.
   await step("electron-builder", async () => {
-    await run("pnpm", ["--filter", "@overlaysys/desktop", "exec", "electron-builder"]);
+    await run("pnpm", [
+      "--filter",
+      "@overlaysys/desktop",
+      "exec",
+      "electron-builder",
+    ]);
   });
 
   process.stdout.write("\n✓ Packaged. See apps/desktop/build/release/\n");
-}
-
-async function exists(p) {
-  try {
-    await fs.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 main().catch((err) => {

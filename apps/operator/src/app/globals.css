@@ -1,0 +1,32 @@
+:root {
+  --bg: #0c0d10;
+  --panel: #14161a;
+  --panel-2: #1c1f25;
+  --border: #2a2e36;
+  --text: #e9eaee;
+  --text-dim: #9099a8;
+  --accent: #ff3a3a;
+  --accent-2: #ffb13a;
+  --green: #4ade80;
+  --red: #f87171;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+input, textarea {
+  font: inherit;
+}

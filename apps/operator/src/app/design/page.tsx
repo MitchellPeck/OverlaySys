@@ -7,6 +7,7 @@ import { v4 as uuid } from "uuid";
 import { blankTemplate } from "@overlaysys/editor-kit";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
+import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 
 export default function DesignIndexPage() {
@@ -15,6 +16,7 @@ export default function DesignIndexPage() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog } = useDialog();
 
   useEffect(() => {
     if (conn === "open") send({ type: "list_templates" });
@@ -29,13 +31,22 @@ export default function DesignIndexPage() {
     // Navigate after a short tick so the server has the file by the time the
     // editor route fetches it; the route also gracefully retries on conn-open.
     setTimeout(() => {
-      router.push(`/design/${id}`);
+      router.push(`/design/edit?id=${encodeURIComponent(id)}`);
     }, 150);
   }
 
-  function remove(templateId: string) {
-    if (!confirm(`Delete template "${templateId}"? This removes the JSON file.`)) return;
-    send({ type: "delete_template", templateId });
+  async function remove(templateId: string) {
+    const ok = await confirm({
+      title: "Delete template",
+      message: (
+        <>
+          Delete <strong>{templateId}</strong>? This removes the JSON file.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) send({ type: "delete_template", templateId });
   }
 
   return (
@@ -71,7 +82,7 @@ export default function DesignIndexPage() {
         {templates.map((t) => (
           <li key={t.id} style={{ marginBottom: 4, display: "flex", alignItems: "stretch", gap: 4 }}>
             <Link
-              href={`/design/${t.id}`}
+              href={`/design/edit?id=${encodeURIComponent(t.id)}`}
               style={{
                 flex: 1,
                 padding: "12px 14px",
@@ -106,6 +117,7 @@ export default function DesignIndexPage() {
         ))}
       </ul>
       </main>
+      {dialog}
     </>
   );
 }

@@ -24,6 +24,7 @@ export default function ChannelsPage() {
     mirrorOf: string;
     renderMode: ChannelRenderMode;
   }>({ id: "", name: "", mirrorOf: "", renderMode: "normal" });
+  const { confirm, alert, dialog } = useDialog();
 
   useEffect(() => {
     if (conn === "open") send({ type: "list_channels" });
@@ -34,7 +35,14 @@ export default function ChannelsPage() {
     const name = creating.name.trim() || id;
     if (!id) return;
     if (channels.some((c) => c.id === id)) {
-      alert(`Channel "${id}" already exists.`);
+      void alert({
+        title: "Duplicate channel",
+        message: (
+          <>
+            A channel with id <strong>{id}</strong> already exists.
+          </>
+        ),
+      });
       return;
     }
     const config: ChannelConfig = {
@@ -52,9 +60,18 @@ export default function ChannelsPage() {
     send({ type: "save_channel", config });
   }
 
-  function remove(id: string, name: string) {
-    if (!confirm(`Delete channel "${name}"? This removes the JSON file.`)) return;
-    send({ type: "delete_channel", channelId: id });
+  async function remove(id: string, name: string) {
+    const ok = await confirm({
+      title: "Delete channel",
+      message: (
+        <>
+          Delete <strong>{name}</strong>? This removes the JSON file.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) send({ type: "delete_channel", channelId: id });
   }
 
   return (
@@ -137,6 +154,7 @@ export default function ChannelsPage() {
         </ul>
       </div>
       </main>
+      {dialog}
     </>
   );
 }

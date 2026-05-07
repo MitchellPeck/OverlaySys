@@ -1,21 +1,30 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
 import type { Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
+import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 
-export default function ShowEditPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id: showId } = use(params);
+// Suspense wrapper required by Next.js static export when the page calls
+// useSearchParams() — the inner page reads ?id= and renders.
+export default function ShowEditPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
+      <ShowEditPageInner />
+    </Suspense>
+  );
+}
+
+function ShowEditPageInner() {
+  // Static-export-friendly: id comes from ?id=… query string.
+  const searchParams = useSearchParams();
+  const showId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
   const router = useRouter();
   const conn = useStore((s) => s.conn);
@@ -28,6 +37,7 @@ export default function ShowEditPage({
   const [dirty, setDirty] = useState(false);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const fetchedRef = useRef<string | null>(null);
+  const { confirm, alert, dialog } = useDialog();
 
   // Listen for show messages.
   useEffect(() => {
@@ -105,9 +115,19 @@ export default function ShowEditPage({
     send({ type: "get_show", showId });
   }
 
-  function remove() {
+  async function remove() {
     if (!draft) return;
-    if (!confirm(`Delete show "${draft.name}"?`)) return;
+    const ok = await confirm({
+      title: "Delete show",
+      message: (
+        <>
+          Delete <strong>{draft.name}</strong>?
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     send({ type: "delete_show", showId: draft.id });
     setTimeout(() => router.push("/shows"), 150);
   }
@@ -120,12 +140,15 @@ export default function ShowEditPage({
   }
 
   function addSongRow() {
+    const firstSong = songs[0];
+    if (!firstSong) {
+      void alert({
+        title: "No songs yet",
+        message: "No songs in library yet. Create one in Songs first.",
+      });
+      return;
+    }
     update((s) => {
-      const firstSong = songs[0];
-      if (!firstSong) {
-        alert("No songs in library yet. Create one in /songs first.");
-        return;
-      }
       const cachedSong = songCache[firstSong.id];
       const lyricTemplateId =
         cachedSong?.defaultLyricTemplateId ??
@@ -248,6 +271,7 @@ export default function ShowEditPage({
           </div>
         </div>
       </div>
+      {dialog}
     </main>
   );
 }

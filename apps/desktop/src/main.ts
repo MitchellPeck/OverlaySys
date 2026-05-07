@@ -61,13 +61,23 @@ function rendererChannelUrl(channelId: string): string {
 // ── Server lifecycle ─────────────────────────────────────────────────────────
 
 function spawnServer(): Promise<{ port: number }> {
-  // Resolve the bundled server, fixtures, and lyric-listener paths.
-  // In packaged Electron, app resources sit in `process.resourcesPath`;
-  // we ship the workspace tree under `resources/app` and the
-  // pre-installed node_modules under `resources/app/node_modules`.
+  // In packaged Electron, the app tree sits at process.resourcesPath/app/
+  // with this layout (produced by scripts/package-desktop.mjs):
+  //
+  //   app/
+  //     server/                 ← pnpm-deploy'd self-contained server
+  //       package.json
+  //       src/index.ts
+  //       node_modules/         ← all prod deps incl. tsx, fastify, ws
+  //     apps/
+  //       lyric-listener/src/stdin.mjs
+  //       operator/out/         ← static export
+  //       renderer/dist/        ← vite build
+  //     data/
+  //       <kind>/fixtures/      ← seeded into userData on first run
   const resourcesRoot = process.resourcesPath;
   const appRoot = path.join(resourcesRoot, "app");
-  const serverEntry = path.join(appRoot, "server", "src", "index.ts");
+  const serverDir = path.join(appRoot, "server");
   const fixturesDir = path.join(appRoot, "data");
   const listenerPath = path.join(
     appRoot,
@@ -80,11 +90,17 @@ function spawnServer(): Promise<{ port: number }> {
   const rendererStatic = path.join(appRoot, "apps", "renderer", "dist");
   const userDataDir = path.join(app.getPath("userData"), "data");
 
+  // The lyric-listener daemon imports `ws` from npm; share the server's
+  // node_modules via NODE_PATH so the listener can resolve it without a
+  // separate install.
+  const sharedNodePath = path.join(serverDir, "node_modules");
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
     PORT: "0",
     HOST: "127.0.0.1",
+    NODE_PATH: sharedNodePath,
     OVERLAYSYS_DATA_DIR: userDataDir,
     OVERLAYSYS_FIXTURES_DIR: fixturesDir,
     OVERLAYSYS_LISTENER_PATH: listenerPath,
@@ -94,10 +110,12 @@ function spawnServer(): Promise<{ port: number }> {
   };
 
   return new Promise<{ port: number }>((resolve, reject) => {
+    // cwd = serverDir so node resolves tsx and other deps from
+    // server/node_modules.
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", serverEntry],
-      { env, cwd: appRoot, stdio: ["ignore", "pipe", "pipe"] },
+      ["--import", "tsx", "src/index.ts"],
+      { env, cwd: serverDir, stdio: ["ignore", "pipe", "pipe"] },
     );
     serverChild = child;
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { use, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Canvas,
   LayerTree,
@@ -13,12 +14,20 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { AppHeader } from "@/app/components/AppHeader";
 
-export default function DesignPage({
-  params,
-}: {
-  params: Promise<{ templateId: string }>;
-}) {
-  const { templateId } = use(params);
+// Suspense wrapper required by Next.js static export when the page
+// calls useSearchParams().
+export default function DesignPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
+      <DesignPageInner />
+    </Suspense>
+  );
+}
+
+function DesignPageInner() {
+  // Static-export-friendly: templateId comes from ?id=… query string.
+  const searchParams = useSearchParams();
+  const templateId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
 

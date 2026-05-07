@@ -7,6 +7,7 @@ import { v4 as uuid } from "uuid";
 import type { Show } from "@overlaysys/core";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
+import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 
 export default function ShowsIndexPage() {
@@ -15,6 +16,7 @@ export default function ShowsIndexPage() {
   const conn = useStore((s) => s.conn);
   const showMetas = useStore((s) => s.showMetas);
   const [name, setName] = useState("");
+  const { confirm, dialog } = useDialog();
 
 
   useEffect(() => {
@@ -28,12 +30,21 @@ export default function ShowsIndexPage() {
     const show: Show = { id, name: trimmed, rows: [] };
     send({ type: "save_show", show });
     setName("");
-    setTimeout(() => router.push(`/shows/${id}`), 150);
+    setTimeout(() => router.push(`/shows/edit?id=${encodeURIComponent(id)}`), 150);
   }
 
-  function remove(id: string, name: string) {
-    if (!confirm(`Delete show "${name}"? This removes the JSON file.`)) return;
-    send({ type: "delete_show", showId: id });
+  async function remove(id: string, name: string) {
+    const ok = await confirm({
+      title: "Delete show",
+      message: (
+        <>
+          Delete <strong>{name}</strong>? This removes the JSON file.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) send({ type: "delete_show", showId: id });
   }
 
   return (
@@ -83,7 +94,7 @@ export default function ShowsIndexPage() {
           {showMetas.map((s) => (
             <li key={s.id} style={{ marginBottom: 4, display: "flex", gap: 4 }}>
               <Link
-                href={`/shows/${s.id}`}
+                href={`/shows/edit?id=${encodeURIComponent(s.id)}`}
                 style={{
                   flex: 1,
                   padding: "12px 14px",
@@ -111,6 +122,7 @@ export default function ShowsIndexPage() {
         </ul>
       </div>
       </main>
+      {dialog}
     </>
   );
 }

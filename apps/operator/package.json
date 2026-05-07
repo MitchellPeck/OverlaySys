@@ -1,0 +1,35 @@
+{
+  "name": "@overlaysys/operator",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "clean": "rm -rf .next .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@overlaysys/core": "workspace:*",
+    "@overlaysys/editor-kit": "workspace:*",
+    "@overlaysys/ws-protocol": "workspace:*",
+    "@overlaysys/template-engine": "workspace:*",
+    "gsap": "^3.12.5",
+    "immer": "^10.1.1",
+    "next": "^15.1.0",
+    "papaparse": "^5.4.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "uuid": "^11.0.3",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.3.15",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.6.0"
+  }
+}
