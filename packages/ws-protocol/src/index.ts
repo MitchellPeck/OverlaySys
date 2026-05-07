@@ -99,6 +99,17 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("save_channel"), config: ChannelConfigSchema }),
   z.object({ type: z.literal("delete_channel"), channelId: z.string() }),
   z.object({ type: z.literal("ping"), t: z.number() }),
+  z.object({
+    type: z.literal("stt_listener_register"),
+    audioSourceId: z.string(),
+    label: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("stt_hypothesis"),
+    audioSourceId: z.string(),
+    text: z.string(),
+    t: z.number(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -171,6 +182,29 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     message: z.string(),
   }),
   z.object({ type: z.literal("pong"), t: z.number() }),
+  z.object({
+    type: z.literal("stt_listener_state"),
+    listeners: z.array(
+      z.object({
+        audioSourceId: z.string(),
+        label: z.string().optional(),
+        online: z.boolean(),
+        lastSeen: z.number(),
+      }),
+    ),
+  }),
+  z.object({
+    type: z.literal("stt_match"),
+    channel: z.string(),
+    suggestedSlide: z
+      .object({
+        sectionIdx: z.number().int().nonnegative(),
+        slideIdx: z.number().int().nonnegative(),
+      })
+      .nullable(),
+    confidence: z.number().min(0).max(1),
+    hypothesis: z.string(),
+  }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
