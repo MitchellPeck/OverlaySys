@@ -13,7 +13,27 @@ import * as shows from "./shows";
 import * as songs from "./songs";
 import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
+import * as sttListener from "./sttListener";
 import { registerSender, broadcast } from "./broadcast";
+
+// ───── Module-scope subscriptions ────────────────────────────────────────────
+// These broadcast to all connected clients whenever STT state changes.
+
+songSession.onMatch((channel, result, hypothesis) => {
+  broadcast({
+    type: "stt_match",
+    channel,
+    suggestedSlide: result
+      ? { sectionIdx: result.sectionIdx, slideIdx: result.slideIdx }
+      : null,
+    confidence: result?.confidence ?? 0,
+    hypothesis,
+  });
+});
+
+sttListener.subscribe((listeners) => {
+  broadcast({ type: "stt_listener_state", listeners });
+});
 
 export function handleConnection(
   ws: WebSocket,
@@ -21,6 +41,7 @@ export function handleConnection(
   log: FastifyBaseLogger,
 ): void {
   const subscriptions = new Map<string, () => void>();
+  let registeredAudioSourceId: string | null = null;
 
   function send(msg: ServerMessage): void {
     if (ws.readyState === ws.OPEN) ws.send(encode(msg));
@@ -233,6 +254,21 @@ export function handleConnection(
           send({ type: "pong", t: parsed.t });
           break;
         }
+        case "stt_listener_register": {
+          sttListener.register(parsed.audioSourceId, parsed.label);
+          // Track so we can disconnect this source when the WS closes.
+          registeredAudioSourceId = parsed.audioSourceId;
+          break;
+        }
+        case "stt_hypothesis": {
+          sttListener.markHypothesisReceived(parsed.audioSourceId);
+          // Route to all active sessions — the operator UI shows suggestions
+          // for every channel regardless of which listener sent them.
+          for (const channel of songSession.getChannelsWithSessions()) {
+            songSession.processSttHypothesis(channel, parsed.text, parsed.t);
+          }
+          break;
+        }
       }
     } catch (err) {
       log.error({ err, type: parsed.type }, "ws handler error");
@@ -241,6 +277,9 @@ export function handleConnection(
   });
 
   ws.on("close", () => {
+    if (registeredAudioSourceId) {
+      sttListener.disconnect(registeredAudioSourceId);
+    }
     for (const unsub of subscriptions.values()) unsub();
     subscriptions.clear();
     offBroadcast();
