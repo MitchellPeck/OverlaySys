@@ -7,6 +7,7 @@ const states = new Map<string, ChannelState>();
 const listeners = new Map<string, Set<Listener>>();
 
 let takeIsInternal = false;
+let clearIsInternal = false;
 
 function getOrInit(channel: string): ChannelState {
   let s = states.get(channel);
@@ -68,7 +69,7 @@ export function takeInternal(channel: string, templateId: string, data: Record<s
 }
 
 export function clear(channel: string): void {
-  if (!takeIsInternal) {
+  if (!clearIsInternal) {
     // External clear ends any live song session on this channel; without this
     // the session summary persists in ChannelState and the operator UI stays
     // in song mode after the screen is cleared.
@@ -88,6 +89,20 @@ export function clear(channel: string): void {
       emit(channel);
     }
   }, 1500);
+}
+
+/**
+ * Clear without ending an active song session. Used by song mode's blank
+ * action — we want the renderer's out animation to play but the session
+ * stays live so the operator can unblank back into the same slide.
+ */
+export function clearInternal(channel: string): void {
+  clearIsInternal = true;
+  try {
+    clear(channel);
+  } finally {
+    clearIsInternal = false;
+  }
 }
 
 export function update(channel: string, data: Record<string, string>): void {

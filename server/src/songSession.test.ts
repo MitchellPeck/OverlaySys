@@ -118,18 +118,21 @@ describe("songSession", () => {
     expect(s.songSession?.cursor).toEqual({ sectionIdx: 1, slideIdx: 0 });
   });
 
-  it("blank toggles channel.active to null without ending the session", () => {
+  it("blank triggers the channel's out phase without ending the session", () => {
     songSession.start(CH, {
       song, lyricTemplateId: "lyric-default",
       arrangement: song.defaultArrangement, trustMode: false,
     });
     songSession.blank(CH);
     const blanked = channels.getState(CH);
-    expect(blanked.active).toBe(null);
+    // active enters "out" phase so the renderer plays its out animation;
+    // it nulls asynchronously after a 1.5s grace (not asserted here).
+    expect(blanked.active?.phase).toBe("out");
     expect(blanked.songSession?.blanked).toBe(true);
     songSession.blank(CH);
     const restored = channels.getState(CH);
     expect(restored.active?.data.text).toBe("Line A1\nLine A2");
+    expect(restored.active?.phase).toBe("in");
     expect(restored.songSession?.blanked).toBe(false);
   });
 

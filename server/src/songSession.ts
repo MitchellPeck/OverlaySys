@@ -49,10 +49,9 @@ function currentSlideText(s: InternalSession): string | null {
 function render(s: InternalSession): void {
   channels.setSongSessionSummary(s.channel, summarize(s));
   if (s.blanked) {
-    // Use setActiveNull for synchronous clearing — channels.clear() has a
-    // 1.5s async grace period before nulling active, which would break tests
-    // that immediately check active === null after blank().
-    channels.setActiveNull(s.channel);
+    // Use clearInternal so the renderer plays its out animation; the session
+    // itself stays alive so unblank can re-mount the same slide cleanly.
+    channels.clearInternal(s.channel);
     return;
   }
   const text = currentSlideText(s);
