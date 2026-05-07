@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { ColorInput, ImageInput } from "@overlaysys/editor-kit";
 import type { Field } from "@overlaysys/core";
 
@@ -21,6 +22,8 @@ export function FieldInput({ field, value, onChange }: Props) {
       return <ColorInput value={v || "#ffffff"} onChange={onChange} />;
     case "image":
       return <ImageInput value={v} onChange={onChange} />;
+    case "video":
+      return <VideoInput value={v} onChange={onChange} />;
     case "number":
       return (
         <input
@@ -54,3 +57,74 @@ const inputStyle: React.CSSProperties = {
   fontSize: 12,
   outline: "none",
 };
+
+/**
+ * Operator-side video field input. Accepts either a path/URL typed in,
+ * or a local file dropped/selected (encoded as a `data:` URL — fine for
+ * short stings, less ideal for full videos which should sit on disk and
+ * be referenced by path).
+ */
+function VideoInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  function pickFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const r = reader.result;
+      if (typeof r === "string") onChange(r);
+    };
+    reader.readAsDataURL(file);
+  }
+  return (
+    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      <input
+        value={value.startsWith("data:") ? "(embedded video)" : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="path/url or pick file →"
+        readOnly={value.startsWith("data:")}
+        style={{ ...inputStyle, flex: 1 }}
+      />
+      <button
+        onClick={() => fileRef.current?.click()}
+        style={{
+          padding: "4px 8px",
+          background: "var(--panel-2)",
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          borderRadius: 3,
+          fontSize: 11,
+          cursor: "pointer",
+        }}
+      >
+        Pick…
+      </button>
+      {value && (
+        <button
+          onClick={() => onChange("")}
+          title="Clear"
+          style={{
+            padding: "4px 8px",
+            background: "transparent",
+            color: "var(--text-dim)",
+            border: "1px solid var(--border)",
+            borderRadius: 3,
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+        >
+          ×
+        </button>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="video/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) pickFile(f);
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
