@@ -87,20 +87,24 @@ export function mountTemplate(
     playIn() {
       return new Promise<void>((resolve) => {
         inTl.eventCallback("onComplete", () => resolve());
-        // Invalidate before restarting: GSAP caches each tween's "rendered"
-        // state internally, and on subsequent restarts will skip re-applying
-        // the from values if it thinks they were already written. Calling
-        // invalidate() drops the cache so restart(true) actually re-renders
-        // each tween's start values, including the all-important t=0 from.
+        // Force a fresh render at t=0 then play forward. invalidate() drops
+        // GSAP's per-tween rendered-state cache; pause(0) forces the
+        // timeline to render at time 0 (applying the fromTo's "from" values
+        // synchronously to the DOM); play() resumes forward playback. This
+        // sequence is more reliable than restart(true) for repeated runs
+        // of the same animation: restart can short-circuit the t=0 render
+        // when the tween thinks it has already rendered there.
         inTl.invalidate();
-        inTl.restart(true);
+        inTl.pause(0);
+        inTl.play();
       });
     },
     playOut() {
       return new Promise<void>((resolve) => {
         outTl.eventCallback("onComplete", () => resolve());
         outTl.invalidate();
-        outTl.restart(true);
+        outTl.pause(0);
+        outTl.play();
       });
     },
     seek(which, time) {
