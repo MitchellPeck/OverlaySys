@@ -1,0 +1,21 @@
+{
+  "name": "@overlaysys/desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Electron host for OverlaySys — operator window plus per-channel renderer windows",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "OVERLAYSYS_DESKTOP_DEV=1 OPERATOR_URL=http://localhost:3000 RENDERER_URL=http://localhost:3001 pnpm build && electron dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@overlaysys/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^33.2.0",
+    "typescript": "^5.6.0"
+  }
+}

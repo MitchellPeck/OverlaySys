@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "turbo run dev --parallel",
+    "desktop": "pnpm --filter @overlaysys/desktop dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
@@ -27,7 +28,8 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "sharp",
-      "@swc/core"
+      "@swc/core",
+      "electron"
     ]
   }
 }
