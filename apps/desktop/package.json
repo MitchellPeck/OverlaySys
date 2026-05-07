@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "OVERLAYSYS_DESKTOP_DEV=1 OPERATOR_URL=http://localhost:3000 RENDERER_URL=http://localhost:3001 pnpm build && electron dist/main.js",
+    "dev": "pnpm build && OVERLAYSYS_DESKTOP_DEV=1 OPERATOR_URL=http://localhost:3000 RENDERER_URL=http://localhost:3001 electron dist/main.js",
     "package": "node ../../scripts/package-desktop.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "rm -rf dist build .turbo *.tsbuildinfo"

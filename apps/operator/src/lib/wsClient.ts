@@ -122,9 +122,32 @@ export class WsClient {
   }
 }
 
+const SERVER_STORAGE_KEY = "overlaysys:server-url";
+
 export function defaultServerUrl(): string {
   if (typeof window === "undefined") return "ws://localhost:4000/ws";
+  // Priority 1 — `?server=` URL override (Electron host injects this on
+  // initial window load). Persist it so subsequent in-app navigations
+  // (which strip the query string) and page refreshes still find the
+  // right server, even when the server is on a dynamic ephemeral port.
   const override = new URLSearchParams(location.search).get("server");
-  if (override) return override;
+  if (override) {
+    try {
+      sessionStorage.setItem(SERVER_STORAGE_KEY, override);
+    } catch {
+      // sessionStorage may throw in private mode / with strict CSP — fine,
+      // we'll just rely on the URL param surviving instead.
+    }
+    return override;
+  }
+  // Priority 2 — sessionStorage from an earlier tab session.
+  try {
+    const stored = sessionStorage.getItem(SERVER_STORAGE_KEY);
+    if (stored) return stored;
+  } catch {
+    // ignore
+  }
+  // Priority 3 — same-host fallback. Works for browser-source dev
+  // (operator on :3000, server on :4000).
   return `ws://${location.hostname}:4000/ws`;
 }

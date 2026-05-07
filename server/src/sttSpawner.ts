@@ -12,6 +12,36 @@ const LISTENER_PATH = process.env["OVERLAYSYS_LISTENER_PATH"]
   ? path.resolve(process.env["OVERLAYSYS_LISTENER_PATH"])
   : path.resolve(REPO_ROOT, "apps", "lyric-listener", "src", "stdin.mjs");
 
+// macOS GUI apps launched from Finder inherit a minimal PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin) — Homebrew's whisper-stream lives at
+// /opt/homebrew/bin or /usr/local/bin and is invisible without an
+// augment. Same on Linux for some XDG-launched apps. Prepend the common
+// locations so the user's installed STT binary can be found.
+const PATH_AUGMENTS = [
+  "/opt/homebrew/bin",
+  "/opt/homebrew/sbin",
+  "/usr/local/bin",
+  "/usr/local/sbin",
+];
+function buildAugmentedPath(): string {
+  const existing = (process.env["PATH"] ?? "").split(path.delimiter);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const dir of [...PATH_AUGMENTS, ...existing]) {
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    out.push(dir);
+  }
+  return out.join(path.delimiter);
+}
+
+// In packaged Electron there's no system `node` on PATH — only the
+// Electron binary at process.execPath, which runs as Node when
+// ELECTRON_RUN_AS_NODE=1 is set. Use that binary to invoke the listener
+// daemon from the bash pipeline so we don't depend on the user having
+// node installed.
+const NODE_BIN = process.execPath;
+
 const RECENT_LOG_LIMIT = 100;
 
 let child: ChildProcess | null = null;
@@ -61,15 +91,28 @@ export function start(config: SttSpawnerConfig): void {
 
   // Build the full pipeline. The user's command's stdout gets piped into
   // the stdin daemon. We use bash -c so shell features (|, >, $VAR) work.
-  const fullCommand = `${config.command} | node ${JSON.stringify(LISTENER_PATH)}`;
+  // The listener side uses NODE_BIN (the calling process's binary) instead
+  // of relying on `node` being on PATH — important for packaged Electron
+  // where there's no system node, only Electron-as-node.
+  const fullCommand = `${config.command} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
   appendLog(`spawn: ${fullCommand}`);
+
+  const augmentedPath = buildAugmentedPath();
 
   try {
     // Use detached: true so we own a process group and can kill all children
     // (including whisper-stream) with a single process.kill(-pid, SIGTERM).
     const c = spawn("bash", ["-c", fullCommand], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
+      env: {
+        ...process.env,
+        PATH: augmentedPath,
+        // ELECTRON_RUN_AS_NODE makes process.execPath behave as a plain
+        // Node binary when invoked. Required so the listener daemon
+        // launched from the bash pipeline runs as JS, not as a new
+        // Electron app instance.
+        ELECTRON_RUN_AS_NODE: "1",
+      },
       detached: true,
     });
     child = c;
