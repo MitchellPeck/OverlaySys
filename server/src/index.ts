@@ -6,6 +6,8 @@ import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
+import * as sttSpawner from "./sttSpawner";
+import { loadSttConfig } from "./storage";
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
 const PORT = Number(process.env["PORT"] ?? 4000);
@@ -21,6 +23,13 @@ await reloadSongs();
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s)`,
 );
+
+// Boot STT spawner: load persisted config; auto-start if configured.
+const sttConfig = await loadSttConfig();
+if (sttConfig.autoStart) {
+  app.log.info("[stt] autoStart enabled — starting STT spawner");
+  sttSpawner.start(sttConfig);
+}
 
 app.get("/health", async () => ({ ok: true, time: Date.now() }));
 

@@ -7,10 +7,13 @@ import {
   ShowSchema,
   ChannelConfigSchema,
   SongSchema,
+  SttSpawnerConfigSchema,
+  DEFAULT_STT_SPAWNER_CONFIG,
   type Template,
   type Show,
   type ChannelConfig,
   type Song,
+  type SttSpawnerConfig,
 } from "@overlaysys/core";
 
 // Resolve repo root (../../ from server/src). Templates and shows live at <root>/data.
@@ -21,6 +24,8 @@ const TEMPLATES_DIR = path.join(DATA_ROOT, "templates");
 const SHOWS_DIR = path.join(DATA_ROOT, "shows");
 const CHANNELS_DIR = path.join(DATA_ROOT, "channels");
 const SONGS_DIR = path.join(DATA_ROOT, "songs");
+const STT_DIR = path.join(DATA_ROOT, "stt");
+const STT_CONFIG_FILE = path.join(STT_DIR, "config.json");
 const TEMPLATE_FIXTURES_DIR = path.join(TEMPLATES_DIR, "fixtures");
 const SHOW_FIXTURES_DIR = path.join(SHOWS_DIR, "fixtures");
 const CHANNEL_FIXTURES_DIR = path.join(CHANNELS_DIR, "fixtures");
@@ -71,6 +76,7 @@ export async function ensureSeeded(): Promise<void> {
   await ensureDir(SHOWS_DIR);
   await ensureDir(CHANNELS_DIR);
   await ensureDir(SONGS_DIR);
+  await ensureDir(STT_DIR);
   // Seed any fixtures that don't exist as live files yet.
   await copyMissingFixtures(TEMPLATE_FIXTURES_DIR, TEMPLATES_DIR);
   await copyMissingFixtures(SHOW_FIXTURES_DIR, SHOWS_DIR);
@@ -207,4 +213,22 @@ export async function deleteSong(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// STT spawner config ───────────────────────────────────────────────────────────
+
+export async function loadSttConfig(): Promise<SttSpawnerConfig> {
+  await ensureDir(STT_DIR);
+  try {
+    const raw = await fs.readFile(STT_CONFIG_FILE, "utf8");
+    return SttSpawnerConfigSchema.parse(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_STT_SPAWNER_CONFIG };
+  }
+}
+
+export async function saveSttConfig(config: SttSpawnerConfig): Promise<void> {
+  await ensureDir(STT_DIR);
+  const parsed = SttSpawnerConfigSchema.parse(config);
+  await writeAtomic(STT_CONFIG_FILE, JSON.stringify(parsed, null, 2));
 }
