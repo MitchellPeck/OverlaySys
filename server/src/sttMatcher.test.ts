@@ -62,11 +62,13 @@ describe("sttMatcher", () => {
     expect(r!.slideIdx).toBe(1);
   });
 
-  it("matches the chorus when the band drops to it (section-start bonus)", () => {
+  it("matches the chorus when the cursor is right next to it", () => {
     matcher.bindSession("program", song, song.defaultArrangement);
+    // Cursor at v1s2 (last slide of v1). Chorus is cursor+1 — within
+    // the neighborhood, so a chorus-text hypothesis is matchable.
     const r = matcher.processHypothesis("program", "my chains are gone", {
       sectionIdx: 0,
-      slideIdx: 0,
+      slideIdx: 1,
     });
     expect(r!.sectionIdx).toBe(1);
     expect(r!.slideIdx).toBe(0);
@@ -176,16 +178,20 @@ describe("sttMatcher", () => {
       matcher.unbindSession("program");
     });
 
-    it("can still match cursor+2 (two slides ahead)", () => {
+    it("does NOT match cursor+2 (two slides ahead is now out of range)", () => {
       matcher.bindSession("program", sharedVocabSong, sharedVocabSong.defaultArrangement);
-      // Cursor at v2; v4's first line comes in (cursor+2).
+      // Cursor at v2; v4's exact text comes in (cursor+2). Should NOT match
+      // — the per-hypothesis matcher is restricted to cursor−1/cursor/cursor+1.
       const r = matcher.processHypothesis(
         "program",
         "amazing grace forever sweet",
         { sectionIdx: 1, slideIdx: 0 },
       );
-      expect(r).not.toBeNull();
-      expect(r!.sectionIdx).toBe(3); // v4 is at index 3
+      // Either null, or matches a candidate within the neighborhood
+      // (v1, v2, v3) — never v4.
+      if (r) {
+        expect(r.sectionIdx).toBeLessThanOrEqual(2);
+      }
       matcher.unbindSession("program");
     });
   });

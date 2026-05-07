@@ -178,13 +178,11 @@ export function processHypothesis(
   }
 
   // ── Fallback: per-hypothesis token-overlap match ──────────────────────────
-  // Restricted to the local neighborhood: cursor−1, cursor, cursor+1,
-  // cursor+2. We deliberately do NOT consider far-away slides (e.g. first
-  // slide of every section) because verses in worship songs share so much
-  // vocabulary that a misheard hypothesis could otherwise jump from verse 2
-  // to verse 5. Operator-driven jumps via hotkeys (C/B/V1-3/T) bypass this
-  // matcher entirely, so non-monotonic moves are still possible — just not
-  // STT-driven.
+  // Restricted to a tight neighborhood: cursor−1, cursor, cursor+1. Worship
+  // songs share so much vocabulary across verses that anything wider invites
+  // misheard-word teleports. Operator-driven jumps via hotkeys (C/B/V1-3/T)
+  // bypass this matcher entirely, so non-monotonic moves are still possible
+  // — just not STT-driven.
   const { song, arrangement } = session;
   const candidates = new Set<string>();
   const candidateList: Array<{ sectionIdx: number; slideIdx: number }> = [];
@@ -202,7 +200,7 @@ export function processHypothesis(
     candidateList.push({ sectionIdx, slideIdx });
   }
 
-  for (const offset of [-1, 0, 1, 2]) {
+  for (const offset of [-1, 0, 1]) {
     const pos = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, offset);
     if (pos) addCandidate(pos.sectionIdx, pos.slideIdx);
   }

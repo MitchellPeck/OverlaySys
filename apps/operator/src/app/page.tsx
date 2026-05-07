@@ -53,7 +53,11 @@ export default function ShowPage() {
         position: "fixed",
         inset: 0,
         display: "grid",
-        gridTemplateRows: "auto minmax(0, 1fr)",
+        // When a song is live, add a third row for a horizontal channels
+        // strip across the bottom. Otherwise normal 2-row layout.
+        gridTemplateRows: programSession
+          ? "auto minmax(0, 1fr) auto"
+          : "auto minmax(0, 1fr)",
         overflow: "hidden",
       }}
     >
@@ -63,7 +67,7 @@ export default function ShowPage() {
           display: "grid",
           // When a song is live, collapse the side panels and give song mode
           // the page. Rundown shrinks to a narrow context column; Channels
-          // is hidden (operator can end the song to access it).
+          // moves to the bottom strip below.
           gridTemplateColumns: programSession
             ? "260px minmax(0, 1fr)"
             : "minmax(360px, 1fr) 360px 320px",
@@ -90,6 +94,43 @@ export default function ShowPage() {
           </Panel>
         )}
       </div>
+
+      {programSession && (
+        <section
+          style={{
+            background: "var(--panel)",
+            borderTop: "1px solid var(--border)",
+            padding: "10px 16px",
+            overflowX: "auto",
+            overflowY: "hidden",
+            maxHeight: 220,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 1.2,
+                color: "var(--text-dim)",
+              }}
+            >
+              Channels & Preview
+            </h3>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "stretch",
+              flexWrap: "nowrap",
+            }}
+          >
+            <ChannelsList orientation="horizontal" />
+          </div>
+        </section>
+      )}
     </main>
   );
 }

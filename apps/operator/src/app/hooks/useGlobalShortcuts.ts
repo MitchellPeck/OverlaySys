@@ -21,7 +21,8 @@ import { getClient } from "@/lib/useWs";
  *   C               jump to first chorus section
  *   B               jump to first bridge section
  *   T               jump to first tag section
- *   1 / 2 / 3       jump to verse 1 / 2 / 3
+ *   1..9            jump to verse 1..9
+ *   0               jump to verse 10
  *   .               toggle blank
  *   Esc             end song
  *
@@ -157,14 +158,12 @@ function handleSongHotkey(e: KeyboardEvent, send: Sender): boolean {
     send({ type: "song_jump_kind", channel, kind: "tag", ordinal: 1 });
     return true;
   }
-  if (k === "1" || k === "2" || k === "3") {
+  // Verse jumps: 1..9 → Verse 1..9, 0 → Verse 10. Ten verses covers any
+  // realistic worship song (Amazing Grace's longest published version is 7).
+  if (/^[0-9]$/.test(k)) {
     e.preventDefault();
-    send({
-      type: "song_jump_kind",
-      channel,
-      kind: "verse",
-      ordinal: Number(k),
-    });
+    const ordinal = k === "0" ? 10 : Number(k);
+    send({ type: "song_jump_kind", channel, kind: "verse", ordinal });
     return true;
   }
 
