@@ -24,12 +24,42 @@ export function SongModePanel({ channel, session }: Props) {
     return <div style={panelStyle()}>Loading song…</div>;
   }
 
+  const sttMatch = useStore((s) => s.sttMatches[channel]);
+
   const currentSectionId = session.arrangement[session.cursor.sectionIdx];
   const currentSection = song.sections.find((s) => s.id === currentSectionId);
+
+  const suggestedSlideIdx = (
+    sttMatch &&
+    sttMatch.sectionIdx === session.cursor.sectionIdx
+  ) ? sttMatch.slideIdx : undefined;
 
   return (
     <div style={panelStyle()}>
       <Header channel={channel} song={song} session={session} />
+      {sttMatch && (
+        <div style={{
+          marginTop: 8,
+          padding: "6px 10px",
+          fontSize: 11,
+          background: "rgba(74, 222, 128, 0.06)",
+          border: "1px solid rgba(74, 222, 128, 0.2)",
+          borderRadius: 4,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          color: "var(--text-dim)",
+        }}>
+          <span style={{ fontWeight: 600, color: "#4ade80" }}>STT</span>
+          <span style={{ fontFamily: "ui-monospace, monospace", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            &ldquo;{sttMatch.hypothesis}&rdquo;
+          </span>
+          <span>&rarr; section {sttMatch.sectionIdx + 1}, slide {sttMatch.slideIdx + 1}</span>
+          <span style={{ fontWeight: 600, color: sttMatch.confidence >= 0.65 ? "#4ade80" : "var(--text-dim)" }}>
+            {(sttMatch.confidence * 100).toFixed(0)}%
+          </span>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 220px", gap: 12, marginTop: 12 }}>
         <SectionList
           song={song}
@@ -41,6 +71,7 @@ export function SongModePanel({ channel, session }: Props) {
         <SlideGrid
           section={currentSection ?? null}
           currentSlideIdx={session.cursor.slideIdx}
+          suggestedSlideIdx={suggestedSlideIdx}
           onSelect={(slideIdx) =>
             currentSectionId &&
             send({
@@ -59,6 +90,8 @@ export function SongModePanel({ channel, session }: Props) {
 
 function Header({ channel, song, session }: { channel: string; song: Song; session: SongSessionSummary }) {
   const { send } = useWs();
+  const sttListeners = useStore((s) => s.sttListeners);
+  const onlineCount = sttListeners.filter((l) => l.online).length;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <div style={{ fontWeight: 700, fontSize: 16 }}>♪ {song.title}</div>
@@ -66,11 +99,32 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
         {song.author} · {channel}
       </div>
       <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-        <label
-          style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, opacity: 0.4, cursor: "not-allowed" }}
-          title="Plan B (STT) not yet implemented"
+        <span
+          style={{
+            fontSize: 11,
+            padding: "2px 8px",
+            borderRadius: 999,
+            background: onlineCount > 0 ? "rgba(74, 222, 128, 0.15)" : "rgba(255, 255, 255, 0.06)",
+            color: onlineCount > 0 ? "#4ade80" : "var(--text-dim)",
+            border: `1px solid ${onlineCount > 0 ? "rgba(74, 222, 128, 0.4)" : "var(--border)"}`,
+          }}
+          title={
+            sttListeners.length === 0
+              ? "No STT listeners connected"
+              : sttListeners.map((l) => `${l.label ?? l.audioSourceId} ${l.online ? "online" : "offline"}`).join("\n")
+          }
         >
-          <input type="checkbox" checked={session.trustMode} disabled readOnly />
+          {onlineCount > 0 ? `🎤 STT × ${onlineCount}` : "🎤 STT off"}
+        </span>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}
+          title="When on, high-confidence STT matches auto-advance the current slide"
+        >
+          <input
+            type="checkbox"
+            checked={session.trustMode}
+            onChange={(e) => send({ type: "song_set_trust", channel, trustMode: e.target.checked })}
+          />
           Trust Mode
         </label>
         <button
@@ -124,10 +178,11 @@ function SectionList({
 }
 
 function SlideGrid({
-  section, currentSlideIdx, onSelect,
+  section, currentSlideIdx, suggestedSlideIdx, onSelect,
 }: {
   section: Song["sections"][number] | null;
   currentSlideIdx: number;
+  suggestedSlideIdx?: number;
   onSelect: (slideIdx: number) => void;
 }) {
   if (!section) return <div style={{ color: "var(--text-dim)" }}>—</div>;
@@ -135,6 +190,7 @@ function SlideGrid({
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
       {section.slides.map((slide, i) => {
         const active = i === currentSlideIdx;
+        const isSuggested = suggestedSlideIdx === i && currentSlideIdx !== i;
         return (
           <button
             key={slide.id}
@@ -148,6 +204,8 @@ function SlideGrid({
               cursor: "pointer",
               textAlign: "left",
               minHeight: 80,
+              outline: isSuggested ? "2px dashed #4ade80" : undefined,
+              outlineOffset: isSuggested ? "1px" : undefined,
             }}
           >
             <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>

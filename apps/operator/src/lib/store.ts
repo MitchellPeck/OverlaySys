@@ -15,6 +15,20 @@ import type {
 type ConnState = "connecting" | "open" | "closed";
 export type ShowMeta = { id: string; name: string; rowCount: number };
 
+type SttMatchSummary = {
+  sectionIdx: number;
+  slideIdx: number;
+  confidence: number;
+  hypothesis: string;
+} | null;
+
+type SttListenerInfo = {
+  audioSourceId: string;
+  label?: string;
+  online: boolean;
+  lastSeen: number;
+};
+
 type StoreState = {
   conn: ConnState;
   templates: TemplateMeta[];
@@ -28,6 +42,8 @@ type StoreState = {
   songs: SongMeta[];
   songCache: Record<string, Song>;
   songSessions: Record<string, SongSessionSummary | null>;
+  sttMatches: Record<string, SttMatchSummary>;
+  sttListeners: SttListenerInfo[];
 
   setConn: (c: ConnState) => void;
   setTemplates: (t: TemplateMeta[]) => void;
@@ -40,6 +56,8 @@ type StoreState = {
   setSongs: (songs: SongMeta[]) => void;
   setSong: (song: Song) => void;
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
+  setSttMatch: (channel: string, match: SttMatchSummary) => void;
+  setSttListeners: (listeners: SttListenerInfo[]) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -54,6 +72,8 @@ export const useStore = create<StoreState>((set) => ({
   songs: [],
   songCache: {},
   songSessions: {},
+  sttMatches: {},
+  sttListeners: [],
 
   setConn: (c) => set({ conn: c }),
   setTemplates: (t) => set({ templates: t }),
@@ -80,4 +100,7 @@ export const useStore = create<StoreState>((set) => ({
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),
   setSongSession: (channel, session) =>
     set((s) => ({ songSessions: { ...s.songSessions, [channel]: session } })),
+  setSttMatch: (channel, match) =>
+    set((s) => ({ sttMatches: { ...s.sttMatches, [channel]: match } })),
+  setSttListeners: (listeners) => set({ sttListeners: listeners }),
 }));

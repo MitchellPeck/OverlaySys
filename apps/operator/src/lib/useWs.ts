@@ -71,6 +71,17 @@ function bootstrap(): void {
           client.send({ type: "subscribe", channel: c.id, role: "operator" });
         }
         break;
+      case "stt_match":
+        store.setSttMatch(msg.channel, msg.suggestedSlide ? {
+          sectionIdx: msg.suggestedSlide.sectionIdx,
+          slideIdx: msg.suggestedSlide.slideIdx,
+          confidence: msg.confidence,
+          hypothesis: msg.hypothesis,
+        } : null);
+        break;
+      case "stt_listener_state":
+        store.setSttListeners(msg.listeners);
+        break;
       case "error":
         console.warn("[server error]", msg);
         break;
