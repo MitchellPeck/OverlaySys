@@ -54,6 +54,42 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("save_song"), song: SongSchema }),
   z.object({ type: z.literal("delete_song"), songId: z.string() }),
   z.object({
+    type: z.literal("song_take"),
+    channel: z.string(),
+    showId: z.string(),
+    songRowId: z.string(),
+  }),
+  z.object({
+    type: z.literal("song_advance"),
+    channel: z.string(),
+    delta: z.number().int(),
+  }),
+  z.object({
+    type: z.literal("song_jump"),
+    channel: z.string(),
+    sectionId: z.string(),
+    slideIdx: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    type: z.literal("song_jump_kind"),
+    channel: z.string(),
+    kind: z.string(),
+    ordinal: z.number().int().min(1),
+  }),
+  z.object({
+    type: z.literal("song_blank"),
+    channel: z.string(),
+  }),
+  z.object({
+    type: z.literal("song_set_trust"),
+    channel: z.string(),
+    trustMode: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("song_end"),
+    channel: z.string(),
+  }),
+  z.object({
     type: z.literal("take_pvw_to_pgm"),
     fromChannel: z.string().default("preview"),
     toChannel: z.string().default("program"),

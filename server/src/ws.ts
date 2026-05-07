@@ -11,6 +11,7 @@ import * as channels from "./channels";
 import * as templates from "./templates";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import { registerSender, broadcast } from "./broadcast";
 
@@ -150,6 +151,54 @@ export function handleConnection(
             const list = await songs.listSongMetas();
             broadcast({ type: "song_list", songs: list });
           }
+          break;
+        }
+        case "song_take": {
+          const show = await shows.getShow(parsed.showId);
+          if (!show) {
+            send({ type: "error", code: "not_found", message: parsed.showId });
+            break;
+          }
+          const row = show.rows.find((r) => r.id === parsed.songRowId);
+          if (!row || row.kind !== "song") {
+            send({ type: "error", code: "not_found", message: parsed.songRowId });
+            break;
+          }
+          const song = await songs.getSong(row.songId);
+          if (!song) {
+            send({ type: "error", code: "not_found", message: row.songId });
+            break;
+          }
+          songSession.start(parsed.channel, {
+            song,
+            lyricTemplateId: row.lyricTemplateId,
+            arrangement: row.arrangement ?? song.defaultArrangement,
+            trustMode: row.trustMode ?? false,
+          });
+          break;
+        }
+        case "song_advance": {
+          songSession.advance(parsed.channel, parsed.delta);
+          break;
+        }
+        case "song_jump": {
+          songSession.jump(parsed.channel, parsed.sectionId, parsed.slideIdx ?? 0);
+          break;
+        }
+        case "song_jump_kind": {
+          songSession.jumpByKindOrdinal(parsed.channel, parsed.kind, parsed.ordinal);
+          break;
+        }
+        case "song_blank": {
+          songSession.blank(parsed.channel);
+          break;
+        }
+        case "song_set_trust": {
+          songSession.setTrust(parsed.channel, parsed.trustMode);
+          break;
+        }
+        case "song_end": {
+          songSession.end(parsed.channel);
           break;
         }
         case "list_channels": {
