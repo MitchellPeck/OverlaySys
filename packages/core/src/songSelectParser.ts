@@ -1,4 +1,5 @@
 import type { Section } from "./song";
+import type { RawSection } from "./sectionEmit";
 
 export interface SongSelectMeta {
   title?: string;
@@ -108,7 +109,60 @@ function stripChords(line: string): string {
     .trim();
 }
 
-export const _internal = { splitFooter, extractMeta, extractTitle, stripChords };
+const BRACKET_HEADER_RE = /^\s*\[(.+?)\]\s*$/;
+const BARE_HEADER_RE =
+  /^(verse|chorus|bridge|tag|intro|outro|pre[- ]?chorus|interlude|ending|coda)(\s+\d+)?$/i;
+
+function isHeaderLine(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const bracket = BRACKET_HEADER_RE.exec(trimmed);
+  if (bracket) return (bracket[1] ?? "").trim();
+  if (BARE_HEADER_RE.test(trimmed)) return trimmed;
+  return null;
+}
+
+function tokenizeBody(lines: string[]): RawSection[] {
+  const sections: RawSection[] = [];
+  let current: RawSection | null = null;
+  let buffer: string[] = [];
+
+  function flushSlide() {
+    if (!current) return;
+    if (buffer.length === 0) return;
+    current.blocks.push(buffer);
+    buffer = [];
+  }
+
+  for (const line of lines) {
+    const header = isHeaderLine(line);
+    if (header !== null) {
+      flushSlide();
+      if (current) sections.push(current);
+      current = { header, blocks: [] };
+      buffer = [];
+      continue;
+    }
+    if (line.trim() === "") {
+      flushSlide();
+      continue;
+    }
+    if (!current) continue;
+    buffer.push(line);
+  }
+  flushSlide();
+  if (current) sections.push(current);
+  return sections;
+}
+
+export const _internal = {
+  splitFooter,
+  extractMeta,
+  extractTitle,
+  stripChords,
+  isHeaderLine,
+  tokenizeBody,
+};
 
 export function parseSongSelectText(_text: string): SongSelectParseResult {
   throw new Error("parseSongSelectText: not yet implemented");

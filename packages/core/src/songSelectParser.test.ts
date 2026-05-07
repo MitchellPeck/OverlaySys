@@ -168,3 +168,81 @@ describe("_internal.stripChords", () => {
       .toBe("hello world");
   });
 });
+
+describe("_internal.isHeaderLine", () => {
+  it("recognizes bracketed headers", () => {
+    expect(_internal.isHeaderLine("[Verse 1]")).toBe("Verse 1");
+    expect(_internal.isHeaderLine("[Chorus]")).toBe("Chorus");
+  });
+  it("recognizes bare keyword headers", () => {
+    expect(_internal.isHeaderLine("Verse 1")).toBe("Verse 1");
+    expect(_internal.isHeaderLine("Chorus")).toBe("Chorus");
+    expect(_internal.isHeaderLine("Bridge")).toBe("Bridge");
+    expect(_internal.isHeaderLine("Pre-Chorus")).toBe("Pre-Chorus");
+    expect(_internal.isHeaderLine("Pre Chorus")).toBe("Pre Chorus");
+    expect(_internal.isHeaderLine("Tag")).toBe("Tag");
+    expect(_internal.isHeaderLine("Intro")).toBe("Intro");
+    expect(_internal.isHeaderLine("Outro")).toBe("Outro");
+    expect(_internal.isHeaderLine("Interlude")).toBe("Interlude");
+    expect(_internal.isHeaderLine("Ending")).toBe("Ending");
+    expect(_internal.isHeaderLine("verse 2")).toBe("verse 2");
+    expect(_internal.isHeaderLine("Chorus 2")).toBe("Chorus 2");
+  });
+  it("does NOT match lyric lines that happen to contain a keyword", () => {
+    expect(_internal.isHeaderLine("Verse this is a lyric"))
+      .toBeNull();
+    expect(_internal.isHeaderLine("On Christ the solid rock I stand"))
+      .toBeNull();
+    expect(_internal.isHeaderLine("Bridge over troubled water"))
+      .toBeNull();
+  });
+  it("returns null for empty and arbitrary lines", () => {
+    expect(_internal.isHeaderLine("")).toBeNull();
+    expect(_internal.isHeaderLine("Amazing grace how sweet the sound"))
+      .toBeNull();
+  });
+});
+
+describe("_internal.tokenizeBody (mixed bracketed + bare headers)", () => {
+  it("tokenizes a mix of bracketed and bare headers", () => {
+    const body = [
+      "Verse 1",
+      "Amazing grace how sweet the sound",
+      "That saved a wretch like me",
+      "",
+      "[Chorus]",
+      "How sweet the sound (test)",
+      "",
+      "Verse 2",
+      "Twas grace that taught my heart to fear",
+    ];
+    const raw = _internal.tokenizeBody(body);
+    expect(raw).toHaveLength(3);
+    expect(raw[0]!.header).toBe("Verse 1");
+    expect(raw[1]!.header).toBe("Chorus");
+    expect(raw[2]!.header).toBe("Verse 2");
+    expect(raw[0]!.blocks[0]).toEqual([
+      "Amazing grace how sweet the sound",
+      "That saved a wretch like me",
+    ]);
+  });
+
+  it("splits multiple slides on blank line within a section", () => {
+    const body = [
+      "Verse 1",
+      "Line A1",
+      "Line A2",
+      "",
+      "Line B1",
+      "Line B2",
+    ];
+    const raw = _internal.tokenizeBody(body);
+    expect(raw[0]!.blocks).toHaveLength(2);
+  });
+
+  it("ignores text before any header", () => {
+    const raw = _internal.tokenizeBody(["preamble line", "", "Verse 1", "x"]);
+    expect(raw).toHaveLength(1);
+    expect(raw[0]!.header).toBe("Verse 1");
+  });
+});
