@@ -36,7 +36,7 @@
       "kind": "song",
       "id": "row-amazing-grace",
       "songId": "amazing-grace",
-      "lyricTemplateId": "lower-third-default"
+      "lyricTemplateId": "lyric-default"
     }
   ]
 }
