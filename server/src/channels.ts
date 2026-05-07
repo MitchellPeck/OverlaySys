@@ -1,9 +1,12 @@
 import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
+import * as songSession from "./songSession";
 
 type Listener = (state: ChannelState) => void;
 
 const states = new Map<string, ChannelState>();
 const listeners = new Map<string, Set<Listener>>();
+
+let takeIsInternal = false;
 
 function getOrInit(channel: string): ChannelState {
   let s = states.get(channel);
@@ -41,10 +44,27 @@ export function subscribe(channel: string, listener: Listener): () => void {
 }
 
 export function take(channel: string, templateId: string, data: Record<string, string>): void {
+  if (!takeIsInternal) {
+    const session = songSession.getSession(channel);
+    if (session) {
+      // External take while a song session is live → end the session, then
+      // proceed with the new take.
+      songSession.end(channel);
+    }
+  }
   const s = getOrInit(channel);
   s.active = { templateId, data, phase: "in", takenAt: Date.now() };
   states.set(channel, s);
   emit(channel);
+}
+
+export function takeInternal(channel: string, templateId: string, data: Record<string, string>): void {
+  takeIsInternal = true;
+  try {
+    take(channel, templateId, data);
+  } finally {
+    takeIsInternal = false;
+  }
 }
 
 export function clear(channel: string): void {

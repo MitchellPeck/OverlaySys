@@ -57,7 +57,7 @@ function render(s: InternalSession): void {
   }
   const text = currentSlideText(s);
   if (text === null) return;
-  channels.take(s.channel, s.lyricTemplateId, { text });
+  channels.takeInternal(s.channel, s.lyricTemplateId, { text });
 }
 
 export function start(channel: string, args: StartArgs): void {

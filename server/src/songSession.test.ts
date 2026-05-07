@@ -142,4 +142,15 @@ describe("songSession", () => {
     const s = channels.getState(CH);
     expect(s.songSession).toBeUndefined();
   });
+
+  it("ends the session when a graphic take lands on the same channel", () => {
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement, trustMode: false,
+    });
+    channels.take(CH, "lower-third-default", { name: "Pastor" });
+    const s = channels.getState(CH);
+    expect(s.songSession).toBeUndefined();
+    expect(s.active?.templateId).toBe("lower-third-default");
+  });
 });
