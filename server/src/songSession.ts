@@ -1,5 +1,7 @@
 import type { Song, SongSessionSummary } from "@overlaysys/core";
 import * as channels from "./channels";
+import * as sttMatcher from "./sttMatcher";
+import type { MatchResult } from "./sttMatcher";
 
 interface StartArgs {
   song: Song;
@@ -72,6 +74,7 @@ export function start(channel: string, args: StartArgs): void {
   };
   sessions.set(channel, internal);
   render(internal);
+  sttMatcher.bindSession(channel, args.song, args.arrangement);
 }
 
 export function getSession(channel: string): SongSessionSummary | null {
@@ -167,6 +170,12 @@ export function setTrust(channel: string, trustMode: boolean): void {
 export function end(channel: string): void {
   const s = sessions.get(channel);
   if (!s) return;
+  const timer = autoAdvanceTimers.get(channel);
+  if (timer) {
+    clearTimeout(timer);
+    autoAdvanceTimers.delete(channel);
+  }
+  sttMatcher.unbindSession(channel);
   sessions.delete(channel);
   channels.setSongSessionSummary(channel, null);
   channels.clear(channel);
@@ -178,4 +187,58 @@ export function end(channel: string): void {
  */
 export function endAll(): void {
   for (const ch of Array.from(sessions.keys())) end(ch);
+}
+
+// ───── STT match integration ─────────────────────────────────────────────────
+
+type MatchListener = (channel: string, result: MatchResult | null, hypothesis: string) => void;
+const matchListeners = new Set<MatchListener>();
+
+export function onMatch(fn: MatchListener): () => void {
+  matchListeners.add(fn);
+  return () => {
+    matchListeners.delete(fn);
+  };
+}
+
+const autoAdvanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleAutoAdvance(channel: string, target: MatchResult, _t: number): void {
+  const existing = autoAdvanceTimers.get(channel);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    autoAdvanceTimers.delete(channel);
+    const s = sessions.get(channel);
+    if (!s) return;
+    // Re-check: cursor may have moved during the debounce. Only advance if
+    // the target is still forward of the (possibly updated) cursor.
+    const stillForward =
+      target.sectionIdx > s.cursor.sectionIdx ||
+      (target.sectionIdx === s.cursor.sectionIdx && target.slideIdx > s.cursor.slideIdx);
+    if (!stillForward) return;
+    s.cursor = { sectionIdx: target.sectionIdx, slideIdx: target.slideIdx };
+    render(s);
+  }, 300);
+  autoAdvanceTimers.set(channel, timer);
+}
+
+export function processSttHypothesis(channel: string, text: string, hypothesisT: number): void {
+  const s = sessions.get(channel);
+  if (!s) return;
+  const result = sttMatcher.processHypothesis(channel, text, s.cursor);
+  // Always emit stt_match (even null) so the UI can clear stale highlights.
+  for (const fn of matchListeners) fn(channel, result, text);
+  if (!result) return;
+
+  if (s.trustMode && result.confidence >= sttMatcher.AUTO_TAKE_THRESHOLD) {
+    // Only auto-advance if the candidate is monotonically forward (strictly ahead).
+    const isForward =
+      result.sectionIdx > s.cursor.sectionIdx ||
+      (result.sectionIdx === s.cursor.sectionIdx && result.slideIdx > s.cursor.slideIdx);
+    if (isForward) scheduleAutoAdvance(channel, result, hypothesisT);
+  }
+}
+
+export function getChannelsWithSessions(): string[] {
+  return Array.from(sessions.keys());
 }

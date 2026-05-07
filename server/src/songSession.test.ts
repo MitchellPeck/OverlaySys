@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Song } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as songSession from "./songSession";
@@ -179,5 +179,84 @@ describe("songSession", () => {
     const s = channels.getState(CH);
     expect(s.songSession).toBeUndefined();
     expect(s.active?.templateId).toBe("lower-third-default");
+  });
+});
+
+// The song fixture here has:
+//   v1s1: ["Line A1", "Line A2"]
+//   v1s2: ["Line B1", "Line B2"]
+//   c1:   ["Chorus 1", "Chorus 2"]
+// The matcher normalizes to lowercase, so "line b1 line b2" matches v1s2,
+// and "line a1 line a2" matches v1s1.
+// Tests use vi.useFakeTimers() + vi.advanceTimersByTime(300) to flush debounce.
+
+describe("songSession trust mode", () => {
+  beforeEach(() => {
+    songSession.endAll();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("auto-advances when STT confidence >= AUTO_TAKE_THRESHOLD and target is forward", () => {
+    songSession.start(CH, {
+      song,
+      lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement,
+      trustMode: true,
+    });
+    // Hypothesis matches v1s2 — forward from cursor at v1s1.
+    songSession.processSttHypothesis(CH, "line b1 line b2", Date.now());
+    // Match emitted synchronously, but auto-advance is debounced by 300ms.
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 0 });
+    vi.advanceTimersByTime(300);
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 1 });
+  });
+
+  it("does NOT auto-advance when trustMode is off", () => {
+    songSession.start(CH, {
+      song,
+      lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement,
+      trustMode: false,
+    });
+    songSession.processSttHypothesis(CH, "line b1 line b2", Date.now());
+    vi.advanceTimersByTime(300);
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 0 });
+  });
+
+  it("does NOT auto-advance backward even with high confidence", () => {
+    // Use a non-repeating arrangement so "line a1" only matches backward.
+    songSession.start(CH, {
+      song,
+      lyricTemplateId: "lyric-default",
+      arrangement: ["v1", "c"],
+      trustMode: true,
+    });
+    // Move cursor forward first to v1s2.
+    songSession.advance(CH, 1);
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 1 });
+    // Now hypothesis matches v1s1 (line a1 a2) — backward.
+    // With no forward section containing v1s1 content, the matcher should
+    // produce no forward-eligible candidate above AUTO_TAKE_THRESHOLD.
+    songSession.processSttHypothesis(CH, "line a1 line a2", Date.now());
+    vi.advanceTimersByTime(300);
+    // Cursor should still be at v1s2.
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 1 });
+  });
+
+  it("ending the session cancels any pending auto-advance timer", () => {
+    songSession.start(CH, {
+      song,
+      lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement,
+      trustMode: true,
+    });
+    songSession.processSttHypothesis(CH, "line b1 line b2", Date.now());
+    songSession.end(CH);
+    vi.advanceTimersByTime(300);
+    // No throw, no zombie cursor advance.
+    expect(channels.getState(CH).songSession).toBeUndefined();
   });
 });
