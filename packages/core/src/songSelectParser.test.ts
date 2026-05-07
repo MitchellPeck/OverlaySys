@@ -1,5 +1,16 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseSongSelectText, slugifyTitle, _internal } from "./songSelectParser";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+function fixture(name: string): string {
+  return readFileSync(
+    join(__dirname, "__fixtures__", "songselect", name),
+    "utf8",
+  );
+}
 
 describe("slugifyTitle", () => {
   it("lowercases and hyphenates", () => {
@@ -345,5 +356,37 @@ describe("_internal.tokenizeBody (mixed bracketed + bare headers)", () => {
     const raw = _internal.tokenizeBody(["preamble line", "", "Verse 1", "x"]);
     expect(raw).toHaveLength(1);
     expect(raw[0]!.header).toBe("Verse 1");
+  });
+});
+
+describe("parseSongSelectText (file fixtures)", () => {
+  it("parses amazing-grace.txt with extracted metadata", () => {
+    const result = parseSongSelectText(fixture("amazing-grace.txt"));
+    expect(result.meta.title).toBe("Amazing Grace");
+    expect(result.meta.ccliNumber).toBe("22025");
+    expect(result.meta.authors).toEqual(["John Newton"]);
+    expect(result.meta.copyright).toBe("© Public Domain");
+    expect(result.sections).toHaveLength(3);
+    expect(result.sections.map((s) => s.id)).toEqual(["v1", "v2", "v3"]);
+    expect(JSON.stringify(result)).not.toContain("9999999");
+  });
+
+  it("parses amazing-grace.cho with chords stripped", () => {
+    const result = parseSongSelectText(fixture("amazing-grace.cho"));
+    expect(result.meta.title).toBe("Amazing Grace");
+    expect(result.sections[0]!.slides[0]!.lines[0]).not.toContain("[");
+    expect(result.sections[0]!.slides[0]!.lines[0]).toMatch(/^Amazing grace/);
+  });
+
+  it("parses no-footer.txt and leaves meta fields undefined", () => {
+    const result = parseSongSelectText(fixture("no-footer.txt"));
+    expect(result.meta.ccliNumber).toBeUndefined();
+    expect(result.meta.copyright).toBeUndefined();
+    expect(result.sections).toHaveLength(2);
+  });
+
+  it("throws on malformed.txt", () => {
+    expect(() => parseSongSelectText(fixture("malformed.txt")))
+      .toThrow(/no sections/i);
   });
 });

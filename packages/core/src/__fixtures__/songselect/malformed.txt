@@ -1,0 +1,3 @@
+This file has no section headers at all
+just prose lines
+that should fail to parse
