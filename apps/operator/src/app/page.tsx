@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { ShowPicker } from "./components/ShowPicker";
@@ -10,12 +9,12 @@ import { TakePanel } from "./components/TakePanel";
 import { ChannelsList } from "./components/ChannelsList";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { SongModePanel } from "./components/SongModePanel";
+import { AppHeader } from "./components/AppHeader";
 
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
 
 export default function ShowPage() {
   const { send } = useWs();
-  const conn = useStore((s) => s.conn);
 
   // Auto-load: prefer the show the operator had selected last (persisted in
   // localStorage so a refresh doesn't silently jump to a different show);
@@ -58,7 +57,7 @@ export default function ShowPage() {
         overflow: "hidden",
       }}
     >
-      <Header conn={conn} />
+      <AppHeader />
       <div
         style={{
           display: "grid",
@@ -85,35 +84,6 @@ export default function ShowPage() {
         </Panel>
       </div>
     </main>
-  );
-}
-
-function Header({ conn }: { conn: "connecting" | "open" | "closed" }) {
-  const dot = { connecting: "🟡", open: "🟢", closed: "🔴" }[conn];
-  return (
-    <header
-      style={{
-        padding: "10px 16px",
-        borderBottom: "1px solid var(--border)",
-        background: "var(--panel)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <strong>OverlaySys</strong>
-      <span style={{ color: "var(--text-dim)" }}>· operator</span>
-      <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
-        <Link href="/" style={navLinkActiveStyle}>Show</Link>
-        <Link href="/shows" style={navLinkStyle}>Shows</Link>
-        <Link href="/songs" style={navLinkStyle}>Songs</Link>
-        <Link href="/design" style={navLinkStyle}>Design</Link>
-        <Link href="/channels" style={navLinkStyle}>Channels</Link>
-      </nav>
-      <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 12 }}>
-        {dot} {conn}
-      </span>
-    </header>
   );
 }
 
@@ -154,16 +124,3 @@ function Panel({
   );
 }
 
-const navLinkStyle: React.CSSProperties = {
-  color: "var(--text-dim)",
-  textDecoration: "none",
-  fontSize: 13,
-  padding: "4px 10px",
-  borderRadius: 4,
-};
-
-const navLinkActiveStyle: React.CSSProperties = {
-  ...navLinkStyle,
-  color: "var(--text)",
-  background: "var(--panel-2)",
-};

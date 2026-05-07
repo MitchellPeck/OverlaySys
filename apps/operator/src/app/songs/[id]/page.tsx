@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
@@ -9,6 +8,7 @@ import {
 } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { AppHeader } from "@/app/components/AppHeader";
 
 export default function SongEditorPage() {
   const params = useParams<{ id: string }>();
@@ -107,13 +107,17 @@ export default function SongEditorPage() {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <Link href="/songs" style={{ color: "var(--text-dim)" }}>← Songs</Link>
-        <h1 style={{ margin: 0, fontSize: 18 }}>{draft.title}</h1>
-        <button onClick={() => setPasteOpen((v) => !v)} style={btn()}>Paste lyrics…</button>
-        <button onClick={save} style={btn("primary")}>Save</button>
-      </header>
+    <>
+      <AppHeader
+        context={<h1 style={{ margin: 0, fontSize: 16 }}>♪ {draft.title}</h1>}
+        actions={
+          <>
+            <button onClick={() => setPasteOpen((v) => !v)} style={btn()}>Paste lyrics…</button>
+            <button onClick={save} style={btn("primary")}>Save</button>
+          </>
+        }
+      />
+      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
 
       {pasteOpen && (
         <div style={{ marginBottom: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
@@ -213,7 +217,8 @@ export default function SongEditorPage() {
           Sections can repeat. Drag chips to reorder.
         </p>
       </fieldset>
-    </div>
+      </div>
+    </>
   );
 }
 

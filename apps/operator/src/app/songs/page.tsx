@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { AppHeader } from "@/app/components/AppHeader";
 
 export default function SongsPage() {
   const { send } = useWs();
@@ -37,12 +38,12 @@ export default function SongsPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 18 }}>Songs</h1>
-        <button onClick={newSong} style={btn("primary")}>+ New Song</button>
-        <Link href="/" style={{ marginLeft: "auto", color: "var(--text-dim)" }}>← Back</Link>
-      </header>
+    <>
+      <AppHeader
+        context={<h1 style={{ margin: 0, fontSize: 16 }}>Songs</h1>}
+        actions={<button onClick={newSong} style={btn("primary")}>+ New Song</button>}
+      />
+      <div style={{ padding: 24 }}>
 
       {songs.length === 0 ? (
         <p style={{ color: "var(--text-dim)" }}>No songs yet. Create one to get started.</p>
@@ -86,7 +87,8 @@ export default function SongsPage() {
           </tbody>
         </table>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

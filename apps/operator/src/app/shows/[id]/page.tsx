@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
@@ -9,6 +8,7 @@ import type { Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, T
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
+import { AppHeader } from "@/app/components/AppHeader";
 
 export default function ShowEditPage({
   params,
@@ -174,12 +174,14 @@ export default function ShowEditPage({
 
   if (!draft) {
     return (
-      <main style={{ padding: 24 }}>
-        <Link href="/shows" style={{ color: "var(--text-dim)" }}>← Shows</Link>
-        <p style={{ color: "var(--text-dim)", marginTop: 12 }}>
-          Loading show <code>{showId}</code>…
-        </p>
-      </main>
+      <>
+        <AppHeader />
+        <main style={{ padding: 24 }}>
+          <p style={{ color: "var(--text-dim)", marginTop: 12 }}>
+            Loading show <code>{showId}</code>…
+          </p>
+        </main>
+      </>
     );
   }
 
@@ -193,14 +195,37 @@ export default function ShowEditPage({
         overflow: "hidden",
       }}
     >
-      <Header
-        show={draft}
-        dirty={dirty}
-        conn={conn}
-        onRename={(name) => update((s) => { s.name = name; })}
-        onSave={save}
-        onRevert={revert}
-        onDelete={remove}
+      <AppHeader
+        context={
+          <>
+            <input
+              value={draft.name}
+              onChange={(e) => update((s) => { s.name = e.target.value; })}
+              style={{
+                background: "transparent",
+                border: "1px solid transparent",
+                color: "var(--text)",
+                fontSize: 15,
+                fontWeight: 600,
+                padding: "2px 6px",
+                borderRadius: 4,
+                minWidth: 200,
+              }}
+            />
+            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{draft.id}</span>
+            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>· {draft.rows.length} rows</span>
+            {dirty && <span style={{ color: "var(--accent-2)", fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
+          </>
+        }
+        actions={
+          <>
+            <button onClick={remove} style={dangerBtn}>Delete</button>
+            <button onClick={revert} style={ghostBtn} disabled={!dirty}>Revert</button>
+            <button onClick={save} style={primaryBtn} disabled={!dirty || conn !== "open"}>
+              Save (⌘S)
+            </button>
+          </>
+        }
       />
 
       <div style={{ overflow: "auto", padding: "16px 24px" }}>
@@ -224,69 +249,6 @@ export default function ShowEditPage({
         </div>
       </div>
     </main>
-  );
-}
-
-function Header({
-  show,
-  dirty,
-  conn,
-  onRename,
-  onSave,
-  onRevert,
-  onDelete,
-}: {
-  show: Show;
-  dirty: boolean;
-  conn: "connecting" | "open" | "closed";
-  onRename: (name: string) => void;
-  onSave: () => void;
-  onRevert: () => void;
-  onDelete: () => void;
-}) {
-  const dot = { connecting: "🟡", open: "🟢", closed: "🔴" }[conn];
-  return (
-    <header
-      style={{
-        padding: "10px 16px",
-        borderBottom: "1px solid var(--border)",
-        background: "var(--panel)",
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <Link href="/shows" style={{ color: "var(--text-dim)", textDecoration: "none", fontSize: 13 }}>
-        ←
-      </Link>
-      <input
-        value={show.name}
-        onChange={(e) => onRename(e.target.value)}
-        style={{
-          background: "transparent",
-          border: "1px solid transparent",
-          color: "var(--text)",
-          fontSize: 16,
-          fontWeight: 600,
-          padding: "4px 8px",
-          borderRadius: 4,
-          minWidth: 240,
-        }}
-      />
-      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{show.id}</span>
-      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>· {show.rows.length} rows</span>
-      {dirty && <span style={{ color: "var(--accent-2)", fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
-      <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-        <button onClick={onDelete} style={dangerBtn}>Delete</button>
-        <button onClick={onRevert} style={ghostBtn} disabled={!dirty}>Revert</button>
-        <button onClick={onSave} style={primaryBtn} disabled={!dirty || conn !== "open"}>
-          Save (⌘S)
-        </button>
-        <span style={{ color: "var(--text-dim)", fontSize: 12, marginLeft: 8 }}>
-          {dot} {conn}
-        </span>
-      </div>
-    </header>
   );
 }
 
