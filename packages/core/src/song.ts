@@ -38,3 +38,22 @@ export const SongSchema = z.object({
 export type Song = z.infer<typeof SongSchema>;
 
 export type SongMeta = Pick<Song, "id" | "title" | "ccliNumber" | "author">;
+
+/**
+ * Lightweight description of a live SongSession sent to clients via
+ * ChannelState.songSession. The server keeps the full session in memory;
+ * this is just what's needed to render the operator UI.
+ */
+export const SongSessionSummarySchema = z.object({
+  songId: z.string(),
+  lyricTemplateId: z.string(),
+  arrangement: z.array(z.string()),
+  cursor: z.object({
+    sectionIdx: z.number().int().nonnegative(),
+    slideIdx: z.number().int().nonnegative(),
+  }),
+  blanked: z.boolean(),
+  trustMode: z.boolean(),
+  startedAt: z.number(),
+});
+export type SongSessionSummary = z.infer<typeof SongSessionSummarySchema>;
