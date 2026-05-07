@@ -135,6 +135,50 @@ describe("parseSongSelectText", () => {
     expect(result.meta.copyright).toBeUndefined();
     expect(result.meta.title).toBeUndefined();
   });
+
+  it("parses a SongSelect export with a spaced (blank-line separated) footer", () => {
+    const text = [
+      "For The Beauty Of The Earth (Dix)",
+      "",
+      "Verse 1",
+      "For the beauty of the earth",
+      "For the glory of the skies",
+      "",
+      "Verse 2",
+      "For the beauty of each hour",
+      "Of the day and of the night",
+      "",
+      "Conrad Kocher, Folliott Sandford Pierpoint",
+      "",
+      "CCLI Song # 43200",
+      "",
+      "© Words: Public Domain; Music: Public Domain",
+      "",
+      "For use solely with the SongSelect® Terms of Use. www.ccli.com",
+      "",
+      "CCLI License # 9999999",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.meta.title).toBe("For The Beauty Of The Earth (Dix)");
+    expect(result.meta.ccliNumber).toBe("43200");
+    expect(result.meta.copyright).toBe("© Words: Public Domain; Music: Public Domain");
+    expect(result.meta.authors).toEqual([
+      "Conrad Kocher, Folliott Sandford Pierpoint",
+    ]);
+    // Crucially: authors line must NOT have leaked into Verse 2's slides
+    expect(result.sections).toHaveLength(2);
+    expect(result.sections[1]!.label).toBe("Verse 2");
+    expect(result.sections[1]!.slides).toHaveLength(1);
+    expect(result.sections[1]!.slides[0]!.lines).toEqual([
+      "For the beauty of each hour",
+      "Of the day and of the night",
+    ]);
+    // License # leak guard
+    const json = JSON.stringify(result);
+    expect(json).not.toContain("9999999");
+    expect(json).not.toContain("License");
+    expect(json).not.toContain("For use solely");
+  });
 });
 
 describe("_internal.splitFooter", () => {
@@ -181,6 +225,41 @@ describe("_internal.splitFooter", () => {
     ];
     const out = _internal.splitFooter(lines);
     expect(out.footer).toEqual([lines[2]]);
+  });
+
+  it("walks back to include a bracketed author line above 'CCLI Song #'", () => {
+    const lines = [
+      "[Verse 1]",
+      "Lyric body",
+      "",
+      "Conrad Kocher, Folliott Sandford Pierpoint",
+      "",
+      "CCLI Song # 43200",
+      "",
+      "© Public Domain",
+    ];
+    const out = _internal.splitFooter(lines);
+    expect(out.body).toEqual(["[Verse 1]", "Lyric body", ""]);
+    expect(out.footer).toEqual([
+      "Conrad Kocher, Folliott Sandford Pierpoint",
+      "",
+      "CCLI Song # 43200",
+      "",
+      "© Public Domain",
+    ]);
+  });
+
+  it("does NOT include a non-bracketed line above 'CCLI Song #' (would be a lyric)", () => {
+    const lines = [
+      "[Verse 1]",
+      "Lyric line one",
+      "Lyric line two",
+      "CCLI Song # 43200",
+      "© Public Domain",
+    ];
+    const out = _internal.splitFooter(lines);
+    expect(out.body).toEqual(["[Verse 1]", "Lyric line one", "Lyric line two"]);
+    expect(out.footer).toEqual(["CCLI Song # 43200", "© Public Domain"]);
   });
 });
 
@@ -235,6 +314,35 @@ describe("_internal.extractMeta", () => {
     expect(meta.ccliNumber).toBeUndefined();
     expect(meta.copyright).toBeUndefined();
     expect(meta.authors).toBeUndefined();
+  });
+
+  it("extracts author from a footer with blank-line separators (spaced format)", () => {
+    const meta = _internal.extractMeta([], [
+      "Conrad Kocher, Folliott Sandford Pierpoint",
+      "",
+      "CCLI Song # 43200",
+      "",
+      "© Public Domain",
+    ]);
+    expect(meta.authors).toEqual(["Conrad Kocher, Folliott Sandford Pierpoint"]);
+    expect(meta.ccliNumber).toBe("43200");
+    expect(meta.copyright).toBe("© Public Domain");
+  });
+
+  it("ignores 'For use solely with the SongSelect' boilerplate line", () => {
+    const meta = _internal.extractMeta([], [
+      "John Newton",
+      "",
+      "CCLI Song # 22025",
+      "",
+      "© Public Domain",
+      "",
+      "For use solely with the SongSelect® Terms of Use. www.ccli.com",
+    ]);
+    // Should NOT pick up the boilerplate as an author or include it in any field.
+    const json = JSON.stringify(meta);
+    expect(json).not.toContain("For use solely");
+    expect(meta.authors).toEqual(["John Newton"]);
   });
 });
 

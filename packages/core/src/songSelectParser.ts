@@ -32,7 +32,18 @@ function splitFooter(lines: string[]): { body: string[]; footer: string[] } {
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i]!.trim();
     if (FOOTER_MARKER_RE.test(t) || COPYRIGHT_LINE_RE.test(t)) {
-      return { body: lines.slice(0, i), footer: lines.slice(i) };
+      let footerStart = i;
+      // Walk back through blanks
+      let j = i - 1;
+      while (j >= 0 && lines[j]!.trim() === "") j--;
+      // j now points at a non-blank line or -1
+      if (j >= 0) {
+        // If line at j is bracketed by blanks (or BOF), include it as part of footer
+        if (j === 0 || lines[j - 1]!.trim() === "") {
+          footerStart = j;
+        }
+      }
+      return { body: lines.slice(0, footerStart), footer: lines.slice(footerStart) };
     }
   }
   return { body: lines, footer: [] };
@@ -54,32 +65,26 @@ function extractMeta(preamble: string[], footer: string[]): SongSelectMeta {
   const title = extractTitle(preamble);
   if (title) meta.title = title;
 
-  // Track which footer line contains ©, then the line above it (if any) is
-  // the author line, when it contains alpha content.
-  let copyrightIdx = -1;
-  for (let i = 0; i < footer.length; i++) {
-    const line = footer[i]!.trim();
+  for (const raw of footer) {
+    const line = raw.trim();
+    if (!line) continue;
     if (CCLI_LICENSE_RE.test(line)) continue; // explicitly ignored
-    const ccli = CCLI_SONG_RE.exec(line);
-    if (ccli && !meta.ccliNumber) meta.ccliNumber = ccli[1];
-    if (line.startsWith("©") && copyrightIdx === -1) {
-      copyrightIdx = i;
-      meta.copyright = line;
-    }
-  }
+    if (/^For use solely with the SongSelect/i.test(line)) continue;
 
-  // Author line: line directly above copyright, if it contains letters.
-  if (copyrightIdx > 0) {
-    const candidate = footer[copyrightIdx - 1]!.trim();
-    const isAuthorish =
-      candidate &&
-      /[A-Za-z]/.test(candidate) &&
-      !CCLI_SONG_RE.test(candidate) &&
-      !CCLI_LICENSE_RE.test(candidate);
-    if (isAuthorish) {
-      meta.authors = candidate.includes(" | ")
-        ? candidate.split(" | ").map((s) => s.trim()).filter(Boolean)
-        : [candidate];
+    const ccli = CCLI_SONG_RE.exec(line);
+    if (ccli) {
+      if (!meta.ccliNumber) meta.ccliNumber = ccli[1];
+      continue;
+    }
+    if (line.startsWith("©")) {
+      if (!meta.copyright) meta.copyright = line;
+      continue;
+    }
+    // Anything else: first non-classified line is the author candidate.
+    if (!meta.authors && /[A-Za-z]/.test(line)) {
+      meta.authors = line.includes(" | ")
+        ? line.split(" | ").map((s) => s.trim()).filter(Boolean)
+        : [line];
     }
   }
   return meta;
