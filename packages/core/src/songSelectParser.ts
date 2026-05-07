@@ -99,7 +99,7 @@ function extractMeta(preamble: string[], footer: string[]): SongSelectMeta {
 // chars are 4+ lowercase letters with no digit before the ']', treat as a
 // section label and skip. Otherwise match as a chord.
 const CHORD_RE =
-  /\[[A-Ga-g][#b]?(?![a-z]{4,}\])(?:[a-z0-9]*)(?:\/[A-Ga-g][#b]?)?\]/g;
+  /\[[A-Ga-g][#b]?(?![a-z]{4,}\])(?:[a-zA-Z0-9]*)(?:\/[A-Ga-g][#b]?)?\]/g;
 
 function stripChords(line: string): string {
   return line

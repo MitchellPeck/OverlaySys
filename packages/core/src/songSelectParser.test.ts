@@ -163,4 +163,8 @@ describe("_internal.stripChords", () => {
   it("trims leading/trailing whitespace", () => {
     expect(_internal.stripChords("  [G]hello [C]  ")).toBe("hello");
   });
+  it("removes chords with uppercase qualifiers", () => {
+    expect(_internal.stripChords("[CMaj7]hello [F#M]world"))
+      .toBe("hello world");
+  });
 });
