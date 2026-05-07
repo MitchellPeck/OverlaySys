@@ -10,6 +10,8 @@ import type {
   Song,
   SongMeta,
   SongSessionSummary,
+  SttSpawnerConfig,
+  SttSpawnerStatus,
 } from "@overlaysys/core";
 
 type ConnState = "connecting" | "open" | "closed";
@@ -58,6 +60,11 @@ type StoreState = {
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
   setSttMatch: (channel: string, match: SttMatchSummary) => void;
   setSttListeners: (listeners: SttListenerInfo[]) => void;
+
+  sttSpawnerStatus: SttSpawnerStatus | null;
+  sttSpawnerConfig: SttSpawnerConfig | null;
+  setSttSpawnerStatus: (s: SttSpawnerStatus) => void;
+  setSttSpawnerConfig: (c: SttSpawnerConfig) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -74,6 +81,8 @@ export const useStore = create<StoreState>((set) => ({
   songSessions: {},
   sttMatches: {},
   sttListeners: [],
+  sttSpawnerStatus: null,
+  sttSpawnerConfig: null,
 
   setConn: (c) => set({ conn: c }),
   setTemplates: (t) => set({ templates: t }),
@@ -103,4 +112,6 @@ export const useStore = create<StoreState>((set) => ({
   setSttMatch: (channel, match) =>
     set((s) => ({ sttMatches: { ...s.sttMatches, [channel]: match } })),
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
+  setSttSpawnerStatus: (s) => set({ sttSpawnerStatus: s }),
+  setSttSpawnerConfig: (c) => set({ sttSpawnerConfig: c }),
 }));

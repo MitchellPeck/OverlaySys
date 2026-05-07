@@ -39,6 +39,7 @@ function bootstrap(): void {
         client.send({ type: "list_shows" });
         client.send({ type: "list_songs" });
         client.send({ type: "list_channels" });
+        client.send({ type: "stt_spawner_get_config" });
         break;
       case "state":
         store.setChannelState(msg.state);
@@ -81,6 +82,12 @@ function bootstrap(): void {
         break;
       case "stt_listener_state":
         store.setSttListeners(msg.listeners);
+        break;
+      case "stt_spawner_status":
+        store.setSttSpawnerStatus(msg.status);
+        break;
+      case "stt_spawner_config":
+        store.setSttSpawnerConfig(msg.config);
         break;
       case "error":
         console.warn("[server error]", msg);

@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: "/", label: "Show" },
   { href: "/shows", label: "Shows" },
   { href: "/songs", label: "Songs" },
+  { href: "/stt", label: "STT" },
   { href: "/design", label: "Design" },
   { href: "/channels", label: "Channels" },
 ];
@@ -41,7 +42,7 @@ export function AppHeader({
       }}
     >
       <strong>OverlaySys</strong>
-      <span style={{ color: "var(--text-dim)" }}>· operator</span>
+      <span style={{ color: "var(--text-dim)" }}>Operator</span>
       <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
         {NAV_LINKS.map((link) => (
           <Link
