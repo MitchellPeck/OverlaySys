@@ -178,8 +178,13 @@ export function processHypothesis(
   }
 
   // ── Fallback: per-hypothesis token-overlap match ──────────────────────────
-  // Used for non-monotonic jumps (band drops to bridge, calls a reprise,
-  // etc.) and for low-coverage states where no pre-emption signal exists.
+  // Restricted to the local neighborhood: cursor−1, cursor, cursor+1,
+  // cursor+2. We deliberately do NOT consider far-away slides (e.g. first
+  // slide of every section) because verses in worship songs share so much
+  // vocabulary that a misheard hypothesis could otherwise jump from verse 2
+  // to verse 5. Operator-driven jumps via hotkeys (C/B/V1-3/T) bypass this
+  // matcher entirely, so non-monotonic moves are still possible — just not
+  // STT-driven.
   const { song, arrangement } = session;
   const candidates = new Set<string>();
   const candidateList: Array<{ sectionIdx: number; slideIdx: number }> = [];
@@ -201,7 +206,6 @@ export function processHypothesis(
     const pos = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, offset);
     if (pos) addCandidate(pos.sectionIdx, pos.slideIdx);
   }
-  for (let si = 0; si < arrangement.length; si++) addCandidate(si, 0);
 
   let bestScore = -1;
   let bestCandidate: { sectionIdx: number; slideIdx: number } | null = null;

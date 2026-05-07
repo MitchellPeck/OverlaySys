@@ -142,6 +142,54 @@ describe("sttMatcher", () => {
     matcher.unbindSession("preview");
   });
 
+  describe("local-neighborhood restriction", () => {
+    // Multi-verse song where verses share vocabulary — STT mishears across
+    // verses would otherwise be tempting jumps for the matcher.
+    const sharedVocabSong: Song = {
+      id: "shared",
+      title: "Shared",
+      sections: [
+        { id: "v1", kind: "verse", label: "V1", slides: [{ id: "v1s1", lines: ["amazing grace how sweet the sound"] }] },
+        { id: "v2", kind: "verse", label: "V2", slides: [{ id: "v2s1", lines: ["amazing grace will lead me home"] }] },
+        { id: "v3", kind: "verse", label: "V3", slides: [{ id: "v3s1", lines: ["amazing grace will set me free"] }] },
+        { id: "v4", kind: "verse", label: "V4", slides: [{ id: "v4s1", lines: ["amazing grace forever sweet"] }] },
+        { id: "v5", kind: "verse", label: "V5", slides: [{ id: "v5s1", lines: ["amazing grace will guide my way"] }] },
+      ],
+      defaultArrangement: ["v1", "v2", "v3", "v4", "v5"],
+    };
+
+    it("does NOT jump to a far-away verse even on perfect-overlap text", () => {
+      matcher.bindSession("program", sharedVocabSong, sharedVocabSong.defaultArrangement);
+      // Cursor at v2; v5's exact text comes in. Should NOT jump to v5 — v5
+      // is outside the cursor+1/cursor+2 neighborhood.
+      const r = matcher.processHypothesis(
+        "program",
+        "amazing grace will guide my way",
+        { sectionIdx: 1, slideIdx: 0 },
+      );
+      // Acceptable outcomes: null (no candidate scored above MIN_EMIT) or
+      // a candidate within {v1, v2, v3, v4} = {sectionIdx 0..3}. Critically
+      // NOT v5 (sectionIdx === 4).
+      if (r) {
+        expect(r.sectionIdx).toBeLessThan(4);
+      }
+      matcher.unbindSession("program");
+    });
+
+    it("can still match cursor+2 (two slides ahead)", () => {
+      matcher.bindSession("program", sharedVocabSong, sharedVocabSong.defaultArrangement);
+      // Cursor at v2; v4's first line comes in (cursor+2).
+      const r = matcher.processHypothesis(
+        "program",
+        "amazing grace forever sweet",
+        { sectionIdx: 1, slideIdx: 0 },
+      );
+      expect(r).not.toBeNull();
+      expect(r!.sectionIdx).toBe(3); // v4 is at index 3
+      matcher.unbindSession("program");
+    });
+  });
+
   describe("coverage-based pre-emption", () => {
     it("advances to next slide once enough current-slide tokens have accumulated", () => {
       matcher.bindSession("program", song, song.defaultArrangement);

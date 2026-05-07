@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 const NAV_LINKS = [
   { href: "/", label: "Show" },
@@ -78,7 +78,7 @@ export function AppHeader({
   );
 }
 
-const navLinkStyle: React.CSSProperties = {
+const navLinkStyle: CSSProperties = {
   color: "var(--text-dim)",
   textDecoration: "none",
   fontSize: 13,
@@ -86,7 +86,7 @@ const navLinkStyle: React.CSSProperties = {
   borderRadius: 4,
 };
 
-const navLinkActiveStyle: React.CSSProperties = {
+const navLinkActiveStyle: CSSProperties = {
   ...navLinkStyle,
   color: "var(--text)",
   background: "var(--panel-2)",
