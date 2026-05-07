@@ -61,7 +61,12 @@ export default function ShowPage() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(360px, 1fr) 360px 320px",
+          // When a song is live, collapse the side panels and give song mode
+          // the page. Rundown shrinks to a narrow context column; Channels
+          // is hidden (operator can end the song to access it).
+          gridTemplateColumns: programSession
+            ? "260px minmax(0, 1fr)"
+            : "minmax(360px, 1fr) 360px 320px",
           gap: 1,
           background: "var(--border)",
           minHeight: 0,
@@ -79,9 +84,11 @@ export default function ShowPage() {
           )}
         </Panel>
 
-        <Panel title="Channels">
-          <ChannelsList />
-        </Panel>
+        {!programSession && (
+          <Panel title="Channels">
+            <ChannelsList />
+          </Panel>
+        )}
       </div>
     </main>
   );

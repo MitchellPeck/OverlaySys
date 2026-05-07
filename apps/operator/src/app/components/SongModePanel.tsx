@@ -61,7 +61,12 @@ export function SongModePanel({ channel, session }: Props) {
           </span>
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 220px", gap: 12, marginTop: 12 }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "240px minmax(0, 1fr) 320px",
+        gap: 16,
+        marginTop: 16,
+      }}>
         <SectionList
           song={song}
           currentSectionId={currentSectionId ?? null}
@@ -149,7 +154,7 @@ function SectionList({
   onJump: (sectionId: string) => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {song.sections.map((sec) => {
         const active = sec.id === currentSectionId;
         return (
@@ -158,18 +163,18 @@ function SectionList({
             onClick={() => onJump(sec.id)}
             style={{
               textAlign: "left",
-              padding: "6px 8px",
+              padding: "10px 12px",
               borderRadius: 4,
               border: "1px solid var(--border)",
               background: active ? "rgba(255, 58, 58, 0.18)" : "var(--panel-2)",
               color: "var(--text)",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: 13,
             }}
           >
-            <div style={{ fontWeight: 600 }}>{sec.label}</div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>
-              {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"}
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{sec.label}</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+              {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"} · {sec.kind}
             </div>
           </button>
         );
@@ -188,7 +193,7 @@ function SlideGrid({
 }) {
   if (!section) return <div style={{ color: "var(--text-dim)" }}>—</div>;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
       {section.slides.map((slide, i) => {
         const active = i === currentSlideIdx;
         const isSuggested = suggestedSlideIdx === i && currentSlideIdx !== i;
@@ -197,22 +202,22 @@ function SlideGrid({
             key={slide.id}
             onClick={() => onSelect(i)}
             style={{
-              padding: 12,
-              borderRadius: 4,
+              padding: 18,
+              borderRadius: 6,
               border: active ? "2px solid var(--accent)" : "1px solid var(--border)",
               background: active ? "rgba(255, 58, 58, 0.12)" : "var(--panel-2)",
               color: "var(--text)",
               cursor: "pointer",
               textAlign: "left",
-              minHeight: 80,
+              minHeight: 120,
               outline: isSuggested ? "2px dashed #4ade80" : undefined,
               outlineOffset: isSuggested ? "1px" : undefined,
             }}
           >
-            <div style={{ fontSize: 10, color: "var(--text-dim)", marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 8, letterSpacing: 1, textTransform: "uppercase" }}>
               Slide {i + 1}
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.4 }}>
+            <div style={{ fontSize: 17, lineHeight: 1.45 }}>
               {slide.lines.map((line, j) => (
                 <div key={j}>{line}</div>
               ))}
@@ -237,24 +242,24 @@ function UpNext({ song, session }: { song: Song; session: SongSessionSummary }) 
     else { sectionIdx += 1; slideIdx = 0; }
   }
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 1.2 }}>
         Up Next
       </div>
       {items.map((item, i) => (
         <div
           key={i}
           style={{
-            padding: 8,
+            padding: 10,
             borderRadius: 4,
             border: "1px solid var(--border)",
             background: i === 0 ? "rgba(255,58,58,0.08)" : "var(--panel-2)",
-            fontSize: 11,
+            fontSize: 12,
           }}
         >
-          <div style={{ color: "var(--text-dim)", marginBottom: 2 }}>{item.label}</div>
+          <div style={{ color: "var(--text-dim)", marginBottom: 4, fontSize: 10, letterSpacing: 1 }}>{item.label}</div>
           {item.lines.map((line, j) => (
-            <div key={j} style={{ color: "var(--text)" }}>{line}</div>
+            <div key={j} style={{ color: "var(--text)", lineHeight: 1.4 }}>{line}</div>
           ))}
         </div>
       ))}
