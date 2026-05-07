@@ -106,6 +106,7 @@ function Header({ conn }: { conn: "connecting" | "open" | "closed" }) {
       <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
         <Link href="/" style={navLinkActiveStyle}>Show</Link>
         <Link href="/shows" style={navLinkStyle}>Shows</Link>
+        <Link href="/songs" style={navLinkStyle}>Songs</Link>
         <Link href="/design" style={navLinkStyle}>Design</Link>
         <Link href="/channels" style={navLinkStyle}>Channels</Link>
       </nav>
