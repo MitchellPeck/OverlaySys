@@ -1,0 +1,18 @@
+{
+  "name": "@overlaysys/lyric-listener",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "STT hypothesis source for OverlaySys. Connects to the WS server, registers as a listener, streams stt_hypothesis messages. The default 'stdin' mode reads one line of recognized text per stdin line — pipe whisper.cpp / cloud STT output into it.",
+  "bin": {
+    "overlay-listen-stdin": "src/stdin.mjs"
+  },
+  "scripts": {
+    "start": "node src/stdin.mjs",
+    "typecheck": "echo 'no ts in this package' && true",
+    "clean": "true"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
