@@ -1,5 +1,5 @@
 import type { Section } from "./song";
-import type { RawSection } from "./sectionEmit";
+import { emitSections, type RawSection } from "./sectionEmit";
 
 export interface SongSelectMeta {
   title?: string;
@@ -164,6 +164,35 @@ export const _internal = {
   tokenizeBody,
 };
 
-export function parseSongSelectText(_text: string): SongSelectParseResult {
-  throw new Error("parseSongSelectText: not yet implemented");
+export function parseSongSelectText(text: string): SongSelectParseResult {
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const allLines = normalized.split("\n");
+
+  const { body, footer } = splitFooter(allLines);
+
+  // Find where the first header is — everything before it is preamble (for title).
+  let firstHeaderIdx = -1;
+  for (let i = 0; i < body.length; i++) {
+    if (isHeaderLine(body[i]!) !== null) {
+      firstHeaderIdx = i;
+      break;
+    }
+  }
+  const preamble = firstHeaderIdx === -1 ? body : body.slice(0, firstHeaderIdx);
+  const bodyAfterPreamble =
+    firstHeaderIdx === -1 ? [] : body.slice(firstHeaderIdx);
+
+  // Strip chord markers from non-header body lines.
+  const strippedBody = bodyAfterPreamble.map((line) =>
+    isHeaderLine(line) !== null ? line : stripChords(line),
+  );
+
+  const raw = tokenizeBody(strippedBody);
+  if (raw.length === 0) {
+    throw new Error("songSelect: no sections detected");
+  }
+
+  const meta = extractMeta(preamble, footer);
+  const { sections, defaultArrangement } = emitSections(raw);
+  return { meta, sections, defaultArrangement };
 }

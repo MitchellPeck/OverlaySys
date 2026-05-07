@@ -19,9 +19,110 @@ describe("slugifyTitle", () => {
   });
 });
 
-describe("parseSongSelectText (skeleton)", () => {
-  it("throws on empty input", () => {
-    expect(() => parseSongSelectText("")).toThrow();
+describe("parseSongSelectText", () => {
+  it("throws when no sections are detected", () => {
+    expect(() => parseSongSelectText("just prose, no section header at all"))
+      .toThrow(/no sections/i);
+    expect(() => parseSongSelectText("")).toThrow(/no sections/i);
+  });
+
+  it("parses a complete plain-lyrics file (public-domain Amazing Grace)", () => {
+    const text = [
+      "Amazing Grace",
+      "",
+      "Verse 1",
+      "Amazing grace how sweet the sound",
+      "That saved a wretch like me",
+      "",
+      "Verse 2",
+      "Twas grace that taught my heart to fear",
+      "And grace my fears relieved",
+      "",
+      "CCLI Song # 22025",
+      "John Newton",
+      "© Public Domain",
+      "CCLI License # 9999999",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.meta.title).toBe("Amazing Grace");
+    expect(result.meta.ccliNumber).toBe("22025");
+    expect(result.meta.authors).toEqual(["John Newton"]);
+    expect(result.meta.copyright).toBe("© Public Domain");
+    expect(result.sections).toHaveLength(2);
+    expect(result.sections[0]!.kind).toBe("verse");
+    expect(result.sections[0]!.label).toBe("Verse 1");
+    expect(result.sections[0]!.id).toBe("v1");
+    expect(result.sections[1]!.id).toBe("v2");
+    expect(result.defaultArrangement).toEqual(["v1", "v2"]);
+    // License # leak guard
+    const all = JSON.stringify(result);
+    expect(all).not.toContain("9999999");
+    expect(all).not.toContain("License");
+  });
+
+  it("parses a ChordPro file by stripping chords from body lines", () => {
+    const text = [
+      "Amazing Grace",
+      "",
+      "[Verse 1]",
+      "[G]Amazing [C]grace [G]how sweet the [D]sound",
+      "[G]That saved [Em]a wretch like [D]me",
+      "",
+      "CCLI Song # 22025",
+      "© Public Domain",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.sections[0]!.slides[0]!.lines).toEqual([
+      "Amazing grace how sweet the sound",
+      "That saved a wretch like me",
+    ]);
+  });
+
+  it("preserves a parenthetical title", () => {
+    const text = [
+      "Amazing Grace (My Chains Are Gone)",
+      "",
+      "Verse 1",
+      "Amazing grace how sweet the sound",
+      "",
+      "CCLI Song # 4768151",
+      "© 2006 Worship Together",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.meta.title).toBe("Amazing Grace (My Chains Are Gone)");
+  });
+
+  it("parses multiple authors split on ' | '", () => {
+    const text = [
+      "Build My Life",
+      "",
+      "Verse 1",
+      "Worthy of every song we could ever sing",
+      "",
+      "CCLI Song # 7070345",
+      "Pat Barrett | Brett Younker | Karl Martin | Kirby Kaple | Matt Redman",
+      "© 2016 Said And Done Music",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.meta.authors).toEqual([
+      "Pat Barrett",
+      "Brett Younker",
+      "Karl Martin",
+      "Kirby Kaple",
+      "Matt Redman",
+    ]);
+  });
+
+  it("succeeds with no footer (meta fields just undefined)", () => {
+    const text = [
+      "[Verse 1]",
+      "Amazing grace how sweet the sound",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.sections).toHaveLength(1);
+    expect(result.meta.ccliNumber).toBeUndefined();
+    expect(result.meta.copyright).toBeUndefined();
+    expect(result.meta.title).toBeUndefined();
   });
 });
 
