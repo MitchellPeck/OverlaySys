@@ -68,6 +68,13 @@ export function takeInternal(channel: string, templateId: string, data: Record<s
 }
 
 export function clear(channel: string): void {
+  if (!takeIsInternal) {
+    // External clear ends any live song session on this channel; without this
+    // the session summary persists in ChannelState and the operator UI stays
+    // in song mode after the screen is cleared.
+    const session = songSession.getSession(channel);
+    if (session) songSession.end(channel);
+  }
   const s = getOrInit(channel);
   if (!s.active) return;
   s.active = { ...s.active, phase: "out" };
@@ -121,6 +128,11 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   const src = states.get(fromChannel);
   if (!src || !src.active) return;
   const queued = src.active;
+
+  // End any song session live on the destination channel — otherwise the
+  // session keeps rendering lyric slides over whatever we just promoted.
+  const destSession = songSession.getSession(toChannel);
+  if (destSession) songSession.end(toChannel);
 
   // Put it on PGM — fresh takenAt so renderers re-mount.
   const pgm = getOrInit(toChannel);

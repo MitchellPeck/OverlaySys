@@ -153,4 +153,28 @@ describe("songSession", () => {
     expect(s.songSession).toBeUndefined();
     expect(s.active?.templateId).toBe("lower-third-default");
   });
+
+  it("ends the session when channel is cleared externally", () => {
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement, trustMode: false,
+    });
+    channels.clear(CH);
+    const s = channels.getState(CH);
+    expect(s.songSession).toBeUndefined();
+  });
+
+  it("ends the session when takePvwToPgm promotes onto the session's channel", () => {
+    // Stage a graphic on preview, start a song on program, then PVW→PGM.
+    // The song session on program must end so the promoted graphic stays live.
+    channels.take("preview", "lower-third-default", { name: "Pastor" });
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement, trustMode: false,
+    });
+    channels.takePvwToPgm("preview", CH);
+    const s = channels.getState(CH);
+    expect(s.songSession).toBeUndefined();
+    expect(s.active?.templateId).toBe("lower-third-default");
+  });
 });
