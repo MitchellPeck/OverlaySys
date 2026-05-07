@@ -16,13 +16,15 @@ export default function SongEditorPage() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const cached = useStore((s) => s.songCache[id]);
+  const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<Song | null>(cached ?? null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
   useEffect(() => {
     if (conn === "open" && !cached) send({ type: "get_song", songId: id });
-  }, [conn, cached, id, send]);
+    if (conn === "open" && templates.length === 0) send({ type: "list_templates" });
+  }, [conn, cached, id, send, templates.length]);
 
   useEffect(() => {
     if (cached) setDraft(cached);
@@ -134,6 +136,28 @@ export default function SongEditorPage() {
         <Field label="Author" value={draft.author ?? ""} onChange={(v) => setMeta("author", v || undefined)} />
         <Field label="CCLI #" value={draft.ccliNumber ?? ""} onChange={(v) => setMeta("ccliNumber", v || undefined)} />
         <Field label="Copyright" value={draft.copyright ?? ""} onChange={(v) => setMeta("copyright", v || undefined)} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+          <label style={{ width: 100, fontSize: 12, color: "var(--text-dim)" }}>Template</label>
+          <select
+            value={draft.defaultLyricTemplateId ?? ""}
+            onChange={(e) => setMeta("defaultLyricTemplateId", e.target.value || undefined)}
+            style={{ flex: 1 }}
+          >
+            <option value="">(none — pick per show row)</option>
+            {!!draft.defaultLyricTemplateId &&
+              !templates.some((t) => t.id === draft.defaultLyricTemplateId) && (
+                <option value={draft.defaultLyricTemplateId}>
+                  {draft.defaultLyricTemplateId} (missing)
+                </option>
+              )}
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+        <p style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 108, marginTop: 2 }}>
+          Default template used when this song is added to a show. Show rows can override per-row.
+        </p>
       </fieldset>
 
       <h2 style={{ fontSize: 14, marginBottom: 8 }}>Sections</h2>
