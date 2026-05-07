@@ -13,6 +13,9 @@ interface Props {
 export function SongModePanel({ channel, session }: Props) {
   const { send } = useWs();
   const song = useStore((s) => s.songCache[session.songId]);
+  // All hooks must be called unconditionally on every render — keep this
+  // above any early returns to satisfy the Rules of Hooks.
+  const sttMatch = useStore((s) => s.sttMatches[channel]);
 
   useEffect(() => {
     if (!song) {
@@ -23,8 +26,6 @@ export function SongModePanel({ channel, session }: Props) {
   if (!song) {
     return <div style={panelStyle()}>Loading song…</div>;
   }
-
-  const sttMatch = useStore((s) => s.sttMatches[channel]);
 
   const currentSectionId = session.arrangement[session.cursor.sectionIdx];
   const currentSection = song.sections.find((s) => s.id === currentSectionId);
