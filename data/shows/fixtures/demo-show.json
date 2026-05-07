@@ -1,0 +1,42 @@
+{
+  "id": "demo-show",
+  "name": "Demo Show",
+  "rows": [
+    {
+      "kind": "graphic",
+      "id": "r1",
+      "templateId": "lower-third-default",
+      "data": { "name": "Avery Chen", "title": "Anchor" }
+    },
+    {
+      "kind": "graphic",
+      "id": "r2",
+      "templateId": "lower-third-default",
+      "data": { "name": "Marcus Wells", "title": "Field Reporter" }
+    },
+    {
+      "kind": "graphic",
+      "id": "r3",
+      "templateId": "name-card",
+      "data": { "name": "Dr. Priya Patel" }
+    },
+    {
+      "kind": "graphic",
+      "id": "r4",
+      "templateId": "fullscreen-sting",
+      "data": { "headline": "BREAKING", "subline": "Live from the studio" }
+    },
+    {
+      "kind": "graphic",
+      "id": "r5",
+      "templateId": "lower-third-default",
+      "data": { "name": "Jordan Reeves", "title": "Senior Producer" }
+    },
+    {
+      "kind": "song",
+      "id": "row-amazing-grace",
+      "songId": "amazing-grace",
+      "lyricTemplateId": "lower-third-default"
+    }
+  ]
+}
