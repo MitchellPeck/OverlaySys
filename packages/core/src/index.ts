@@ -3,3 +3,4 @@ export * from "./show";
 export * from "./channel";
 export * from "./channelConfig";
 export * from "./song";
+export * from "./songParser";
