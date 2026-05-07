@@ -61,7 +61,7 @@ function tokenize(text: string): RawSection[] {
     if (m) {
       flushSlide();
       if (current) sections.push(current);
-      current = { header: m[1].trim(), blocks: [] };
+      current = { header: (m[1] ?? "").trim(), blocks: [] };
       buffer = [];
       continue;
     }

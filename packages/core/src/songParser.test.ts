@@ -16,13 +16,13 @@ I've been set free`,
     );
     expect(song.id).toBe("amazing-grace");
     expect(song.sections).toHaveLength(2);
-    expect(song.sections[0].kind).toBe("verse");
-    expect(song.sections[0].label).toBe("Verse 1");
-    expect(song.sections[0].slides[0].lines).toEqual([
+    expect(song.sections[0]!.kind).toBe("verse");
+    expect(song.sections[0]!.label).toBe("Verse 1");
+    expect(song.sections[0]!.slides[0]!.lines).toEqual([
       "Amazing grace how sweet the sound",
       "That saved a wretch like me",
     ]);
-    expect(song.sections[1].kind).toBe("chorus");
+    expect(song.sections[1]!.kind).toBe("chorus");
   });
 
   it("splits multiple slides within a section by blank line", () => {
@@ -32,9 +32,9 @@ Line A2
 
 Line B1
 Line B2`);
-    expect(song.sections[0].slides).toHaveLength(2);
-    expect(song.sections[0].slides[0].lines).toEqual(["Line A1", "Line A2"]);
-    expect(song.sections[0].slides[1].lines).toEqual(["Line B1", "Line B2"]);
+    expect(song.sections[0]!.slides).toHaveLength(2);
+    expect(song.sections[0]!.slides[0]!.lines).toEqual(["Line A1", "Line A2"]);
+    expect(song.sections[0]!.slides[1]!.lines).toEqual(["Line B1", "Line B2"]);
   });
 
   it("infers section kind from header text", () => {
@@ -52,7 +52,7 @@ Line B2`);
     for (const c of cases) {
       const song = parseSongFromText("x", "X", `[${c.header}]
 foo`);
-      expect(song.sections[0].kind, c.header).toBe(c.kind);
+      expect(song.sections[0]!.kind, c.header).toBe(c.kind);
     }
   });
 
@@ -76,7 +76,7 @@ b`);
 
   it("trims leading and trailing blank lines and CR characters", () => {
     const song = parseSongFromText("x", "X", "\r\n[Verse 1]\r\nfoo\r\n\r\n");
-    expect(song.sections[0].slides[0].lines).toEqual(["foo"]);
+    expect(song.sections[0]!.slides[0]!.lines).toEqual(["foo"]);
   });
 
   it("rejects input with no section headers", () => {
