@@ -1,47 +1,115 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { v4 as uuid } from "uuid";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { ImportFromFileModal } from "./ImportFromFileModal";
+import type { Song } from "@overlaysys/core";
 
 export default function SongsPage() {
   const { send } = useWs();
+  const router = useRouter();
   const songs = useStore((s) => s.songs);
   const conn = useStore((s) => s.conn);
+  const { confirm, dialog } = useDialog();
+  const [importOpen, setImportOpen] = useState(false);
 
   useEffect(() => {
     if (conn === "open") send({ type: "list_songs" });
   }, [conn, send]);
 
   function newSong() {
-    const id = prompt("Song id (e.g. 'amazing-grace')?")?.trim();
-    if (!id) return;
-    const title = prompt("Title?", id)?.trim() ?? id;
+    if (conn !== "open") return;
+    const id = `song-${uuid().slice(0, 8)}`;
     send({
       type: "save_song",
       song: {
         id,
-        title,
+        title: "",
         sections: [
           {
             id: "v1",
             kind: "verse",
             label: "Verse 1",
-            slides: [{ id: "v1s1", lines: ["First line"] }],
+            slides: [{ id: "v1s1", lines: [""] }],
           },
         ],
         defaultArrangement: ["v1"],
       },
     });
+    setTimeout(() => router.push(`/songs/edit?id=${encodeURIComponent(id)}`), 150);
+  }
+
+  async function handleImportSubmit(song: Song) {
+    if (song.ccliNumber) {
+      const existing = songs.find(
+        (s) => s.ccliNumber === song.ccliNumber && s.id !== song.id,
+      );
+      if (existing) {
+        const replace = await confirm({
+          title: "Song already exists",
+          message: (
+            <>
+              A song with CCLI # <strong>{song.ccliNumber}</strong> already exists:{" "}
+              <strong>{existing.title || existing.id}</strong>.
+              <br />
+              Click <strong>Replace</strong> to overwrite that song, or <strong>Cancel</strong> to import as a new copy.
+            </>
+          ),
+          confirmLabel: "Replace",
+          cancelLabel: "Import as new copy",
+          destructive: true,
+        });
+        if (replace) {
+          send({ type: "save_song", song: { ...song, id: existing.id } });
+        } else {
+          // Import as new copy: suffix the slug numerically.
+          const baseSlug = song.id;
+          let n = 2;
+          while (songs.some((s) => s.id === `${baseSlug}-${n}`)) n++;
+          send({ type: "save_song", song: { ...song, id: `${baseSlug}-${n}` } });
+        }
+        setImportOpen(false);
+        return;
+      }
+    }
+    send({ type: "save_song", song });
+    setImportOpen(false);
+  }
+
+  async function removeSong(id: string, title: string) {
+    const ok = await confirm({
+      title: "Delete song",
+      message: (
+        <>
+          Delete <strong>{title || id}</strong>? This removes the JSON file.
+        </>
+      ),
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (ok) send({ type: "delete_song", songId: id });
   }
 
   return (
     <>
       <AppHeader
         context={<h1 style={{ margin: 0, fontSize: 16 }}>Songs</h1>}
-        actions={<button onClick={newSong} style={btn("primary")}>+ New Song</button>}
+        actions={
+          <>
+            <button onClick={() => setImportOpen(true)} disabled={conn !== "open"} style={btn()}>
+              Import from file…
+            </button>
+            <button onClick={newSong} disabled={conn !== "open"} style={btn("primary")}>
+              + New Song
+            </button>
+          </>
+        }
       />
       <div style={{ padding: 24 }}>
 
@@ -61,8 +129,8 @@ export default function SongsPage() {
             {songs.map((s) => (
               <tr key={s.id}>
                 <td style={td()}>
-                  <Link href={`/songs/${encodeURIComponent(s.id)}`} style={{ fontWeight: 600 }}>
-                    {s.title}
+                  <Link href={`/songs/edit?id=${encodeURIComponent(s.id)}`} style={{ fontWeight: 600 }}>
+                    {s.title || <em style={{ color: "var(--text-dim)" }}>(untitled)</em>}
                   </Link>
                   <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
                     {s.id}
@@ -71,14 +139,7 @@ export default function SongsPage() {
                 <td style={td()}>{s.author ?? "—"}</td>
                 <td style={td()}>{s.ccliNumber ?? "—"}</td>
                 <td style={td()}>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete "${s.title}"?`)) {
-                        send({ type: "delete_song", songId: s.id });
-                      }
-                    }}
-                    style={btn()}
-                  >
+                  <button onClick={() => removeSong(s.id, s.title)} style={btn()}>
                     Delete
                   </button>
                 </td>
@@ -87,7 +148,15 @@ export default function SongsPage() {
           </tbody>
         </table>
       )}
+      {importOpen && (
+        <ImportFromFileModal
+          existingIds={new Set(songs.map((s) => s.id))}
+          onCancel={() => setImportOpen(false)}
+          onSubmit={(song) => handleImportSubmit(song)}
+        />
+      )}
       </div>
+      {dialog}
     </>
   );
 }
