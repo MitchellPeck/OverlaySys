@@ -21,7 +21,16 @@ export default function ShowPage() {
   // fall back to the first available show if the saved id no longer exists.
   const showMetas = useStore((s) => s.showMetas);
   const show = useStore((s) => s.show);
+  // Drive song mode for whichever channel has an active session, preferring
+  // program (the live output) over preview (the staged-but-not-live cue).
   const programSession = useStore((s) => s.songSessions["program"]);
+  const previewSession = useStore((s) => s.songSessions["preview"]);
+  const activeSongChannel: "program" | "preview" | null = programSession
+    ? "program"
+    : previewSession
+    ? "preview"
+    : null;
+  const activeSongSession = programSession ?? previewSession ?? null;
   useEffect(() => {
     if (show || showMetas.length === 0) return;
     const saved =
@@ -47,15 +56,14 @@ export default function ShowPage() {
 
   useGlobalShortcuts();
 
+  const songModeActive = activeSongSession !== null;
   return (
     <main
       style={{
         position: "fixed",
         inset: 0,
         display: "grid",
-        // When a song is live, add a third row for a horizontal channels
-        // strip across the bottom. Otherwise normal 2-row layout.
-        gridTemplateRows: programSession
+        gridTemplateRows: songModeActive
           ? "auto minmax(0, 1fr) auto"
           : "auto minmax(0, 1fr)",
         overflow: "hidden",
@@ -65,10 +73,7 @@ export default function ShowPage() {
       <div
         style={{
           display: "grid",
-          // When a song is live, collapse the side panels and give song mode
-          // the page. Rundown shrinks to a narrow context column; Channels
-          // moves to the bottom strip below.
-          gridTemplateColumns: programSession
+          gridTemplateColumns: songModeActive
             ? "260px minmax(0, 1fr)"
             : "minmax(360px, 1fr) 360px 320px",
           gap: 1,
@@ -80,22 +85,30 @@ export default function ShowPage() {
           <Rundown />
         </Panel>
 
-        <Panel title={programSession ? "Song mode" : "Take controls"}>
-          {programSession ? (
-            <SongModePanel channel="program" session={programSession} />
+        <Panel
+          title={
+            activeSongChannel === "program"
+              ? "Song mode (PGM)"
+              : activeSongChannel === "preview"
+              ? "Song mode (PVW · cued)"
+              : "Take controls"
+          }
+        >
+          {activeSongSession && activeSongChannel ? (
+            <SongModePanel channel={activeSongChannel} session={activeSongSession} />
           ) : (
             <TakePanel />
           )}
         </Panel>
 
-        {!programSession && (
+        {!songModeActive && (
           <Panel title="Channels">
             <ChannelsList />
           </Panel>
         )}
       </div>
 
-      {programSession && (
+      {songModeActive && (
         <section
           style={{
             background: "var(--panel)",

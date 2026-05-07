@@ -37,11 +37,20 @@ export function useGlobalShortcuts(): void {
 
       const store = useStore.getState();
       const client = getClient();
-      const session = store.songSessions["program"] as SongSessionSummary | null | undefined;
+      // Drive song hotkeys against whichever channel has an active session,
+      // preferring program over preview. Lets the cue-and-navigate-on-PVW
+      // workflow use the same Space / Shift+Space / C / B / 1-9 / 0
+      // shortcuts as live program operation.
+      const programSession = store.songSessions["program"] as SongSessionSummary | null | undefined;
+      const previewSession = store.songSessions["preview"] as SongSessionSummary | null | undefined;
+      const activeChannel: "program" | "preview" | null = programSession
+        ? "program"
+        : previewSession
+        ? "preview"
+        : null;
 
-      // Song mode takes priority over graphic mode for the keys it owns.
-      if (session) {
-        if (handleSongHotkey(e, client.send.bind(client))) return;
+      if (activeChannel) {
+        if (handleSongHotkey(e, client.send.bind(client), activeChannel)) return;
       }
 
       const show = store.show;
@@ -118,8 +127,11 @@ type Sender = ReturnType<typeof getClient>["send"];
  * Handle song-mode hotkeys. Returns true if the key was consumed (caller
  * should stop further graphic-mode handling).
  */
-function handleSongHotkey(e: KeyboardEvent, send: Sender): boolean {
-  const channel = "program";
+function handleSongHotkey(
+  e: KeyboardEvent,
+  send: Sender,
+  channel: "program" | "preview",
+): boolean {
 
   if (e.code === "Space" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
     e.preventDefault();

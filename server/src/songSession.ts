@@ -77,6 +77,43 @@ export function start(channel: string, args: StartArgs): void {
   sttMatcher.bindSession(channel, args.song, args.arrangement);
 }
 
+/**
+ * Promote a session from one channel to another. If `fromChannel` has an
+ * active session for the same song, copies its cursor + arrangement +
+ * trustMode to a fresh session on `toChannel`, then ends the source. If
+ * `fromChannel` has no matching session, starts a fresh session on
+ * `toChannel` at slide 0 with the given args (the typical flow when the
+ * operator double-clicks a song row to take directly to program without
+ * cueing first).
+ */
+export function promoteTo(
+  fromChannel: string,
+  toChannel: string,
+  args: StartArgs,
+): void {
+  const src = sessions.get(fromChannel);
+  // Copy cursor + arrangement only if the source is for the same song.
+  const reuseFromSource = src && src.song.id === args.song.id;
+
+  const internal: InternalSession = {
+    channel: toChannel,
+    song: args.song,
+    lyricTemplateId: args.lyricTemplateId,
+    arrangement: reuseFromSource ? src.arrangement.slice() : args.arrangement.slice(),
+    cursor: reuseFromSource ? { ...src.cursor } : { sectionIdx: 0, slideIdx: 0 },
+    blanked: false,
+    trustMode: reuseFromSource ? src.trustMode : args.trustMode,
+    startedAt: Date.now(),
+  };
+  sessions.set(toChannel, internal);
+  render(internal);
+  sttMatcher.bindSession(toChannel, args.song, internal.arrangement);
+
+  // End the source AFTER the destination is rendered, so there's never a
+  // gap with neither channel showing the song.
+  if (src) end(fromChannel);
+}
+
 export function getSession(channel: string): SongSessionSummary | null {
   const s = sessions.get(channel);
   return s ? summarize(s) : null;

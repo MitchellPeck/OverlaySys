@@ -204,6 +204,30 @@ export function handleConnection(
           });
           break;
         }
+        case "song_take_pvw_to_pgm": {
+          const show = await shows.getShow(parsed.showId);
+          if (!show) {
+            send({ type: "error", code: "not_found", message: parsed.showId });
+            break;
+          }
+          const row = show.rows.find((r) => r.id === parsed.songRowId);
+          if (!row || row.kind !== "song") {
+            send({ type: "error", code: "not_found", message: parsed.songRowId });
+            break;
+          }
+          const song = await songs.getSong(row.songId);
+          if (!song) {
+            send({ type: "error", code: "not_found", message: row.songId });
+            break;
+          }
+          songSession.promoteTo(parsed.fromChannel, parsed.toChannel, {
+            song,
+            lyricTemplateId: row.lyricTemplateId,
+            arrangement: row.arrangement ?? song.defaultArrangement,
+            trustMode: row.trustMode ?? false,
+          });
+          break;
+        }
         case "song_advance": {
           songSession.advance(parsed.channel, parsed.delta);
           break;

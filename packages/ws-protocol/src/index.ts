@@ -92,6 +92,18 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     channel: z.string(),
   }),
   z.object({
+    // Promote a song session: if `fromChannel` already has a session for
+    // `songRowId`, copy its cursor (and trustMode) to a fresh session on
+    // `toChannel`, then end the source. Otherwise start a fresh session
+    // on `toChannel` at slide 0. Lets the operator cue a song to preview,
+    // navigate to a starting slide, then take to program at that cursor.
+    type: z.literal("song_take_pvw_to_pgm"),
+    showId: z.string(),
+    songRowId: z.string(),
+    fromChannel: z.string().default("preview"),
+    toChannel: z.string().default("program"),
+  }),
+  z.object({
     type: z.literal("take_pvw_to_pgm"),
     fromChannel: z.string().default("preview"),
     toChannel: z.string().default("program"),

@@ -50,8 +50,9 @@ export function Rundown() {
     const row = show.rows.find((r) => r.id === selectedRowId);
     if (!row) return;
     if (row.kind === "song") {
-      // Songs go straight to program (cueing them makes less sense; UX deferred to Plan B)
-      send({ type: "song_take", channel: "program", showId: show.id, songRowId: row.id });
+      // Cue song → start a session on PREVIEW so the operator can navigate
+      // to the right slide before promoting to program.
+      send({ type: "song_take", channel: "preview", showId: show.id, songRowId: row.id });
       return;
     }
     send({
@@ -65,7 +66,16 @@ export function Rundown() {
     const row = show.rows.find((r) => r.id === selectedRowId);
     if (!row) return;
     if (row.kind === "song") {
-      send({ type: "song_take", channel: "program", showId: show.id, songRowId: row.id });
+      // Take song → if a preview session for this song is already running
+      // (e.g. operator cued and navigated), promote it to program at the
+      // current cursor. Otherwise start a fresh session at slide 0.
+      send({
+        type: "song_take_pvw_to_pgm",
+        showId: show.id,
+        songRowId: row.id,
+        fromChannel: "preview",
+        toChannel: "program",
+      });
       return;
     }
     send({
@@ -128,11 +138,15 @@ export function Rundown() {
                   onClick={() => setSelectedRow(row.id)}
                   onDoubleClick={() => {
                     setSelectedRow(row.id);
+                    // Double-click = direct take to program (legacy /
+                    // power-user behavior). Use Cue button for the
+                    // preview-then-promote workflow.
                     send({
-                      type: "song_take",
-                      channel: "program",
+                      type: "song_take_pvw_to_pgm",
                       showId: show.id,
                       songRowId: row.id,
+                      fromChannel: "preview",
+                      toChannel: "program",
                     });
                   }}
                   style={{
