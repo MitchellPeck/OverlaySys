@@ -14,6 +14,8 @@ import * as songs from "./songs";
 import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
+import * as sttSpawner from "./sttSpawner";
+import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
@@ -33,6 +35,10 @@ songSession.onMatch((channel, result, hypothesis) => {
 
 sttListener.subscribe((listeners) => {
   broadcast({ type: "stt_listener_state", listeners });
+});
+
+sttSpawner.subscribe((status) => {
+  broadcast({ type: "stt_spawner_status", status });
 });
 
 export function handleConnection(
@@ -267,6 +273,27 @@ export function handleConnection(
           for (const channel of songSession.getChannelsWithSessions()) {
             songSession.processSttHypothesis(channel, parsed.text, parsed.t);
           }
+          break;
+        }
+        case "stt_spawner_get_config": {
+          const cfg = await storage.loadSttConfig();
+          send({ type: "stt_spawner_config", config: cfg });
+          send({ type: "stt_spawner_status", status: sttSpawner.getStatus() });
+          break;
+        }
+        case "stt_spawner_save_config": {
+          await storage.saveSttConfig(parsed.config);
+          send({ type: "ack", op: "stt_spawner_save_config" });
+          broadcast({ type: "stt_spawner_config", config: parsed.config });
+          break;
+        }
+        case "stt_spawner_start": {
+          const cfg = await storage.loadSttConfig();
+          sttSpawner.start(cfg);
+          break;
+        }
+        case "stt_spawner_stop": {
+          sttSpawner.stop();
           break;
         }
       }
