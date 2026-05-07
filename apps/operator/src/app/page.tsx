@@ -102,8 +102,8 @@ export default function ShowPage() {
             borderTop: "1px solid var(--border)",
             padding: "10px 16px",
             overflowX: "auto",
-            overflowY: "hidden",
-            maxHeight: 220,
+            overflowY: "auto",
+            maxHeight: 380,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
