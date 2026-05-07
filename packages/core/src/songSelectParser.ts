@@ -37,7 +37,54 @@ function splitFooter(lines: string[]): { body: string[]; footer: string[] } {
   return { body: lines, footer: [] };
 }
 
-export const _internal = { splitFooter };
+const CCLI_SONG_RE = /^CCLI Song #\s*(\d+)/i;
+const CCLI_LICENSE_RE = /^CCLI License #/i;
+
+function extractTitle(preamble: string[]): string | undefined {
+  for (const raw of preamble) {
+    const t = raw.trim();
+    if (t) return t;
+  }
+  return undefined;
+}
+
+function extractMeta(preamble: string[], footer: string[]): SongSelectMeta {
+  const meta: SongSelectMeta = {};
+  const title = extractTitle(preamble);
+  if (title) meta.title = title;
+
+  // Track which footer line contains ©, then the line above it (if any) is
+  // the author line, when it contains alpha content.
+  let copyrightIdx = -1;
+  for (let i = 0; i < footer.length; i++) {
+    const line = footer[i]!.trim();
+    if (CCLI_LICENSE_RE.test(line)) continue; // explicitly ignored
+    const ccli = CCLI_SONG_RE.exec(line);
+    if (ccli && !meta.ccliNumber) meta.ccliNumber = ccli[1];
+    if (line.startsWith("©") && copyrightIdx === -1) {
+      copyrightIdx = i;
+      meta.copyright = line;
+    }
+  }
+
+  // Author line: line directly above copyright, if it contains letters.
+  if (copyrightIdx > 0) {
+    const candidate = footer[copyrightIdx - 1]!.trim();
+    const isAuthorish =
+      candidate &&
+      /[A-Za-z]/.test(candidate) &&
+      !CCLI_SONG_RE.test(candidate) &&
+      !CCLI_LICENSE_RE.test(candidate);
+    if (isAuthorish) {
+      meta.authors = candidate.includes(" | ")
+        ? candidate.split(" | ").map((s) => s.trim()).filter(Boolean)
+        : [candidate];
+    }
+  }
+  return meta;
+}
+
+export const _internal = { splitFooter, extractMeta, extractTitle };
 
 export function parseSongSelectText(_text: string): SongSelectParseResult {
   throw new Error("parseSongSelectText: not yet implemented");

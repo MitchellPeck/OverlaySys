@@ -71,3 +71,73 @@ describe("_internal.splitFooter", () => {
     expect(out.footer).toEqual([lines[2]]);
   });
 });
+
+describe("_internal.extractMeta", () => {
+  it("extracts ccliNumber from 'CCLI Song #'", () => {
+    const meta = _internal.extractMeta(["Amazing Grace"], [
+      "CCLI Song # 22025",
+    ]);
+    expect(meta.ccliNumber).toBe("22025");
+  });
+
+  it("extracts copyright from a © line, preserving the symbol", () => {
+    const meta = _internal.extractMeta([], [
+      "CCLI Song # 22025",
+      "© Public Domain",
+    ]);
+    expect(meta.copyright).toBe("© Public Domain");
+  });
+
+  it("extracts a single author when no | separator present", () => {
+    const meta = _internal.extractMeta([], [
+      "CCLI Song # 22025",
+      "John Newton",
+      "© Public Domain",
+    ]);
+    expect(meta.authors).toEqual(["John Newton"]);
+  });
+
+  it("extracts multiple authors split on ' | '", () => {
+    const meta = _internal.extractMeta([], [
+      "CCLI Song # 4768151",
+      "John Newton | Chris Tomlin | Louie Giglio",
+      "© 2006 sixsteps Music",
+    ]);
+    expect(meta.authors).toEqual(["John Newton", "Chris Tomlin", "Louie Giglio"]);
+  });
+
+  it("never includes the CCLI License # in any field", () => {
+    const meta = _internal.extractMeta([], [
+      "CCLI Song # 22025",
+      "John Newton",
+      "© Public Domain",
+      "CCLI License # 9999999",
+    ]);
+    const all = JSON.stringify(meta);
+    expect(all).not.toContain("9999999");
+    expect(all).not.toContain("License");
+  });
+
+  it("returns undefined fields when footer lacks the markers", () => {
+    const meta = _internal.extractMeta([], []);
+    expect(meta.ccliNumber).toBeUndefined();
+    expect(meta.copyright).toBeUndefined();
+    expect(meta.authors).toBeUndefined();
+  });
+});
+
+describe("_internal.extractTitle", () => {
+  it("returns the first non-empty preamble line", () => {
+    const preamble = ["", "Amazing Grace", ""];
+    expect(_internal.extractTitle(preamble)).toBe("Amazing Grace");
+  });
+  it("preserves parentheticals in the title", () => {
+    expect(
+      _internal.extractTitle(["Amazing Grace (My Chains Are Gone)"]),
+    ).toBe("Amazing Grace (My Chains Are Gone)");
+  });
+  it("returns undefined when preamble has no non-empty line", () => {
+    expect(_internal.extractTitle([])).toBeUndefined();
+    expect(_internal.extractTitle(["", "  "])).toBeUndefined();
+  });
+});
