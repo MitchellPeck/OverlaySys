@@ -70,11 +70,61 @@ export function AppHeader({
       )}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
         {actions}
+        <SttStatusPill />
         <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
           {dot} {conn}
         </span>
       </div>
     </header>
+  );
+}
+
+/**
+ * Tiny STT spawner status indicator. Always rendered in the global header
+ * so the operator can see at a glance whether STT is up — no matter which
+ * page they're on. Click navigates to /stt for control + logs.
+ */
+function SttStatusPill() {
+  const status = useStore((s) => s.sttSpawnerStatus);
+  const pathname = usePathname() ?? "/";
+  // No status yet (haven't received the first stt_spawner_status broadcast)
+  // — render nothing rather than a confusing "idle" stub.
+  if (!status) return null;
+  // On /stt itself the page already shows a big status pill in its actions
+  // slot; suppress the global one to avoid duplication.
+  if (pathname === "/stt" || pathname.startsWith("/stt/")) return null;
+
+  const colors: Record<string, string> = {
+    idle: "var(--text-dim)",
+    starting: "#fbbf24",
+    running: "#4ade80",
+    stopped: "var(--text-dim)",
+    error: "#ef4444",
+  };
+  const color = colors[status.state] ?? "var(--text-dim)";
+
+  return (
+    <Link
+      href="/stt"
+      title={
+        status.state === "error" && status.lastError
+          ? `STT: ${status.state} — ${status.lastError}`
+          : `STT: ${status.state}`
+      }
+      style={{
+        fontSize: 11,
+        padding: "3px 10px",
+        borderRadius: 999,
+        border: `1px solid ${color}`,
+        color,
+        textDecoration: "none",
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: 1,
+      }}
+    >
+      🎤 {status.state}
+    </Link>
   );
 }
 
