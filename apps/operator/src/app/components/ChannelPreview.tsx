@@ -60,12 +60,9 @@ export function ChannelPreview({ config, state }: Props) {
   }, [state?.active?.templateId, templateCache, send]);
 
   // Drive the mounted template through its lifecycle based on state changes.
-  // Mirrors the live renderer's crossfade:
-  //   - new takenAt → mount the new instance and playIn while the previous
-  //     mount plays its out simultaneously; previous is destroyed when its
-  //     out completes
-  //   - phase=out → playOut, destroy on completion
-  //   - same takenAt, data changed → hot update without re-animating
+  // Sequential transition: previous mount plays out fully, then is
+  // destroyed; only then is the new mount appended and its in animation
+  // started. Mirrors the standalone renderer's flow.
   useEffect(() => {
     if (!stageRef.current) return;
     const active = state?.active;
@@ -93,19 +90,23 @@ export function ChannelPreview({ config, state }: Props) {
       lastTakenAtRef.current = active.takenAt;
       if (active.phase === "out") return;
 
-      // Crossfade: previous mount plays out concurrently with new mount's in.
+      // Sequential: out-then-in. If a newer take arrives during the out
+      // animation, the lastTakenAtRef guard below abandons this flow.
+      const myTakenAt = active.takenAt;
       const previous = mountedRef.current;
-      if (previous) mountedRef.current = null;
+      mountedRef.current = null;
 
-      const m = mountTemplate(stageRef.current, tpl, active.data);
-      mountedRef.current = m;
-      m.playIn().catch(() => {});
-
-      if (previous) {
-        triggerOut(previous)
-          .catch(() => {})
-          .finally(() => previous.destroy());
-      }
+      (async () => {
+        if (previous) {
+          await triggerOut(previous).catch(() => {});
+          previous.destroy();
+        }
+        if (myTakenAt !== lastTakenAtRef.current) return;
+        if (!stageRef.current) return;
+        const m = mountTemplate(stageRef.current, tpl, active.data);
+        mountedRef.current = m;
+        m.playIn().catch(() => {});
+      })();
       return;
     }
 

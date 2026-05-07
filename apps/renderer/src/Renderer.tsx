@@ -107,22 +107,28 @@ export function Renderer({ channel, debug = false }: Props) {
 
         if (phase === "out") return;
 
-        // Crossfade: keep the previous mount alive playing its out animation
-        // while the new one mounts and plays its in animation simultaneously.
-        // The previous is destroyed once its out completes.
+        // Sequential transition: play the previous mount's out animation
+        // to completion, destroy it, then mount the new template and play
+        // its in animation. Total transition time is out-duration +
+        // in-duration. If a newer take arrives during the out (operator
+        // pressing space rapidly), the takenAt guard below abandons this
+        // flow so the newer take's flow can take over.
+        const myTakenAt = takenAt;
         const previous = mountedRef.current;
-        if (previous) mountedRef.current = null;
+        mountedRef.current = null;
 
         const tpl = await ensureTemplate(templateId);
+
+        if (previous) {
+          await triggerOut(previous).catch(() => {});
+          previous.destroy();
+        }
+
+        if (myTakenAt !== lastTakenAtRef.current) return;
+
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
         m.playIn().catch(() => {});
-
-        if (previous) {
-          triggerOut(previous)
-            .catch(() => {})
-            .finally(() => previous.destroy());
-        }
         return;
       }
 
