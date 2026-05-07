@@ -204,18 +204,13 @@ export default function SongEditorPage() {
 
       <fieldset style={{ marginBottom: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
         <legend style={{ fontSize: 12, color: "var(--text-dim)" }}>Default Arrangement</legend>
-        <input
-          value={draft.defaultArrangement.join(" → ")}
-          onChange={(e) =>
-            setMeta(
-              "defaultArrangement",
-              e.target.value.split("→").map((s) => s.trim()).filter(Boolean),
-            )
-          }
-          style={{ width: "100%", fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+        <ArrangementEditor
+          arrangement={draft.defaultArrangement}
+          sections={draft.sections}
+          onChange={(next) => setMeta("defaultArrangement", next)}
         />
         <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
-          Section ids separated by →. Available: {draft.sections.map((s) => s.id).join(", ")}
+          Sections can repeat. Drag chips to reorder.
         </p>
       </fieldset>
     </div>
@@ -227,6 +222,133 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
     <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
       <label style={{ width: 100, fontSize: 12, color: "var(--text-dim)" }}>{label}</label>
       <input value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }} />
+    </div>
+  );
+}
+
+function ArrangementEditor({
+  arrangement,
+  sections,
+  onChange,
+}: {
+  arrangement: string[];
+  sections: Section[];
+  onChange: (next: string[]) => void;
+}) {
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dropZone, setDropZone] = useState<{ idx: number; pos: "before" | "after" } | null>(null);
+
+  function move(from: number, to: number) {
+    if (from === to) return;
+    const next = arrangement.slice();
+    const [removed] = next.splice(from, 1);
+    if (removed === undefined) return;
+    const adjustedTo = from < to ? to - 1 : to;
+    next.splice(adjustedTo, 0, removed);
+    onChange(next);
+  }
+  function remove(idx: number) {
+    onChange(arrangement.filter((_, i) => i !== idx));
+  }
+  function add(sectionId: string) {
+    onChange([...arrangement, sectionId]);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
+        {arrangement.length === 0 && (
+          <p style={{ color: "var(--text-dim)", fontSize: 12, fontStyle: "italic" }}>
+            Empty arrangement. Add sections below.
+          </p>
+        )}
+        {arrangement.map((sectionId, i) => {
+          const section = sections.find((s) => s.id === sectionId);
+          const isDragging = dragIdx === i;
+          const dropAtMe = dropZone?.idx === i ? dropZone.pos : null;
+          return (
+            <div
+              key={`${sectionId}@${i}`}
+              draggable
+              onDragStart={(e) => {
+                setDragIdx(i);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", String(i));
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                const pos: "before" | "after" = e.clientY < r.top + r.height / 2 ? "before" : "after";
+                setDropZone({ idx: i, pos });
+              }}
+              onDragLeave={() => setDropZone(null)}
+              onDrop={(e) => {
+                e.preventDefault();
+                const sourceIdxStr = e.dataTransfer.getData("text/plain");
+                const sourceIdx = Number(sourceIdxStr);
+                const z = dropZone;
+                setDropZone(null);
+                if (Number.isNaN(sourceIdx) || !z) return;
+                const target = z.pos === "before" ? z.idx : z.idx + 1;
+                move(sourceIdx, target);
+              }}
+              onDragEnd={() => { setDragIdx(null); setDropZone(null); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 10px",
+                borderRadius: 4,
+                border: "1px solid var(--border)",
+                background: "var(--panel-2)",
+                opacity: isDragging ? 0.5 : 1,
+                borderTop: dropAtMe === "before" ? "2px solid #4ade80" : undefined,
+                borderBottom: dropAtMe === "after" ? "2px solid #4ade80" : "1px solid var(--border)",
+                cursor: "grab",
+                fontSize: 12,
+              }}
+            >
+              <span style={{ color: "var(--text-dim)", width: 24, textAlign: "right" }}>{i + 1}.</span>
+              <span aria-hidden style={{ color: "var(--text-dim)" }}>⋮⋮</span>
+              <span style={{ fontWeight: 600 }}>{section?.label ?? sectionId}</span>
+              <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+                {sectionId}{!section && " (missing)"}
+              </span>
+              <button
+                onClick={() => remove(i)}
+                title="Remove"
+                style={{
+                  marginLeft: "auto",
+                  padding: "2px 8px",
+                  background: "transparent",
+                  color: "var(--text-dim)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <select
+        value=""
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v) add(v);
+          e.currentTarget.value = "";
+        }}
+        style={{ fontSize: 12 }}
+      >
+        <option value="">+ Add section…</option>
+        {sections.map((s) => (
+          <option key={s.id} value={s.id}>{s.label} ({s.id})</option>
+        ))}
+      </select>
     </div>
   );
 }
