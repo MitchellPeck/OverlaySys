@@ -160,6 +160,22 @@ function tokenizeBody(lines: string[]): RawSection[] {
   return sections;
 }
 
+const MAX_LINES_PER_SLIDE = 2;
+
+function rechunkSlides(raw: RawSection[]): RawSection[] {
+  return raw.map((rs) => ({
+    ...rs,
+    blocks: rs.blocks.flatMap((lines) => {
+      if (lines.length <= MAX_LINES_PER_SLIDE) return [lines];
+      const out: string[][] = [];
+      for (let i = 0; i < lines.length; i += MAX_LINES_PER_SLIDE) {
+        out.push(lines.slice(i, i + MAX_LINES_PER_SLIDE));
+      }
+      return out;
+    }),
+  }));
+}
+
 export const _internal = {
   splitFooter,
   extractMeta,
@@ -167,6 +183,7 @@ export const _internal = {
   stripChords,
   isHeaderLine,
   tokenizeBody,
+  rechunkSlides,
 };
 
 export function parseSongSelectText(text: string): SongSelectParseResult {
@@ -198,6 +215,6 @@ export function parseSongSelectText(text: string): SongSelectParseResult {
   }
 
   const meta = extractMeta(preamble, footer);
-  const { sections, defaultArrangement } = emitSections(raw);
+  const { sections, defaultArrangement } = emitSections(rechunkSlides(raw));
   return { meta, sections, defaultArrangement };
 }

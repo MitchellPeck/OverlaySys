@@ -467,6 +467,57 @@ describe("_internal.tokenizeBody (mixed bracketed + bare headers)", () => {
   });
 });
 
+describe("_internal.rechunkSlides", () => {
+  it("leaves 1- and 2-line blocks unchanged", () => {
+    const out = _internal.rechunkSlides([
+      { header: "Verse 1", blocks: [["a"]] },
+      { header: "Verse 2", blocks: [["a", "b"]] },
+    ]);
+    expect(out[0]!.blocks).toEqual([["a"]]);
+    expect(out[1]!.blocks).toEqual([["a", "b"]]);
+  });
+
+  it("splits 4-line blocks into two 2-line blocks", () => {
+    const out = _internal.rechunkSlides([
+      { header: "Verse 1", blocks: [["a", "b", "c", "d"]] },
+    ]);
+    expect(out[0]!.blocks).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+    ]);
+  });
+
+  it("splits 5-line blocks into 2 + 2 + 1", () => {
+    const out = _internal.rechunkSlides([
+      { header: "Verse 1", blocks: [["a", "b", "c", "d", "e"]] },
+    ]);
+    expect(out[0]!.blocks).toEqual([
+      ["a", "b"],
+      ["c", "d"],
+      ["e"],
+    ]);
+  });
+
+  it("preserves existing slide boundaries (rechunks within each block)", () => {
+    const out = _internal.rechunkSlides([
+      {
+        header: "Verse 1",
+        blocks: [
+          ["a", "b", "c"],
+          ["d", "e", "f", "g"],
+        ],
+      },
+    ]);
+    // First block: 3 lines → 2 + 1; second: 4 lines → 2 + 2.
+    expect(out[0]!.blocks).toEqual([
+      ["a", "b"],
+      ["c"],
+      ["d", "e"],
+      ["f", "g"],
+    ]);
+  });
+});
+
 describe("parseSongSelectText (file fixtures)", () => {
   it("parses amazing-grace.txt with extracted metadata", () => {
     const result = parseSongSelectText(fixture("amazing-grace.txt"));
@@ -496,5 +547,27 @@ describe("parseSongSelectText (file fixtures)", () => {
   it("throws on malformed.txt", () => {
     expect(() => parseSongSelectText(fixture("malformed.txt")))
       .toThrow(/no sections/i);
+  });
+});
+
+describe("parseSongSelectText", () => {
+  it("chunks slides to 2 lines each", () => {
+    const text = [
+      "Hymn",
+      "",
+      "Verse 1",
+      "Line one",
+      "Line two",
+      "Line three",
+      "Line four",
+      "",
+      "CCLI Song # 1",
+      "© Public Domain",
+    ].join("\n");
+    const result = parseSongSelectText(text);
+    expect(result.sections).toHaveLength(1);
+    expect(result.sections[0]!.slides).toHaveLength(2);
+    expect(result.sections[0]!.slides[0]!.lines).toEqual(["Line one", "Line two"]);
+    expect(result.sections[0]!.slides[1]!.lines).toEqual(["Line three", "Line four"]);
   });
 });
