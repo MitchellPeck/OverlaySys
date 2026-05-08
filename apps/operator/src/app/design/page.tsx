@@ -8,6 +8,7 @@ import { blankTemplate } from "@overlaysys/editor-kit";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
+import { downloadJson } from "@/lib/download";
 import { AppHeader } from "@/app/components/AppHeader";
 
 export default function DesignIndexPage() {
@@ -33,6 +34,24 @@ export default function DesignIndexPage() {
     setTimeout(() => {
       router.push(`/design/edit?id=${encodeURIComponent(id)}`);
     }, 150);
+  }
+
+  function exportTemplate(id: string) {
+    const cached = useStore.getState().templateCache[id];
+    if (cached) {
+      downloadJson(`${id}.json`, cached);
+      return;
+    }
+    if (conn !== "open") return;
+    send({ type: "get_template", templateId: id });
+    const start = Date.now();
+    const tick = () => {
+      const c = useStore.getState().templateCache[id];
+      if (c) { downloadJson(`${id}.json`, c); return; }
+      if (Date.now() - start > 2000) return;
+      setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
   }
 
   async function remove(templateId: string) {
@@ -98,6 +117,21 @@ export default function DesignIndexPage() {
                 {t.id} · {t.size.w}×{t.size.h}
               </div>
             </Link>
+            <button
+              onClick={() => exportTemplate(t.id)}
+              title="Export template"
+              style={{
+                width: 44,
+                background: "transparent",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Export
+            </button>
             <button
               onClick={() => remove(t.id)}
               title="Delete template"
