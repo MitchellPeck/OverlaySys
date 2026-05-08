@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { type Song } from "./song";
+import { type Template } from "./template";
+import { type Show } from "./show";
 import {
   BundleSchema,
   collectDependencies,
   detectImport,
   type BundleSelection,
+  type StoreSnapshot,
 } from "./bundle";
 
 describe("BundleSchema", () => {
@@ -72,5 +76,167 @@ describe("collectDependencies (skeleton)", () => {
 describe("detectImport (skeleton)", () => {
   it("returns kind 'error' for non-recognized JSON", () => {
     expect(detectImport({ random: "junk" }).kind).toBe("error");
+  });
+});
+
+function makeSong(id: string, defaultLyricTemplateId?: string): Song {
+  return {
+    id,
+    title: id,
+    sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["x"] }] }],
+    defaultArrangement: ["v1"],
+    ...(defaultLyricTemplateId !== undefined ? { defaultLyricTemplateId } : {}),
+  };
+}
+
+function makeTemplate(id: string): Template {
+  return {
+    id,
+    name: id,
+    canvas: { width: 1920, height: 1080, background: { kind: "solid", color: "#000" } },
+    fields: [],
+    layers: [],
+  };
+}
+
+function makeShow(id: string, rows: Show["rows"]): Show {
+  return { id, name: id, rows };
+}
+
+describe("collectDependencies", () => {
+  it("pulls a show's referenced songs and templates", () => {
+    const store: StoreSnapshot = {
+      songs: new Map([["amazing-grace", makeSong("amazing-grace", "tpl-lyric")]]),
+      templates: new Map([
+        ["tpl-lyric", makeTemplate("tpl-lyric")],
+        ["tpl-graphic", makeTemplate("tpl-graphic")],
+        ["tpl-stinger", makeTemplate("tpl-stinger")],
+      ]),
+      shows: new Map([
+        [
+          "show1",
+          makeShow("show1", [
+            { kind: "graphic", id: "r1", templateId: "tpl-graphic", data: {} },
+            {
+              kind: "song",
+              id: "r2",
+              songId: "amazing-grace",
+              lyricTemplateId: "tpl-lyric",
+            },
+          ]),
+        ],
+      ]),
+    };
+    const out = collectDependencies(
+      { songIds: [], templateIds: [], showIds: ["show1"] },
+      store,
+    );
+    expect(out.shows.map((s) => s.id)).toEqual(["show1"]);
+    expect(out.songs.map((s) => s.id)).toEqual(["amazing-grace"]);
+    expect(out.templates.map((t) => t.id).sort()).toEqual([
+      "tpl-graphic",
+      "tpl-lyric",
+    ]);
+    expect(out.missing).toEqual([]);
+  });
+
+  it("pulls a song's defaultLyricTemplateId", () => {
+    const store: StoreSnapshot = {
+      songs: new Map([["s1", makeSong("s1", "tpl-default")]]),
+      templates: new Map([["tpl-default", makeTemplate("tpl-default")]]),
+      shows: new Map(),
+    };
+    const out = collectDependencies(
+      { songIds: ["s1"], templateIds: [], showIds: [] },
+      store,
+    );
+    expect(out.songs.map((s) => s.id)).toEqual(["s1"]);
+    expect(out.templates.map((t) => t.id)).toEqual(["tpl-default"]);
+  });
+
+  it("does NOT pull anything for a standalone template", () => {
+    const store: StoreSnapshot = {
+      songs: new Map(),
+      templates: new Map([["t1", makeTemplate("t1")]]),
+      shows: new Map(),
+    };
+    const out = collectDependencies(
+      { songIds: [], templateIds: ["t1"], showIds: [] },
+      store,
+    );
+    expect(out.templates.map((t) => t.id)).toEqual(["t1"]);
+    expect(out.songs).toEqual([]);
+    expect(out.shows).toEqual([]);
+  });
+
+  it("records a missing-ref when a referenced song is not in the store", () => {
+    const store: StoreSnapshot = {
+      songs: new Map(),
+      templates: new Map([["tpl-lyric", makeTemplate("tpl-lyric")]]),
+      shows: new Map([
+        [
+          "show-stale",
+          makeShow("show-stale", [
+            {
+              kind: "song",
+              id: "r1",
+              songId: "ghost-song",
+              lyricTemplateId: "tpl-lyric",
+            },
+          ]),
+        ],
+      ]),
+    };
+    const out = collectDependencies(
+      { songIds: [], templateIds: [], showIds: ["show-stale"] },
+      store,
+    );
+    expect(out.shows.map((s) => s.id)).toEqual(["show-stale"]);
+    expect(out.songs).toEqual([]);
+    expect(out.missing).toEqual([
+      { kind: "song", id: "ghost-song", referencedBy: "show-stale" },
+    ]);
+  });
+
+  it("does not double-add when two shows reference the same template", () => {
+    const tpl = makeTemplate("tpl-shared");
+    const store: StoreSnapshot = {
+      songs: new Map(),
+      templates: new Map([["tpl-shared", tpl]]),
+      shows: new Map([
+        ["a", makeShow("a", [{ kind: "graphic", id: "r1", templateId: "tpl-shared", data: {} }])],
+        ["b", makeShow("b", [{ kind: "graphic", id: "r1", templateId: "tpl-shared", data: {} }])],
+      ]),
+    };
+    const out = collectDependencies(
+      { songIds: [], templateIds: [], showIds: ["a", "b"] },
+      store,
+    );
+    expect(out.templates.map((t) => t.id)).toEqual(["tpl-shared"]);
+  });
+
+  it("includes directly-selected entities even if they have no deps", () => {
+    const store: StoreSnapshot = {
+      songs: new Map([["s1", makeSong("s1")]]),
+      templates: new Map([["t1", makeTemplate("t1")]]),
+      shows: new Map(),
+    };
+    const out = collectDependencies(
+      { songIds: ["s1"], templateIds: ["t1"], showIds: [] },
+      store,
+    );
+    expect(out.songs.map((s) => s.id)).toEqual(["s1"]);
+    expect(out.templates.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("records missing-ref for a directly-selected id that doesn't exist in the store", () => {
+    const out = collectDependencies(
+      { songIds: ["ghost"], templateIds: [], showIds: [] },
+      { songs: new Map(), templates: new Map(), shows: new Map() },
+    );
+    expect(out.songs).toEqual([]);
+    expect(out.missing).toEqual([
+      { kind: "song", id: "ghost", referencedBy: "(direct selection)" },
+    ]);
   });
 });
