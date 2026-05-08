@@ -143,6 +143,28 @@ export type Detected =
   | { kind: "show"; show: Show }
   | { kind: "error"; message: string };
 
-export function detectImport(_json: unknown): Detected {
-  return { kind: "error", message: "not yet implemented" };
+export function detectImport(json: unknown): Detected {
+  if (json === null || typeof json !== "object" || Array.isArray(json)) {
+    return { kind: "error", message: "expected a JSON object" };
+  }
+  const obj = json as Record<string, unknown>;
+
+  if (obj.format === "overlaysys-bundle") {
+    const result = BundleSchema.safeParse(obj);
+    if (result.success) return { kind: "bundle", bundle: result.data };
+    return { kind: "error", message: `invalid bundle: ${result.error.message}` };
+  }
+
+  // Try entity schemas in order of specificity.
+  const songR = SongSchema.safeParse(obj);
+  if (songR.success) return { kind: "song", song: songR.data };
+  const templateR = TemplateSchema.safeParse(obj);
+  if (templateR.success) return { kind: "template", template: templateR.data };
+  const showR = ShowSchema.safeParse(obj);
+  if (showR.success) return { kind: "show", show: showR.data };
+
+  return {
+    kind: "error",
+    message: "not a bundle, song, template, or show",
+  };
 }

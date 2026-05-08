@@ -90,12 +90,15 @@ function makeSong(id: string, defaultLyricTemplateId?: string): Song {
 }
 
 function makeTemplate(id: string): Template {
+  const emptyTimeline = { duration: 0, tracks: [] };
   return {
     id,
     name: id,
-    canvas: { width: 1920, height: 1080, background: { kind: "solid", color: "#000" } },
+    size: { w: 1920, h: 1080 },
     fields: [],
     layers: [],
+    timelines: { in: emptyTimeline, out: emptyTimeline },
+    fonts: [],
   };
 }
 
@@ -238,5 +241,62 @@ describe("collectDependencies", () => {
     expect(out.missing).toEqual([
       { kind: "song", id: "ghost", referencedBy: "(direct selection)" },
     ]);
+  });
+});
+
+describe("detectImport", () => {
+  it("recognizes a bundle by the format discriminator", () => {
+    const bundle = {
+      format: "overlaysys-bundle",
+      version: 1,
+      exportedAt: "2026-05-08T00:00:00Z",
+      songs: [],
+      templates: [],
+      shows: [],
+    };
+    const result = detectImport(bundle);
+    expect(result.kind).toBe("bundle");
+  });
+
+  it("recognizes a single Song", () => {
+    const result = detectImport(makeSong("amazing-grace"));
+    expect(result.kind).toBe("song");
+    if (result.kind === "song") {
+      expect(result.song.id).toBe("amazing-grace");
+    }
+  });
+
+  it("recognizes a single Template", () => {
+    const result = detectImport(makeTemplate("tpl-1"));
+    expect(result.kind).toBe("template");
+  });
+
+  it("recognizes a single Show", () => {
+    const result = detectImport(makeShow("show-1", []));
+    expect(result.kind).toBe("show");
+  });
+
+  it("returns 'error' for arbitrary JSON", () => {
+    const result = detectImport({ foo: "bar" });
+    expect(result.kind).toBe("error");
+  });
+
+  it("returns 'error' for a string", () => {
+    const result = detectImport("not an object");
+    expect(result.kind).toBe("error");
+  });
+
+  it("returns 'error' for null", () => {
+    const result = detectImport(null);
+    expect(result.kind).toBe("error");
+  });
+
+  it("returns 'error' for a malformed bundle (rejects with bundle's error message)", () => {
+    const result = detectImport({
+      format: "overlaysys-bundle",
+      version: 1,
+      // missing exportedAt
+    });
+    expect(result.kind).toBe("error");
   });
 });
