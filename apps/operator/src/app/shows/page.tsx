@@ -9,6 +9,7 @@ import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { downloadJson } from "@/lib/download";
 
 export default function ShowsIndexPage() {
   const router = useRouter();
@@ -31,6 +32,24 @@ export default function ShowsIndexPage() {
     send({ type: "save_show", show });
     setName("");
     setTimeout(() => router.push(`/shows/edit?id=${encodeURIComponent(id)}`), 150);
+  }
+
+  function exportShow(id: string) {
+    const cached = useStore.getState().showCache[id];
+    if (cached) {
+      downloadJson(`${id}.json`, cached);
+      return;
+    }
+    if (conn !== "open") return;
+    send({ type: "get_show", showId: id });
+    const start = Date.now();
+    const tick = () => {
+      const c = useStore.getState().showCache[id];
+      if (c) { downloadJson(`${id}.json`, c); return; }
+      if (Date.now() - start > 2000) return;
+      setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
   }
 
   async function remove(id: string, name: string) {
@@ -110,6 +129,8 @@ export default function ShowsIndexPage() {
                   {s.id} · {s.rowCount} {s.rowCount === 1 ? "row" : "rows"}
                 </div>
               </Link>
+              <button onClick={() => exportShow(s.id)} style={delBtn}>Export</button>
+              {" "}
               <button
                 onClick={() => remove(s.id, s.name)}
                 title="Delete show"
