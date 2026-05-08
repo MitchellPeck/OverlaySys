@@ -45,24 +45,37 @@ Window options at open time (via `window.overlaysys.openChannelWindow(id, opts)`
 
 `alwaysOnTop` and `fullscreen` can be toggled at runtime via `setChannelWindowOptions`. `frameless` and `transparent` require window recreate.
 
-## Packaging (TODO — current state is scaffolded but not yet shippable)
+## Packaging
 
 ```bash
-pnpm --filter @overlaysys/desktop package
+pnpm --filter @overlaysys/desktop package         # host platform
+pnpm --filter @overlaysys/desktop package:mac     # mac dmg + zip (arm64 + x64)
+pnpm --filter @overlaysys/desktop package:win     # Windows installer (NSIS x64)
+pnpm --filter @overlaysys/desktop package:linux   # Linux AppImage x64
 ```
 
 Runs:
 1. `next build` with `NEXT_BUILD_STATIC=1` → `apps/operator/out/`
 2. `vite build` → `apps/renderer/dist/`
 3. `tsc` for the Electron main + preload → `apps/desktop/dist/`
-4. Stages a runtime tree at `apps/desktop/build/staged/` containing the server source, workspace packages, lyric-listener, static frontends, and fixtures
-5. `electron-builder` packages it per platform → `apps/desktop/build/release/`
+4. `pnpm deploy --legacy --prod` for the server and lyric-listener into `apps/desktop/build/staged/{server,apps/lyric-listener}/`. Each gets its own self-contained `node_modules/` with workspace deps materialized — Node's ESM resolver can find bare specifiers (`fastify`, `ws`, `@overlaysys/core`) from the daemon's own directory.
+5. Stages static frontends (`apps/operator/out`, `apps/renderer/dist`) and fixture data under `build/staged/`.
+6. `electron-builder` packages it per platform → `apps/desktop/build/release/`.
 
-### Known TODOs before shippable
+### Cross-building from macOS to Windows
 
-- The staged tree references workspace packages via the source tree but doesn't yet `pnpm install --prod` inside itself, so the resulting bundle is missing `node_modules`. To finish: extend `scripts/package-desktop.mjs` step 5 to `cd build/staged && pnpm install --prod --shamefully-hoist`. (Or bundle the server with esbuild into a single JS file with deps inlined — cleaner but more work.)
-- Code signing (macOS notarization, Windows authenticode) — config slots are in place (`build.mac`, `build.win` in `package.json`) but no certificates wired up yet.
-- Auto-update via `electron-updater` — not configured.
+`package:win` runs electron-builder with `--win`. For the .exe icon and version metadata, install Wine first:
+
+```bash
+brew install --cask --no-quarantine wine-stable
+```
+
+Cross-builds are unsigned. Native modules aren't an issue — the server is pure JS.
+
+### Not yet wired up
+
+- Code signing — config slots are in place (`build.mac`, `build.win` in `package.json`) but no certs yet. macOS notarization and Windows authenticode still TODO.
+- Auto-update via `electron-updater`.
 - Multi-monitor display picker UX in the operator — IPC supports it (`fullscreen`, future: `displayId`) but no UI yet.
 
 ## Architecture
