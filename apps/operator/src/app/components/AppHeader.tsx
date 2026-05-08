@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/stt", label: "STT" },
   { href: "/design", label: "Design" },
   { href: "/channels", label: "Channels" },
+  { href: "/data", label: "Data" },
 ];
 
 export function AppHeader({
