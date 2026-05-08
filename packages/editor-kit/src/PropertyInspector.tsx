@@ -109,6 +109,32 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
               style={inputStyle}
             />
           </Row>
+          <Row label="Style">
+            <div style={{ display: "flex", gap: 4 }}>
+              <button
+                type="button"
+                onClick={() =>
+                  patchLayer({ style: { ...layer.style, italic: !layer.style.italic } } as Partial<Layer>)
+                }
+                aria-pressed={layer.style.italic}
+                title="Italic"
+                style={textEffectButtonStyle(layer.style.italic, { fontStyle: "italic" })}
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  patchLayer({ style: { ...layer.style, underline: !layer.style.underline } } as Partial<Layer>)
+                }
+                aria-pressed={layer.style.underline}
+                title="Underline"
+                style={textEffectButtonStyle(layer.style.underline, { textDecoration: "underline" })}
+              >
+                U
+              </button>
+            </div>
+          </Row>
           <BindingControl
             template={template}
             label="Color"
@@ -132,6 +158,21 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
               <option value="left">left</option>
               <option value="center">center</option>
               <option value="right">right</option>
+            </select>
+          </Row>
+          <Row label="V. align">
+            <select
+              value={layer.style.verticalAlign}
+              onChange={(e) =>
+                patchLayer({
+                  style: { ...layer.style, verticalAlign: e.target.value as "top" | "middle" | "bottom" },
+                } as Partial<Layer>)
+              }
+              style={inputStyle}
+            >
+              <option value="top">top</option>
+              <option value="middle">middle</option>
+              <option value="bottom">bottom</option>
             </select>
           </Row>
         </Section>
@@ -790,6 +831,22 @@ const smallInput: React.CSSProperties = {
   ...inputStyle,
   padding: "2px 6px",
 };
+
+function textEffectButtonStyle(active: boolean, extra: React.CSSProperties): React.CSSProperties {
+  return {
+    width: 28,
+    height: 24,
+    padding: 0,
+    background: active ? "var(--accent, #4ade80)" : "var(--panel-2, #1c1f25)",
+    color: active ? "#0c0d10" : "var(--text, #e9eaee)",
+    border: "1px solid var(--border, #2a2e36)",
+    borderRadius: 3,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    ...extra,
+  };
+}
 
 const addRowBtn: React.CSSProperties = {
   padding: "4px 10px",

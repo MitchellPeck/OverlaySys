@@ -315,10 +315,13 @@ function makeLayer(type: Layer["type"], id: string): Layer {
           fontFamily: "Inter, system-ui, sans-serif",
           fontSize: 48,
           fontWeight: 600,
+          italic: false,
+          underline: false,
           color: "#ffffff",
           letterSpacing: 0,
           lineHeight: 1.1,
           align: "left",
+          verticalAlign: "top",
         },
       };
     case "shape":

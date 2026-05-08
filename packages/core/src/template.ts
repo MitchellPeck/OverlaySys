@@ -37,10 +37,13 @@ export const TextStyleSchema = z.object({
   fontFamily: z.string().default("Inter"),
   fontSize: z.number().default(48),
   fontWeight: z.union([z.string(), z.number()]).default(600),
+  italic: z.boolean().default(false),
+  underline: z.boolean().default(false),
   color: ColorValueSchema.default("#ffffff"),
   letterSpacing: z.number().default(0),
   lineHeight: z.number().default(1.1),
   align: z.enum(["left", "center", "right"]).default("left"),
+  verticalAlign: z.enum(["top", "middle", "bottom"]).default("top"),
 });
 export type TextStyle = z.infer<typeof TextStyleSchema>;
 

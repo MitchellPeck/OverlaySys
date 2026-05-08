@@ -53,15 +53,34 @@ function applyTransform(el: HTMLElement, t: Transform): void {
   el.style.willChange = "transform, opacity";
 }
 
-function applyTextStyle(el: HTMLElement, s: TextStyle, data: Record<string, string>): void {
-  el.style.fontFamily = s.fontFamily;
-  el.style.fontSize = `${s.fontSize}px`;
-  el.style.fontWeight = String(s.fontWeight);
-  el.style.color = resolveBinding(s.color, data, "#ffffff");
-  el.style.letterSpacing = `${s.letterSpacing}px`;
-  el.style.lineHeight = String(s.lineHeight);
-  el.style.textAlign = s.align;
-  el.style.whiteSpace = "pre";
+function applyTextStyle(
+  container: HTMLElement,
+  span: HTMLElement,
+  s: TextStyle,
+  data: Record<string, string>,
+): void {
+  // Outer: a flex column so vertical alignment uses justify-content, with
+  // overflow:hidden clipping anything that doesn't fit the layer box.
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
+  container.style.justifyContent =
+    s.verticalAlign === "middle" ? "center" : s.verticalAlign === "bottom" ? "flex-end" : "flex-start";
+  container.style.overflow = "hidden";
+
+  // Inner: actual text styling. white-space:pre-wrap preserves explicit \n
+  // and wraps on width; word-break:break-word avoids a single long token
+  // bursting through the box.
+  span.style.fontFamily = s.fontFamily;
+  span.style.fontSize = `${s.fontSize}px`;
+  span.style.fontWeight = String(s.fontWeight);
+  span.style.fontStyle = s.italic ? "italic" : "normal";
+  span.style.textDecoration = s.underline ? "underline" : "none";
+  span.style.color = resolveBinding(s.color, data, "#ffffff");
+  span.style.letterSpacing = `${s.letterSpacing}px`;
+  span.style.lineHeight = String(s.lineHeight);
+  span.style.textAlign = s.align;
+  span.style.whiteSpace = "pre-wrap";
+  span.style.wordBreak = "break-word";
 }
 
 function fillToCss(fill: Fill, data: Record<string, string>): string {
@@ -137,8 +156,10 @@ function buildLayer(
       el = document.createElement("div");
       el.dataset["layerId"] = layer.id;
       el.dataset["layerType"] = "text";
-      applyTextStyle(el, layer.style, data);
-      el.textContent = resolveBinding(layer.content, data);
+      const span = document.createElement("span");
+      applyTextStyle(el, span, layer.style, data);
+      span.textContent = resolveBinding(layer.content, data);
+      el.appendChild(span);
       break;
     }
     case "image": {
@@ -309,11 +330,12 @@ export function updateTemplateData(
     const el = nodes.get(layer.id);
     if (!el) return;
     if (layer.type === "text") {
-      if (typeof layer.content !== "string") {
-        el.textContent = resolveBinding(layer.content, data);
+      const span = el.firstElementChild as HTMLElement | null;
+      if (span && typeof layer.content !== "string") {
+        span.textContent = resolveBinding(layer.content, data);
       }
       // Always re-apply color in case it's bound — cheap; idempotent if literal.
-      el.style.color = resolveBinding(layer.style.color, data, "#ffffff");
+      if (span) span.style.color = resolveBinding(layer.style.color, data, "#ffffff");
     } else if (layer.type === "image") {
       if (typeof layer.src !== "string") {
         (el as HTMLImageElement).src = resolveBinding(layer.src, data);
