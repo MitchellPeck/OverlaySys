@@ -3,6 +3,7 @@ import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, S
 import { findLayer } from "./utils";
 import { ColorInput } from "./ColorInput";
 import { ImageInput } from "./ImageInput";
+import { VideoInput } from "./VideoInput";
 import { GradientStops } from "./GradientStops";
 
 type CommitFn = (recipe: (d: Draft<Template>) => void) => void;
@@ -607,6 +608,8 @@ function BindingControl({
             <ColorInput value={value} onChange={(c) => onChange(c)} />
           ) : literalKind === "image" ? (
             <ImageInput value={value} onChange={(s) => onChange(s)} />
+          ) : literalKind === "video" ? (
+            <VideoInput value={value} onChange={(s) => onChange(s)} />
           ) : (
             <input
               value={value}

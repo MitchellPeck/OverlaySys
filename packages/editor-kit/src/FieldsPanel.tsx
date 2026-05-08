@@ -2,6 +2,7 @@ import type { Draft } from "immer";
 import type { Field, Template } from "@overlaysys/core";
 import { ColorInput } from "./ColorInput";
 import { ImageInput } from "./ImageInput";
+import { VideoInput } from "./VideoInput";
 
 type Props = {
   template: Template;
@@ -114,16 +115,7 @@ function DefaultEditor({
     case "image":
       return <ImageInput value={v} onChange={onChange} />;
     case "video":
-      // No bespoke video preview for the field-default editor; accept a
-      // path/url string. Operator-side FieldInput has the file picker.
-      return (
-        <input
-          value={v}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="path/url to default video"
-          style={inputStyle}
-        />
-      );
+      return <VideoInput value={v} onChange={onChange} />;
     case "number":
       return (
         <input
