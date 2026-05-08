@@ -146,15 +146,22 @@ async function main() {
     }
   });
 
-  // 6. electron-builder.
-  await step("electron-builder", async () => {
-    await run("pnpm", [
-      "--filter",
-      "@overlaysys/desktop",
-      "exec",
-      "electron-builder",
-    ]);
-  });
+  // 6. electron-builder. Any flags passed to this script (e.g. --win, --mac,
+  // --linux, or --x64/--arm64) are forwarded to electron-builder as-is.
+  // With no flags, electron-builder targets the host platform.
+  const builderArgs = process.argv.slice(2);
+  await step(
+    `electron-builder${builderArgs.length ? " " + builderArgs.join(" ") : ""}`,
+    async () => {
+      await run("pnpm", [
+        "--filter",
+        "@overlaysys/desktop",
+        "exec",
+        "electron-builder",
+        ...builderArgs,
+      ]);
+    },
+  );
 
   process.stdout.write("\n✓ Packaged. See apps/desktop/build/release/\n");
 }

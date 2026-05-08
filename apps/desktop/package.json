@@ -8,6 +8,9 @@
     "build": "tsc -p tsconfig.json",
     "dev": "pnpm build && OVERLAYSYS_DESKTOP_DEV=1 OPERATOR_URL=http://localhost:3000 RENDERER_URL=http://localhost:3001 electron dist/main.js",
     "package": "node ../../scripts/package-desktop.mjs",
+    "package:mac": "node ../../scripts/package-desktop.mjs --mac",
+    "package:win": "node ../../scripts/package-desktop.mjs --win",
+    "package:linux": "node ../../scripts/package-desktop.mjs --linux",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "rm -rf dist build .turbo *.tsbuildinfo"
   },
