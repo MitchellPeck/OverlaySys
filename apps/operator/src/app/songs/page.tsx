@@ -9,6 +9,7 @@ import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 import { ImportFromFileModal } from "./ImportFromFileModal";
+import { downloadJson } from "@/lib/download";
 import type { Song } from "@overlaysys/core";
 
 export default function SongsPage() {
@@ -82,6 +83,24 @@ export default function SongsPage() {
     setImportOpen(false);
   }
 
+  function exportSong(id: string) {
+    const cached = useStore.getState().songCache[id];
+    if (cached) {
+      downloadJson(`${id}.json`, cached);
+      return;
+    }
+    if (conn !== "open") return;
+    send({ type: "get_song", songId: id });
+    const start = Date.now();
+    const tick = () => {
+      const c = useStore.getState().songCache[id];
+      if (c) { downloadJson(`${id}.json`, c); return; }
+      if (Date.now() - start > 2000) return;
+      setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
+  }
+
   async function removeSong(id: string, title: string) {
     const ok = await confirm({
       title: "Delete song",
@@ -139,6 +158,8 @@ export default function SongsPage() {
                 <td style={td()}>{s.author ?? "—"}</td>
                 <td style={td()}>{s.ccliNumber ?? "—"}</td>
                 <td style={td()}>
+                  <button onClick={() => exportSong(s.id)} style={btn()}>Export</button>
+                  {" "}
                   <button onClick={() => removeSong(s.id, s.title)} style={btn()}>
                     Delete
                   </button>
