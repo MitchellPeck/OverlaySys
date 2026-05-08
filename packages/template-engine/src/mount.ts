@@ -5,6 +5,7 @@ import {
   updateTemplateData,
   type LayerNodeMap,
 } from "./dom";
+import { ensureTemplateFonts } from "./fonts";
 import { buildGsapTimeline } from "./gsap-timeline";
 
 export type MountMode = "live" | "edit";
@@ -55,6 +56,11 @@ export function mountTemplate(
 ): MountedTemplate {
   const mode = options.mode ?? "live";
   const merged = withDefaults(template, initialData);
+  // Kick off font registration in the background. Mount stays synchronous —
+  // the browser repaints text once each FontFace resolves, so the only
+  // visible effect is a brief FOUT on the very first mount of a template
+  // that uses a not-yet-cached font.
+  void ensureTemplateFonts(template);
   const { root, nodes } = buildTemplateDom(template, merged);
   host.appendChild(root);
 
