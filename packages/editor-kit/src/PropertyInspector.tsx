@@ -2,6 +2,7 @@ import type { Draft } from "immer";
 import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, Shadow } from "@overlaysys/core";
 import { findLayer } from "./utils";
 import { ColorInput } from "./ColorInput";
+import { FontInput } from "./FontInput";
 import { ImageInput } from "./ImageInput";
 import { VideoInput } from "./VideoInput";
 import { GradientStops } from "./GradientStops";
@@ -72,6 +73,20 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
 
       {layer.type === "text" && (
         <Section title="Text">
+          <Row label="Family">
+            <FontInput
+              value={layer.style.fontFamily}
+              templateFonts={template.fonts}
+              onChange={(family) =>
+                patchLayer({ style: { ...layer.style, fontFamily: family } } as Partial<Layer>)
+              }
+              onAddFont={(entry) =>
+                onCommit((d) => {
+                  d.fonts.push(entry);
+                })
+              }
+            />
+          </Row>
           <BindingControl
             template={template}
             value={layer.content}
