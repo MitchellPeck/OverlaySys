@@ -19,6 +19,8 @@ type Props = {
  */
 export function FontInput(props: Props) {
   const listId = useId();
+  const fileInputId = useId();
+  const familyInputId = useId();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [pendingFamily, setPendingFamily] = useState("");
   const [pendingSrc, setPendingSrc] = useState<string | null>(null);
@@ -26,6 +28,13 @@ export function FontInput(props: Props) {
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
   const options = fontPickerOptions(props.templateFonts, props.value);
+
+  function closePopover() {
+    setPopoverOpen(false);
+    setPendingFamily("");
+    setPendingSrc(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
 
   useEffect(() => {
     if (!popoverOpen) return;
@@ -47,12 +56,9 @@ export function FontInput(props: Props) {
     };
   }, [popoverOpen]);
 
-  function closePopover() {
-    setPopoverOpen(false);
-    setPendingFamily("");
-    setPendingSrc(null);
-    if (fileRef.current) fileRef.current.value = "";
-  }
+  useEffect(() => {
+    if (popoverOpen) fileRef.current?.focus();
+  }, [popoverOpen]);
 
   function onFile(file: File) {
     const reader = new FileReader();
@@ -138,9 +144,10 @@ export function FontInput(props: Props) {
             boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
           }}
         >
-          <label style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Font file</label>
+          <label htmlFor={fileInputId} style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Font file</label>
           <input
             ref={fileRef}
+            id={fileInputId}
             type="file"
             accept=".woff2,.woff,.ttf,.otf"
             onChange={(e) => {
@@ -149,8 +156,9 @@ export function FontInput(props: Props) {
             }}
             style={{ fontSize: 12, color: "var(--text, #e9eaee)" }}
           />
-          <label style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Family name</label>
+          <label htmlFor={familyInputId} style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Family name</label>
           <input
+            id={familyInputId}
             value={pendingFamily}
             onChange={(e) => setPendingFamily(e.target.value)}
             placeholder="My Font"
