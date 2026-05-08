@@ -43,6 +43,7 @@ type StoreState = {
 
   songs: SongMeta[];
   songCache: Record<string, Song>;
+  showCache: Record<string, Show>;
   songSessions: Record<string, SongSessionSummary | null>;
   sttMatches: Record<string, SttMatchSummary>;
   sttListeners: SttListenerInfo[];
@@ -57,6 +58,7 @@ type StoreState = {
   setChannelConfigs: (c: ChannelConfig[]) => void;
   setSongs: (songs: SongMeta[]) => void;
   setSong: (song: Song) => void;
+  setShowFull: (show: Show) => void;
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
   setSttMatch: (channel: string, match: SttMatchSummary) => void;
   setSttListeners: (listeners: SttListenerInfo[]) => void;
@@ -78,6 +80,7 @@ export const useStore = create<StoreState>((set) => ({
   channelConfigs: [],
   songs: [],
   songCache: {},
+  showCache: {},
   songSessions: {},
   sttMatches: {},
   sttListeners: [],
@@ -107,6 +110,8 @@ export const useStore = create<StoreState>((set) => ({
   setChannelConfigs: (c) => set({ channelConfigs: c }),
   setSongs: (songs) => set({ songs }),
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),
+  setShowFull: (show) =>
+    set((s) => ({ showCache: { ...s.showCache, [show.id]: show } })),
   setSongSession: (channel, session) =>
     set((s) => ({ songSessions: { ...s.songSessions, [channel]: session } })),
   setSttMatch: (channel, match) =>

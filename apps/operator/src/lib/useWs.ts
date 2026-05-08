@@ -62,6 +62,7 @@ function bootstrap(): void {
         break;
       case "show":
         if (!store.show || store.show.id === msg.show.id) store.setShow(msg.show);
+        store.setShowFull(msg.show);
         break;
       case "channel_list":
         store.setChannelConfigs(msg.configs);
