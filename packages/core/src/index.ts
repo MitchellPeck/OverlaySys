@@ -7,3 +7,4 @@ export * from "./songParser";
 export * from "./songSelectParser";
 export * from "./sectionEmit";
 export * from "./sttSpawnerConfig";
+export * from "./bundle";
