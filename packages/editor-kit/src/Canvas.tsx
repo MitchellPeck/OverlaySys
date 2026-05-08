@@ -137,10 +137,16 @@ export function Canvas(props: Props) {
   }, [props.template]);
 
   useEffect(() => {
-    // Switching templates invalidates any "entered group" selection state.
     setEnteredGroupId(null);
     lastClickRef.current = { time: 0, groupId: null };
-  }, [props.template]);
+  }, [props.template.id]);
+
+  useEffect(() => {
+    if (enteredGroupId && !findLayer(props.template.layers, enteredGroupId)) {
+      setEnteredGroupId(null);
+      lastClickRef.current = { time: 0, groupId: null };
+    }
+  }, [props.template.layers, enteredGroupId]);
 
   useEffect(() => {
     mountedRef.current?.update(props.data);
