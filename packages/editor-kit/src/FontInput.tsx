@@ -10,6 +10,8 @@ type Props = {
   onChange: (family: string) => void;
   /** Called when the user uploads a new font file. */
   onAddFont: (entry: { family: string; src: string }) => void;
+  /** When provided, the picked font file is uploaded; else inline data URL. */
+  onUpload?: (file: File) => Promise<string>;
 };
 
 /**
@@ -60,15 +62,30 @@ export function FontInput(props: Props) {
     if (popoverOpen) fileRef.current?.focus();
   }, [popoverOpen]);
 
-  function onFile(file: File) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onFile(file: File) {
+    setError(null);
+    // Auto-fill the family name regardless of upload mode.
+    setPendingFamily((prev) =>
+      prev ? prev : fontFamilyFromFilename(file.name),
+    );
+    if (props.onUpload) {
+      setUploading(true);
+      try {
+        const url = await props.onUpload(file);
+        setPendingSrc(url);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setPendingSrc(reader.result);
-        setPendingFamily((prev) =>
-          prev ? prev : fontFamilyFromFilename(file.name),
-        );
-      }
+      if (typeof reader.result === "string") setPendingSrc(reader.result);
     };
     reader.readAsDataURL(file);
   }
@@ -80,7 +97,7 @@ export function FontInput(props: Props) {
     closePopover();
   }
 
-  const canSubmit = !!pendingFamily.trim() && !!pendingSrc;
+  const canSubmit = !!pendingFamily.trim() && !!pendingSrc && !uploading;
 
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center", width: "100%", position: "relative" }}>
@@ -171,6 +188,16 @@ export function FontInput(props: Props) {
               fontSize: 12,
             }}
           />
+          {(uploading || error) && (
+            <div
+              style={{
+                fontSize: 11,
+                color: error ? "var(--red, #f87171)" : "var(--text-dim, #9099a8)",
+              }}
+            >
+              {error ? error : "Uploading…"}
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
             <button
               type="button"

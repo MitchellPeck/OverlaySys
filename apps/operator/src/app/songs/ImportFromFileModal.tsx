@@ -6,11 +6,11 @@ import {
   slugifyTitle,
   type Song,
 } from "@overlaysys/core";
+import { Button, Field, Input, Modal, colors } from "@overlaysys/ui";
 
 interface Props {
   onSubmit: (song: Song) => void;
   onCancel: () => void;
-  // Caller supplies the existing song ids so we can avoid slug collisions.
   existingIds: Set<string>;
 }
 
@@ -64,82 +64,77 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
   }
 
   return (
-    <div
-      role="dialog"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
-    >
-      <div
-        style={{
-          background: "var(--panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: 16,
-          minWidth: 480,
-          maxWidth: 720,
-          maxHeight: "80vh",
-          overflowY: "auto",
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>Import song from file</h2>
-
-        <input
-          type="file"
-          accept=".txt,.cho"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) readFile(f);
-          }}
-          style={{ marginBottom: 12 }}
-        />
-
-        {parseError && (
-          <p style={{ color: "#ef4444", fontSize: 12 }}>
-            Parse failed: {parseError}
-          </p>
-        )}
-
-        {sections.length > 0 && (
-          <>
-            <Field label="Title" value={title} onChange={setTitle} />
-            <Field
-              label="Slug"
-              value={slug}
-              onChange={(v) => setSlug(v.replace(/\s+/g, "-").toLowerCase())}
-              hint={existingIds.has(slug) ? "⚠ slug collides with existing song" : undefined}
-            />
-            <Field label="Author" value={author} onChange={setAuthor} />
-            <Field label="CCLI #" value={ccli} onChange={setCcli} />
-            <Field label="Copyright" value={copyright} onChange={setCopyright} />
-            <p style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
-              <strong>{sections.length}</strong> section(s) detected:{" "}
-              {sections.map((s) => s.label).join(", ")}
-            </p>
-            <p style={{ fontSize: 11, color: "var(--text-dim)" }}>
-              Loaded from: <code>{filename}</code>
-            </p>
-          </>
-        )}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
-          <button onClick={onCancel} style={btn()}>Cancel</button>
-          <button
+    <Modal
+      open
+      onClose={onCancel}
+      onCancel={onCancel}
+      onConfirm={sections.length > 0 && slug && title ? save : undefined}
+      size="md"
+      title="Import song from file"
+      footer={
+        <>
+          <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+          <Button
             onClick={save}
             disabled={sections.length === 0 || !slug || !title}
-            style={btn("primary")}
+            variant="primary"
+            size="sm"
           >
             Save song
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </>
+      }
+    >
+      <input
+        type="file"
+        accept=".txt,.cho"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) readFile(f);
+        }}
+        style={{ marginBottom: 12 }}
+      />
+
+      {parseError && (
+        <p style={{ color: colors.errorText, fontSize: 12 }}>
+          Parse failed: {parseError}
+        </p>
+      )}
+
+      {sections.length > 0 && (
+        <>
+          <Field label="Title" layout="inline">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </Field>
+          <Field
+            label="Slug"
+            layout="inline"
+            hint={existingIds.has(slug) ? "⚠ slug collides with existing song" : undefined}
+          >
+            <Input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase())}
+            />
+          </Field>
+          <Field label="Author" layout="inline">
+            <Input value={author} onChange={(e) => setAuthor(e.target.value)} />
+          </Field>
+          <Field label="CCLI #" layout="inline">
+            <Input value={ccli} onChange={(e) => setCcli(e.target.value)} />
+          </Field>
+          <Field label="Copyright" layout="inline">
+            <Input value={copyright} onChange={(e) => setCopyright(e.target.value)} />
+          </Field>
+          <p style={{ fontSize: 12, color: colors.textDim, marginTop: 8 }}>
+            <strong>{sections.length}</strong> section(s) detected:{" "}
+            {sections.map((s) => s.label).join(", ")}
+          </p>
+          <p style={{ fontSize: 11, color: colors.textDim }}>
+            Loaded from: <code>{filename}</code>
+          </p>
+        </>
+      )}
+    </Modal>
   );
 }
 
@@ -148,49 +143,4 @@ function uniqueSlug(base: string, existing: Set<string>): string {
   let n = 2;
   while (existing.has(`${base}-${n}`)) n++;
   return `${base}-${n}`;
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  hint,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  hint?: string;
-}) {
-  return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <label style={{ width: 100, fontSize: 12, color: "var(--text-dim)" }}>
-          {label}
-        </label>
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={{ flex: 1 }}
-        />
-      </div>
-      {hint && (
-        <p style={{ fontSize: 11, color: "#f59e0b", marginLeft: 108, marginTop: 2 }}>
-          {hint}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function btn(kind: "default" | "primary" = "default"): React.CSSProperties {
-  return {
-    padding: "6px 10px",
-    background: kind === "primary" ? "var(--accent)" : "var(--panel-2)",
-    color: kind === "primary" ? "#fff" : "var(--text)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
 }

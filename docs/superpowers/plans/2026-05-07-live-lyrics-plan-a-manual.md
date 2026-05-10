@@ -1752,7 +1752,7 @@ For each existing row in `data/shows/fixtures/demo-show.json`, prepend `"kind": 
 - [ ] **Step 2: Reseed (delete live show so fixture re-copies)**
 
 ```bash
-rm data/shows/demo-show.json
+rm data/shows/demo-show.json.ignorefixture
 ```
 
 (Storage layer will re-seed from fixtures on next boot.)
@@ -1770,7 +1770,7 @@ Expected: boots without error; logs include `1 show(s)` with the song row presen
 - [ ] **Step 4: Commit**
 
 ```bash
-git add data/shows/fixtures/demo-show.json
+git add data/shows/fixtures/demo-show.json.ignorefixture
 git commit -m "test(data): demo show includes a song row"
 ```
 
@@ -1990,7 +1990,7 @@ In `data/shows/fixtures/demo-show.json`, change the song row's `lyricTemplateId`
 - [ ] **Step 3: Reseed**
 
 ```bash
-rm data/templates/lyric-default.json data/shows/demo-show.json 2>/dev/null
+rm data/templates/lyric-default.json data/shows/demo-show.json.ignorefixture 2>/dev/null
 ```
 
 (Files only exist if a previous boot seeded them — ignore errors.)
@@ -2002,7 +2002,7 @@ Start server. Verify in the boot log: template count includes `lyric-default`. R
 - [ ] **Step 5: Commit**
 
 ```bash
-git add data/templates/fixtures/lyric-default.json data/shows/fixtures/demo-show.json
+git add data/templates/fixtures/lyric-default.json data/shows/fixtures/demo-show.json.ignorefixture
 git commit -m "feat(data): add lyric-default template fixture"
 ```
 

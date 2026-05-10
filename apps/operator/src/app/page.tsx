@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { ShowPicker } from "./components/ShowPicker";
@@ -16,13 +17,8 @@ const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
 export default function ShowPage() {
   const { send } = useWs();
 
-  // Auto-load: prefer the show the operator had selected last (persisted in
-  // localStorage so a refresh doesn't silently jump to a different show);
-  // fall back to the first available show if the saved id no longer exists.
   const showMetas = useStore((s) => s.showMetas);
   const show = useStore((s) => s.show);
-  // Drive song mode for whichever channel has an active session, preferring
-  // program (the live output) over preview (the staged-but-not-live cue).
   const programSession = useStore((s) => s.songSessions["program"]);
   const previewSession = useStore((s) => s.songSessions["preview"]);
   const activeSongChannel: "program" | "preview" | null = programSession
@@ -40,13 +36,11 @@ export default function ShowPage() {
     send({ type: "get_show", showId: targetId });
   }, [show, showMetas, send]);
 
-  // Persist the loaded show's id whenever it changes so a refresh restores it.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (show) localStorage.setItem(SELECTED_SHOW_KEY, show.id);
   }, [show?.id]);
 
-  // Subscribe to incoming "show" messages even when arriving via auto-load.
   useEffect(() => {
     const off = getClient().on((msg) => {
       if (msg.type === "show") useStore.getState().setShow(msg.show);
@@ -77,15 +71,15 @@ export default function ShowPage() {
             ? "260px minmax(0, 1fr)"
             : "minmax(360px, 1fr) 360px 320px",
           gap: 1,
-          background: "var(--border)",
+          background: colors.border,
           minHeight: 0,
         }}
       >
-        <Panel title="Rundown" actions={<ShowPicker />}>
+        <ShellPanel title="Rundown" actions={<ShowPicker />}>
           <Rundown />
-        </Panel>
+        </ShellPanel>
 
-        <Panel
+        <ShellPanel
           title={
             activeSongChannel === "program"
               ? "Song mode (PGM)"
@@ -99,20 +93,20 @@ export default function ShowPage() {
           ) : (
             <TakePanel />
           )}
-        </Panel>
+        </ShellPanel>
 
         {!songModeActive && (
-          <Panel title="Channels">
+          <ShellPanel title="Channels">
             <ChannelsList />
-          </Panel>
+          </ShellPanel>
         )}
       </div>
 
       {songModeActive && (
         <section
           style={{
-            background: "var(--panel)",
-            borderTop: "1px solid var(--border)",
+            background: colors.panel,
+            borderTop: `1px solid ${colors.border}`,
             padding: "10px 16px",
             overflowX: "auto",
             overflowY: "auto",
@@ -126,7 +120,7 @@ export default function ShowPage() {
                 fontSize: 11,
                 textTransform: "uppercase",
                 letterSpacing: 1.2,
-                color: "var(--text-dim)",
+                color: colors.textDim,
               }}
             >
               Channels & Preview
@@ -148,7 +142,13 @@ export default function ShowPage() {
   );
 }
 
-function Panel({
+/**
+ * Operator shell pane — the fixed three-column layout's panel header style is
+ * domain-specific (small uppercase letterspaced label) and distinct from the
+ * bordered card primitive. Kept local so the operator hot-path layout doesn't
+ * pull in @overlaysys/ui Panel's title typography.
+ */
+function ShellPanel({
   title,
   actions,
   children,
@@ -160,7 +160,7 @@ function Panel({
   return (
     <section
       style={{
-        background: "var(--panel)",
+        background: colors.panel,
         padding: 16,
         overflow: "auto",
         minHeight: 0,
@@ -173,7 +173,7 @@ function Panel({
             fontSize: 11,
             textTransform: "uppercase",
             letterSpacing: 1.2,
-            color: "var(--text-dim)",
+            color: colors.textDim,
           }}
         >
           {title}
@@ -184,4 +184,3 @@ function Panel({
     </section>
   );
 }
-

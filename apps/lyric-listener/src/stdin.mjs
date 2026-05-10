@@ -73,34 +73,51 @@ ws.on("error", (err) => {
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
 
 let buffer = "";
-let lastSent = "";
+let lastSent = ""; // last (text + ":" + isFinal flag) we emitted
 
-function emit(segment) {
+function emit(segment, isFinal) {
   const cleaned = segment.replace(ANSI_RE, "").trim();
   if (!cleaned) return;
-  if (cleaned === lastSent) return; // dedupe consecutive duplicates
-  lastSent = cleaned;
+  // Dedupe consecutive identical (text, isFinal) pairs, but allow the same
+  // text through if the finality flag changes — the final is semantically
+  // distinct from the partial that preceded it.
+  const key = `${isFinal ? "F" : "P"}:${cleaned}`;
+  if (key === lastSent) return;
+  lastSent = key;
   if (ws.readyState !== WebSocket.OPEN) return;
   ws.send(JSON.stringify({
     type: "stt_hypothesis",
     audioSourceId: AUDIO_SOURCE_ID,
     text: cleaned,
     t: Date.now(),
+    isFinal,
   }));
 }
 
+// Split buffer into (text, terminator) segments. CR-only termination means
+// the recognizer is overdrawing the line (partial); a terminator containing
+// LF means the segment is finalized. Whisper-stream emits \r repeatedly
+// within a step, then \n at the end.
+const SEGMENT_RE = /([^\r\n]*)([\r\n]+)/g;
+
 process.stdin.on("data", (chunk) => {
   buffer += chunk.toString();
-  // Split on any combination of CR and LF. Whisper-stream uses \r to
-  // overwrite the current line as it refines the partial transcript;
-  // a final segment is followed by \n. Treating both as separators
-  // means each refinement becomes its own emit() call (deduped below).
-  const parts = buffer.split(/[\r\n]+/);
-  buffer = parts.pop() ?? "";
-  for (const part of parts) emit(part);
+  let lastIndex = 0;
+  let m;
+  SEGMENT_RE.lastIndex = 0;
+  while ((m = SEGMENT_RE.exec(buffer)) !== null) {
+    const text = m[1] ?? "";
+    const term = m[2] ?? "";
+    const isFinal = term.includes("\n");
+    if (text) emit(text, isFinal);
+    lastIndex = SEGMENT_RE.lastIndex;
+  }
+  buffer = buffer.slice(lastIndex);
 });
 
 process.stdin.on("end", () => {
-  if (buffer) emit(buffer);
+  // Anything left in the buffer at EOF is implicitly final — no more
+  // refinements coming.
+  if (buffer) emit(buffer, true);
   ws.close();
 });

@@ -17,11 +17,18 @@ import type {
 type ConnState = "connecting" | "open" | "closed";
 export type ShowMeta = { id: string; name: string; rowCount: number };
 
+export type SttMatchStrategy = "coverage" | "neighborhood" | "audible";
+
 type SttMatchSummary = {
   sectionIdx: number;
   slideIdx: number;
   confidence: number;
   hypothesis: string;
+  strategy: SttMatchStrategy | null;
+  matchedTokens: string[];
+  coverage: number;
+  latencyMs: number;
+  isFinal: boolean;
 } | null;
 
 type SttListenerInfo = {

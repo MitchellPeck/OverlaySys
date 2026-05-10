@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { ChannelStatus } from "./ChannelStatus";
 
 const PREVIEW_ENABLED_KEY = "overlaysys:channelPreviewEnabled";
 
-/** Per-channel toggle state, loaded from / persisted to localStorage. */
 type EnabledMap = Record<string, boolean>;
 
 function loadEnabled(): EnabledMap {
@@ -42,13 +42,11 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
   const channelStates = useStore((s) => s.channelStates);
   const [enabledMap, setEnabledMap] = useState<EnabledMap>(() => loadEnabled());
 
-  // Persist whenever the toggle map changes.
   useEffect(() => {
     saveEnabled(enabledMap);
   }, [enabledMap]);
 
   function isEnabled(id: string): boolean {
-    // Default: previews ON for newly-discovered channels.
     return enabledMap[id] ?? true;
   }
   function toggle(id: string) {
@@ -57,9 +55,9 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
 
   if (channels.length === 0) {
     return (
-      <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
+      <div style={{ color: colors.textDim, fontSize: 12 }}>
         No channels configured.{" "}
-        <Link href="/channels" style={{ color: "var(--accent-2)" }}>
+        <Link href="/channels" style={{ color: colors.accent2 }}>
           Add channels
         </Link>
       </div>
@@ -86,7 +84,7 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
                 accent={accentFor(c)}
                 mirrorOf={c.mirrorOf ?? null}
                 renderMode={c.renderMode}
-                href={`http://localhost:3001/?channel=${encodeURIComponent(c.id)}&debug=1`}
+                href={`http://localhost:3001/?channel=${encodeURIComponent(c.id)}`}
                 config={c}
                 previewEnabled={isEnabled(c.id)}
                 onTogglePreview={() => toggle(c.id)}
@@ -101,8 +99,6 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
   return (
     <>
       {channels.map((c) => {
-        // Mirror channels reflect the source's runtime state — show that,
-        // not the (always-empty) state on the mirror's own id.
         const sourceId = c.mirrorOf ?? c.id;
         const state = channelStates[sourceId];
         return (
@@ -113,7 +109,7 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
             accent={accentFor(c)}
             mirrorOf={c.mirrorOf ?? null}
             renderMode={c.renderMode}
-            href={`http://localhost:3001/?channel=${encodeURIComponent(c.id)}&debug=1`}
+            href={`http://localhost:3001/?channel=${encodeURIComponent(c.id)}`}
             config={c}
             previewEnabled={isEnabled(c.id)}
             onTogglePreview={() => toggle(c.id)}
@@ -126,7 +122,7 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
           style={{
             display: "inline-block",
             fontSize: 11,
-            color: "var(--text-dim)",
+            color: colors.textDim,
             textDecoration: "none",
           }}
         >
@@ -138,8 +134,11 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
 }
 
 function accentFor(c: { id: string; renderMode: string }): string {
-  if (c.id === "program") return "var(--accent)";
-  if (c.id === "preview") return "var(--accent-2)";
-  if (c.renderMode === "matte") return "var(--text-dim)";
-  return "#4ade80";
+  // Hot-path accent picks — must stay in sync with the dot color in
+  // ChannelStatus's left badge. Program red, preview amber, matte dim,
+  // everything else green.
+  if (c.id === "program") return colors.accent;
+  if (c.id === "preview") return colors.accent2;
+  if (c.renderMode === "matte") return colors.textDim;
+  return colors.green;
 }

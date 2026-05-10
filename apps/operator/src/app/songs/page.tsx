@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
+import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
@@ -69,7 +69,6 @@ export default function SongsPage() {
         if (replace) {
           send({ type: "save_song", song: { ...song, id: existing.id } });
         } else {
-          // Import as new copy: suffix the slug numerically.
           const baseSlug = song.id;
           let n = 2;
           while (songs.some((s) => s.id === `${baseSlug}-${n}`)) n++;
@@ -118,85 +117,65 @@ export default function SongsPage() {
   return (
     <>
       <AppHeader
-        context={<h1 style={{ margin: 0, fontSize: 16 }}>Songs</h1>}
+        title="Songs"
         actions={
           <>
-            <button onClick={() => setImportOpen(true)} disabled={conn !== "open"} style={btn()}>
+            <Button onClick={() => setImportOpen(true)} disabled={conn !== "open"} size="sm">
               Import from file…
-            </button>
-            <button onClick={newSong} disabled={conn !== "open"} style={btn("primary")}>
+            </Button>
+            <Button onClick={newSong} disabled={conn !== "open"} variant="primary" size="sm">
               + New Song
-            </button>
+            </Button>
           </>
         }
       />
-      <div style={{ padding: 24 }}>
-
-      {songs.length === 0 ? (
-        <p style={{ color: "var(--text-dim)" }}>No songs yet. Create one to get started.</p>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ color: "var(--text-dim)", textAlign: "left" }}>
-              <th style={th()}>Title</th>
-              <th style={th()}>Author</th>
-              <th style={th()}>CCLI</th>
-              <th style={th()}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {songs.map((s) => (
-              <tr key={s.id}>
-                <td style={td()}>
-                  <Link href={`/songs/edit?id=${encodeURIComponent(s.id)}`} style={{ fontWeight: 600 }}>
-                    {s.title || <em style={{ color: "var(--text-dim)" }}>(untitled)</em>}
-                  </Link>
-                  <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
-                    {s.id}
-                  </div>
-                </td>
-                <td style={td()}>{s.author ?? "—"}</td>
-                <td style={td()}>{s.ccliNumber ?? "—"}</td>
-                <td style={td()}>
-                  <button onClick={() => exportSong(s.id)} style={btn()}>Export</button>
-                  {" "}
-                  <button onClick={() => removeSong(s.id, s.title)} style={btn()}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {importOpen && (
-        <ImportFromFileModal
-          existingIds={new Set(songs.map((s) => s.id))}
-          onCancel={() => setImportOpen(false)}
-          onSubmit={(song) => handleImportSubmit(song)}
-        />
-      )}
-      </div>
+      <main style={{ padding: 24 }}>
+        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+          {songs.length === 0 ? (
+            <p style={{ color: colors.textDim, fontSize: 13 }}>
+              No songs yet. Create one to get started.
+            </p>
+          ) : (
+            <EntityList>
+              {songs.map((s) => (
+                <EntityRow
+                  key={s.id}
+                  href={`/songs/edit?id=${encodeURIComponent(s.id)}`}
+                  primary={s.title || <em style={{ color: colors.textDim }}>(untitled)</em>}
+                  secondary={[
+                    s.id,
+                    s.author ? `by ${s.author}` : null,
+                    s.ccliNumber ? `CCLI ${s.ccliNumber}` : null,
+                  ].filter(Boolean).join(" · ")}
+                  actions={
+                    <>
+                      <Button onClick={() => exportSong(s.id)} size="sm" style={{ width: 64 }}>
+                        Export
+                      </Button>
+                      <IconButton
+                        onClick={() => removeSong(s.id, s.title)}
+                        title="Delete song"
+                        size={44}
+                        style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
+                      >
+                        ×
+                      </IconButton>
+                    </>
+                  }
+                />
+              ))}
+            </EntityList>
+          )}
+        </div>
+        {importOpen && (
+          <ImportFromFileModal
+            existingIds={new Set(songs.map((s) => s.id))}
+            onCancel={() => setImportOpen(false)}
+            onSubmit={(song) => handleImportSubmit(song)}
+          />
+        )}
+      </main>
       {dialog}
     </>
   );
-}
-
-function btn(kind: "default" | "primary" = "default"): React.CSSProperties {
-  return {
-    padding: "6px 10px",
-    background: kind === "primary" ? "var(--accent)" : "var(--panel-2)",
-    color: kind === "primary" ? "#fff" : "var(--text)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
-}
-function th(): React.CSSProperties {
-  return { padding: "6px 8px", borderBottom: "1px solid var(--border)", fontWeight: 500, fontSize: 11 };
-}
-function td(): React.CSSProperties {
-  return { padding: "8px", borderBottom: "1px solid var(--border)" };
 }

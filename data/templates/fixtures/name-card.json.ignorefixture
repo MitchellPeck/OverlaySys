@@ -1,0 +1,77 @@
+{
+  "id": "name-card",
+  "name": "Name Card — Compact",
+  "size": { "w": 1920, "h": 1080 },
+  "fonts": [],
+  "fields": [
+    { "key": "name", "label": "Name", "type": "text", "default": "Speaker Name" }
+  ],
+  "layers": [
+    {
+      "type": "group",
+      "id": "card-group",
+      "name": "Card",
+      "visible": true,
+      "transform": {
+        "x": 80, "y": 880, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+      },
+      "children": [
+        {
+          "type": "shape",
+          "id": "card-plate",
+          "name": "Plate",
+          "visible": true,
+          "shape": "rect",
+          "fill": { "kind": "solid", "color": "rgba(20, 22, 26, 0.88)" },
+          "cornerRadius": 6,
+          "transform": {
+            "x": 0, "y": 0, "w": 540, "h": 96, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 1, "anchorX": 0, "anchorY": 0
+          }
+        },
+        {
+          "type": "text",
+          "id": "card-name",
+          "name": "Name",
+          "visible": true,
+          "content": { "fieldKey": "name" },
+          "style": {
+            "fontFamily": "Inter, system-ui, sans-serif",
+            "fontSize": 40,
+            "fontWeight": 600,
+            "color": "#ffffff",
+            "letterSpacing": 0,
+            "lineHeight": 1.0,
+            "align": "left"
+          },
+          "transform": {
+            "x": 24, "y": 28, "w": 500, "h": 48, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 1, "anchorX": 0, "anchorY": 0
+          }
+        }
+      ]
+    }
+  ],
+  "timelines": {
+    "in": {
+      "duration": 0.5,
+      "tracks": [
+        { "layerId": "card-group", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 0, "easing": "power2.out" },
+          { "t": 0.3, "value": 1, "easing": "power2.out" }
+        ]},
+        { "layerId": "card-group", "property": "y", "keyframes": [
+          { "t": 0, "value": 920, "easing": "power3.out" },
+          { "t": 0.5, "value": 880, "easing": "power3.out" }
+        ]}
+      ]
+    },
+    "out": {
+      "duration": 0.35,
+      "tracks": [
+        { "layerId": "card-group", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 1, "easing": "power2.in" },
+          { "t": 0.35, "value": 0, "easing": "power2.in" }
+        ]}
+      ]
+    }
+  }
+}

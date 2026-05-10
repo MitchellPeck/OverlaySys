@@ -32,7 +32,7 @@ describe("SongSchema", () => {
   it("parses a minimal valid song", () => {
     const parsed = SongSchema.parse(minimal);
     expect(parsed.id).toBe("amazing-grace");
-    expect(parsed.sections[0].slides[0].lines).toEqual([
+    expect(parsed.sections[0]!.slides[0]!.lines).toEqual([
       "Amazing grace how sweet the sound",
     ]);
   });
@@ -47,7 +47,7 @@ describe("SongSchema", () => {
     expect(() =>
       SongSchema.parse({
         ...minimal,
-        sections: [{ ...minimal.sections[0], slides: [] }],
+        sections: [{ ...minimal.sections[0]!, slides: [] }],
       }),
     ).toThrow();
   });
@@ -58,7 +58,7 @@ describe("SongSchema", () => {
         ...minimal,
         sections: [
           {
-            ...minimal.sections[0],
+            ...minimal.sections[0]!,
             slides: [{ id: "v1s1", lines: [] }],
           },
         ],

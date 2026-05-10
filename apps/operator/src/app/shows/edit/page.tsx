@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
 import type { Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
@@ -12,7 +13,7 @@ import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 
 // Suspense wrapper required by Next.js static export when the page calls
-// useSearchParams() — the inner page reads ?id= and renders.
+// useSearchParams().
 export default function ShowEditPage() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
@@ -22,7 +23,6 @@ export default function ShowEditPage() {
 }
 
 function ShowEditPageInner() {
-  // Static-export-friendly: id comes from ?id=… query string.
   const searchParams = useSearchParams();
   const showId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
@@ -39,7 +39,6 @@ function ShowEditPageInner() {
   const fetchedRef = useRef<string | null>(null);
   const { confirm, alert, dialog } = useDialog();
 
-  // Listen for show messages.
   useEffect(() => {
     fetchedRef.current = null;
     setDraft(null);
@@ -53,7 +52,6 @@ function ShowEditPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showId]);
 
-  // Fetch only when WS is open.
   useEffect(() => {
     if (conn !== "open") return;
     if (fetchedRef.current === showId) return;
@@ -63,10 +61,6 @@ function ShowEditPageInner() {
     send({ type: "list_songs" });
   }, [conn, showId, send]);
 
-  // For each unique templateId in the rundown, request its full template
-  // so the field inputs know what to display. Cached in the global store
-  // so other panels (TakePanel, etc.) reuse what we fetch here. Songs use
-  // a different mechanism (lyricTemplateId) so we ignore them here.
   useEffect(() => {
     if (!draft) return;
     const needed = new Set(
@@ -79,7 +73,6 @@ function ShowEditPageInner() {
     }
   }, [draft, templateCache, conn, send]);
 
-  // For each song row, request the full Song if not yet cached.
   useEffect(() => {
     if (!draft) return;
     const needed = new Set(
@@ -200,7 +193,7 @@ function ShowEditPageInner() {
       <>
         <AppHeader />
         <main style={{ padding: 24 }}>
-          <p style={{ color: "var(--text-dim)", marginTop: 12 }}>
+          <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading show <code>{showId}</code>…
           </p>
         </main>
@@ -227,7 +220,7 @@ function ShowEditPageInner() {
               style={{
                 background: "transparent",
                 border: "1px solid transparent",
-                color: "var(--text)",
+                color: colors.text,
                 fontSize: 15,
                 fontWeight: 600,
                 padding: "2px 6px",
@@ -235,18 +228,18 @@ function ShowEditPageInner() {
                 minWidth: 200,
               }}
             />
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{draft.id}</span>
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>· {draft.rows.length} rows</span>
-            {dirty && <span style={{ color: "var(--accent-2)", fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
+            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
+            <span style={{ color: colors.textDim, fontSize: 11 }}>· {draft.rows.length} rows</span>
+            {dirty && <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
           </>
         }
         actions={
           <>
-            <button onClick={remove} style={dangerBtn}>Delete</button>
-            <button onClick={revert} style={ghostBtn} disabled={!dirty}>Revert</button>
-            <button onClick={save} style={primaryBtn} disabled={!dirty || conn !== "open"}>
+            <Button onClick={remove} variant="danger" size="sm">Delete</Button>
+            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
+            <Button onClick={save} variant="primary" size="sm" disabled={!dirty || conn !== "open"}>
               Save (⌘S)
-            </button>
+            </Button>
           </>
         }
       />
@@ -301,7 +294,7 @@ function RundownTable({
 }) {
   if (draft.rows.length === 0) {
     return (
-      <p style={{ color: "var(--text-dim)", fontSize: 13, padding: 24, textAlign: "center" }}>
+      <p style={{ color: colors.textDim, fontSize: 13, padding: 24, textAlign: "center" }}>
         No rows yet. Click <strong>+ Add row</strong> below to start building the rundown.
       </p>
     );
@@ -317,7 +310,7 @@ function RundownTable({
       }}
     >
       <thead>
-        <tr style={{ color: "var(--text-dim)", textAlign: "left" }}>
+        <tr style={{ color: colors.textDim, textAlign: "left" }}>
           <th style={th}>#</th>
           <th style={th}>Template</th>
           <th style={th}>Fields</th>
@@ -435,18 +428,18 @@ function RundownRowEditor({
       onDragEnd={onDragEnd}
       style={{
         opacity: isDragging ? 0.5 : 1,
-        borderTop: dropZone === "before" ? "2px solid #4ade80" : "1px solid transparent",
-        borderBottom: dropZone === "after" ? "2px solid #4ade80" : "1px solid var(--border)",
+        // 2px borders here are intentional drag indicators, not the standard token.
+        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
+        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
       }}
     >
-      <td style={{ ...td, width: 30, textAlign: "center", color: "var(--text-dim)", cursor: "grab" }}>
+      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
         {index + 1}
       </td>
       <td style={{ ...td, width: 220 }}>
-        <select
+        <Select
           value={row.templateId}
           onChange={(e) => patchRow({ templateId: e.target.value })}
-          style={input}
         >
           {!templates.some((t) => t.id === row.templateId) && (
             <option value={row.templateId}>{row.templateId} (missing)</option>
@@ -454,34 +447,34 @@ function RundownRowEditor({
           {templates.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
-        </select>
+        </Select>
       </td>
       <td style={{ ...td, minWidth: 320 }}>
         <FieldsEditor template={template} data={row.data} onChange={setData} />
       </td>
       <td style={{ ...td, width: 100 }}>
-        <select
+        <Select
           value={row.channelHint ?? ""}
           onChange={(e) =>
             patchRow({ channelHint: e.target.value ? e.target.value : undefined })
           }
-          style={input}
         >
           <option value="">(any)</option>
           <option value="program">program</option>
           <option value="preview">preview</option>
-        </select>
+        </Select>
       </td>
       <td style={{ ...td, width: 200 }}>
-        <input
+        <Input
           value={row.notes ?? ""}
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
-          style={input}
         />
       </td>
       <td style={{ ...td, width: 36, textAlign: "center" }}>
-        <button onClick={onDelete} title="Delete row" style={tinyDelBtn}>×</button>
+        <IconButton onClick={onDelete} title="Delete row" size={24} style={{ color: colors.red, fontSize: 14 }}>
+          ×
+        </IconButton>
       </td>
     </tr>
   );
@@ -564,36 +557,36 @@ function SongRowEditor({
       onDragEnd={onDragEnd}
       style={{
         opacity: isDragging ? 0.5 : 1,
-        borderTop: dropZone === "before" ? "2px solid #4ade80" : "1px solid transparent",
-        borderBottom: dropZone === "after" ? "2px solid #4ade80" : "1px solid var(--border)",
+        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
+        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
         background: "rgba(255, 177, 58, 0.06)",
       }}
     >
-      <td style={{ ...td, width: 30, textAlign: "center", color: "var(--text-dim)", cursor: "grab" }}>
+      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
         {index + 1}
       </td>
       <td style={{ ...td, width: 220 }}>
-        <select value={row.songId} onChange={(e) => pickSong(e.target.value)} style={input}>
+        <Select value={row.songId} onChange={(e) => pickSong(e.target.value)}>
           {!songs.some((s) => s.id === row.songId) && (
             <option value={row.songId}>{row.songId} (missing)</option>
           )}
           {songs.map((s) => (
             <option key={s.id} value={s.id}>♪ {s.title}</option>
           ))}
-        </select>
+        </Select>
         {songMeta && (
-          <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", marginTop: 2 }}>
+          <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 2 }}>
             {songMeta.id}
           </div>
         )}
       </td>
       <td style={{ ...td, minWidth: 320 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ width: 60, fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>template</span>
-          <select
+          <span style={{ width: 60, fontSize: 11, color: colors.textDim, flexShrink: 0 }}>template</span>
+          <Select
             value={row.lyricTemplateId}
             onChange={(e) => patchRow({ lyricTemplateId: e.target.value })}
-            style={{ ...input, flex: 1 }}
+            style={{ flex: 1 }}
           >
             {!templates.some((t) => t.id === row.lyricTemplateId) && (
               <option value={row.lyricTemplateId}>{row.lyricTemplateId} (missing)</option>
@@ -601,35 +594,35 @@ function SongRowEditor({
             {templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
-          </select>
+          </Select>
         </div>
         {row.arrangement && row.arrangement.length > 0 && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: colors.textDim, marginTop: 4 }}>
             arrangement override: {row.arrangement.join(" → ")}
           </div>
         )}
       </td>
       <td style={{ ...td, width: 100 }}>
-        <select
+        <Select
           value={row.channelHint ?? ""}
           onChange={(e) => patchRow({ channelHint: e.target.value ? e.target.value : undefined })}
-          style={input}
         >
           <option value="">(any)</option>
           <option value="program">program</option>
           <option value="preview">preview</option>
-        </select>
+        </Select>
       </td>
       <td style={{ ...td, width: 200 }}>
-        <input
+        <Input
           value={row.notes ?? ""}
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
-          style={input}
         />
       </td>
       <td style={{ ...td, width: 36, textAlign: "center" }}>
-        <button onClick={onDelete} title="Delete row" style={tinyDelBtn}>×</button>
+        <IconButton onClick={onDelete} title="Delete row" size={24} style={{ color: colors.red, fontSize: 14 }}>
+          ×
+        </IconButton>
       </td>
     </tr>
   );
@@ -653,7 +646,7 @@ function FieldsEditor({
 
   if (!template) {
     return (
-      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+      <span style={{ color: colors.textDim, fontSize: 11 }}>
         Loading template…
       </span>
     );
@@ -661,7 +654,7 @@ function FieldsEditor({
 
   if (fieldsToShow.length === 0 && orphanKeys.length === 0) {
     return (
-      <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+      <span style={{ color: colors.textDim, fontSize: 11 }}>
         Template declares no fields.
       </span>
     );
@@ -671,7 +664,7 @@ function FieldsEditor({
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       {fieldsToShow.map((f) => (
         <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 90, fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>
+          <span style={{ width: 90, fontSize: 11, color: colors.textDim, flexShrink: 0 }}>
             {f.label}
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -682,15 +675,14 @@ function FieldsEditor({
       {orphanKeys.map((k) => (
         <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.7 }}>
           <span
-            style={{ width: 90, fontSize: 11, color: "var(--accent-2)", flexShrink: 0 }}
+            style={{ width: 90, fontSize: 11, color: colors.accent2, flexShrink: 0 }}
             title="Not declared by the template — will still be sent on take. Edit the template's Fields panel to declare it."
           >
             {k}*
           </span>
-          <input
+          <Input
             value={data[k] ?? ""}
             onChange={(e) => onChange(k, e.target.value)}
-            style={input}
           />
         </div>
       ))}
@@ -700,7 +692,7 @@ function FieldsEditor({
 
 const th: React.CSSProperties = {
   padding: "8px 8px",
-  borderBottom: "1px solid var(--border)",
+  borderBottom: `1px solid ${colors.border}`,
   fontWeight: 500,
   fontSize: 11,
   textTransform: "uppercase",
@@ -710,60 +702,15 @@ const td: React.CSSProperties = {
   padding: "8px",
   verticalAlign: "top",
 };
-const input: React.CSSProperties = {
-  width: "100%",
-  padding: "4px 8px",
-  background: "var(--panel-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 3,
-  color: "var(--text)",
-  fontSize: 12,
-  outline: "none",
-};
-const primaryBtn: React.CSSProperties = {
-  padding: "6px 14px",
-  background: "var(--accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const ghostBtn: React.CSSProperties = {
-  padding: "6px 12px",
-  background: "transparent",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const dangerBtn: React.CSSProperties = {
-  ...ghostBtn,
-  color: "var(--red)",
-  borderColor: "var(--red)",
-};
 const addRowBtn: React.CSSProperties = {
   marginTop: 12,
   padding: "10px 16px",
-  background: "var(--panel)",
-  color: "var(--text)",
-  border: "1px dashed var(--border)",
+  background: colors.panel,
+  color: colors.text,
+  border: `1px dashed ${colors.border}`,
   borderRadius: 4,
   fontWeight: 600,
   fontSize: 12,
   cursor: "pointer",
   width: "100%",
-};
-const tinyDelBtn: React.CSSProperties = {
-  width: 24,
-  height: 24,
-  background: "transparent",
-  color: "var(--red)",
-  border: "1px solid var(--border)",
-  borderRadius: 3,
-  cursor: "pointer",
-  fontSize: 14,
 };

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OverlaySys Renderer</title>
+    <style>
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        /* Default transparent so OBS browser source alpha-keys correctly.
+           NOT !important — the Renderer overrides it inline based on the
+           channel config (matte mode → black, custom background → custom). */
+        background: transparent;
+        overflow: hidden;
+        font-family: Inter, system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

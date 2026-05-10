@@ -10,6 +10,7 @@ import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
+import { registerAssetRoutes } from "./assets";
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
 // PORT=0 → OS-assigned ephemeral port (used by the Electron host so two
@@ -60,6 +61,8 @@ if (sttConfig.autoStart) {
 }
 
 app.get("/health", async () => ({ ok: true, time: Date.now() }));
+
+await registerAssetRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };

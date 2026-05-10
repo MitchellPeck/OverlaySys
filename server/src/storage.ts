@@ -26,6 +26,9 @@ const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
 const DATA_ROOT = process.env["OVERLAYSYS_DATA_DIR"]
   ? path.resolve(process.env["OVERLAYSYS_DATA_DIR"])
   : path.resolve(REPO_ROOT, "data");
+/** Filesystem root for user-writable data. Public so other modules can derive
+ * sibling directories (e.g. assets) without redoing the env-resolution dance. */
+export const dataRoot = (): string => DATA_ROOT;
 const TEMPLATES_DIR = path.join(DATA_ROOT, "templates");
 const SHOWS_DIR = path.join(DATA_ROOT, "shows");
 const CHANNELS_DIR = path.join(DATA_ROOT, "channels");

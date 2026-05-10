@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
+import { colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 
@@ -19,9 +20,6 @@ type Props = {
  * mount/playin/playout/update lifecycle, but scaled into a small card and
  * driven from the operator's already-cached templates instead of fetching
  * each one independently.
- *
- * Renders nothing if the channel has no active graphic — the caller is
- * responsible for showing a placeholder in that case.
  */
 export function ChannelPreview({ config, state }: Props) {
   const { send } = useWs();
@@ -36,8 +34,6 @@ export function ChannelPreview({ config, state }: Props) {
   const outStartedRef = useRef<WeakSet<MountedTemplate>>(new WeakSet());
   const [scale, setScale] = useState(0);
 
-  // Auto-fit the 1920x1080 stage into the card. ResizeObserver handles the
-  // initial measurement plus any responsive resizes (e.g., panel toggle).
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -50,19 +46,12 @@ export function ChannelPreview({ config, state }: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Fetch any template referenced by an active graphic that we don't yet
-  // have cached. The store caches it for everyone (TakePanel, Rundown, etc.)
-  // so this also warms the cache opportunistically.
   useEffect(() => {
     const id = state?.active?.templateId;
     if (!id) return;
     if (!templateCache[id]) send({ type: "get_template", templateId: id });
   }, [state?.active?.templateId, templateCache, send]);
 
-  // Drive the mounted template through its lifecycle based on state changes.
-  // Sequential transition: previous mount plays out fully, then is
-  // destroyed; only then is the new mount appended and its in animation
-  // started. Mirrors the standalone renderer's flow.
   useEffect(() => {
     if (!stageRef.current) return;
     const active = state?.active;
@@ -84,14 +73,12 @@ export function ChannelPreview({ config, state }: Props) {
     }
 
     const tpl = templateCache[active.templateId];
-    if (!tpl) return; // wait for template to arrive — effect re-runs once cached
+    if (!tpl) return;
 
     if (active.takenAt !== lastTakenAtRef.current) {
       lastTakenAtRef.current = active.takenAt;
       if (active.phase === "out") return;
 
-      // Sequential: out-then-in. If a newer take arrives during the out
-      // animation, the lastTakenAtRef guard below abandons this flow.
       const myTakenAt = active.takenAt;
       const previous = mountedRef.current;
       mountedRef.current = null;
@@ -128,7 +115,6 @@ export function ChannelPreview({ config, state }: Props) {
     templateCache,
   ]);
 
-  // Tear down on unmount (preview disabled, channel removed, page nav).
   useEffect(() => {
     return () => {
       if (mountedRef.current) {
@@ -149,11 +135,9 @@ export function ChannelPreview({ config, state }: Props) {
         position: "relative",
         width: "100%",
         aspectRatio: `${STAGE_W} / ${STAGE_H}`,
-        borderRadius: 4,
+        borderRadius: radius.md,
         overflow: "hidden",
-        border: "1px solid var(--border)",
-        // Checkerboard for transparent so the operator can see through-areas;
-        // solid color otherwise (chroma green, matte black, etc.).
+        border: `1px solid ${colors.border}`,
         background: isTransparent
           ? "linear-gradient(45deg, #1a1c20 25%, #0c0d10 25%, #0c0d10 50%, #1a1c20 50%, #1a1c20 75%, #0c0d10 75%, #0c0d10) 0 0 / 12px 12px"
           : bg,
@@ -169,7 +153,6 @@ export function ChannelPreview({ config, state }: Props) {
           height: STAGE_H,
           transform: `translate(-50%, -50%) scale(${scale})`,
           transformOrigin: "50% 50%",
-          // Same matte trick as the live renderer.
           filter: matte ? "brightness(0) invert(1)" : undefined,
         }}
       />
@@ -181,7 +164,7 @@ export function ChannelPreview({ config, state }: Props) {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: matte ? "rgba(255,255,255,0.4)" : "var(--text-dim)",
+            color: matte ? "rgba(255,255,255,0.4)" : colors.textDim,
             fontSize: 11,
             letterSpacing: 1,
             pointerEvents: "none",

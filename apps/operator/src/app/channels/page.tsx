@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelRenderMode } from "@overlaysys/core";
+import { Button, IconButton, Input, Panel, Select, colors, radius } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
@@ -76,83 +77,90 @@ export default function ChannelsPage() {
 
   return (
     <>
-      <AppHeader />
+      <AppHeader title="Channels" />
       <main style={{ padding: 24 }}>
-      <div style={{ maxWidth: 980, margin: "0 auto" }}>
+        <div style={{ maxWidth: 980, margin: "0 auto" }}>
+          <p style={{ color: colors.textDim, fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
+            Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
+            <strong>Normal</strong> renders content as authored;{" "}
+            <strong>matte</strong> renders content as a white silhouette on
+            black for hardware fill+key. <strong>Mirrors</strong> reflects another
+            channel's runtime state — one take fires both. <strong>Background</strong>{" "}
+            sets the page colour for chroma key or solid hosts.
+          </p>
 
-        <p style={{ color: "var(--text-dim)", fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
-          Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
-          <strong>Normal</strong> renders content as authored;{" "}
-          <strong>matte</strong> renders content as a white silhouette on
-          black for hardware fill+key. <strong>Mirrors</strong> reflects another
-          channel's runtime state — one take fires both. <strong>Background</strong>{" "}
-          sets the page colour for chroma key or solid hosts.
-        </p>
+          <Panel title="Create channel" padding="md" style={{ marginBottom: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 8 }}>
+              <Input
+                value={creating.id}
+                onChange={(e) => setCreating((c) => ({ ...c, id: e.target.value }))}
+                placeholder="id (e.g., key-program)"
+                style={{ fontFamily: "ui-monospace, monospace" }}
+              />
+              <Input
+                value={creating.name}
+                onChange={(e) => setCreating((c) => ({ ...c, name: e.target.value }))}
+                placeholder="display name"
+              />
+              <Select
+                value={creating.renderMode}
+                onChange={(e) =>
+                  setCreating((c) => ({ ...c, renderMode: e.target.value as ChannelRenderMode }))
+                }
+              >
+                <option value="normal">normal</option>
+                <option value="matte">matte (white on black)</option>
+              </Select>
+              <Select
+                value={creating.mirrorOf}
+                onChange={(e) => setCreating((c) => ({ ...c, mirrorOf: e.target.value }))}
+                title="Mirror another channel's state (e.g., program, preview)"
+              >
+                <option value="">— no mirror —</option>
+                {channels.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    mirrors {o.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                onClick={create}
+                disabled={!creating.id.trim() || conn !== "open"}
+                variant="primary"
+                size="sm"
+              >
+                Create
+              </Button>
+            </div>
+          </Panel>
 
-        <section style={card}>
-          <h3 style={sectionH}>Create channel</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 8 }}>
-            <input
-              value={creating.id}
-              onChange={(e) => setCreating((c) => ({ ...c, id: e.target.value }))}
-              placeholder="id (e.g., key-program)"
-              style={{ ...input, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
-            />
-            <input
-              value={creating.name}
-              onChange={(e) => setCreating((c) => ({ ...c, name: e.target.value }))}
-              placeholder="display name"
-              style={input}
-            />
-            <select
-              value={creating.renderMode}
-              onChange={(e) =>
-                setCreating((c) => ({ ...c, renderMode: e.target.value as ChannelRenderMode }))
-              }
-              style={input}
-            >
-              <option value="normal">normal</option>
-              <option value="matte">matte (white on black)</option>
-            </select>
-            <select
-              value={creating.mirrorOf}
-              onChange={(e) => setCreating((c) => ({ ...c, mirrorOf: e.target.value }))}
-              style={input}
-              title="Mirror another channel's state (e.g., program, preview)"
-            >
-              <option value="">— no mirror —</option>
-              {channels.map((o) => (
-                <option key={o.id} value={o.id}>
-                  mirrors {o.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={create}
-              disabled={!creating.id.trim() || conn !== "open"}
-              style={primaryBtn}
-            >
-              Create
-            </button>
-          </div>
-        </section>
-
-        <h3 style={sectionH}>All channels ({channels.length})</h3>
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {channels.length === 0 && (
-            <li style={{ color: "var(--text-dim)", fontSize: 13 }}>(none)</li>
-          )}
-          {channels.map((c) => (
-            <ChannelRow
-              key={c.id}
-              config={c}
-              allChannels={channels}
-              onSave={save}
-              onRemove={() => remove(c.id, c.name)}
-            />
-          ))}
-        </ul>
-      </div>
+          <h3
+            style={{
+              margin: 0,
+              marginBottom: 8,
+              fontSize: 11,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              color: colors.textDim,
+            }}
+          >
+            All channels ({channels.length})
+          </h3>
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {channels.length === 0 && (
+              <li style={{ color: colors.textDim, fontSize: 13 }}>(none)</li>
+            )}
+            {channels.map((c) => (
+              <ChannelRow
+                key={c.id}
+                config={c}
+                allChannels={channels}
+                onSave={save}
+                onRemove={() => remove(c.id, c.name)}
+              />
+            ))}
+          </ul>
+        </div>
       </main>
       {dialog}
     </>
@@ -171,19 +179,12 @@ function ChannelRow({
   onRemove: () => void;
 }) {
   const [draft, setDraft] = useState<ChannelConfig>(config);
-  // Track the last config we synced from. We only want to adopt incoming
-  // server config when the user has no pending edits — otherwise the
-  // channel_list broadcast (fired by *any* save/delete in the system)
-  // would clobber the user's mid-edit selections in this row.
   const lastSyncedRef = useRef<ChannelConfig>(config);
   useEffect(() => {
     if (JSON.stringify(draft) === JSON.stringify(lastSyncedRef.current)) {
       setDraft(config);
     }
     lastSyncedRef.current = config;
-    // We deliberately depend only on `config` — `draft` is read via closure
-    // at the moment the effect fires (post-render), which gives us the
-    // latest user state without re-running the effect on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
@@ -198,85 +199,91 @@ function ChannelRow({
   }
 
   return (
-    <li style={{ marginBottom: 8, ...card }}>
-      <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 160px 200px auto auto", gap: 8, alignItems: "center" }}>
-        <code style={{ fontSize: 12, color: "var(--text-dim)" }}>{config.id}</code>
-        <input
-          value={draft.name}
-          onChange={(e) => patch({ name: e.target.value })}
-          style={input}
-          title="Display name"
-        />
-        <select
-          value={draft.renderMode}
-          onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
-          style={input}
-          title="Render mode"
-        >
-          <option value="normal">normal</option>
-          <option value="matte">matte (white on black)</option>
-        </select>
-        <select
-          value={draft.mirrorOf ?? ""}
-          onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
-          style={input}
-          title="Mirror of (channel whose state this one reflects)"
-        >
-          <option value="">— no mirror —</option>
-          {mirrorOptions.map((o) => (
-            <option key={o.id} value={o.id}>
-              mirrors {o.name}
-            </option>
-          ))}
-        </select>
-        <div style={{ display: "flex", gap: 4 }}>
-          {dirty && (
-            <button onClick={revert} style={ghostBtnActive} title="Discard unsaved changes">
-              Revert
-            </button>
-          )}
-          <button
-            onClick={() => onSave(draft)}
-            disabled={!dirty}
-            style={dirty ? primaryBtn : ghostBtn}
+    <li style={{ marginBottom: 8 }}>
+      <Panel padding="md">
+        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 160px 200px auto auto", gap: 8, alignItems: "center" }}>
+          <code style={{ fontSize: 12, color: colors.textDim }}>{config.id}</code>
+          <Input
+            value={draft.name}
+            onChange={(e) => patch({ name: e.target.value })}
+            title="Display name"
+          />
+          <Select
+            value={draft.renderMode}
+            onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
+            title="Render mode"
           >
-            Save
-          </button>
+            <option value="normal">normal</option>
+            <option value="matte">matte (white on black)</option>
+          </Select>
+          <Select
+            value={draft.mirrorOf ?? ""}
+            onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
+            title="Mirror of (channel whose state this one reflects)"
+          >
+            <option value="">— no mirror —</option>
+            {mirrorOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                mirrors {o.name}
+              </option>
+            ))}
+          </Select>
+          <div style={{ display: "flex", gap: 4 }}>
+            {dirty && (
+              <Button onClick={revert} variant="ghost" size="sm" title="Discard unsaved changes">
+                Revert
+              </Button>
+            )}
+            <Button
+              onClick={() => onSave(draft)}
+              disabled={!dirty}
+              variant={dirty ? "primary" : "ghost"}
+              size="sm"
+            >
+              Save
+            </Button>
+          </div>
+          <IconButton
+            onClick={onRemove}
+            title="Delete channel"
+            style={{ color: colors.red }}
+          >
+            ×
+          </IconButton>
         </div>
-        <button onClick={onRemove} style={delBtn}>×</button>
-      </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "180px 1fr",
-          gap: 8,
-          alignItems: "center",
-          marginTop: 8,
-        }}
-      >
-        <span style={{ fontSize: 11, color: "var(--text-dim)", textAlign: "right" }}>
-          background:
-        </span>
-        <BackgroundEditor value={draft.background} onChange={(v) => patch({ background: v })} />
-      </div>
-
-      <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)", display: "flex", gap: 12, alignItems: "center" }}>
-        <a
-          href={`http://localhost:3001/?channel=${encodeURIComponent(config.id)}&debug=1`}
-          target="_blank"
-          rel="noreferrer"
-          style={{ color: "var(--accent-2)", fontFamily: "ui-monospace, monospace" }}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "180px 1fr",
+            gap: 8,
+            alignItems: "center",
+            marginTop: 8,
+          }}
         >
-          renderer URL
-        </a>
-        {draft.renderMode === "matte" && (
-          <span style={{ color: "var(--text-dim)" }}>
-            (matte mode forces black bg)
+          <span style={{ fontSize: 11, color: colors.textDim, textAlign: "right" }}>
+            background:
           </span>
-        )}
-        {dirty && <span style={{ color: "var(--accent-2)", marginLeft: "auto" }}>● unsaved</span>}
-      </div>
+          <BackgroundEditor value={draft.background} onChange={(v) => patch({ background: v })} />
+        </div>
+
+        <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim, display: "flex", gap: 12, alignItems: "center" }}>
+          <a
+            href={`http://localhost:3001/?channel=${encodeURIComponent(config.id)}&debug=1`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: colors.accent2, fontFamily: "ui-monospace, monospace" }}
+          >
+            renderer URL
+          </a>
+          {draft.renderMode === "matte" && (
+            <span style={{ color: colors.textDim }}>
+              (matte mode forces black bg)
+            </span>
+          )}
+          {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}>● unsaved</span>}
+        </div>
+      </Panel>
     </li>
   );
 }
@@ -296,13 +303,12 @@ function BackgroundEditor({
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      {/* Visual swatch — checkerboard for transparent, solid otherwise. */}
       <span
         style={{
           width: 24,
           height: 24,
-          borderRadius: 3,
-          border: "1px solid var(--border)",
+          borderRadius: radius.sm,
+          border: `1px solid ${colors.border}`,
           background:
             v === "transparent"
               ? "linear-gradient(45deg, #1a1c20 25%, transparent 25%, transparent 75%, #1a1c20 75%) 0 0 / 8px 8px, #0c0d10"
@@ -310,19 +316,17 @@ function BackgroundEditor({
         }}
         title={v}
       />
-      <select
+      <Select
         value={isPreset ? v : "__custom__"}
         onChange={(e) => {
           const sel = e.target.value;
           if (sel === "__custom__") {
-            // Switching from a preset to custom — seed with a sensible
-            // starting color so the color-picker has something valid.
             onChange(isPreset ? "#ffffff" : v);
           } else {
             onChange(sel);
           }
         }}
-        style={{ ...input, width: 160 }}
+        style={{ width: 160 }}
       >
         {BG_PRESETS.map((p) => (
           <option key={p.value} value={p.value}>
@@ -330,82 +334,22 @@ function BackgroundEditor({
           </option>
         ))}
         <option value="__custom__">custom…</option>
-      </select>
+      </Select>
       {!isPreset && (
         <input
           type="color"
           value={hex}
           onChange={(e) => onChange(e.target.value)}
-          style={{ width: 32, height: 26, padding: 0, border: "1px solid var(--border)", borderRadius: 3 }}
+          style={{ width: 32, height: 26, padding: 0, border: `1px solid ${colors.border}`, borderRadius: radius.sm }}
         />
       )}
       {!isPreset && (
-        <input
+        <Input
           value={v}
           onChange={(e) => onChange(e.target.value)}
-          style={{ ...input, fontFamily: "ui-monospace, monospace", fontSize: 11, flex: 1 }}
+          style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, flex: 1 }}
         />
       )}
     </div>
   );
 }
-
-const card: React.CSSProperties = {
-  background: "var(--panel)",
-  border: "1px solid var(--border)",
-  borderRadius: 6,
-  padding: 12,
-  marginBottom: 12,
-};
-const sectionH: React.CSSProperties = {
-  margin: 0,
-  marginBottom: 8,
-  fontSize: 11,
-  letterSpacing: 1.2,
-  textTransform: "uppercase",
-  color: "var(--text-dim)",
-};
-const input: React.CSSProperties = {
-  padding: "6px 8px",
-  background: "var(--panel-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  color: "var(--text)",
-  outline: "none",
-  fontSize: 13,
-  width: "100%",
-};
-const primaryBtn: React.CSSProperties = {
-  padding: "6px 14px",
-  background: "var(--accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const ghostBtn: React.CSSProperties = {
-  padding: "6px 14px",
-  background: "transparent",
-  color: "var(--text-dim)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  fontSize: 12,
-  cursor: "not-allowed",
-};
-const ghostBtnActive: React.CSSProperties = {
-  ...ghostBtn,
-  color: "var(--text)",
-  cursor: "pointer",
-};
-const delBtn: React.CSSProperties = {
-  width: 36,
-  height: 30,
-  background: "transparent",
-  color: "var(--red)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  cursor: "pointer",
-  fontSize: 16,
-};

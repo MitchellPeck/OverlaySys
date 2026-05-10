@@ -9,15 +9,19 @@ import { GradientStops } from "./GradientStops";
 
 type CommitFn = (recipe: (d: Draft<Template>) => void) => void;
 type PushHistoryFn = () => void;
+type UploadFn = (file: File) => Promise<string>;
 
 type Props = {
   template: Template;
   selectedId: string | null;
   onCommit: CommitFn;
   onPushHistory?: PushHistoryFn;
+  /** Optional uploader for image/video/font file pickers. Without it,
+   * picked files fall back to inline data URLs. */
+  onUpload?: UploadFn;
 };
 
-export function PropertyInspector({ template, selectedId, onCommit, onPushHistory }: Props) {
+export function PropertyInspector({ template, selectedId, onCommit, onPushHistory, onUpload }: Props) {
   if (!selectedId) {
     return (
       <p style={{ color: "var(--text-dim, #9099a8)", fontSize: 12, padding: 8 }}>
@@ -77,6 +81,7 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
             <FontInput
               value={layer.style.fontFamily}
               templateFonts={template.fonts}
+              onUpload={onUpload}
               onChange={(family) =>
                 patchLayer({ style: { ...layer.style, fontFamily: family } } as Partial<Layer>)
               }
@@ -317,6 +322,7 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
             value={layer.src}
             allowedTypes={["image"]}
             literalKind="image"
+            onUpload={onUpload}
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <Row label="Fit">
@@ -340,6 +346,7 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
             value={layer.src}
             allowedTypes={["video"]}
             literalKind="video"
+            onUpload={onUpload}
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <Row label="Fit">
@@ -606,6 +613,7 @@ function BindingControl({
   allowedTypes,
   literalKind = "text",
   onChange,
+  onUpload,
 }: {
   template: Template;
   label?: string;
@@ -614,6 +622,7 @@ function BindingControl({
   /** Which input control to use when the value is a literal string. */
   literalKind?: "text" | "color" | "image" | "video";
   onChange: (v: string | { fieldKey: string }) => void;
+  onUpload?: (file: File) => Promise<string>;
 }) {
   const isBound = typeof value !== "string";
   const candidates = template.fields.filter((f) => allowedTypes.includes(f.type));
@@ -663,9 +672,9 @@ function BindingControl({
           {literalKind === "color" ? (
             <ColorInput value={value} onChange={(c) => onChange(c)} />
           ) : literalKind === "image" ? (
-            <ImageInput value={value} onChange={(s) => onChange(s)} />
+            <ImageInput value={value} onChange={(s) => onChange(s)} onUpload={onUpload} />
           ) : literalKind === "video" ? (
-            <VideoInput value={value} onChange={(s) => onChange(s)} />
+            <VideoInput value={value} onChange={(s) => onChange(s)} onUpload={onUpload} />
           ) : (
             <input
               value={value}

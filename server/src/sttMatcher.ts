@@ -1,13 +1,16 @@
 import type { Song } from "@overlaysys/core";
+import { lyricTokens } from "@overlaysys/core";
 
 export const MIN_EMIT_THRESHOLD = 0.30;
 export const AUTO_TAKE_THRESHOLD = 0.65;
 
 /**
  * Coverage-based pre-emption: when ≥ this fraction of the current slide's
- * unique tokens have been heard within COVERAGE_WINDOW_MS, advance to the
- * next slide WITHOUT waiting for any next-slide tokens. This is what lets
- * the operator screen flip ahead of the band rather than chasing them.
+ * unique content tokens have been heard within COVERAGE_WINDOW_MS, the
+ * matcher treats the current slide as "complete enough" and considers
+ * advancing to the next slide. Coverage is computed over phonetically-folded
+ * tokens minus stop words (see lyricTokens), so connectives like "the" and
+ * "of" don't inflate the signal.
  */
 export const COVERAGE_THRESHOLD = 0.65;
 export const COVERAGE_WINDOW_MS = 8000;
@@ -18,25 +21,43 @@ export const COVERAGE_WINDOW_MS = 8000;
  */
 export const COVERAGE_MIN_TOKENS = 3;
 
+/**
+ * Confidence floor for an audible (section-start jump outside the cursor
+ * neighborhood). Above-floor matches must also beat the best neighborhood
+ * candidate by AUDIBLE_MARGIN to fire — this prevents "amazing grace"
+ * (shared across verses) from teleporting on a partial hypothesis.
+ */
+export const AUDIBLE_THRESHOLD = 0.85;
+export const AUDIBLE_MARGIN = 0.20;
+export const AUDIBLE_MIN_TOKENS = 3;
+
 interface BoundSession {
   channel: string;
   song: Song;
   arrangement: string[];
-  // Sliding window of recently-heard tokens (with timestamps for pruning).
+  // Sliding window of recently-heard FOLDED tokens, with timestamps for
+  // pruning. Reset on cursor move.
   recentTokens: { token: string; t: number }[];
-  // Reset recentTokens when the cursor moves — each slide gets its own
-  // coverage window starting from zero.
   lastSeenCursor: { sectionIdx: number; slideIdx: number } | null;
 }
+
+export type MatchStrategy = "coverage" | "neighborhood" | "audible";
 
 export interface MatchResult {
   sectionIdx: number;
   slideIdx: number;
   confidence: number;
+  strategy: MatchStrategy;
+  // Folded slide tokens that were matched against the recent window or
+  // hypothesis. Empty for strategies that don't track per-token matches.
+  matchedTokens: string[];
+  // Coverage of the CURRENT cursor slide, [0..1]. Reported regardless of
+  // which strategy fired so the operator overlay can show progress.
+  coverage: number;
 }
 
 const boundSessions = new Map<string, BoundSession>();
-const slideTokenCache = new Map<string, Set<string>>();
+const slideTokenCache = new Map<string, string[]>();
 
 export function bindSession(channel: string, song: Song, arrangement: string[]): void {
   boundSessions.set(channel, {
@@ -52,27 +73,21 @@ export function unbindSession(channel: string): void {
   boundSessions.delete(channel);
 }
 
-function normalize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter((t) => t.length > 0);
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
 }
 
-function slideTokens(songId: string, slideId: string, lines: string[]): Set<string> {
+function slideTokens(songId: string, slideId: string, lines: string[]): string[] {
   const key = `${songId}:${slideId}`;
   const cached = slideTokenCache.get(key);
   if (cached) return cached;
-  const tokens = new Set(normalize(lines.join(" ")));
-  slideTokenCache.set(key, tokens);
-  return tokens;
+  const arr = lyricTokens(lines.join(" "));
+  slideTokenCache.set(key, arr);
+  return arr;
 }
 
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
+function uniqueSlideTokenSet(songId: string, slideId: string, lines: string[]): Set<string> {
+  return new Set(slideTokens(songId, slideId, lines));
 }
 
 /**
@@ -116,29 +131,84 @@ function resolveOffset(
 function getSlideTokens(
   session: BoundSession,
   pos: { sectionIdx: number; slideIdx: number },
-): Set<string> | null {
+): { tokens: string[]; unique: Set<string> } | null {
   const sectionId = session.arrangement[pos.sectionIdx];
   if (!sectionId) return null;
   const section = session.song.sections.find((sec) => sec.id === sectionId);
   if (!section) return null;
   const slide = section.slides[pos.slideIdx];
   if (!slide) return null;
-  return slideTokens(session.song.id, slide.id, slide.lines);
+  const tokens = slideTokens(session.song.id, slide.id, slide.lines);
+  return { tokens, unique: new Set(tokens) };
+}
+
+// ── Confidence scoring ──────────────────────────────────────────────────────
+// The previous matcher used a hand-tuned linear formula per strategy.
+// We keep that shape but split it so each call site is explicit about its
+// inputs — easier to tune and to read in the debug overlay.
+
+function coverageConfidence(coverage: number, hasNextHint: boolean): number {
+  if (hasNextHint) {
+    // Next-slide token confirmation present → eligible for auto-take.
+    // Maps coverage [0.65..1.0] linearly into [0.75..1.0].
+    return clamp(
+      0.75 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.25,
+      0.75,
+      1.0,
+    );
+  }
+  // No next-slide hint: still emit so operator can see "current slide is
+  // covered", but cap below AUTO_TAKE_THRESHOLD so trust mode does NOT
+  // fire. This was the source of "triggers too early" reports — matchers
+  // were jumping on chorus-vocab repetition without confirmation that
+  // the band had actually moved on.
+  return clamp(
+    0.45 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.15,
+    0.45,
+    0.60,
+  );
+}
+
+function overlapConfidence(
+  overlap: number,
+  isForwardOrAtCursor: boolean,
+  sectionStart: boolean,
+): number {
+  const monotonicBonus = isForwardOrAtCursor ? 0.10 : -0.80;
+  const sectionStartBonus = isForwardOrAtCursor && sectionStart ? 0.05 : 0;
+  return clamp(overlap + monotonicBonus + sectionStartBonus, 0, 1);
+}
+
+// ── Main entry point ────────────────────────────────────────────────────────
+
+export interface ProcessOptions {
+  // Whisper-stream emits partial hypotheses (\r overdraws) followed by a
+  // final segment (\n). Partials are unstable — letting them drive coverage
+  // pre-emption and auto-advance means the operator screen flips as soon as
+  // the recognizer's first guess covers the slide, before the band has
+  // actually moved on. So we restrict partials to the neighborhood matcher
+  // (operator-visible suggestion only), and leave coverage / audibles /
+  // window mutation to finals. Defaults true for backward compat with
+  // listeners that only emit completed lines.
+  isFinal?: boolean;
 }
 
 export function processHypothesis(
   channel: string,
   hypothesisText: string,
   cursor: { sectionIdx: number; slideIdx: number },
+  opts: ProcessOptions = {},
 ): MatchResult | null {
   const session = boundSessions.get(channel);
   if (!session) return null;
 
+  const isFinal = opts.isFinal ?? true;
   const now = Date.now();
-  const hypTokens = normalize(hypothesisText);
+  const hypTokens = lyricTokens(hypothesisText);
 
-  // ── Sliding window bookkeeping ────────────────────────────────────────────
-  // Reset on cursor move — each slide has its own coverage window.
+  // ── Sliding-window bookkeeping ─────────────────────────────────────────
+  // Reset on cursor move — each slide has its own coverage window. Only
+  // finals contribute to the window; partials are read-only consumers.
   const cursorMoved =
     !session.lastSeenCursor ||
     session.lastSeenCursor.sectionIdx !== cursor.sectionIdx ||
@@ -147,99 +217,195 @@ export function processHypothesis(
     session.recentTokens = [];
     session.lastSeenCursor = { sectionIdx: cursor.sectionIdx, slideIdx: cursor.slideIdx };
   }
-  for (const tok of hypTokens) session.recentTokens.push({ token: tok, t: now });
+  if (isFinal) {
+    for (const tok of hypTokens) session.recentTokens.push({ token: tok, t: now });
+  }
   const cutoff = now - COVERAGE_WINDOW_MS;
   session.recentTokens = session.recentTokens.filter((entry) => entry.t >= cutoff);
+  const recentSet = new Set(session.recentTokens.map((e) => e.token));
 
-  // ── Coverage-based pre-emption ────────────────────────────────────────────
-  // If most of the current slide has been heard recently, advance to the
-  // next slide WITHOUT waiting for next-slide tokens. This is what makes
-  // auto-advance feel proactive rather than chasing the band.
-  const currentSlideTokenSet = getSlideTokens(session, cursor);
-  if (currentSlideTokenSet && currentSlideTokenSet.size >= COVERAGE_MIN_TOKENS) {
-    const recentSet = new Set(session.recentTokens.map((e) => e.token));
-    let matched = 0;
-    for (const t of currentSlideTokenSet) if (recentSet.has(t)) matched++;
-    const coverage = matched / currentSlideTokenSet.size;
+  // ── Compute coverage of current slide (always — used for telemetry) ────
+  const currentSlide = getSlideTokens(session, cursor);
+  let coverage = 0;
+  let coveredTokens: string[] = [];
+  if (currentSlide && currentSlide.unique.size > 0) {
+    for (const t of currentSlide.unique) {
+      if (recentSet.has(t)) coveredTokens.push(t);
+    }
+    coverage = coveredTokens.length / currentSlide.unique.size;
+  }
 
-    if (coverage >= COVERAGE_THRESHOLD) {
-      const next = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, 1);
-      if (next) {
-        // Map coverage [0.65..1.0] → confidence [0.70..1.0]. Always clears
-        // AUTO_TAKE_THRESHOLD so trust mode auto-advances on this signal.
-        const confidence = clamp(
-          0.70 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.30,
-          0.70,
-          1.0,
-        );
-        return { sectionIdx: next.sectionIdx, slideIdx: next.slideIdx, confidence };
+  // ── Strategy 1: coverage-based pre-emption with next-slide gate ────────
+  // Coverage only fires on FINAL hypotheses — partials would let the matcher
+  // jump as soon as whisper-stream's first guess is "good enough", before
+  // the recognizer has had a chance to refine.
+  let coverageResult: MatchResult | null = null;
+  if (
+    isFinal &&
+    currentSlide &&
+    currentSlide.unique.size >= COVERAGE_MIN_TOKENS &&
+    coverage >= COVERAGE_THRESHOLD
+  ) {
+    const next = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, 1);
+    if (next) {
+      const nextSlide = getSlideTokens(session, next);
+      let hasNextHint = false;
+      if (nextSlide) {
+        // Tokens unique to next slide (NOT shared with current). At least
+        // one of these in the recent window confirms the band has actually
+        // moved on, rather than just looping the current line.
+        for (const t of nextSlide.unique) {
+          if (currentSlide.unique.has(t)) continue;
+          if (recentSet.has(t)) {
+            hasNextHint = true;
+            break;
+          }
+        }
+      }
+      const confidence = coverageConfidence(coverage, hasNextHint);
+      coverageResult = {
+        sectionIdx: next.sectionIdx,
+        slideIdx: next.slideIdx,
+        confidence,
+        strategy: "coverage",
+        matchedTokens: coveredTokens,
+        coverage,
+      };
+    }
+  }
+
+  // ── Strategy 2: per-hypothesis token-overlap match (cursor neighborhood) ─
+  // Restricted to cursor−1, cursor, cursor+1. Worship songs share so much
+  // vocabulary across verses that anything wider invites misheard-word
+  // teleports. Operator-driven jumps via hotkeys (C/B/V1-3/T) bypass this
+  // matcher entirely, so non-monotonic moves are still possible — just not
+  // STT-driven.
+  const candidates: Array<{ sectionIdx: number; slideIdx: number }> = [];
+  const seen = new Set<string>();
+  function addCandidate(p: { sectionIdx: number; slideIdx: number }): void {
+    const key = `${p.sectionIdx}:${p.slideIdx}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push(p);
+  }
+  for (const offset of [-1, 0, 1]) {
+    const pos = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, offset);
+    if (pos) addCandidate(pos);
+  }
+
+  let neighborhoodResult: MatchResult | null = null;
+  let bestNeighborhoodScore = -1;
+
+  if (hypTokens.length > 0) {
+    for (const cand of candidates) {
+      const sectionId = session.arrangement[cand.sectionIdx];
+      if (!sectionId) continue;
+      const section = session.song.sections.find((sec) => sec.id === sectionId);
+      if (!section) continue;
+      const slide = section.slides[cand.slideIdx];
+      if (!slide) continue;
+      const sUnique = uniqueSlideTokenSet(session.song.id, slide.id, slide.lines);
+      let overlap = 0;
+      const matched: string[] = [];
+      for (const t of hypTokens) {
+        if (sUnique.has(t)) {
+          overlap += 1;
+          matched.push(t);
+        }
+      }
+      const overlapFrac = overlap / Math.max(1, hypTokens.length);
+      const isForwardOrAtCursor =
+        cand.sectionIdx > cursor.sectionIdx ||
+        (cand.sectionIdx === cursor.sectionIdx && cand.slideIdx >= cursor.slideIdx);
+      const conf = overlapConfidence(overlapFrac, isForwardOrAtCursor, cand.slideIdx === 0);
+      if (conf > bestNeighborhoodScore) {
+        bestNeighborhoodScore = conf;
+        neighborhoodResult = {
+          sectionIdx: cand.sectionIdx,
+          slideIdx: cand.slideIdx,
+          confidence: conf,
+          strategy: "neighborhood",
+          matchedTokens: matched,
+          coverage,
+        };
       }
     }
   }
 
-  // ── Fallback: per-hypothesis token-overlap match ──────────────────────────
-  // Restricted to a tight neighborhood: cursor−1, cursor, cursor+1. Worship
-  // songs share so much vocabulary across verses that anything wider invites
-  // misheard-word teleports. Operator-driven jumps via hotkeys (C/B/V1-3/T)
-  // bypass this matcher entirely, so non-monotonic moves are still possible
-  // — just not STT-driven.
-  const { song, arrangement } = session;
-  const candidates = new Set<string>();
-  const candidateList: Array<{ sectionIdx: number; slideIdx: number }> = [];
+  // ── Strategy 3: section audibles (operator audibled to a far section) ───
+  // Only checks SECTION-START slides outside the cursor neighborhood, with
+  // a strict threshold AND a margin over the best neighborhood candidate.
+  // Designed for the case where the operator's pre-planned arrangement
+  // doesn't match what the band is actually doing — e.g., dropping straight
+  // from V1 to bridge. Audibles require finalized hypotheses; a partial
+  // mid-line is too unstable to teleport on.
+  let audibleResult: MatchResult | null = null;
+  if (isFinal && hypTokens.length >= AUDIBLE_MIN_TOKENS) {
+    const neighborhoodKeys = new Set(
+      candidates.map((c) => `${c.sectionIdx}:${c.slideIdx}`),
+    );
+    const bestToBeat = bestNeighborhoodScore;
 
-  function addCandidate(sectionIdx: number, slideIdx: number): void {
-    if (sectionIdx < 0 || sectionIdx >= arrangement.length) return;
-    const sectionId = arrangement[sectionIdx];
-    if (!sectionId) return;
-    const section = song.sections.find((sec) => sec.id === sectionId);
-    if (!section) return;
-    if (slideIdx < 0 || slideIdx >= section.slides.length) return;
-    const key = `${sectionIdx}:${slideIdx}`;
-    if (candidates.has(key)) return;
-    candidates.add(key);
-    candidateList.push({ sectionIdx, slideIdx });
-  }
-
-  for (const offset of [-1, 0, 1]) {
-    const pos = resolveOffset(session, cursor.sectionIdx, cursor.slideIdx, offset);
-    if (pos) addCandidate(pos.sectionIdx, pos.slideIdx);
-  }
-
-  let bestScore = -1;
-  let bestCandidate: { sectionIdx: number; slideIdx: number } | null = null;
-
-  for (const cand of candidateList) {
-    const sectionId = arrangement[cand.sectionIdx];
-    if (!sectionId) continue;
-    const section = song.sections.find((sec) => sec.id === sectionId);
-    if (!section) continue;
-    const slide = section.slides[cand.slideIdx];
-    if (!slide) continue;
-
-    const sTokens = slideTokens(session.song.id, slide.id, slide.lines);
-
-    let overlap = 0;
-    for (const t of hypTokens) if (sTokens.has(t)) overlap++;
-    const tokenOverlap = overlap / Math.max(1, hypTokens.length);
-
-    const isForwardOrAtCursor =
-      cand.sectionIdx > cursor.sectionIdx ||
-      (cand.sectionIdx === cursor.sectionIdx && cand.slideIdx >= cursor.slideIdx);
-    const monotonicBonus = isForwardOrAtCursor ? 0.10 : -0.80;
-    const sectionStartBonus = isForwardOrAtCursor && cand.slideIdx === 0 ? 0.05 : 0;
-
-    const score = clamp(tokenOverlap + monotonicBonus + sectionStartBonus, 0, 1);
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidate = cand;
+    for (let si = 0; si < session.arrangement.length; si++) {
+      const sectionId = session.arrangement[si];
+      if (!sectionId) continue;
+      const section = session.song.sections.find((sec) => sec.id === sectionId);
+      if (!section) continue;
+      const slide = section.slides[0];
+      if (!slide) continue;
+      const key = `${si}:0`;
+      if (neighborhoodKeys.has(key)) continue;
+      const sUnique = uniqueSlideTokenSet(session.song.id, slide.id, slide.lines);
+      if (sUnique.size < AUDIBLE_MIN_TOKENS) continue;
+      let overlap = 0;
+      const matched: string[] = [];
+      for (const t of hypTokens) {
+        if (sUnique.has(t)) {
+          overlap += 1;
+          matched.push(t);
+        }
+      }
+      const overlapFrac = overlap / Math.max(1, hypTokens.length);
+      // Audible confidence: same shape as neighborhood + section-start, but
+      // gated by a strict floor and a margin over the cursor-neighborhood
+      // best so it can't poach a marginally-better match.
+      const conf = clamp(overlapFrac + 0.05, 0, 1);
+      if (
+        conf >= AUDIBLE_THRESHOLD &&
+        conf >= bestToBeat + AUDIBLE_MARGIN &&
+        (audibleResult === null || conf > audibleResult.confidence)
+      ) {
+        audibleResult = {
+          sectionIdx: si,
+          slideIdx: 0,
+          confidence: conf,
+          strategy: "audible",
+          matchedTokens: matched,
+          coverage,
+        };
+      }
     }
   }
 
-  if (bestScore < MIN_EMIT_THRESHOLD || bestCandidate === null) return null;
+  // ── Pick the winner ───────────────────────────────────────────────────
+  // Priority order: audible (high-confidence intentional jump) > coverage
+  // (with next-slide hint) > best of (coverage without hint, neighborhood).
+  // We always pick the highest-confidence result that clears MIN_EMIT, but
+  // audibles and coverage-with-hint are protected from being out-bid by
+  // marginal neighborhood scores.
+  const candidatesOut = [coverageResult, neighborhoodResult, audibleResult].filter(
+    (r): r is MatchResult => r !== null,
+  );
+  if (candidatesOut.length === 0) return null;
 
-  return {
-    sectionIdx: bestCandidate.sectionIdx,
-    slideIdx: bestCandidate.slideIdx,
-    confidence: bestScore,
-  };
+  // Prefer audible if it cleared the bar.
+  if (audibleResult) return audibleResult;
+
+  // Otherwise pick by confidence.
+  let best = candidatesOut[0]!;
+  for (const r of candidatesOut) {
+    if (r.confidence > best.confidence) best = r;
+  }
+  if (best.confidence < MIN_EMIT_THRESHOLD) return null;
+  return best;
 }

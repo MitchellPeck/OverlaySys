@@ -3,24 +3,36 @@ import { useRef, useState } from "react";
 type Props = {
   value: string;
   onChange: (v: string) => void;
+  /** When provided, picked/dropped files upload via this; else inline data URL. */
+  onUpload?: (file: File) => Promise<string>;
 };
 
 /**
  * Video source input. Mirrors ImageInput's UX: a small thumbnail-ish
  * preview, a path/URL field, a file-picker button, and a clear button.
  * Adds drag-and-drop — drop a video file anywhere on the control to
- * embed it as a data URL.
- *
- * Data URLs balloon the JSON quickly for full-length videos. For short
- * stings/idents this is fine; for actual clip-length content, type a
- * stable file path or URL into the text field instead so the show JSON
- * stays small.
+ * upload it (or embed as a data URL when onUpload isn't wired).
  */
-export function VideoInput({ value, onChange }: Props) {
+export function VideoInput({ value, onChange, onUpload }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function onFile(file: File) {
+  async function onFile(file: File) {
+    setError(null);
+    if (onUpload) {
+      setUploading(true);
+      try {
+        const url = await onUpload(file);
+        onChange(url);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") onChange(reader.result);
@@ -120,18 +132,20 @@ export function VideoInput({ value, onChange }: Props) {
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        title="Pick file (embedded as data URL)"
+        disabled={uploading}
+        title={onUpload ? "Upload video" : "Embed as data URL"}
         style={{
           width: 28,
           height: 24,
           background: "var(--panel-2, #1c1f25)",
           border: "1px solid var(--border, #2a2e36)",
           borderRadius: 3,
-          cursor: "pointer",
+          cursor: uploading ? "wait" : "pointer",
           fontSize: 12,
+          opacity: uploading ? 0.6 : 1,
         }}
       >
-        📁
+        {uploading ? "…" : "📁"}
       </button>
       {value && (
         <button
@@ -163,6 +177,22 @@ export function VideoInput({ value, onChange }: Props) {
           e.target.value = "";
         }}
       />
+      {error && (
+        <div
+          style={{
+            position: "absolute",
+            marginTop: 28,
+            padding: "2px 6px",
+            background: "var(--red, #f87171)",
+            color: "#0c0d10",
+            fontSize: 10,
+            borderRadius: 3,
+            zIndex: 5,
+          }}
+        >
+          {error}
+        </div>
+      )}
     </div>
   );
 }

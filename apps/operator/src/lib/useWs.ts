@@ -79,6 +79,11 @@ function bootstrap(): void {
           slideIdx: msg.suggestedSlide.slideIdx,
           confidence: msg.confidence,
           hypothesis: msg.hypothesis,
+          strategy: msg.strategy,
+          matchedTokens: msg.matchedTokens,
+          coverage: msg.coverage,
+          latencyMs: msg.latencyMs,
+          isFinal: msg.isFinal,
         } : null);
         break;
       case "stt_listener_state":

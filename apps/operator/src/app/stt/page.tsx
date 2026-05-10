@@ -2,9 +2,18 @@
 
 import { useEffect, useState } from "react";
 import type { SttSpawnerConfig } from "@overlaysys/core";
+import { Button, Panel, Pill, Textarea, colors, type PillTone } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { AppHeader } from "@/app/components/AppHeader";
+
+const STATE_TONES: Record<string, PillTone> = {
+  idle: "dim",
+  starting: "warn",
+  running: "good",
+  stopped: "dim",
+  error: "bad",
+};
 
 export default function SttControlPage() {
   const { send } = useWs();
@@ -43,57 +52,32 @@ export default function SttControlPage() {
   }
 
   const state = status?.state ?? "idle";
-  const stateColor: Record<string, string> = {
-    idle: "var(--text-dim)",
-    starting: "#fbbf24",
-    running: "#4ade80",
-    stopped: "var(--text-dim)",
-    error: "#ef4444",
-  };
+  const tone = STATE_TONES[state] ?? "dim";
 
   return (
     <>
       <AppHeader
-        context={<h1 style={{ margin: 0, fontSize: 16 }}>STT Spawner</h1>}
+        title="STT Spawner"
         actions={
           <>
-            <span
-              style={{
-                fontSize: 12,
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: `1px solid ${stateColor[state]}`,
-                color: stateColor[state],
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: 1,
-              }}
-            >
+            <Pill tone={tone} uppercase>
               {state}
-            </span>
+            </Pill>
             {state === "running" || state === "starting" ? (
-              <button onClick={stop} style={btn("danger")}>
+              <Button onClick={stop} variant="destructive" size="sm">
                 Stop
-              </button>
+              </Button>
             ) : (
-              <button onClick={start} style={btn("primary")}>
+              <Button onClick={start} variant="primary" size="sm">
                 Start
-              </button>
+              </Button>
             )}
           </>
         }
       />
       <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
-        <fieldset
-          style={{
-            marginBottom: 16,
-            padding: 16,
-            border: "1px solid var(--border)",
-            borderRadius: 4,
-          }}
-        >
-          <legend style={{ fontSize: 12, color: "var(--text-dim)" }}>Configuration</legend>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <Panel title="Configuration" padding="md" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <input
               type="checkbox"
               id="autoStart"
@@ -104,56 +88,55 @@ export default function SttControlPage() {
               Auto-start on server boot
             </label>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <input
+              type="checkbox"
+              id="biasOnSongStart"
+              checked={draft.biasOnSongStart}
+              onChange={(e) =>
+                setDraft({ ...draft, biasOnSongStart: e.target.checked })
+              }
+            />
+            <label htmlFor="biasOnSongStart" style={{ fontSize: 13 }}>
+              Bias Whisper with the active program song
+            </label>
+            <span style={{ fontSize: 11, color: colors.textDim }}>
+              (restarts the child on song change; whisper-stream commands only)
+            </span>
+          </div>
           <label
-            style={{
-              display: "block",
-              fontSize: 12,
-              color: "var(--text-dim)",
-              marginBottom: 4,
-            }}
+            style={{ display: "block", fontSize: 12, color: colors.textDim, marginBottom: 4 }}
           >
             Command (stdout is piped into the lyric-listener daemon)
           </label>
-          <textarea
+          <Textarea
             value={draft.command}
             onChange={(e) => setDraft({ ...draft, command: e.target.value })}
             rows={3}
-            style={{
-              width: "100%",
-              fontFamily: "ui-monospace, monospace",
-              fontSize: 12,
-              padding: 8,
-              boxSizing: "border-box",
-            }}
+            mono
           />
-          <p style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+          <p style={{ fontSize: 11, color: colors.textDim, marginTop: 6 }}>
             Examples:
             <br />
-            <code
-              style={{ background: "var(--panel-2)", padding: "1px 4px", borderRadius: 2 }}
-            >
+            <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
               whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000
             </code>
             <br />
-            <code
-              style={{ background: "var(--panel-2)", padding: "1px 4px", borderRadius: 2 }}
-            >
+            <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
               whisper-stream -m ~/whisper-models/ggml-small.en.bin -c 1 --step 500 --length 4000
             </code>
           </p>
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <button onClick={save} style={btn()}>
+            <Button onClick={save} size="sm">
               Save Config
-            </button>
+            </Button>
           </div>
-        </fieldset>
+        </Panel>
 
-        <fieldset
-          style={{ padding: 16, border: "1px solid var(--border)", borderRadius: 4 }}
+        <Panel
+          title={`Recent logs ${status?.pid ? `(pid ${status.pid})` : ""}`}
+          padding="md"
         >
-          <legend style={{ fontSize: 12, color: "var(--text-dim)" }}>
-            Recent logs {status?.pid ? `(pid ${status.pid})` : ""}
-          </legend>
           {status?.lastError && (
             <div
               style={{
@@ -163,7 +146,7 @@ export default function SttControlPage() {
                 border: "1px solid rgba(239, 68, 68, 0.3)",
                 borderRadius: 4,
                 fontSize: 12,
-                color: "#ef4444",
+                color: colors.errorText,
               }}
             >
               {status.lastError}
@@ -171,7 +154,7 @@ export default function SttControlPage() {
           )}
           <pre
             style={{
-              background: "var(--panel-2)",
+              background: colors.panel2,
               padding: 12,
               borderRadius: 4,
               fontSize: 11,
@@ -185,26 +168,8 @@ export default function SttControlPage() {
           >
             {(status?.recentLogs ?? []).join("\n") || "(no logs yet)"}
           </pre>
-        </fieldset>
+        </Panel>
       </div>
     </>
   );
-}
-
-function btn(kind: "default" | "primary" | "danger" = "default"): React.CSSProperties {
-  const colors = {
-    default: { bg: "var(--panel-2)", fg: "var(--text)" },
-    primary: { bg: "var(--accent)", fg: "#fff" },
-    danger: { bg: "#ef4444", fg: "#fff" },
-  }[kind];
-  return {
-    padding: "6px 12px",
-    background: colors.bg,
-    color: colors.fg,
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
 }

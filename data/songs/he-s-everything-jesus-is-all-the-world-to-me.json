@@ -1,0 +1,83 @@
+{
+  "id": "he-s-everything-jesus-is-all-the-world-to-me",
+  "title": "He's Everything (Jesus Is All The World To Me)",
+  "ccliNumber": "6182065",
+  "author": "Kevin Pledger, William Lamartine Thompson",
+  "copyright": "© 2011 Message Included Music",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Jesus is all the world to me",
+            "My life my joy my all"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "He's my strength from day to day",
+            "Without Him I would fall"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "When I am sad to Him I go",
+            "No other one can cheer me so"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "When I am sad, he makes me glad",
+            "He's my friend."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Jesus is all the world to me",
+            "I want no better friend"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "I trust Him now I'll trust Him when",
+            "Life's fleeting days shall end"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Beautiful life with such a friend",
+            "Beautiful life that has no end"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Eternal life, eternal joy,",
+            "He's my friend."
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2"
+  ]
+}

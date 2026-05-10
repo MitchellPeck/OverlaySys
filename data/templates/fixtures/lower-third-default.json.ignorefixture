@@ -1,0 +1,140 @@
+{
+  "id": "lower-third-default",
+  "name": "Lower Third — Default",
+  "size": { "w": 1920, "h": 1080 },
+  "fonts": [],
+  "fields": [
+    { "key": "name", "label": "Name", "type": "text", "default": "Jane Doe" },
+    { "key": "title", "label": "Title", "type": "text", "default": "Title / Role" }
+  ],
+  "layers": [
+    {
+      "type": "group",
+      "id": "lt-group",
+      "name": "Lower Third Group",
+      "visible": true,
+      "transform": {
+        "x": 120, "y": 820, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 1, "anchorX": 0, "anchorY": 0
+      },
+      "children": [
+        {
+          "type": "shape",
+          "id": "lt-bar",
+          "name": "Accent bar",
+          "visible": true,
+          "shape": "rect",
+          "fill": { "kind": "solid", "color": "#ff3a3a" },
+          "cornerRadius": 0,
+          "transform": {
+            "x": 0, "y": 0, "w": 12, "h": 140, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 1, "anchorX": 0, "anchorY": 0
+          }
+        },
+        {
+          "type": "shape",
+          "id": "lt-plate",
+          "name": "Plate",
+          "visible": true,
+          "shape": "rect",
+          "fill": {
+            "kind": "linear-gradient",
+            "angle": 90,
+            "stops": [
+              { "at": 0, "color": "rgba(15,15,18,0.92)" },
+              { "at": 1, "color": "rgba(15,15,18,0.40)" }
+            ]
+          },
+          "cornerRadius": 2,
+          "transform": {
+            "x": 12, "y": 0, "w": 720, "h": 140, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+          }
+        },
+        {
+          "type": "text",
+          "id": "lt-name",
+          "name": "Name",
+          "visible": true,
+          "content": { "fieldKey": "name" },
+          "style": {
+            "fontFamily": "Inter, system-ui, sans-serif",
+            "fontSize": 56,
+            "fontWeight": 700,
+            "color": "#ffffff",
+            "letterSpacing": 0,
+            "lineHeight": 1.0,
+            "align": "left"
+          },
+          "transform": {
+            "x": 36, "y": 24, "w": 680, "h": 64, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+          }
+        },
+        {
+          "type": "text",
+          "id": "lt-title",
+          "name": "Title",
+          "visible": true,
+          "content": { "fieldKey": "title" },
+          "style": {
+            "fontFamily": "Inter, system-ui, sans-serif",
+            "fontSize": 28,
+            "fontWeight": 400,
+            "color": "#d8d8dc",
+            "letterSpacing": 1,
+            "lineHeight": 1.0,
+            "align": "left"
+          },
+          "transform": {
+            "x": 36, "y": 92, "w": 680, "h": 32, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+          }
+        }
+      ]
+    }
+  ],
+  "timelines": {
+    "in": {
+      "duration": 1.0,
+      "tracks": [
+        { "layerId": "lt-bar", "property": "scaleY", "keyframes": [
+          { "t": 0, "value": 0, "easing": "power2.out" },
+          { "t": 0.35, "value": 1, "easing": "power3.out" }
+        ]},
+        { "layerId": "lt-plate", "property": "scaleX", "keyframes": [
+          { "t": 0.15, "value": 0, "easing": "power3.out" },
+          { "t": 0.6, "value": 1, "easing": "power3.out" }
+        ]},
+        { "layerId": "lt-plate", "property": "opacity", "keyframes": [
+          { "t": 0.15, "value": 0, "easing": "power2.out" },
+          { "t": 0.4, "value": 1, "easing": "power2.out" }
+        ]},
+        { "layerId": "lt-name", "property": "opacity", "keyframes": [
+          { "t": 0.45, "value": 0, "easing": "power2.out" },
+          { "t": 0.75, "value": 1, "easing": "power2.out" }
+        ]},
+        { "layerId": "lt-name", "property": "y", "keyframes": [
+          { "t": 0.45, "value": 36, "easing": "power3.out" },
+          { "t": 0.75, "value": 24, "easing": "power3.out" }
+        ]},
+        { "layerId": "lt-title", "property": "opacity", "keyframes": [
+          { "t": 0.55, "value": 0, "easing": "power2.out" },
+          { "t": 0.9, "value": 1, "easing": "power2.out" }
+        ]},
+        { "layerId": "lt-title", "property": "y", "keyframes": [
+          { "t": 0.55, "value": 104, "easing": "power3.out" },
+          { "t": 0.9, "value": 92, "easing": "power3.out" }
+        ]}
+      ]
+    },
+    "out": {
+      "duration": 0.5,
+      "tracks": [
+        { "layerId": "lt-group", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 1, "easing": "power2.in" },
+          { "t": 0.4, "value": 0, "easing": "power2.in" }
+        ]},
+        { "layerId": "lt-group", "property": "x", "keyframes": [
+          { "t": 0, "value": 120, "easing": "power2.in" },
+          { "t": 0.5, "value": 60, "easing": "power2.in" }
+        ]}
+      ]
+    }
+  }
+}

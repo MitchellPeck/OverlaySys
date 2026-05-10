@@ -1,0 +1,32 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+.next/
+out/
+.turbo/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# editor / OS
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# data (per-deployment, not source)
+data/templates/*.json
+data/shows/*.json
+!data/templates/.gitkeep
+!data/shows/.gitkeep
+!data/templates/fixtures/
+!data/shows/fixtures/
+
+# tsbuild
+*.tsbuildinfo

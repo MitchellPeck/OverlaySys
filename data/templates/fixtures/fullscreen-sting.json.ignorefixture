@@ -1,0 +1,129 @@
+{
+  "id": "fullscreen-sting",
+  "name": "Full-Screen Sting — Title Card",
+  "size": { "w": 1920, "h": 1080 },
+  "fonts": [],
+  "fields": [
+    { "key": "headline", "label": "Headline", "type": "text", "default": "BREAKING" },
+    { "key": "subline", "label": "Subline", "type": "text", "default": "Live from the studio" }
+  ],
+  "layers": [
+    {
+      "type": "shape",
+      "id": "bg",
+      "name": "Background",
+      "visible": true,
+      "shape": "rect",
+      "fill": {
+        "kind": "linear-gradient",
+        "angle": 135,
+        "stops": [
+          { "at": 0, "color": "#0c0d10" },
+          { "at": 1, "color": "#1a1f2e" }
+        ]
+      },
+      "cornerRadius": 0,
+      "transform": {
+        "x": 0, "y": 0, "w": 1920, "h": 1080, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+      }
+    },
+    {
+      "type": "shape",
+      "id": "accent",
+      "name": "Accent stripe",
+      "visible": true,
+      "shape": "rect",
+      "fill": { "kind": "solid", "color": "#ff3a3a" },
+      "cornerRadius": 0,
+      "transform": {
+        "x": 0, "y": 480, "w": 1920, "h": 8, "rotation": 0, "scaleX": 0, "scaleY": 1, "opacity": 1, "anchorX": 0, "anchorY": 0
+      }
+    },
+    {
+      "type": "text",
+      "id": "headline",
+      "name": "Headline",
+      "visible": true,
+      "content": { "fieldKey": "headline" },
+      "style": {
+        "fontFamily": "Inter, system-ui, sans-serif",
+        "fontSize": 160,
+        "fontWeight": 800,
+        "color": "#ffffff",
+        "letterSpacing": -2,
+        "lineHeight": 1.0,
+        "align": "center"
+      },
+      "transform": {
+        "x": 0, "y": 320, "w": 1920, "h": 180, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+      }
+    },
+    {
+      "type": "text",
+      "id": "subline",
+      "name": "Subline",
+      "visible": true,
+      "content": { "fieldKey": "subline" },
+      "style": {
+        "fontFamily": "Inter, system-ui, sans-serif",
+        "fontSize": 36,
+        "fontWeight": 400,
+        "color": "#9099a8",
+        "letterSpacing": 4,
+        "lineHeight": 1.0,
+        "align": "center"
+      },
+      "transform": {
+        "x": 0, "y": 540, "w": 1920, "h": 60, "rotation": 0, "scaleX": 1, "scaleY": 1, "opacity": 0, "anchorX": 0, "anchorY": 0
+      }
+    }
+  ],
+  "timelines": {
+    "in": {
+      "duration": 1.2,
+      "tracks": [
+        { "layerId": "bg", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 0, "easing": "power2.out" },
+          { "t": 0.3, "value": 1, "easing": "power2.out" }
+        ]},
+        { "layerId": "accent", "property": "scaleX", "keyframes": [
+          { "t": 0.2, "value": 0, "easing": "power4.out" },
+          { "t": 0.7, "value": 1, "easing": "power4.out" }
+        ]},
+        { "layerId": "headline", "property": "opacity", "keyframes": [
+          { "t": 0.4, "value": 0, "easing": "power3.out" },
+          { "t": 0.9, "value": 1, "easing": "power3.out" }
+        ]},
+        { "layerId": "headline", "property": "y", "keyframes": [
+          { "t": 0.4, "value": 360, "easing": "power3.out" },
+          { "t": 0.9, "value": 320, "easing": "power3.out" }
+        ]},
+        { "layerId": "subline", "property": "opacity", "keyframes": [
+          { "t": 0.6, "value": 0, "easing": "power2.out" },
+          { "t": 1.1, "value": 1, "easing": "power2.out" }
+        ]}
+      ]
+    },
+    "out": {
+      "duration": 0.6,
+      "tracks": [
+        { "layerId": "bg", "property": "opacity", "keyframes": [
+          { "t": 0.1, "value": 1, "easing": "power2.in" },
+          { "t": 0.6, "value": 0, "easing": "power2.in" }
+        ]},
+        { "layerId": "accent", "property": "scaleX", "keyframes": [
+          { "t": 0, "value": 1, "easing": "power3.in" },
+          { "t": 0.4, "value": 0, "easing": "power3.in" }
+        ]},
+        { "layerId": "headline", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 1, "easing": "power2.in" },
+          { "t": 0.3, "value": 0, "easing": "power2.in" }
+        ]},
+        { "layerId": "subline", "property": "opacity", "keyframes": [
+          { "t": 0, "value": 1, "easing": "power2.in" },
+          { "t": 0.3, "value": 0, "easing": "power2.in" }
+        ]}
+      ]
+    }
+  }
+}

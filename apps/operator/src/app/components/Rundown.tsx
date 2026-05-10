@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Field } from "@overlaysys/core";
+import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { csvToRows } from "@/lib/csv";
@@ -21,9 +22,6 @@ export function Rundown() {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
-  // Fetch each unique graphic template referenced by the rundown so we can
-  // show its declared field types (for pretty data formatting). Song rows
-  // reference a lyricTemplateId — we load those the same way.
   useEffect(() => {
     if (!show || conn !== "open") return;
     const seen = new Set<string>();
@@ -39,7 +37,7 @@ export function Rundown() {
 
   if (!show) {
     return (
-      <p style={{ color: "var(--text-dim)" }}>
+      <p style={{ color: colors.textDim }}>
         No show loaded. Pick one above, or import a CSV to start a new show.
       </p>
     );
@@ -50,8 +48,6 @@ export function Rundown() {
     const row = show.rows.find((r) => r.id === selectedRowId);
     if (!row) return;
     if (row.kind === "song") {
-      // Cue song → start a session on PREVIEW so the operator can navigate
-      // to the right slide before promoting to program.
       send({ type: "song_take", channel: "preview", showId: show.id, songRowId: row.id });
       return;
     }
@@ -66,9 +62,6 @@ export function Rundown() {
     const row = show.rows.find((r) => r.id === selectedRowId);
     if (!row) return;
     if (row.kind === "song") {
-      // Take song → if a preview session for this song is already running
-      // (e.g. operator cued and navigated), promote it to program at the
-      // current cursor. Otherwise start a fresh session at slide 0.
       send({
         type: "song_take_pvw_to_pgm",
         showId: show.id,
@@ -99,13 +92,13 @@ export function Rundown() {
   return (
     <div>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        <button onClick={cueSelected} style={btn()}>Cue ▶ PVW (Enter)</button>
-        <button onClick={takeSelected} style={btn("primary")}>Take ▶ PGM</button>
+        <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
+        <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button onClick={() => fileRef.current?.click()} style={btn()} disabled={busy}>
+        <Button onClick={() => fileRef.current?.click()} size="md" disabled={busy} style={{ flex: 1 }}>
           {busy ? "Importing…" : "Import CSV"}
-        </button>
+        </Button>
         <input
           ref={fileRef}
           type="file"
@@ -121,7 +114,7 @@ export function Rundown() {
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ color: "var(--text-dim)", textAlign: "left" }}>
+          <tr style={{ color: colors.textDim, textAlign: "left" }}>
             <th style={th()}>#</th>
             <th style={th()}>Template</th>
             <th style={th()}>Data</th>
@@ -138,9 +131,6 @@ export function Rundown() {
                   onClick={() => setSelectedRow(row.id)}
                   onDoubleClick={() => {
                     setSelectedRow(row.id);
-                    // Double-click = direct take to program (legacy /
-                    // power-user behavior). Use Cue button for the
-                    // preview-then-promote workflow.
                     send({
                       type: "song_take_pvw_to_pgm",
                       showId: show.id,
@@ -152,7 +142,7 @@ export function Rundown() {
                   style={{
                     background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
                     borderLeft: selected
-                      ? "3px solid var(--accent)"
+                      ? `3px solid ${colors.accent}`
                       : "3px solid transparent",
                     cursor: "pointer",
                   }}
@@ -163,12 +153,12 @@ export function Rundown() {
                       <span aria-hidden style={{ marginRight: 6 }}>♪</span>
                       {song?.title ?? row.songId}
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
+                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
                       song · {row.lyricTemplateId}
                     </div>
                   </td>
                   <td style={td()}>
-                    <span style={{ color: "var(--text-dim)", fontSize: 11 }}>
+                    <span style={{ color: colors.textDim, fontSize: 11 }}>
                       arrangement: {(row.arrangement ?? []).join(" → ") || "(default)"}
                     </span>
                   </td>
@@ -194,7 +184,7 @@ export function Rundown() {
                 style={{
                   background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
                   borderLeft: selected
-                    ? "3px solid var(--accent)"
+                    ? `3px solid ${colors.accent}`
                     : "3px solid transparent",
                   cursor: "pointer",
                 }}
@@ -203,7 +193,7 @@ export function Rundown() {
                 <td style={td()}>
                   <div style={{ fontWeight: 600 }}>{tplName}</div>
                   {tplMeta && tplMeta.id !== tplName && (
-                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
+                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
                       {tplMeta.id}
                     </div>
                   )}
@@ -221,10 +211,10 @@ export function Rundown() {
         </tbody>
       </table>
 
-      <p style={{ marginTop: 12, fontSize: 11, color: "var(--text-dim)" }}>
+      <p style={{ marginTop: 12, fontSize: 11, color: colors.textDim }}>
         ↑/↓ to navigate · Enter to cue · Space to take · Esc to clear · double-click row to fire instantly
       </p>
-      <p style={{ marginTop: 6, fontSize: 11, color: "var(--text-dim)" }}>
+      <p style={{ marginTop: 6, fontSize: 11, color: colors.textDim }}>
         CSV format: first column <code>template</code>, then one column per fieldKey.
       </p>
 
@@ -240,53 +230,27 @@ function ImagePreviewModal({
   preview: ImagePreview;
   onClose: () => void;
 }) {
-  // Esc to close.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey, true); // capture so it beats other Esc handlers
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.85)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-        cursor: "zoom-out",
+    <Modal
+      open
+      onClose={onClose}
+      onCancel={onClose}
+      captureKeys
+      size="lg"
+      bodyStyle={{ padding: 0 }}
+      containerStyle={{
+        background: colors.panel,
+        maxWidth: "90vw",
+        maxHeight: "90vh",
       }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--panel)",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-          padding: 16,
-          maxWidth: "90vw",
-          maxHeight: "90vh",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          cursor: "default",
-        }}
-      >
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
         <header style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <strong style={{ fontSize: 13 }}>{preview.label}</strong>
           <span
             style={{
               fontSize: 10,
-              color: "var(--text-dim)",
+              color: colors.textDim,
               fontFamily: "ui-monospace, monospace",
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -299,29 +263,16 @@ function ImagePreviewModal({
               ? `(data url, ${(preview.src.length / 1024).toFixed(0)} kB)`
               : preview.src}
           </span>
-          <button
-            onClick={onClose}
-            style={{
-              marginLeft: "auto",
-              width: 28,
-              height: 28,
-              background: "transparent",
-              color: "var(--text)",
-              border: "1px solid var(--border)",
-              borderRadius: 4,
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
+          <IconButton onClick={onClose} style={{ marginLeft: "auto" }} title="Close">
             ×
-          </button>
+          </IconButton>
         </header>
         <div
           style={{
             background:
               "linear-gradient(45deg, #1a1c20 25%, transparent 25%, transparent 75%, #1a1c20 75%) 0 0 / 16px 16px, #0c0d10",
             padding: 8,
-            borderRadius: 4,
+            borderRadius: radius.md,
             overflow: "auto",
             display: "flex",
             alignItems: "center",
@@ -336,22 +287,10 @@ function ImagePreviewModal({
           />
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-/**
- * Pretty-print a row's data for the rundown summary column.
- *
- * Looks up each declared field by its type and renders an appropriate token:
- *   - text/number → the raw value
- *   - color → "color: <hex>" + a small swatch
- *   - image → just the word "image" (avoids dumping huge data: URLs)
- *   - undeclared keys → key: value (operator can spot orphan fields)
- *
- * If we don't have the full template yet (still loading), falls back to the
- * old key:value view.
- */
 function DataSummary({
   data,
   fields,
@@ -363,11 +302,11 @@ function DataSummary({
 }) {
   const entries = Object.entries(data);
   if (entries.length === 0) {
-    return <span style={{ color: "var(--text-dim)" }}>—</span>;
+    return <span style={{ color: colors.textDim }}>—</span>;
   }
   if (!fields) {
     return (
-      <span style={{ color: "var(--text-dim)" }}>
+      <span style={{ color: colors.textDim }}>
         {entries.map(([k, v]) => `${k}: ${truncate(v)}`).join(" · ")}
       </span>
     );
@@ -380,7 +319,7 @@ function DataSummary({
         if (v === undefined) return null;
         return (
           <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{f.label}:</span>
+            <span style={{ color: colors.textDim, fontSize: 11 }}>{f.label}:</span>
             {renderFieldValue(f, v, onPreviewImage)}
           </span>
         );
@@ -388,7 +327,7 @@ function DataSummary({
       {entries
         .filter(([k]) => !fields.some((f) => f.key === k))
         .map(([k, v]) => (
-          <span key={k} style={{ color: "var(--accent-2)", fontSize: 11 }}>
+          <span key={k} style={{ color: colors.accent2, fontSize: 11 }}>
             {k}*: {truncate(v)}
           </span>
         ))}
@@ -410,21 +349,22 @@ function renderFieldValue(
               display: "inline-block",
               width: 12,
               height: 12,
+              // 2px radius is a deliberate small swatch — not the standard token.
               borderRadius: 2,
               background: value || "transparent",
-              border: "1px solid var(--border)",
+              border: `1px solid ${colors.border}`,
               verticalAlign: "middle",
             }}
             title={value}
           />
-          <span style={{ fontSize: 11, color: "var(--text)", fontFamily: "ui-monospace, monospace" }}>
+          <span style={{ fontSize: 11, color: colors.text, fontFamily: "ui-monospace, monospace" }}>
             {value}
           </span>
         </>
       );
     case "image":
       if (!value) {
-        return <span style={{ fontSize: 11, color: "var(--text-dim)", fontStyle: "italic" }}>(empty)</span>;
+        return <span style={{ fontSize: 11, color: colors.textDim, fontStyle: "italic" }}>(empty)</span>;
       }
       return (
         <button
@@ -438,10 +378,10 @@ function renderFieldValue(
             alignItems: "center",
             gap: 4,
             padding: "2px 6px",
-            background: "var(--panel-2)",
-            border: "1px solid var(--border)",
-            borderRadius: 3,
-            color: "var(--accent-2)",
+            background: colors.panel2,
+            border: `1px solid ${colors.border}`,
+            borderRadius: radius.sm,
+            color: colors.accent2,
             fontSize: 11,
             cursor: "pointer",
             fontStyle: "normal",
@@ -462,23 +402,9 @@ function truncate(s: string, max = 40): string {
   return s.slice(0, max - 1) + "…";
 }
 
-function btn(kind: "default" | "primary" = "default"): React.CSSProperties {
-  return {
-    flex: 1,
-    padding: "8px 10px",
-    background: kind === "primary" ? "var(--accent)" : "var(--panel-2)",
-    color: kind === "primary" ? "#fff" : "var(--text)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
-}
-
 function th(): React.CSSProperties {
-  return { padding: "6px 8px", borderBottom: "1px solid var(--border)", fontWeight: 500, fontSize: 11 };
+  return { padding: "6px 8px", borderBottom: `1px solid ${colors.border}`, fontWeight: 500, fontSize: ts.xs };
 }
 function td(): React.CSSProperties {
-  return { padding: "8px", borderBottom: "1px solid var(--border)" };
+  return { padding: "8px", borderBottom: `1px solid ${colors.border}` };
 }

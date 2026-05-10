@@ -81,12 +81,21 @@ export function mountTemplate(
     nodes,
     timelines: { in: inTl, out: outTl },
     playIn() {
+      // Empty timelines (no tracks, or all tracks dropped because their
+      // target layers don't exist) have duration 0 in GSAP 3 — and
+      // tl.totalDuration(spec.duration) is a no-op on a children-less
+      // timeline, so the spec's declared duration doesn't materialize.
+      // restart()ing such a timeline never fires onComplete, which hangs
+      // every awaiter (notably the renderer's sequential out→in transition,
+      // which leaves the previous template stuck on screen forever).
+      if (inTl.duration() === 0) return Promise.resolve();
       return new Promise<void>((resolve) => {
         inTl.eventCallback("onComplete", () => resolve());
         inTl.restart(true);
       });
     },
     playOut() {
+      if (outTl.duration() === 0) return Promise.resolve();
       return new Promise<void>((resolve) => {
         outTl.eventCallback("onComplete", () => resolve());
         outTl.restart(true);

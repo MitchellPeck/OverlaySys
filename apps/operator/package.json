@@ -14,6 +14,7 @@
   "dependencies": {
     "@overlaysys/core": "workspace:*",
     "@overlaysys/editor-kit": "workspace:*",
+    "@overlaysys/ui": "workspace:*",
     "@overlaysys/ws-protocol": "workspace:*",
     "@overlaysys/template-engine": "workspace:*",
     "gsap": "^3.12.5",

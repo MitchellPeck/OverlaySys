@@ -3,6 +3,39 @@ import * as channels from "./channels";
 import * as sttMatcher from "./sttMatcher";
 import type { MatchResult } from "./sttMatcher";
 
+// Channel that drives Whisper prompt biasing. Bias only follows the program
+// session — preview cues shouldn't restart the recognizer.
+const PROGRAM_CHANNEL = "program";
+
+type ProgramBiasListener = (biasText: string | null) => void;
+const programBiasListeners = new Set<ProgramBiasListener>();
+let lastProgramBias: string | null = null;
+
+export function onProgramBiasChange(fn: ProgramBiasListener): () => void {
+  programBiasListeners.add(fn);
+  return () => {
+    programBiasListeners.delete(fn);
+  };
+}
+
+function songBiasText(song: Song): string {
+  const parts: string[] = [];
+  for (const sec of song.sections) {
+    for (const slide of sec.slides) {
+      for (const line of slide.lines) parts.push(line);
+    }
+  }
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function refreshProgramBias(): void {
+  const s = sessions.get(PROGRAM_CHANNEL);
+  const next = s ? songBiasText(s.song) : null;
+  if (next === lastProgramBias) return;
+  lastProgramBias = next;
+  for (const fn of programBiasListeners) fn(next);
+}
+
 interface StartArgs {
   song: Song;
   lyricTemplateId: string;
@@ -75,6 +108,7 @@ export function start(channel: string, args: StartArgs): void {
   sessions.set(channel, internal);
   render(internal);
   sttMatcher.bindSession(channel, args.song, args.arrangement);
+  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
 }
 
 /**
@@ -112,6 +146,9 @@ export function promoteTo(
   // End the source AFTER the destination is rendered, so there's never a
   // gap with neither channel showing the song.
   if (src) end(fromChannel);
+  if (toChannel === PROGRAM_CHANNEL || fromChannel === PROGRAM_CHANNEL) {
+    refreshProgramBias();
+  }
 }
 
 export function getSession(channel: string): SongSessionSummary | null {
@@ -216,6 +253,7 @@ export function end(channel: string): void {
   sessions.delete(channel);
   channels.setSongSessionSummary(channel, null);
   channels.clear(channel);
+  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
 }
 
 /**
@@ -228,7 +266,23 @@ export function endAll(): void {
 
 // ───── STT match integration ─────────────────────────────────────────────────
 
-type MatchListener = (channel: string, result: MatchResult | null, hypothesis: string) => void;
+export interface MatchMeta {
+  // Listener-side timestamp of the originating hypothesis (ms epoch).
+  hypothesisT: number;
+  // Server-measured latency from `hypothesisT` to the moment the match was
+  // computed. Useful for telling the operator whether the system is leading
+  // the band or chasing it.
+  latencyMs: number;
+  // True for finalized hypotheses (whisper-stream LF), false for partials.
+  isFinal: boolean;
+}
+
+type MatchListener = (
+  channel: string,
+  result: MatchResult | null,
+  hypothesis: string,
+  meta: MatchMeta,
+) => void;
 const matchListeners = new Set<MatchListener>();
 
 export function onMatch(fn: MatchListener): () => void {
@@ -240,9 +294,23 @@ export function onMatch(fn: MatchListener): () => void {
 
 const autoAdvanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-function scheduleAutoAdvance(channel: string, target: MatchResult, _t: number): void {
+/**
+ * Pick a debounce delay based on match confidence. High-confidence matches
+ * snap quickly so the operator screen doesn't lag the band; marginal matches
+ * wait longer so a manual override is easier. The lower bound (150ms)
+ * preserves the original debounce intent: never advance on a single noisy
+ * partial hypothesis.
+ */
+function debounceDelayMs(confidence: number): number {
+  if (confidence >= 0.90) return 150;
+  if (confidence >= 0.75) return 250;
+  return 400;
+}
+
+function scheduleAutoAdvance(channel: string, target: MatchResult): void {
   const existing = autoAdvanceTimers.get(channel);
   if (existing) clearTimeout(existing);
+  const delay = debounceDelayMs(target.confidence);
   const timer = setTimeout(() => {
     autoAdvanceTimers.delete(channel);
     const s = sessions.get(channel);
@@ -255,24 +323,37 @@ function scheduleAutoAdvance(channel: string, target: MatchResult, _t: number): 
     if (!stillForward) return;
     s.cursor = { sectionIdx: target.sectionIdx, slideIdx: target.slideIdx };
     render(s);
-  }, 300);
+  }, delay);
   autoAdvanceTimers.set(channel, timer);
 }
 
-export function processSttHypothesis(channel: string, text: string, hypothesisT: number): void {
+export function processSttHypothesis(
+  channel: string,
+  text: string,
+  hypothesisT: number,
+  isFinal: boolean = true,
+): void {
   const s = sessions.get(channel);
   if (!s) return;
-  const result = sttMatcher.processHypothesis(channel, text, s.cursor);
+  const result = sttMatcher.processHypothesis(channel, text, s.cursor, { isFinal });
+  const latencyMs = Math.max(0, Date.now() - hypothesisT);
+  const meta: MatchMeta = { hypothesisT, latencyMs, isFinal };
   // Always emit stt_match (even null) so the UI can clear stale highlights.
-  for (const fn of matchListeners) fn(channel, result, text);
+  for (const fn of matchListeners) fn(channel, result, text, meta);
   if (!result) return;
 
-  if (s.trustMode && result.confidence >= sttMatcher.AUTO_TAKE_THRESHOLD) {
+  // Auto-advance is gated on FINAL hypotheses only — partials are
+  // refinements of an in-flight transcript and may still change.
+  if (
+    isFinal &&
+    s.trustMode &&
+    result.confidence >= sttMatcher.AUTO_TAKE_THRESHOLD
+  ) {
     // Only auto-advance if the candidate is monotonically forward (strictly ahead).
     const isForward =
       result.sectionIdx > s.cursor.sectionIdx ||
       (result.sectionIdx === s.cursor.sectionIdx && result.slideIdx > s.cursor.slideIdx);
-    if (isForward) scheduleAutoAdvance(channel, result, hypothesisT);
+    if (isForward) scheduleAutoAdvance(channel, result);
   }
 }
 

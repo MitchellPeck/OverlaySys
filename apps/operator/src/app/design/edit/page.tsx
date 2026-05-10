@@ -9,13 +9,16 @@ import {
   TimelinePanel,
   FieldsPanel,
 } from "@overlaysys/editor-kit";
+import { Button, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
+import { uploadAsset } from "@/lib/uploadAsset";
 import { AppHeader } from "@/app/components/AppHeader";
 
-// Suspense wrapper required by Next.js static export when the page
-// calls useSearchParams().
+const uploadInspector = async (file: File): Promise<string> =>
+  (await uploadAsset(file)).url;
+
 export default function DesignPage() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
@@ -25,7 +28,6 @@ export default function DesignPage() {
 }
 
 function DesignPageInner() {
-  // Static-export-friendly: templateId comes from ?id=… query string.
   const searchParams = useSearchParams();
   const templateId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
@@ -56,8 +58,6 @@ function DesignPageInner() {
   const fetchedRef = useRef<string | null>(null);
   const playRafRef = useRef<number | null>(null);
 
-  // Listener: adopt server's template version when our draft is clean.
-  // Mounted once per route — the WS singleton outlives this component.
   useEffect(() => {
     fetchedRef.current = null;
     setDraft(null);
@@ -69,8 +69,6 @@ function DesignPageInner() {
     return off;
   }, [templateId, setDraft]);
 
-  // Fetch: only once the WS is open. Otherwise the message is dropped silently
-  // because send() is a no-op when readyState !== OPEN.
   useEffect(() => {
     if (conn !== "open") return;
     if (fetchedRef.current === templateId) return;
@@ -78,7 +76,6 @@ function DesignPageInner() {
     send({ type: "get_template", templateId });
   }, [conn, templateId, send]);
 
-  // Compute preview data from declared field defaults.
   const previewData = useMemo<Record<string, string>>(() => {
     if (!draft) return {};
     const out: Record<string, string> = {};
@@ -86,8 +83,6 @@ function DesignPageInner() {
     return out;
   }, [draft]);
 
-  // Native GSAP-driven playback. We drive the editor's scrubTime from raf so the
-  // Canvas's seek() runs the same path as during live playback.
   function play() {
     if (!draft) return;
     if (playRafRef.current) cancelAnimationFrame(playRafRef.current);
@@ -121,7 +116,6 @@ function DesignPageInner() {
     setPlaying(false);
   }
 
-  // Keyboard shortcuts: undo/redo/save/delete-keyframe/play.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -196,7 +190,7 @@ function DesignPageInner() {
       <>
         <AppHeader />
         <main style={{ padding: 24 }}>
-          <p style={{ color: "var(--text-dim)", marginTop: 12 }}>
+          <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading template <code>{templateId}</code>…
           </p>
         </main>
@@ -224,7 +218,7 @@ function DesignPageInner() {
               style={{
                 background: "transparent",
                 border: "1px solid transparent",
-                color: "var(--text)",
+                color: colors.text,
                 fontSize: 15,
                 fontWeight: 600,
                 padding: "2px 6px",
@@ -232,18 +226,18 @@ function DesignPageInner() {
                 minWidth: 200,
               }}
             />
-            <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{draft.id}</span>
-            {dirty && <span style={{ color: "var(--accent-2)", fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
+            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
+            {dirty && <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
           </>
         }
         actions={
           <>
-            <button onClick={undo} style={ghostBtn}>↶ Undo</button>
-            <button onClick={redo} style={ghostBtn}>↷ Redo</button>
-            <button onClick={revert} style={ghostBtn} disabled={!dirty}>Revert</button>
-            <button onClick={save} style={primaryBtn} disabled={!dirty || conn !== "open"}>
+            <Button onClick={undo} variant="ghost" size="sm">↶ Undo</Button>
+            <Button onClick={redo} variant="ghost" size="sm">↷ Redo</Button>
+            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
+            <Button onClick={save} variant="primary" size="sm" disabled={!dirty || conn !== "open"}>
               Save (⌘S)
-            </button>
+            </Button>
           </>
         }
       />
@@ -253,22 +247,22 @@ function DesignPageInner() {
           display: "grid",
           gridTemplateColumns: "260px minmax(0, 1fr) 300px",
           gap: 1,
-          background: "var(--border)",
+          background: colors.border,
           minHeight: 0,
           overflow: "hidden",
         }}
       >
-        <Panel title="Layers" extra={<FieldsLink />}>
+        <EditorSection title="Layers" extra={<FieldsLink />}>
           <LayerTree
             template={draft}
             selectedId={selectedLayerId}
             onSelect={setSelectedLayer}
             onCommit={commit}
           />
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
             <FieldsPanel template={draft} onCommit={commit} />
           </div>
-        </Panel>
+        </EditorSection>
 
         <div style={{ background: "#0a0b0e", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           <Canvas
@@ -283,17 +277,18 @@ function DesignPageInner() {
           />
         </div>
 
-        <Panel title="Inspector" subtitle={selectedLayerId ?? "no selection"}>
+        <EditorSection title="Inspector" subtitle={selectedLayerId ?? "no selection"}>
           <PropertyInspector
             template={draft}
             selectedId={selectedLayerId}
             onCommit={commit}
             onPushHistory={pushHistory}
+            onUpload={uploadInspector}
           />
-        </Panel>
+        </EditorSection>
       </div>
 
-      <div style={{ borderTop: "1px solid var(--border)", minHeight: 0, overflow: "hidden" }}>
+      <div style={{ borderTop: `1px solid ${colors.border}`, minHeight: 0, overflow: "hidden" }}>
         <TimelinePanel
           template={draft}
           active={activeTimeline}
@@ -319,13 +314,18 @@ function DesignPageInner() {
 
 function FieldsLink() {
   return (
-    <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+    <span style={{ fontSize: 11, color: colors.textDim }}>
       drag to reorder · 👁 to hide
     </span>
   );
 }
 
-function Panel({
+/**
+ * Sidebar section for the design editor. Distinct from @overlaysys/ui Panel —
+ * uses a small uppercase letterspaced title without a bordered card to fit
+ * the editor's three-pane chrome.
+ */
+function EditorSection({
   title,
   subtitle,
   extra,
@@ -337,7 +337,7 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ background: "var(--panel)", padding: 12, overflow: "auto", minHeight: 0 }}>
+    <section style={{ background: colors.panel, padding: 12, overflow: "auto", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8, gap: 6 }}>
         <h3
           style={{
@@ -345,36 +345,15 @@ function Panel({
             fontSize: 11,
             textTransform: "uppercase",
             letterSpacing: 1.2,
-            color: "var(--text-dim)",
+            color: colors.textDim,
           }}
         >
           {title}
         </h3>
-        {subtitle && <span style={{ fontSize: 11, color: "var(--text-dim)" }}>· {subtitle}</span>}
+        {subtitle && <span style={{ fontSize: 11, color: colors.textDim }}>· {subtitle}</span>}
         <div style={{ marginLeft: "auto" }}>{extra}</div>
       </div>
       {children}
     </section>
   );
 }
-
-const primaryBtn: React.CSSProperties = {
-  padding: "6px 14px",
-  background: "var(--accent)",
-  color: "#fff",
-  border: "none",
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};
-const ghostBtn: React.CSSProperties = {
-  padding: "6px 12px",
-  background: "transparent",
-  color: "var(--text)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-};

@@ -8,6 +8,7 @@ import {
   type Song,
   type Template,
 } from "@overlaysys/core";
+import { Button, Field, Input, Inline, Panel, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { downloadJson } from "@/lib/download";
@@ -39,7 +40,6 @@ export function ExportBundle() {
     send({ type: "list_templates" });
   }, [conn, send]);
 
-  // Build a store snapshot for collectDependencies.
   const storeSnapshot = useMemo(
     () => ({
       songs: new Map<string, Song>(Object.entries(songCache)),
@@ -61,7 +61,6 @@ export function ExportBundle() {
   const hasSelection =
     selectedSongs.size > 0 || selectedShows.size > 0 || selectedTemplates.size > 0;
 
-  // Resolve the bundle preview reactively.
   const preview = useMemo(() => {
     if (!hasSelection) return null;
     if (!includeDeps) {
@@ -90,7 +89,6 @@ export function ExportBundle() {
     return next;
   }
 
-  // Prefetch any selected entity that isn't cached yet.
   useEffect(() => {
     if (conn !== "open") return;
     for (const id of selectedSongs) if (!songCache[id]) send({ type: "get_song", songId: id });
@@ -114,17 +112,16 @@ export function ExportBundle() {
   }
 
   return (
-    <section style={{ marginBottom: 24, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
-      <h2 style={{ marginTop: 0, fontSize: 14 }}>Export bundle</h2>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        <label style={{ width: 120, fontSize: 12, color: "var(--text-dim)" }}>Bundle name</label>
-        <input
+    <Panel title="Export bundle" padding="md" style={{ marginBottom: 24 }}>
+      <Field label="Bundle name" layout="inline" labelWidth={120}>
+        <Input
           value={bundleName}
           onChange={(e) => setBundleName(e.target.value)}
           placeholder="(optional)"
-          style={{ flex: 1, maxWidth: 320 }}
+          style={{ maxWidth: 320 }}
         />
-      </div>
+      </Field>
+
       <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
         <input
           type="checkbox"
@@ -134,22 +131,29 @@ export function ExportBundle() {
         Include referenced dependencies
       </label>
 
-      <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+      <Inline gap={1} style={{ marginBottom: 8 }}>
         {(["songs", "shows", "templates"] as const).map((t) => (
-          <button
+          <Button
             key={t}
+            size="sm"
+            variant={tab === t ? "primary" : "secondary"}
             onClick={() => setTab(t)}
-            style={{
-              ...btn(),
-              ...(tab === t ? { background: "var(--accent)", color: "#fff" } : {}),
-            }}
           >
             {t} ({t === "songs" ? songsList.length : t === "shows" ? showMetas.length : templates.length})
-          </button>
+          </Button>
         ))}
-      </div>
+      </Inline>
 
-      <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 6, marginBottom: 8 }}>
+      <div
+        style={{
+          maxHeight: 240,
+          overflowY: "auto",
+          border: `1px solid ${colors.border}`,
+          borderRadius: 4,
+          padding: 6,
+          marginBottom: 8,
+        }}
+      >
         {tab === "songs" && songsList.map((s) => (
           <CheckRow
             key={s.id}
@@ -180,7 +184,16 @@ export function ExportBundle() {
       </div>
 
       {preview && (preview.missing.length > 0) && (
-        <div style={{ padding: 8, background: "rgba(245, 158, 11, 0.1)", border: "1px solid #f59e0b", borderRadius: 4, marginBottom: 8, fontSize: 12 }}>
+        <div
+          style={{
+            padding: 8,
+            background: "rgba(245, 158, 11, 0.1)",
+            border: `1px solid ${colors.warn}`,
+            borderRadius: 4,
+            marginBottom: 8,
+            fontSize: 12,
+          }}
+        >
           <strong>⚠ {preview.missing.length} reference(s) not found locally</strong>
           <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
             {preview.missing.map((m, i) => (
@@ -193,17 +206,17 @@ export function ExportBundle() {
       )}
 
       {preview && (
-        <p style={{ fontSize: 12, color: "var(--text-dim)" }}>
+        <p style={{ fontSize: 12, color: colors.textDim }}>
           Will export: <strong>{preview.songs.length}</strong> song(s),{" "}
           <strong>{preview.templates.length}</strong> template(s),{" "}
           <strong>{preview.shows.length}</strong> show(s).
         </p>
       )}
 
-      <button onClick={downloadBundle} disabled={!hasSelection} style={btn("primary")}>
+      <Button onClick={downloadBundle} disabled={!hasSelection} variant="primary" size="sm">
         Download bundle
-      </button>
-    </section>
+      </Button>
+    </Panel>
   );
 }
 
@@ -216,7 +229,7 @@ function CheckRow({
     <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px", fontSize: 13, cursor: "pointer" }}>
       <input type="checkbox" checked={checked} onChange={onToggle} />
       <span style={{ fontWeight: 600 }}>{label}</span>
-      <code style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)" }}>{id}</code>
+      <code style={{ marginLeft: "auto", fontSize: 10, color: colors.textDim }}>{id}</code>
     </label>
   );
 }
@@ -226,17 +239,4 @@ function slugify(s: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function btn(kind: "default" | "primary" = "default"): React.CSSProperties {
-  return {
-    padding: "6px 10px",
-    background: kind === "primary" ? "var(--accent)" : "var(--panel-2)",
-    color: kind === "primary" ? "#fff" : "var(--text)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
 }

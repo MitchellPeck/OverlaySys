@@ -123,6 +123,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     audioSourceId: z.string(),
     text: z.string(),
     t: z.number(),
+    // True for finalized hypotheses (LF-terminated), false for partial
+    // overdraws (CR-only). Defaults true so manual / older listeners that
+    // only emit complete lines stay compatible.
+    isFinal: z.boolean().default(true),
   }),
   z.object({ type: z.literal("stt_spawner_get_config") }),
   z.object({
@@ -225,6 +229,20 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
       .nullable(),
     confidence: z.number().min(0).max(1),
     hypothesis: z.string(),
+    // Which matcher strategy fired. Null means no match (suggestedSlide is null too).
+    strategy: z.enum(["coverage", "neighborhood", "audible"]).nullable(),
+    // Folded slide tokens that the matcher counted as hits — feeds the
+    // operator-side debug overlay so STT tuning is visible.
+    matchedTokens: z.array(z.string()).default([]),
+    // Coverage of the cursor slide [0..1]. Always reported, even when
+    // the firing strategy wasn't coverage-based.
+    coverage: z.number().min(0).max(1).default(0),
+    // Server-measured audio→suggestion latency in ms.
+    latencyMs: z.number().nonnegative().default(0),
+    // True for finalized hypotheses (LF), false for partial overdraws (CR).
+    // Reserved for the listener-side partial/final split — defaults true so
+    // older listeners stay compatible.
+    isFinal: z.boolean().default(true),
   }),
   z.object({
     type: z.literal("stt_spawner_status"),

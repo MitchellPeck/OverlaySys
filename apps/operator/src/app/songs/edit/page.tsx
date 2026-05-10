@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import {
   type Song, type Section,
 } from "@overlaysys/core";
+import { Button, Field, Input, Panel, Select, Textarea, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
@@ -23,9 +24,6 @@ export default function SongEditorPage() {
 }
 
 function SongEditorPageInner() {
-  // Static-export-friendly: id comes from ?id=… query string, not a
-  // dynamic route segment. Allows Next.js to pre-render this page once
-  // and serve it for any song id without enumeration at build time.
   const searchParams = useSearchParams();
   const id = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
@@ -34,7 +32,7 @@ function SongEditorPageInner() {
   const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<Song | null>(cached ?? null);
   const [pasteOpen, setPasteOpen] = useState(false);
-  const { dialog } = useDialog();
+  const { dialog, confirm } = useDialog();
 
   useEffect(() => {
     if (conn === "open" && !cached) send({ type: "get_song", songId: id });
@@ -97,9 +95,46 @@ function SongEditorPageInner() {
       const sections = d.sections.slice();
       const sec = sections[secIdx];
       if (!sec) return d;
-      if (sec.slides.length <= 1) return d; // keep at least one
+      if (sec.slides.length <= 1) return d;
       sections[secIdx] = { ...sec, slides: sec.slides.filter((_, i) => i !== slideIdx) };
       return { ...d, sections };
+    });
+  }
+
+  async function removeSection(secIdx: number) {
+    const sec = draft?.sections[secIdx];
+    if (!sec) return;
+    const arrangementUses = (draft?.defaultArrangement ?? []).filter(
+      (sid) => sid === sec.id,
+    ).length;
+    const ok = await confirm({
+      title: "Delete section?",
+      destructive: true,
+      confirmLabel: "Delete",
+      message: (
+        <>
+          <p style={{ margin: 0 }}>
+            Delete <strong>{sec.label}</strong>{" "}
+            <span style={{ color: colors.textDim, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
+              ({sec.id})
+            </span>{" "}
+            and its {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"}?
+          </p>
+          {arrangementUses > 0 && (
+            <p style={{ marginTop: 8, marginBottom: 0, color: colors.textDim, fontSize: 12 }}>
+              This section appears {arrangementUses} time{arrangementUses === 1 ? "" : "s"} in
+              the default arrangement and will be removed from there too.
+            </p>
+          )}
+        </>
+      ),
+    });
+    if (!ok) return;
+    setDraft((d) => {
+      if (!d) return d;
+      const sections = d.sections.filter((_, i) => i !== secIdx);
+      const defaultArrangement = d.defaultArrangement.filter((sid) => sid !== sec.id);
+      return { ...d, sections, defaultArrangement };
     });
   }
 
@@ -113,13 +148,13 @@ function SongEditorPageInner() {
       <AppHeader
         context={
           <h1 style={{ margin: 0, fontSize: 16 }}>
-            ♪ {draft.title || <span style={{ color: "var(--text-dim)", fontStyle: "italic" }}>(untitled)</span>}
+            ♪ {draft.title || <span style={{ color: colors.textDim, fontStyle: "italic" }}>(untitled)</span>}
           </h1>
         }
         actions={
           <>
-            <button onClick={() => setPasteOpen((v) => !v)} style={btn()}>Paste lyrics…</button>
-            <button onClick={save} style={btn("primary")}>Save</button>
+            <Button onClick={() => setPasteOpen((v) => !v)} size="sm">Paste lyrics…</Button>
+            <Button onClick={save} variant="primary" size="sm">Save</Button>
           </>
         }
       />
@@ -133,18 +168,27 @@ function SongEditorPageInner() {
         />
       )}
 
-      <fieldset style={{ marginBottom: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
-        <legend style={{ fontSize: 12, color: "var(--text-dim)" }}>Metadata</legend>
-        <Field label="Title" value={draft.title} onChange={(v) => setMeta("title", v)} />
-        <Field label="Author" value={draft.author ?? ""} onChange={(v) => setMeta("author", v || undefined)} />
-        <Field label="CCLI #" value={draft.ccliNumber ?? ""} onChange={(v) => setMeta("ccliNumber", v || undefined)} />
-        <Field label="Copyright" value={draft.copyright ?? ""} onChange={(v) => setMeta("copyright", v || undefined)} />
-        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-          <label style={{ width: 100, fontSize: 12, color: "var(--text-dim)" }}>Template</label>
-          <select
+      <Panel title="Metadata" padding="md" style={{ marginBottom: 16 }}>
+        <Field label="Title" layout="inline">
+          <Input value={draft.title} onChange={(e) => setMeta("title", e.target.value)} />
+        </Field>
+        <Field label="Author" layout="inline">
+          <Input value={draft.author ?? ""} onChange={(e) => setMeta("author", e.target.value || undefined)} />
+        </Field>
+        <Field label="CCLI #" layout="inline">
+          <Input value={draft.ccliNumber ?? ""} onChange={(e) => setMeta("ccliNumber", e.target.value || undefined)} />
+        </Field>
+        <Field label="Copyright" layout="inline">
+          <Input value={draft.copyright ?? ""} onChange={(e) => setMeta("copyright", e.target.value || undefined)} />
+        </Field>
+        <Field
+          label="Template"
+          layout="inline"
+          hint="Default template used when this song is added to a show. Show rows can override per-row."
+        >
+          <Select
             value={draft.defaultLyricTemplateId ?? ""}
             onChange={(e) => setMeta("defaultLyricTemplateId", e.target.value || undefined)}
-            style={{ flex: 1 }}
           >
             <option value="">(none — pick per show row)</option>
             {!!draft.defaultLyricTemplateId &&
@@ -156,25 +200,23 @@ function SongEditorPageInner() {
             {templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
-          </select>
-        </div>
-        <p style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: 108, marginTop: 2 }}>
-          Default template used when this song is added to a show. Show rows can override per-row.
-        </p>
-      </fieldset>
+          </Select>
+        </Field>
+      </Panel>
 
       <h2 style={{ fontSize: 14, marginBottom: 8 }}>Sections</h2>
       {draft.sections.map((sec, secIdx) => (
-        <section key={sec.id} style={{ marginBottom: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
+        <Panel key={sec.id} padding="md" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-            <input
+            <Input
               value={sec.label}
               onChange={(e) => updateSection(secIdx, { label: e.target.value })}
               style={{ fontWeight: 600, flex: 1 }}
             />
-            <select
+            <Select
               value={sec.kind}
               onChange={(e) => updateSection(secIdx, { kind: e.target.value as Section["kind"] })}
+              style={{ width: "auto" }}
             >
               <option value="verse">verse</option>
               <option value="chorus">chorus</option>
@@ -183,51 +225,50 @@ function SongEditorPageInner() {
               <option value="intro">intro</option>
               <option value="outro">outro</option>
               <option value="other">other</option>
-            </select>
-            <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+            </Select>
+            <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
               {sec.id}
             </span>
+            <Button
+              onClick={() => removeSection(secIdx)}
+              variant="destructive"
+              size="sm"
+              title="Delete section"
+            >
+              Delete section
+            </Button>
           </div>
           {sec.slides.map((slide, slideIdx) => (
             <div key={slide.id} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-              <textarea
+              <Textarea
                 value={slide.lines.join("\n")}
                 onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
                 rows={2}
-                style={{ flex: 1, fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+                mono
+                style={{ flex: 1 }}
               />
-              <button onClick={() => removeSlide(secIdx, slideIdx)} style={btn()} disabled={sec.slides.length <= 1}>
+              <Button onClick={() => removeSlide(secIdx, slideIdx)} size="sm" disabled={sec.slides.length <= 1}>
                 ✕
-              </button>
+              </Button>
             </div>
           ))}
-          <button onClick={() => addSlide(secIdx)} style={btn()}>+ Slide</button>
-        </section>
+          <Button onClick={() => addSlide(secIdx)} size="sm">+ Slide</Button>
+        </Panel>
       ))}
 
-      <fieldset style={{ marginBottom: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 4 }}>
-        <legend style={{ fontSize: 12, color: "var(--text-dim)" }}>Default Arrangement</legend>
+      <Panel title="Default Arrangement" padding="md" style={{ marginBottom: 16 }}>
         <ArrangementEditor
           arrangement={draft.defaultArrangement}
           sections={draft.sections}
           onChange={(next) => setMeta("defaultArrangement", next)}
         />
-        <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+        <p style={{ fontSize: 10, color: colors.textDim, marginTop: 4 }}>
           Sections can repeat. Drag chips to reorder.
         </p>
-      </fieldset>
+      </Panel>
       </div>
       {dialog}
     </>
-  );
-}
-
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-      <label style={{ width: 100, fontSize: 12, color: "var(--text-dim)" }}>{label}</label>
-      <input value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }} />
-    </div>
   );
 }
 
@@ -263,7 +304,7 @@ function ArrangementEditor({
     <div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
         {arrangement.length === 0 && (
-          <p style={{ color: "var(--text-dim)", fontSize: 12, fontStyle: "italic" }}>
+          <p style={{ color: colors.textDim, fontSize: 12, fontStyle: "italic" }}>
             Empty arrangement. Add sections below.
           </p>
         )}
@@ -305,19 +346,21 @@ function ArrangementEditor({
                 gap: 8,
                 padding: "6px 10px",
                 borderRadius: 4,
-                border: "1px solid var(--border)",
-                background: "var(--panel-2)",
+                border: `1px solid ${colors.border}`,
+                background: colors.panel2,
                 opacity: isDragging ? 0.5 : 1,
-                borderTop: dropAtMe === "before" ? "2px solid #4ade80" : undefined,
-                borderBottom: dropAtMe === "after" ? "2px solid #4ade80" : "1px solid var(--border)",
+                // Raw 2px borders here are intentional drag indicators —
+                // not the standardized radius/border tokens.
+                borderTop: dropAtMe === "before" ? `2px solid ${colors.green}` : undefined,
+                borderBottom: dropAtMe === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
                 cursor: "grab",
                 fontSize: 12,
               }}
             >
-              <span style={{ color: "var(--text-dim)", width: 24, textAlign: "right" }}>{i + 1}.</span>
-              <span aria-hidden style={{ color: "var(--text-dim)" }}>⋮⋮</span>
+              <span style={{ color: colors.textDim, width: 24, textAlign: "right" }}>{i + 1}.</span>
+              <span aria-hidden style={{ color: colors.textDim }}>⋮⋮</span>
               <span style={{ fontWeight: 600 }}>{section?.label ?? sectionId}</span>
-              <span style={{ fontSize: 10, color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+              <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
                 {sectionId}{!section && " (missing)"}
               </span>
               <button
@@ -327,8 +370,8 @@ function ArrangementEditor({
                   marginLeft: "auto",
                   padding: "2px 8px",
                   background: "transparent",
-                  color: "var(--text-dim)",
-                  border: "1px solid var(--border)",
+                  color: colors.textDim,
+                  border: `1px solid ${colors.border}`,
                   borderRadius: 3,
                   cursor: "pointer",
                   fontSize: 12,
@@ -340,33 +383,20 @@ function ArrangementEditor({
           );
         })}
       </div>
-      <select
+      <Select
         value=""
         onChange={(e) => {
           const v = e.target.value;
           if (v) add(v);
           e.currentTarget.value = "";
         }}
-        style={{ fontSize: 12 }}
+        style={{ width: "auto" }}
       >
         <option value="">+ Add section…</option>
         {sections.map((s) => (
           <option key={s.id} value={s.id}>{s.label} ({s.id})</option>
         ))}
-      </select>
+      </Select>
     </div>
   );
-}
-
-function btn(kind: "default" | "primary" = "default"): React.CSSProperties {
-  return {
-    padding: "6px 10px",
-    background: kind === "primary" ? "var(--accent)" : "var(--panel-2)",
-    color: kind === "primary" ? "#fff" : "var(--text)",
-    border: "1px solid var(--border)",
-    borderRadius: 4,
-    fontWeight: 600,
-    cursor: "pointer",
-    fontSize: 12,
-  };
 }

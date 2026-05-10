@@ -77,7 +77,7 @@ describe("ShowSchema (legacy compat)", () => {
         },
       ],
     });
-    expect(show.rows[0].kind).toBe("graphic");
-    expect(show.rows[1].kind).toBe("song");
+    expect(show.rows[0]!.kind).toBe("graphic");
+    expect(show.rows[1]!.kind).toBe("song");
   });
 });

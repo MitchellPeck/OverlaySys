@@ -1,6 +1,7 @@
 "use client";
 
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
+import { colors, radius } from "@overlaysys/ui";
 import { ChannelPreview } from "./ChannelPreview";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
 
@@ -32,9 +33,9 @@ export function ChannelStatus({
       style={{
         marginBottom: 10,
         padding: 12,
-        background: "var(--panel-2)",
-        border: `1px solid ${active ? accent : "var(--border)"}`,
-        borderRadius: 4,
+        background: colors.panel2,
+        border: `1px solid ${active ? accent : colors.border}`,
+        borderRadius: radius.md,
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -49,7 +50,7 @@ export function ChannelStatus({
           ● {label}
         </div>
         {(mirrorOf || renderMode === "matte") && (
-          <div style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>
+          <div style={{ fontSize: 10, color: colors.textDim, fontWeight: 400 }}>
             {mirrorOf && <>↳ {mirrorOf}</>}
             {mirrorOf && renderMode === "matte" && " · "}
             {renderMode === "matte" && <>matte</>}
@@ -64,9 +65,9 @@ export function ChannelStatus({
                 width: 22,
                 height: 18,
                 background: "transparent",
-                color: previewEnabled ? accent : "var(--text-dim)",
-                border: "1px solid var(--border)",
-                borderRadius: 3,
+                color: previewEnabled ? accent : colors.textDim,
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.sm,
                 cursor: "pointer",
                 fontSize: 10,
                 padding: 0,
@@ -76,43 +77,31 @@ export function ChannelStatus({
               {previewEnabled ? "👁" : "—"}
             </button>
           )}
-          {isElectron() && config && (
+          {(href || config) && (
             <button
               onClick={() => {
-                getDesktopApi()?.openChannelWindow(config.id);
+                if (isElectron() && config) {
+                  getDesktopApi()?.openChannelWindow(config.id);
+                } else if (href) {
+                  window.open(href, "_blank", "noreferrer");
+                }
               }}
-              title="Pop out as window"
+              title="Open renderer"
               style={{
                 width: 22,
                 height: 18,
                 background: "transparent",
                 color: accent,
-                border: "1px solid var(--border)",
-                borderRadius: 3,
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.sm,
                 cursor: "pointer",
                 fontSize: 10,
                 padding: 0,
                 lineHeight: 1,
               }}
             >
-              ⧉
-            </button>
-          )}
-          {href && (
-            <a
-              href={href}
-              target="_blank"
-              rel="noreferrer"
-              title="Open renderer in browser"
-              style={{
-                fontSize: 10,
-                color: "var(--text-dim)",
-                textDecoration: "none",
-                paddingLeft: 2,
-              }}
-            >
               ↗
-            </a>
+            </button>
           )}
         </div>
       </div>
@@ -128,20 +117,20 @@ export function ChannelStatus({
         {active ? (
           <>
             <div style={{ fontSize: 13 }}>{active.templateId}</div>
-            <div style={{ color: "var(--text-dim)", fontSize: 11, marginTop: 2 }}>
+            <div style={{ color: colors.textDim, fontSize: 11, marginTop: 2 }}>
               phase: {active.phase} · {Object.keys(active.data).length} fields
             </div>
             {Object.entries(active.data)
               .slice(0, 3)
               .map(([k, v]) => (
-                <div key={k} style={{ fontSize: 11, marginTop: 4, color: "var(--text-dim)" }}>
-                  <span style={{ color: "var(--text)" }}>{k}:</span>{" "}
+                <div key={k} style={{ fontSize: 11, marginTop: 4, color: colors.textDim }}>
+                  <span style={{ color: colors.text }}>{k}:</span>{" "}
                   {v.startsWith("data:") ? "(image data)" : v.length > 40 ? v.slice(0, 39) + "…" : v}
                 </div>
               ))}
           </>
         ) : (
-          <div style={{ color: "var(--text-dim)", fontSize: 12 }}>(empty)</div>
+          <div style={{ color: colors.textDim, fontSize: 12 }}>(empty)</div>
         )}
       </div>
     </div>

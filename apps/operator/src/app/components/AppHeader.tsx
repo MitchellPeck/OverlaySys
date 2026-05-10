@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
+import { Pill, type PillTone } from "@overlaysys/ui";
 import type { CSSProperties, ReactNode } from "react";
 
 const NAV_LINKS = [
@@ -16,10 +17,12 @@ const NAV_LINKS = [
 ];
 
 export function AppHeader({
+  title,
   context,
   actions,
 }: {
-  context?: ReactNode; // page-specific info between nav and actions (e.g. show title)
+  title?: ReactNode; // page title rendered with consistent styling
+  context?: ReactNode; // page-specific info between nav and actions (e.g. show picker)
   actions?: ReactNode; // page-specific buttons aligned to the right edge
 }) {
   const pathname = usePathname() ?? "/";
@@ -55,6 +58,9 @@ export function AppHeader({
           </Link>
         ))}
       </nav>
+      {title !== undefined && (
+        <h1 style={{ margin: 0, marginLeft: 8, fontSize: 16, fontWeight: 600 }}>{title}</h1>
+      )}
       {context && (
         <div
           style={{
@@ -88,21 +94,19 @@ export function AppHeader({
 function SttStatusPill() {
   const status = useStore((s) => s.sttSpawnerStatus);
   const pathname = usePathname() ?? "/";
-  // No status yet (haven't received the first stt_spawner_status broadcast)
-  // — render nothing rather than a confusing "idle" stub.
   if (!status) return null;
   // On /stt itself the page already shows a big status pill in its actions
   // slot; suppress the global one to avoid duplication.
   if (pathname === "/stt" || pathname.startsWith("/stt/")) return null;
 
-  const colors: Record<string, string> = {
-    idle: "var(--text-dim)",
-    starting: "#fbbf24",
-    running: "#4ade80",
-    stopped: "var(--text-dim)",
-    error: "#ef4444",
+  const TONES: Record<string, PillTone> = {
+    idle: "dim",
+    starting: "warn",
+    running: "good",
+    stopped: "dim",
+    error: "bad",
   };
-  const color = colors[status.state] ?? "var(--text-dim)";
+  const tone = TONES[status.state] ?? "dim";
 
   return (
     <Link
@@ -112,19 +116,11 @@ function SttStatusPill() {
           ? `STT: ${status.state} — ${status.lastError}`
           : `STT: ${status.state}`
       }
-      style={{
-        fontSize: 11,
-        padding: "3px 10px",
-        borderRadius: 999,
-        border: `1px solid ${color}`,
-        color,
-        textDecoration: "none",
-        fontWeight: 600,
-        textTransform: "uppercase",
-        letterSpacing: 1,
-      }}
+      style={{ textDecoration: "none" }}
     >
-      🎤 {status.state}
+      <Pill tone={tone} uppercase>
+        🎤 {status.state}
+      </Pill>
     </Link>
   );
 }

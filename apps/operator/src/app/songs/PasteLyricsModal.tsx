@@ -6,6 +6,7 @@ import {
   parseSongSelectText,
   type Song,
 } from "@overlaysys/core";
+import { Button, Panel, Textarea, colors } from "@overlaysys/ui";
 
 type SongPatch =
   & Pick<Song, "sections" | "defaultArrangement">
@@ -27,6 +28,11 @@ function looksLikeSongSelect(text: string): boolean {
   return false;
 }
 
+/**
+ * Inline panel (not a true modal) — rendered above the song editor for pasting
+ * or dropping a lyric file. The name is historical: it's an inline drop zone
+ * that replaces the song body, not a floating dialog.
+ */
 export function PasteLyricsModal({ song, onApply, onClose }: Props) {
   const [text, setText] = useState("");
   const [updateMeta, setUpdateMeta] = useState(false);
@@ -72,28 +78,21 @@ export function PasteLyricsModal({ song, onApply, onClose }: Props) {
   }
 
   return (
-    <div
-      style={{
-        marginBottom: 16,
-        padding: 12,
-        border: "1px solid var(--border)",
-        borderRadius: 4,
-      }}
-    >
-      <p style={{ fontSize: 12, color: "var(--text-dim)", margin: "0 0 8px" }}>
+    <Panel padding="md" style={{ marginBottom: 16 }}>
+      <p style={{ fontSize: 12, color: colors.textDim, margin: "0 0 8px" }}>
         Paste plain text with <code>[Section Name]</code> headers, or drop a SongSelect <code>.txt</code> /
         ChordPro <code>.cho</code> file. Blank line = new slide within a section.
       </p>
-      <textarea
+      <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
         rows={12}
-        style={{ width: "100%", fontFamily: "ui-monospace, monospace", fontSize: 12 }}
+        mono
       />
       {detectedSongSelect && (
-        <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>
+        <div style={{ marginTop: 8, fontSize: 12, color: colors.textDim }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input
               type="checkbox"
@@ -104,22 +103,9 @@ export function PasteLyricsModal({ song, onApply, onClose }: Props) {
           </label>
         </div>
       )}
-      <button
-        onClick={apply}
-        style={{
-          marginTop: 8,
-          padding: "6px 10px",
-          background: "var(--accent)",
-          color: "#fff",
-          border: "1px solid var(--border)",
-          borderRadius: 4,
-          fontWeight: 600,
-          cursor: "pointer",
-          fontSize: 12,
-        }}
-      >
+      <Button onClick={apply} variant="primary" size="sm" style={{ marginTop: 8 }}>
         Replace song body{detectedSongSelect ? " (SongSelect detected)" : ""}
-      </button>
-    </div>
+      </Button>
+    </Panel>
   );
 }

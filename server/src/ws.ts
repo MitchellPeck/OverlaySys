@@ -21,7 +21,7 @@ import { registerSender, broadcast } from "./broadcast";
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
 
-songSession.onMatch((channel, result, hypothesis) => {
+songSession.onMatch((channel, result, hypothesis, meta) => {
   broadcast({
     type: "stt_match",
     channel,
@@ -30,6 +30,11 @@ songSession.onMatch((channel, result, hypothesis) => {
       : null,
     confidence: result?.confidence ?? 0,
     hypothesis,
+    strategy: result?.strategy ?? null,
+    matchedTokens: result?.matchedTokens ?? [],
+    coverage: result?.coverage ?? 0,
+    latencyMs: meta.latencyMs,
+    isFinal: meta.isFinal,
   });
 });
 
@@ -39,6 +44,14 @@ sttListener.subscribe((listeners) => {
 
 sttSpawner.subscribe((status) => {
   broadcast({ type: "stt_spawner_status", status });
+});
+
+// Whenever the program channel's active song changes, push the song's text
+// to the spawner as a Whisper prompt bias. The spawner restarts the child
+// in-place (only when running) so subsequent recognition is biased toward
+// the song's vocabulary.
+songSession.onProgramBiasChange((bias) => {
+  sttSpawner.setBias(bias);
 });
 
 export function handleConnection(
@@ -295,7 +308,12 @@ export function handleConnection(
           // Route to all active sessions — the operator UI shows suggestions
           // for every channel regardless of which listener sent them.
           for (const channel of songSession.getChannelsWithSessions()) {
-            songSession.processSttHypothesis(channel, parsed.text, parsed.t);
+            songSession.processSttHypothesis(
+              channel,
+              parsed.text,
+              parsed.t,
+              parsed.isFinal,
+            );
           }
           break;
         }
