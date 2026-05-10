@@ -7,9 +7,12 @@ import { VideoInput } from "./VideoInput";
 type Props = {
   template: Template;
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
+  /** Optional uploader for image/video field-default file pickers. Without
+   * it, picked files fall back to inline data URLs. */
+  onUpload?: (file: File) => Promise<string>;
 };
 
-export function FieldsPanel({ template, onCommit }: Props) {
+export function FieldsPanel({ template, onCommit, onUpload }: Props) {
   function add() {
     const key = uniqueKey(template.fields);
     onCommit((d) => {
@@ -90,7 +93,7 @@ export function FieldsPanel({ template, onCommit }: Props) {
               </div>
               <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>default</span>
-                <DefaultEditor field={f} onChange={(v) => patch(f.key, { default: v })} />
+                <DefaultEditor field={f} onChange={(v) => patch(f.key, { default: v })} onUpload={onUpload} />
                 <button onClick={() => remove(f.key)} style={delBtnStyle}>×</button>
               </div>
             </li>
@@ -104,18 +107,20 @@ export function FieldsPanel({ template, onCommit }: Props) {
 function DefaultEditor({
   field,
   onChange,
+  onUpload,
 }: {
   field: Field;
   onChange: (v: string) => void;
+  onUpload?: (file: File) => Promise<string>;
 }) {
   const v = field.default ?? "";
   switch (field.type) {
     case "color":
       return <ColorInput value={v || "#ffffff"} onChange={onChange} />;
     case "image":
-      return <ImageInput value={v} onChange={onChange} />;
+      return <ImageInput value={v} onChange={onChange} onUpload={onUpload} />;
     case "video":
-      return <VideoInput value={v} onChange={onChange} />;
+      return <VideoInput value={v} onChange={onChange} onUpload={onUpload} />;
     case "number":
       return (
         <input

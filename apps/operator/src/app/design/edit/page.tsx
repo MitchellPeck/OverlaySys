@@ -9,6 +9,8 @@ import {
   TimelinePanel,
   FieldsPanel,
 } from "@overlaysys/editor-kit";
+import type { Draft } from "immer";
+import type { Template } from "@overlaysys/core";
 import { Button, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -260,7 +262,10 @@ function DesignPageInner() {
             onCommit={commit}
           />
           <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-            <FieldsPanel template={draft} onCommit={commit} />
+            <TemplateSettings template={draft} onCommit={commit} />
+          </div>
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
+            <FieldsPanel template={draft} onCommit={commit} onUpload={uploadInspector} />
           </div>
         </EditorSection>
 
@@ -309,6 +314,66 @@ function DesignPageInner() {
         />
       </div>
     </main>
+  );
+}
+
+function TemplateSettings({
+  template,
+  onCommit,
+}: {
+  template: Template;
+  onCommit: (recipe: (d: Draft<Template>) => void) => void;
+}) {
+  const seconds =
+    template.autoOutMs && template.autoOutMs > 0 ? template.autoOutMs / 1000 : 0;
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 11,
+          color: colors.textDim,
+          textTransform: "uppercase",
+          letterSpacing: 1.2,
+          marginBottom: 8,
+        }}
+      >
+        Settings
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ minWidth: 70 }}>Auto-out</span>
+        <input
+          type="number"
+          min={0}
+          step={0.1}
+          value={seconds === 0 ? "" : seconds}
+          placeholder="off"
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            const next = v === "" ? undefined : Math.max(0, Math.round(Number(v) * 1000));
+            onCommit((d) => {
+              if (!next || next <= 0) {
+                delete d.autoOutMs;
+              } else {
+                d.autoOutMs = next;
+              }
+            });
+          }}
+          title="Auto-clear this template N seconds after it's taken. Empty / 0 to disable."
+          style={{
+            width: 80,
+            padding: "4px 6px",
+            background: colors.panel,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 3,
+            color: colors.text,
+            fontSize: 12,
+          }}
+        />
+        <span style={{ color: colors.textDim, fontSize: 11 }}>
+          seconds {seconds > 0 ? "" : "(off)"}
+        </span>
+      </label>
+    </div>
   );
 }
 
