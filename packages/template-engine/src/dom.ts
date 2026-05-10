@@ -188,6 +188,13 @@ function buildLayer(
       el.style.height = "100%";
 
       const v = document.createElement("video");
+      // muted is the one media boolean that does NOT reflect from the IDL
+      // property to the HTML attribute. Chromium's autoplay policy checks
+      // the attribute — without it, autoplay is silently blocked and the
+      // first frame is never painted, so the layer renders as a blank box
+      // even though the src is set correctly. Set both: the attribute for
+      // the policy check, the property for runtime mute state.
+      if (layer.muted) v.setAttribute("muted", "");
       v.muted = layer.muted;
       v.loop = layer.loop;
       v.autoplay = layer.autoplay;
