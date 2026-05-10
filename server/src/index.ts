@@ -80,7 +80,15 @@ await app.listen({ host: HOST, port: PORT });
 const addr = app.server.address();
 const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
 
-const wss = new WebSocketServer({ server: app.server, path: "/ws" });
+// 1 GB cap. Videos and (eventually large) fonts are embedded as data URLs
+// today, which can push template-save messages well past ws's 100 MB
+// default. This raises the ceiling so saves don't drop the socket; the
+// proper fix is a real upload endpoint that stores binaries on disk.
+const wss = new WebSocketServer({
+  server: app.server,
+  path: "/ws",
+  maxPayload: 1024 * 1024 * 1024,
+});
 wss.on("connection", (ws, req) => {
   handleConnection(ws, req, app.log);
 });
