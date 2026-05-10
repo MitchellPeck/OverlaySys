@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 import staticPlugin from "@fastify/static";
 import { dataRoot } from "./storage";
-import { needsTranscode, transcodeToMp4 } from "./transcode";
+import { planTranscode, transcodeToMp4, transcodeToWebmAlpha } from "./transcode";
 
 /**
  * Content-addressed binary asset store.
@@ -124,13 +124,18 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
 
     const sha256 = hash.digest("hex");
 
-    // Decide the FINAL extension. Video files get transcoded to MP4 if
-    // they're not already in a web-safe container (.mp4 / .webm); the
-    // hash still keys off source bytes, so re-uploads dedup correctly.
-    const isVideoLike = (file.mimetype || "").startsWith("video/") || /\.(mov|mkv|avi|m4v|webm|mp4)$/i.test(file.filename || "");
-    const willTranscode = isVideoLike && needsTranscode(ext);
-    const finalExt = willTranscode ? ".mp4" : ext;
-    const finalName = `${sha256}${finalExt}`;
+    // Decide what to do with this upload. For video, we probe the pixel
+    // format and route to the right encoder: alpha → VP9/WebM, opaque +
+    // non-web-safe → H.264/MP4, opaque + web-safe → passthrough. For images
+    // and fonts, the planner is skipped and we always passthrough.
+    const isVideoLike =
+      (file.mimetype || "").startsWith("video/") ||
+      /\.(mov|mkv|avi|m4v|webm|mp4)$/i.test(file.filename || "");
+    const plan = isVideoLike
+      ? await planTranscode(tmpPath, ext)
+      : { kind: "passthrough" as const, finalExt: ext };
+
+    const finalName = `${sha256}${plan.finalExt}`;
     const finalPath = path.join(ASSETS_DIR(), finalName);
 
     const exists = await fs
@@ -142,22 +147,25 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
       // Same source bytes already converted (or stored verbatim) — drop the
       // temp upload and reuse the existing file.
       await fs.unlink(tmpPath).catch(() => {});
-    } else if (willTranscode) {
-      // Transcode the temp upload into the final slot, then drop the temp.
+    } else if (plan.kind === "passthrough") {
+      await fs.rename(tmpPath, finalPath);
+    } else {
       try {
-        await transcodeToMp4(tmpPath, finalPath);
+        if (plan.kind === "h264-mp4") {
+          await transcodeToMp4(tmpPath, finalPath);
+        } else if (plan.kind === "vp9-webm-alpha") {
+          await transcodeToWebmAlpha(tmpPath, finalPath);
+        }
       } catch (err) {
         await fs.unlink(tmpPath).catch(() => {});
         await fs.unlink(finalPath).catch(() => {});
-        req.log.error({ err }, "asset transcode failed");
+        req.log.error({ err, plan }, "asset transcode failed");
         reply.code(500);
         return {
           error: `transcode failed: ${err instanceof Error ? err.message : String(err)}`,
         };
       }
       await fs.unlink(tmpPath).catch(() => {});
-    } else {
-      await fs.rename(tmpPath, finalPath);
     }
 
     // Build an absolute URL using the request's host header. Works in dev
