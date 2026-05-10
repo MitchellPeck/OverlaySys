@@ -29,7 +29,8 @@
       "esbuild",
       "sharp",
       "@swc/core",
-      "electron"
+      "electron",
+      "ffmpeg-static"
     ]
   }
 }

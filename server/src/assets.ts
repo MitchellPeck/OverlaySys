@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 import staticPlugin from "@fastify/static";
 import { dataRoot } from "./storage";
+import { needsTranscode, transcodeToMp4 } from "./transcode";
 
 /**
  * Content-addressed binary asset store.
@@ -122,7 +123,14 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
     }
 
     const sha256 = hash.digest("hex");
-    const finalName = `${sha256}${ext}`;
+
+    // Decide the FINAL extension. Video files get transcoded to MP4 if
+    // they're not already in a web-safe container (.mp4 / .webm); the
+    // hash still keys off source bytes, so re-uploads dedup correctly.
+    const isVideoLike = (file.mimetype || "").startsWith("video/") || /\.(mov|mkv|avi|m4v|webm|mp4)$/i.test(file.filename || "");
+    const willTranscode = isVideoLike && needsTranscode(ext);
+    const finalExt = willTranscode ? ".mp4" : ext;
+    const finalName = `${sha256}${finalExt}`;
     const finalPath = path.join(ASSETS_DIR(), finalName);
 
     const exists = await fs
@@ -131,6 +139,22 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
       .catch(() => false);
 
     if (exists) {
+      // Same source bytes already converted (or stored verbatim) — drop the
+      // temp upload and reuse the existing file.
+      await fs.unlink(tmpPath).catch(() => {});
+    } else if (willTranscode) {
+      // Transcode the temp upload into the final slot, then drop the temp.
+      try {
+        await transcodeToMp4(tmpPath, finalPath);
+      } catch (err) {
+        await fs.unlink(tmpPath).catch(() => {});
+        await fs.unlink(finalPath).catch(() => {});
+        req.log.error({ err }, "asset transcode failed");
+        reply.code(500);
+        return {
+          error: `transcode failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
       await fs.unlink(tmpPath).catch(() => {});
     } else {
       await fs.rename(tmpPath, finalPath);
