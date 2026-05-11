@@ -81,7 +81,7 @@ function currentSlideText(s: InternalSession): string | null {
   return slide.lines.join("\n");
 }
 
-function render(s: InternalSession): void {
+function render(s: InternalSession, forceMount: boolean = false): void {
   channels.setSongSessionSummary(s.channel, summarize(s));
   if (s.blanked) {
     // Use clearInternal so the renderer plays its out animation; the session
@@ -91,6 +91,25 @@ function render(s: InternalSession): void {
   }
   const text = currentSlideText(s);
   if (text === null) return;
+
+  // Slide advances within a single live session use update() so the same
+  // template instance keeps its in-phase and the lyrics swap content
+  // without replaying the entrance animation. Session start and promotion
+  // pass `forceMount` so the renderer runs the previous mount's OUT and
+  // the new template's IN transitions — even when the previously-active
+  // template happens to be the same lyric template (e.g. starting song B
+  // while song A is live and both use the same lyric template).
+  if (!forceMount) {
+    const current = channels.getState(s.channel).active;
+    const liveMount =
+      current !== null &&
+      current.templateId === s.lyricTemplateId &&
+      current.phase === "in";
+    if (liveMount) {
+      channels.update(s.channel, { text });
+      return;
+    }
+  }
   channels.takeInternal(s.channel, s.lyricTemplateId, { text });
 }
 
@@ -106,7 +125,7 @@ export function start(channel: string, args: StartArgs): void {
     startedAt: Date.now(),
   };
   sessions.set(channel, internal);
-  render(internal);
+  render(internal, /* forceMount */ true);
   sttMatcher.bindSession(channel, args.song, args.arrangement);
   if (channel === PROGRAM_CHANNEL) refreshProgramBias();
 }
@@ -140,7 +159,7 @@ export function promoteTo(
     startedAt: Date.now(),
   };
   sessions.set(toChannel, internal);
-  render(internal);
+  render(internal, /* forceMount */ true);
   sttMatcher.bindSession(toChannel, args.song, internal.arrangement);
 
   // End the source AFTER the destination is rendered, so there's never a
@@ -295,22 +314,30 @@ export function onMatch(fn: MatchListener): () => void {
 const autoAdvanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /**
- * Pick a debounce delay based on match confidence. High-confidence matches
- * snap quickly so the operator screen doesn't lag the band; marginal matches
- * wait longer so a manual override is easier. The lower bound (150ms)
- * preserves the original debounce intent: never advance on a single noisy
- * partial hypothesis.
+ * Pick a debounce delay based on match confidence AND whether the source
+ * was a final or partial hypothesis. Partials use a longer safety window
+ * so unstable refinements have time to settle; finals snap quickly. The
+ * combined effect: trust mode reacts mid-step (no waiting for the ~500ms
+ * whisper final cadence) while still resisting spurious early fires.
  */
-function debounceDelayMs(confidence: number): number {
-  if (confidence >= 0.90) return 150;
-  if (confidence >= 0.75) return 250;
+function debounceDelayMs(confidence: number, isFinal: boolean): number {
+  if (isFinal) {
+    if (confidence >= 0.90) return 80;
+    if (confidence >= 0.75) return 140;
+    return 220;
+  }
+  // Partial — add a settling cushion. A newer partial/final within this
+  // window will replace this timer (scheduleAutoAdvance always cancels
+  // the existing timer before installing a new one).
+  if (confidence >= 0.90) return 250;
+  if (confidence >= 0.75) return 320;
   return 400;
 }
 
-function scheduleAutoAdvance(channel: string, target: MatchResult): void {
+function scheduleAutoAdvance(channel: string, target: MatchResult, isFinal: boolean): void {
   const existing = autoAdvanceTimers.get(channel);
   if (existing) clearTimeout(existing);
-  const delay = debounceDelayMs(target.confidence);
+  const delay = debounceDelayMs(target.confidence, isFinal);
   const timer = setTimeout(() => {
     autoAdvanceTimers.delete(channel);
     const s = sessions.get(channel);
@@ -342,18 +369,17 @@ export function processSttHypothesis(
   for (const fn of matchListeners) fn(channel, result, text, meta);
   if (!result) return;
 
-  // Auto-advance is gated on FINAL hypotheses only — partials are
-  // refinements of an in-flight transcript and may still change.
-  if (
-    isFinal &&
-    s.trustMode &&
-    result.confidence >= sttMatcher.AUTO_TAKE_THRESHOLD
-  ) {
+  // Both partials and finals can schedule auto-advance. Each subsequent
+  // hypothesis cancels the prior timer (scheduleAutoAdvance does this for
+  // us), so an unstable partial that gets revised before its longer
+  // debounce expires is harmlessly replaced. Finals snap fast; partials
+  // pay a cushion. See debounceDelayMs.
+  if (s.trustMode && result.confidence >= sttMatcher.AUTO_TAKE_THRESHOLD) {
     // Only auto-advance if the candidate is monotonically forward (strictly ahead).
     const isForward =
       result.sectionIdx > s.cursor.sectionIdx ||
       (result.sectionIdx === s.cursor.sectionIdx && result.slideIdx > s.cursor.slideIdx);
-    if (isForward) scheduleAutoAdvance(channel, result);
+    if (isForward) scheduleAutoAdvance(channel, result, isFinal);
   }
 }
 

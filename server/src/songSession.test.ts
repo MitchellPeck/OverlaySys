@@ -167,6 +167,82 @@ describe("songSession", () => {
     expect(s.songSession).toBeUndefined();
   });
 
+  it("starting a new song with the same lyric template forces a fresh mount (new takenAt)", () => {
+    // Without forceMount, the render() optimization would just call
+    // channels.update() because previous.templateId === new lyric template,
+    // and the renderer would silently swap text with no out/in transition.
+    // This test pins that session start always produces a new takenAt so the
+    // renderer plays the previous mount's OUT then the new template's IN.
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1000);
+
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: ["v1"], trustMode: false,
+    });
+    const t1 = channels.getState(CH).active?.takenAt;
+    expect(t1).toBe(1000);
+
+    nowSpy.mockReturnValue(2000);
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: ["c"], trustMode: false,
+    });
+    const t2 = channels.getState(CH).active?.takenAt;
+    expect(t2).toBe(2000);
+    expect(t2).not.toBe(t1);
+
+    nowSpy.mockRestore();
+  });
+
+  it("slide advance within a live session keeps the same takenAt (no transition re-play)", () => {
+    // Counterpart to the forceMount test above: the in-session optimization
+    // must still fire so consecutive slide advances flow as a text swap.
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1000);
+
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement, trustMode: false,
+    });
+    const t1 = channels.getState(CH).active?.takenAt;
+
+    nowSpy.mockReturnValue(2000);
+    songSession.advance(CH, 1);
+    const t2 = channels.getState(CH).active?.takenAt;
+
+    expect(t2).toBe(t1);
+
+    nowSpy.mockRestore();
+  });
+
+  it("promoteTo forces a fresh mount on the destination channel", () => {
+    // Same hazard as session start: if the destination already has the same
+    // lyric template active (e.g. preview was cued and program also showed
+    // a lyric template), promotion should still re-mount so transitions run.
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1000);
+
+    // Pre-load destination with a lyric-default mount.
+    songSession.start(CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: ["v1"], trustMode: false,
+    });
+    const t1 = channels.getState(CH).active?.takenAt;
+
+    nowSpy.mockReturnValue(2000);
+    // Promote from a different channel into CH with the same template.
+    songSession.promoteTo("preview", CH, {
+      song, lyricTemplateId: "lyric-default",
+      arrangement: ["c"], trustMode: false,
+    });
+    const t2 = channels.getState(CH).active?.takenAt;
+    expect(t2).toBe(2000);
+    expect(t2).not.toBe(t1);
+
+    nowSpy.mockRestore();
+  });
+
   it("ends the session when takePvwToPgm promotes onto the session's channel", () => {
     // Stage a graphic on preview, start a song on program, then PVW→PGM.
     // The song session on program must end so the promoted graphic stays live.
