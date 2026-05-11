@@ -13,6 +13,15 @@ type Status = "connecting" | "open" | "closed";
 const STAGE_W = 1920;
 const STAGE_H = 1080;
 
+// Session-end stage fade. Used only on session end as a deliberate
+// "screen goes dark" boundary cue. Session START used to fade in too,
+// but that was a workaround for the (now-fixed) songSession path that
+// didn't remount the template on start — with forceMount in place the
+// template's own playIn handles the visual transition, and the fade-in
+// would just conflict with it (snapping the stage opaque-to-clear while
+// the previous template is still mid-OUT and the new one is mid-IN).
+const SONG_FADE_MS = 600;
+
 export function Renderer({ channel, debug = false }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef<MountedTemplate | null>(null);
@@ -34,6 +43,13 @@ export function Renderer({ channel, debug = false }: Props) {
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
   const [config, setConfig] = useState<ChannelConfig | null>(null);
   const [scale, setScale] = useState(1);
+  // Session-level fade. opacity drives the stage; transitionMs=0 disables
+  // the CSS transition so we can snap back to 1 cleanly after a fade-out
+  // without re-triggering a slow ramp on the next non-song take.
+  const [songFadeOpacity, setSongFadeOpacity] = useState(1);
+  const [songFadeTransitionMs, setSongFadeTransitionMs] = useState(0);
+  const lastHadSongSessionRef = useRef(false);
+  const songFadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fit-scale the 1920x1080 stage to the viewport.
   useLayoutEffect(() => {
@@ -163,6 +179,27 @@ export function Renderer({ channel, debug = false }: Props) {
           client.send({ type: "subscribe", channel: src, role: "renderer" });
         }
       } else if (msg.type === "state" && msg.channel === sourceChannelRef.current) {
+        // Session-end stage fade. Session start is handled by the template's
+        // own IN animation (forceMount on session start in songSession.ts
+        // guarantees a fresh mount, so the renderer plays the previous
+        // template's OUT and the new one's IN). A stage fade-in here would
+        // fight that transition.
+        const hadSession = lastHadSongSessionRef.current;
+        const hasSession = !!msg.state.songSession;
+        if (!hasSession && hadSession) {
+          // Fade out: transition opacity to 0, then once it lands snap
+          // back to 1 (no transition) so the next non-song take starts
+          // at full opacity instantly.
+          setSongFadeTransitionMs(SONG_FADE_MS);
+          setSongFadeOpacity(0);
+          if (songFadeOutTimerRef.current) clearTimeout(songFadeOutTimerRef.current);
+          songFadeOutTimerRef.current = setTimeout(() => {
+            setSongFadeTransitionMs(0);
+            setSongFadeOpacity(1);
+            songFadeOutTimerRef.current = null;
+          }, SONG_FADE_MS + 50);
+        }
+        lastHadSongSessionRef.current = hasSession;
         setLatestState(msg.state);
         applyState(msg.state);
       } else if (msg.type === "template") {
@@ -183,6 +220,10 @@ export function Renderer({ channel, debug = false }: Props) {
       offStatus();
       offMsg();
       client.close();
+      if (songFadeOutTimerRef.current) {
+        clearTimeout(songFadeOutTimerRef.current);
+        songFadeOutTimerRef.current = null;
+      }
       if (mountedRef.current) {
         mountedRef.current.destroy();
         mountedRef.current = null;
@@ -219,6 +260,10 @@ export function Renderer({ channel, debug = false }: Props) {
           // white silhouette on black, suitable for hardware fill+key.
           filter: matte ? "brightness(0) invert(1)" : undefined,
           zIndex: 1,
+          opacity: songFadeOpacity,
+          transition: songFadeTransitionMs > 0
+            ? `opacity ${songFadeTransitionMs}ms ease`
+            : "none",
         }}
       />
       {debug && (
