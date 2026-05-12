@@ -28,6 +28,14 @@ export type MountMode = "live" | "edit";
  * All three calls are synchronous so the user only sees the final state.
  */
 function playFromStart(tl: gsap.core.Timeline): Promise<void> {
+  if ((globalThis as { __overlaysys_log?: boolean }).__overlaysys_log) {
+    console.log("[overlaysys:engine] playFromStart", {
+      duration: tl.duration(),
+      progress: tl.progress(),
+      paused: tl.paused(),
+      childCount: tl.getChildren().length,
+    });
+  }
   return new Promise<void>((resolve) => {
     tl.eventCallback("onComplete", () => resolve());
     // suppressEvents=true on the seeks so onComplete doesn't fire during
