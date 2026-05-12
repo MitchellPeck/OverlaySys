@@ -199,7 +199,7 @@ export function advance(channel: string, delta: number): void {
     remaining -= step;
   }
   s.cursor = { sectionIdx, slideIdx };
-  render(s);
+  render(s, /* forceMount */ true);
 }
 
 export function jump(
@@ -218,7 +218,7 @@ export function jump(
     sectionIdx = s.arrangement.length - 1;
   }
   s.cursor = { sectionIdx, slideIdx };
-  render(s);
+  render(s, /* forceMount */ true);
 }
 
 /**

@@ -195,9 +195,11 @@ describe("songSession", () => {
     nowSpy.mockRestore();
   });
 
-  it("slide advance within a live session keeps the same takenAt (no transition re-play)", () => {
-    // Counterpart to the forceMount test above: the in-session optimization
-    // must still fire so consecutive slide advances flow as a text swap.
+  it("slide advance within a live session produces a new takenAt so the renderer replays IN/OUT", () => {
+    // Manual slide changes (advance / jump) re-mount the template each step
+    // so the operator sees the template's OUT on the previous slide's text
+    // and the IN on the new slide's text. Pure update-in-place would just
+    // swap text with no animation.
     const nowSpy = vi.spyOn(Date, "now");
     nowSpy.mockReturnValue(1000);
 
@@ -211,7 +213,8 @@ describe("songSession", () => {
     songSession.advance(CH, 1);
     const t2 = channels.getState(CH).active?.takenAt;
 
-    expect(t2).toBe(t1);
+    expect(t2).toBe(2000);
+    expect(t2).not.toBe(t1);
 
     nowSpy.mockRestore();
   });
