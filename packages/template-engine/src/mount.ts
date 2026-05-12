@@ -11,6 +11,32 @@ import { buildGsapTimeline } from "./gsap-timeline";
 export type MountMode = "live" | "edit";
 
 /**
+ * Restart a paused timeline from t=0, but force GSAP to actually write the
+ * from-values for any fromTo tweens with immediateRender:false.
+ *
+ * Why: buildGsapTimeline creates fromTo tweens with immediateRender:false so
+ * the IN and OUT timelines (which both target the same DOM) don't fight at
+ * construction time over which from-value gets written. The trade-off is
+ * that GSAP's standard restart() doesn't actually write the from-value at
+ * progress 0 — it animates from whatever the DOM currently has to the
+ * to-value. For an OUT (opacity 1 → 0) that's fine because the DOM is
+ * already at 1; for an IN (opacity 0 → 1) it animates 1 → 1 (no visible
+ * change), which looks like an instant snap.
+ *
+ * Fix: seek to the end first (forces GSAP to init the tweens and record
+ * the from-values), then to 0 (writes the from to the DOM), then play.
+ * All three calls are synchronous so the user only sees the final state.
+ */
+function playFromStart(tl: gsap.core.Timeline): Promise<void> {
+  return new Promise<void>((resolve) => {
+    tl.eventCallback("onComplete", () => resolve());
+    // suppressEvents=true on the seeks so onComplete doesn't fire during
+    // the priming.
+    tl.progress(1, true).progress(0, true).play();
+  });
+}
+
+/**
  * Merge a template's declared field defaults under any operator-supplied data.
  * Without this step the runtime would only have the explicit data on a take()
  * payload and any binding referencing an unsupplied key would fall back to the
@@ -89,17 +115,11 @@ export function mountTemplate(
       // every awaiter (notably the renderer's sequential out→in transition,
       // which leaves the previous template stuck on screen forever).
       if (inTl.duration() === 0) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        inTl.eventCallback("onComplete", () => resolve());
-        inTl.restart(true);
-      });
+      return playFromStart(inTl);
     },
     playOut() {
       if (outTl.duration() === 0) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        outTl.eventCallback("onComplete", () => resolve());
-        outTl.restart(true);
-      });
+      return playFromStart(outTl);
     },
     seek(which, time) {
       const tl = which === "in" ? inTl : outTl;
