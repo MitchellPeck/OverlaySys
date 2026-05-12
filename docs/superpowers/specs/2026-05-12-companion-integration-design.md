@@ -110,6 +110,8 @@ interface CompanionState {
   channels: ChannelConfig[];                       // ws "channel_list"
   showCache: Map<string, Show>;                    // lazy `get_show`
   songCache: Map<string, Song>;                    // lazy `get_song` (needed to resolve section/slide labels)
+  loadedShowId: string | null;                     // module-local; set by `load_show` action
+  loadedShowRowCursor: number | null;              // optional cursor for "next/prev row" actions
   sttSpawner: SttSpawnerStatus | null;             // ws "stt_spawner_status"
   sttListeners: SttListenerState[];                // ws "stt_listener_state"
 }
@@ -117,18 +119,39 @@ interface CompanionState {
 
 The reducer is a pure function `apply(state, ServerMessage) → state`. This keeps tests deterministic — feed in a sequence of recorded `ServerMessage`s, assert the resulting state, variables, and feedbacks.
 
+### Loaded show (module-local)
+
+The module instance carries an explicit "loaded show" pointer (`loadedShowId`) set by a `load_show` action. This is **client-local state** — the server is untouched, and other Companion instances or the operator UI are unaffected.
+
+Behavior:
+
+- `load_show` populates `loadedShowId`, fetches the full `Show` via `get_show` into `showCache` (if not already cached), and resets `loadedShowRowCursor` to 0.
+- All `rundown_*` variables, the `take_row` family of actions, and the row-related feedbacks read from this pointer.
+- If the loaded show is deleted server-side (`show_list` no longer contains it), the pointer clears.
+- If `save_show` arrives for the loaded show, the cached copy updates; variables and feedbacks re-emit.
+- Persistence: stored in module config so it survives Companion restarts. The user picks the show once per service rather than every reboot.
+
+This is intentionally a parallel concept to the operator UI's notion of "current show" — Companion's loaded show is a control-surface choice, not authoritative show state.
+
 ## Actions
 
 Each action maps to a single `ClientMessage`. Dropdowns are populated from the local cache (channels, shows, hotcards, songs).
 
 | Action ID                | Inputs                                                       | Sends                                                                 |
 |--------------------------|--------------------------------------------------------------|-----------------------------------------------------------------------|
+| `load_show`              | showId (dropdown)                                            | `get_show { showId }` (fills cache); updates module-local pointer     |
+| `clear_loaded_show`      | —                                                            | clears module-local pointer                                           |
+| `take_row`               | rowId (dependent dropdown from loaded show), channel (default = row's `channelHint`, else `program`) | graphic row → `take { channel, templateId, data }` from the row; song row → `song_take { channel, showId, songRowId }` |
+| `take_row_pvw_pgm`       | rowId, fromChannel (default `preview`), toChannel (default `program`) | graphic row → `cue` on PVW then `take_pvw_to_pgm`; song row → `song_take_pvw_to_pgm`. Implementation detail: emit both as a single user gesture. |
+| `take_row_at_cursor`     | channel                                                       | resolves `loadedShowRowCursor` → row; same dispatch as `take_row`     |
+| `cursor_advance`         | delta (number, default 1)                                     | clamps `loadedShowRowCursor + delta` into row bounds                  |
+| `cursor_set`             | rowId                                                         | sets `loadedShowRowCursor` to that row's index                        |
 | `take_template`          | channel (dropdown), templateId (dropdown), data (textinput)¹ | `take { channel, templateId, data }`                                  |
 | `clear`                  | channel                                                       | `clear { channel }`                                                   |
 | `cue_template`           | channel, templateId, data¹                                    | `cue { channel, templateId, data }`                                   |
 | `take_pvw_to_pgm`        | fromChannel (default `preview`), toChannel (default `program`)| `take_pvw_to_pgm { fromChannel, toChannel }`                          |
 | `fire_hotcard`           | hotcardId (dropdown), channel (dropdown, default = hint)      | `take` with the hotcard's `templateId` + `data` on the chosen channel |
-| `song_take_row`          | showId (dropdown), songRowId (dependent dropdown), channel    | `song_take { channel, showId, songRowId }`                            |
+| `song_take_row`          | showId (dropdown), songRowId (dependent dropdown), channel    | `song_take { channel, showId, songRowId }` (kept as a direct action for users who don't want to load a show) |
 | `song_take_row_pvw_pgm`  | showId, songRowId, fromChannel, toChannel                     | `song_take_pvw_to_pgm`                                                |
 | `song_advance`           | channel, delta (number, default 1)                            | `song_advance { channel, delta }`                                     |
 | `song_jump_section`      | channel, sectionId (dependent dropdown from showCache)        | `song_jump { channel, sectionId, slideIdx: 0 }`                       |
@@ -170,10 +193,19 @@ Global:
 | `connection_state`        | `connected` / `disconnected` / `reconnecting`        |
 | `stt_running`             | from `sttSpawner.status`                            |
 | `stt_listener_count`      | length of `sttListeners` where `online`             |
-| `rundown_<n>_name`        | name of row `n` in the show currently loaded on PGM, for `n` = 1..20 |
-| `rundown_active_row`      | currently active row id on PGM (if any)             |
+| `loaded_show_id`          | `loadedShowId` or empty                              |
+| `loaded_show_name`        | name of the loaded show or empty                     |
+| `loaded_show_row_count`   | `showCache.get(loadedShowId).rows.length`            |
+| `cursor_row_idx`          | `loadedShowRowCursor + 1` (1-based for display)      |
+| `cursor_row_name`         | display label of the row at the cursor               |
+| `cursor_row_kind`         | `graphic` / `song`                                   |
+| `rundown_<n>_name`        | display label of row `n` in the loaded show, for `n` = 1..40 |
+| `rundown_<n>_kind`        | `graphic` / `song` for row `n`                       |
+| `rundown_<n>_is_active`   | `yes` if row `n` matches what's currently on PGM²    |
 
-The active show for `rundown_*` is the show containing the song row currently loaded on PGM's song session; if PGM has no song session, these are empty. (Future increment could add an explicit "load show" concept for graphics-only shows; out of scope for v1.)
+The "display label" for a row is: song row → song title (from `songs` meta) plus arrangement tag if any; graphic row → row `notes` if set, else the template's name.
+
+² A graphic row matches PGM when `active.templateId` + `active.data` deep-equal the row's. A song row matches PGM when `songSession.songId` equals the row's `songId`.
 
 ## Feedbacks
 
@@ -189,12 +221,16 @@ Feedbacks change a button's foreground/background color or text based on state. 
 | `song_trust_on`            | the chosen channel's song session has `trustMode === true`                |
 | `stt_running`              | `sttSpawner.status.state === 'running'`                                   |
 | `connection_lost`          | `connected === false`                                                     |
+| `show_loaded`              | `loadedShowId !== null`                                                   |
+| `row_is_active`            | the chosen row (by `rowId` input) currently matches PGM (see ² above)     |
+| `row_is_cursor`            | the chosen row is at `loadedShowRowCursor`                                |
 
 ## Presets
 
 A small starter set so a new user gets working buttons immediately:
 
 - **Master row** — Take PVW→PGM (green when PVW has content), Clear PGM (red when PGM live), STT On/Off (toggles, lit while running).
+- **Rundown row** — eight buttons each bound to `take_row` for rows 1–8 of the loaded show, labels driven by `$(overlaysys:rundown_<n>_name)`, lit when `row_is_active`. Plus a Previous/Next pair that drives `cursor_advance ±1` and a Take-At-Cursor button.
 - **Song row** — Advance −1, Advance +1, Blank Song, End Song. Active section name surfaces via `$(overlaysys:program_song_section)`.
 - **Hotcards row** — placeholder buttons that the user assigns specific hotcards to via the `fire_hotcard` action; the button label uses `$(overlaysys:<hotcard_name>)` and is lit while on air.
 
@@ -223,4 +259,5 @@ Presets are loaded by Companion via `setPresetDefinitions`.
 
 - Exact list of variables (we may trim or expand `<c>_data_<key>` projections after first real-world use).
 - Whether `take_template` / `cue_template` belong in v1 presets or are advanced-only — they're powerful but easy to misuse (any template, any channel). They will exist as actions; presets will not surface them.
+- Upper bound on `rundown_<n>_*` variables. Spec'd at 40; Companion can technically handle more but each row adds 3 variables. If real shows routinely exceed 40 rows, raise.
 - Companion runtime version target. Companion 3.x is current; we pin to its module API version in `manifest.json` once we start writing code.
