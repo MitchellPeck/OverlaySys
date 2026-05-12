@@ -92,6 +92,13 @@ export function ChannelPreview({ config, state }: Props) {
         if (!stageRef.current) return;
         const m = mountTemplate(stageRef.current, tpl, active.data);
         mountedRef.current = m;
+        if ((globalThis as { __overlaysys_log?: boolean }).__overlaysys_log) {
+          console.log("[overlaysys:preview] mount + playIn", {
+            channel: config.id,
+            tpl: tpl.id,
+            inDuration: m.timelines.in.duration(),
+          });
+        }
         m.playIn().catch(() => {});
       })();
       return;
