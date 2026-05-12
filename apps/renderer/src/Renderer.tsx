@@ -13,13 +13,18 @@ type Status = "connecting" | "open" | "closed";
 const STAGE_W = 1920;
 const STAGE_H = 1080;
 
-// Session-end stage fade. Used only on session end as a deliberate
-// "screen goes dark" boundary cue. Session START used to fade in too,
-// but that was a workaround for the (now-fixed) songSession path that
-// didn't remount the template on start — with forceMount in place the
-// template's own playIn handles the visual transition, and the fade-in
-// would just conflict with it (snapping the stage opaque-to-clear while
-// the previous template is still mid-OUT and the new one is mid-IN).
+// Session-boundary stage fade duration. Applied on top of (not in place
+// of) the template's own IN/OUT animations — for sessions, that's the
+// lyric template — to give the operator + audience an extra session-
+// scope cue at start and end.
+//
+// Start: snap to opacity 0 AFTER the previous template's OUT completes
+// (so we don't clobber that animation), then ramp back to 1 over this
+// duration in parallel with the new template's IN.
+//
+// End: ramp opacity 1 → 0 over this duration once the session ends,
+// then snap back to 1 (transition disabled) so the next non-song take
+// starts at full visibility.
 const SONG_FADE_MS = 600;
 
 export function Renderer({ channel, debug = false }: Props) {
@@ -50,6 +55,12 @@ export function Renderer({ channel, debug = false }: Props) {
   const [songFadeTransitionMs, setSongFadeTransitionMs] = useState(0);
   const lastHadSongSessionRef = useRef(false);
   const songFadeOutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // When set, the next takenAt-driven transition is a session start. The
+  // transition handler reads + clears this flag and applies a stage fade
+  // (snap to 0 after the previous OUT, then ramp back to 1) so the user
+  // gets an extra session-boundary cue layered on top of the template's
+  // own IN animation.
+  const pendingSessionStartRef = useRef(false);
 
   // Fit-scale the 1920x1080 stage to the viewport.
   useLayoutEffect(() => {
@@ -142,9 +153,34 @@ export function Renderer({ channel, debug = false }: Props) {
 
         if (myTakenAt !== lastTakenAtRef.current) return;
 
+        // Session-start cue: snap stage opacity to 0 NOW (after previous's
+        // OUT has finished, so we don't clobber that animation), then ramp
+        // back to 1 over SONG_FADE_MS. Runs in parallel with the new
+        // template's IN, layered on top as an additional session-boundary
+        // signal.
+        const sessionStart = pendingSessionStartRef.current;
+        if (sessionStart) {
+          pendingSessionStartRef.current = false;
+          if (songFadeOutTimerRef.current) {
+            clearTimeout(songFadeOutTimerRef.current);
+            songFadeOutTimerRef.current = null;
+          }
+          setSongFadeTransitionMs(0);
+          setSongFadeOpacity(0);
+        }
+
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
         m.playIn().catch(() => {});
+
+        if (sessionStart) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              setSongFadeTransitionMs(SONG_FADE_MS);
+              setSongFadeOpacity(1);
+            });
+          });
+        }
         return;
       }
 
@@ -179,13 +215,18 @@ export function Renderer({ channel, debug = false }: Props) {
           client.send({ type: "subscribe", channel: src, role: "renderer" });
         }
       } else if (msg.type === "state" && msg.channel === sourceChannelRef.current) {
-        // Session-end stage fade. Session start is handled by the template's
-        // own IN animation (forceMount on session start in songSession.ts
-        // guarantees a fresh mount, so the renderer plays the previous
-        // template's OUT and the new one's IN). A stage fade-in here would
-        // fight that transition.
+        // Session boundary fades: a stage-wide opacity overlay applied on
+        // top of whatever the template's own IN/OUT does, as a deliberate
+        // session-boundary cue.
         const hadSession = lastHadSongSessionRef.current;
         const hasSession = !!msg.state.songSession;
+        if (hasSession && !hadSession) {
+          // Session start: arm the transition handler to snap the stage
+          // opacity to 0 AFTER the previous template's OUT completes, then
+          // fade back to 1. Snapping here would clobber the previous's OUT
+          // animation, so we defer to applyState's transition branch.
+          pendingSessionStartRef.current = true;
+        }
         if (!hasSession && hadSession) {
           // Fade out: transition opacity to 0, then once it lands snap
           // back to 1 (no transition) so the next non-song take starts
