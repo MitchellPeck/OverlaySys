@@ -18,14 +18,19 @@ const STAGE_H = 1080;
 // lyric template — to give the operator + audience an extra session-
 // scope cue at start and end.
 //
-// Start: snap to opacity 0 AFTER the previous template's OUT completes
-// (so we don't clobber that animation), then ramp back to 1 over this
-// duration in parallel with the new template's IN.
+// Start: dip stage opacity to SONG_FADE_DIP_MIN (NOT to 0 — that would
+// fully mask the lyric template's IN animation running underneath),
+// then ramp back to 1. Triggered AFTER the previous template's OUT
+// completes so that animation is not clobbered.
 //
 // End: ramp opacity 1 → 0 over this duration once the session ends,
 // then snap back to 1 (transition disabled) so the next non-song take
 // starts at full visibility.
 const SONG_FADE_MS = 600;
+// How dim the stage gets at the bottom of the session-start dip. 0 fully
+// masks the template's IN; 1 is no dimming. 0.25 is a deliberate cue
+// without hiding the lyric layer.
+const SONG_FADE_DIP_MIN = 0.25;
 
 export function Renderer({ channel, debug = false }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -153,11 +158,11 @@ export function Renderer({ channel, debug = false }: Props) {
 
         if (myTakenAt !== lastTakenAtRef.current) return;
 
-        // Session-start cue: snap stage opacity to 0 NOW (after previous's
-        // OUT has finished, so we don't clobber that animation), then ramp
-        // back to 1 over SONG_FADE_MS. Runs in parallel with the new
-        // template's IN, layered on top as an additional session-boundary
-        // signal.
+        // Session-start cue: dip stage opacity to SONG_FADE_DIP_MIN NOW
+        // (after previous's OUT has finished, so we don't clobber that
+        // animation), then ramp back to 1 over SONG_FADE_MS. The dip is
+        // not 0 — we keep the stage partially visible so the lyric
+        // template's IN animation underneath still shows through.
         const sessionStart = pendingSessionStartRef.current;
         if (sessionStart) {
           pendingSessionStartRef.current = false;
@@ -166,7 +171,7 @@ export function Renderer({ channel, debug = false }: Props) {
             songFadeOutTimerRef.current = null;
           }
           setSongFadeTransitionMs(0);
-          setSongFadeOpacity(0);
+          setSongFadeOpacity(SONG_FADE_DIP_MIN);
         }
 
         const m = mountTemplate(stageRef.current, tpl, data);
