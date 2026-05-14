@@ -15,6 +15,7 @@ import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
+import { CloudPullModal } from "@/app/projects/CloudPullModal";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteProjectCloud,
@@ -23,9 +24,7 @@ import {
 } from "@/lib/cloudData";
 import { isElectron } from "@/lib/desktop";
 import {
-  listCloudProjects,
   publishProjectToCloud,
-  pullProjectFromCloud,
 } from "@/lib/projectSync";
 import { defaultServerUrl } from "@/lib/wsClient";
 import { hasCloudSessionHint } from "@/lib/cloudSession";
@@ -190,6 +189,7 @@ export default function ProjectsIndexPage() {
   const inElectron = isElectron();
   const cloudReady = inElectron && hasCloudSessionHint();
   const [syncBusy, setSyncBusy] = useState<string | null>(null);
+  const [pullOpen, setPullOpen] = useState(false);
 
   async function publishToCloud(p: Project) {
     if (syncBusy) return;
@@ -244,63 +244,17 @@ export default function ProjectsIndexPage() {
     }
   }
 
-  async function pullFromCloudPicker() {
-    if (syncBusy) return;
-    setSyncBusy("pull");
-    try {
-      const cloudProjects = await listCloudProjects();
-      if (cloudProjects.length === 0) {
-        await alert({
-          title: "Nothing to pull",
-          message: "No projects in the cloud yet.",
-        });
-        return;
-      }
-      const pick = await prompt({
-        title: "Pull project from cloud",
-        message: (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span>Type the project id to pull:</span>
-            <div style={{ fontSize: 11, color: colors.textDim }}>
-              {cloudProjects.map((cp) => `${cp.id} (${cp.name})`).join(", ")}
-            </div>
-          </div>
-        ),
-        placeholder: "project-id",
-        confirmLabel: "Pull",
-      });
-      if (!pick) return;
-      const exists = cloudProjects.some((cp) => cp.id === pick);
-      if (!exists) {
-        await alert({ title: "Not found", message: `No cloud project '${pick}'.` });
-        return;
-      }
-      const result = await pullProjectFromCloud(
-        pick,
-        `${httpBase()}/api/import`,
-      );
-      if (result.ok) {
-        // Refresh local meta lists.
-        send({ type: "list_projects" });
-        send({ type: "list_shows" });
-        send({ type: "list_hotcards" });
-        send({ type: "list_templates" });
-        send({ type: "list_songs" });
-        await alert({
-          title: "Pulled from cloud",
-          message: `Project ${pick} written to local data. Lists refreshed.`,
-        });
-      } else {
-        await alert({
-          title: "Pull failed",
-          message: result.error ?? "unknown error",
-        });
-      }
-    } catch (err) {
-      await showError("pull", err);
-    } finally {
-      setSyncBusy(null);
-    }
+  function openPullModal() {
+    setPullOpen(true);
+  }
+
+  function onPullDone() {
+    // Refresh local meta lists once the modal reports success.
+    send({ type: "list_projects" });
+    send({ type: "list_shows" });
+    send({ type: "list_hotcards" });
+    send({ type: "list_templates" });
+    send({ type: "list_songs" });
   }
 
   return (
@@ -336,10 +290,10 @@ export default function ProjectsIndexPage() {
               <span style={{ color: "var(--text-dim)" }}>☁ Cloud sync:</span>
               <Button
                 size="sm"
-                onClick={pullFromCloudPicker}
-                disabled={syncBusy !== null}
+                onClick={openPullModal}
+                disabled={syncBusy !== null || pullOpen}
               >
-                {syncBusy === "pull" ? "Pulling…" : "Pull from cloud"}
+                Pull from cloud
               </Button>
               <span style={{ color: "var(--text-dim)", flex: 1 }}>
                 {syncBusy?.startsWith("publish:")
@@ -434,6 +388,12 @@ export default function ProjectsIndexPage() {
             </EntityList>
           )}
       </PageBody>
+      {pullOpen && (
+        <CloudPullModal
+          onClose={() => setPullOpen(false)}
+          onSuccess={onPullDone}
+        />
+      )}
       {dialog}
     </PageShell>
   );

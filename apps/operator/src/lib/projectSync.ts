@@ -155,7 +155,7 @@ async function buildLocalProjectBundle(
   };
 }
 
-async function buildCloudProjectBundle(
+export async function buildCloudProjectBundle(
   projectId: string,
   onProgress?: (p: PublishProgress) => void,
 ): Promise<Bundle> {
