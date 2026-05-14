@@ -15,6 +15,7 @@ export function ChannelStatus({
   config,
   previewEnabled,
   onTogglePreview,
+  onClear,
 }: {
   label: string;
   state: ChannelState | undefined;
@@ -26,6 +27,10 @@ export function ChannelStatus({
   config?: ChannelConfig;
   previewEnabled?: boolean;
   onTogglePreview?: () => void;
+  /** When provided, renders a Clear (×) button. Disabled when the channel
+   * is idle so the operator can see at-a-glance whether there's anything
+   * to clear. */
+  onClear?: () => void;
 }) {
   const active = state?.active ?? null;
   return (
@@ -101,6 +106,28 @@ export function ChannelStatus({
               }}
             >
               ↗
+            </button>
+          )}
+          {onClear && (
+            <button
+              onClick={onClear}
+              disabled={!active}
+              title={active ? "Clear this channel" : "Channel is already empty"}
+              style={{
+                width: 22,
+                height: 18,
+                background: "transparent",
+                color: active ? colors.red : colors.textDim,
+                border: `1px solid ${colors.border}`,
+                borderRadius: radius.sm,
+                cursor: active ? "pointer" : "default",
+                opacity: active ? 1 : 0.5,
+                fontSize: 12,
+                padding: 0,
+                lineHeight: 1,
+              }}
+            >
+              ×
             </button>
           )}
         </div>

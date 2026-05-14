@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { useWs } from "@/lib/useWs";
 import { ChannelStatus } from "./ChannelStatus";
 
 const PREVIEW_ENABLED_KEY = "overlaysys:channelPreviewEnabled";
@@ -38,9 +39,14 @@ function saveEnabled(m: EnabledMap): void {
  * the bottom strip during song mode.
  */
 export function ChannelsList({ orientation = "vertical" }: { orientation?: "vertical" | "horizontal" } = {}) {
+  const { send } = useWs();
   const channels = useStore((s) => s.channelConfigs);
   const channelStates = useStore((s) => s.channelStates);
   const [enabledMap, setEnabledMap] = useState<EnabledMap>(() => loadEnabled());
+
+  function clearChannel(id: string): void {
+    send({ type: "clear", channel: id });
+  }
 
   useEffect(() => {
     saveEnabled(enabledMap);
@@ -88,6 +94,10 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
                 config={c}
                 previewEnabled={isEnabled(c.id)}
                 onTogglePreview={() => toggle(c.id)}
+                // Mirrors reflect their source — clearing the mirror is a
+                // no-op since the renderer subscribes to the source's state.
+                // Hide the Clear control on mirrors to avoid the confusion.
+                onClear={c.mirrorOf ? undefined : () => clearChannel(c.id)}
               />
             </div>
           );
@@ -113,6 +123,7 @@ export function ChannelsList({ orientation = "vertical" }: { orientation?: "vert
             config={c}
             previewEnabled={isEnabled(c.id)}
             onTogglePreview={() => toggle(c.id)}
+            onClear={c.mirrorOf ? undefined : () => clearChannel(c.id)}
           />
         );
       })}

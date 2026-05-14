@@ -2,6 +2,7 @@
 
 import { AppHeader } from "@/app/components/AppHeader";
 import { TimerPanel } from "@/app/components/TimerPanel";
+import { ActiveTimersPanel } from "@/app/components/ActiveTimersPanel";
 import { ChannelsList } from "@/app/components/ChannelsList";
 import { colors } from "@overlaysys/ui";
 
@@ -33,8 +34,15 @@ export default function TimerPage() {
         }}
       >
         <section style={{ background: colors.panel, padding: 16, overflow: "auto" }}>
-          <div style={{ maxWidth: 720 }}>
-            <TimerPanel />
+          <div style={{ maxWidth: 720, display: "flex", flexDirection: "column", gap: 24 }}>
+            <div>
+              <SectionLabel>Start</SectionLabel>
+              <TimerPanel />
+            </div>
+            <div>
+              <SectionLabel>Active timers</SectionLabel>
+              <ActiveTimersPanel />
+            </div>
           </div>
         </section>
         <section style={{ background: colors.panel, padding: 16, overflow: "auto" }}>

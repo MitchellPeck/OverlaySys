@@ -5,6 +5,7 @@ import { Button, Field, Input, Select, colors } from "@overlaysys/ui";
 import type { Field as TemplateField, Template } from "@overlaysys/core";
 import {
   computeTimeDisplay,
+  encodeTimerValue,
   isTimeField,
   parseDuration,
 } from "@overlaysys/core";
@@ -169,9 +170,11 @@ export function TimerPanel() {
       if (mode === "countdown") {
         const ms = parseDuration(durations[f.key] ?? "");
         if (ms == null) continue; // skip unparseable; renderer falls back to 00:00
-        data[f.key] = String(now + ms);
+        // Carry durationMs so the Active timers panel's Reset action can
+        // re-derive a fresh anchor without asking the operator to retype.
+        data[f.key] = encodeTimerValue({ anchor: now + ms, durationMs: ms });
       } else if (mode === "countup") {
-        data[f.key] = String(now);
+        data[f.key] = encodeTimerValue({ anchor: now });
       }
       // clock: no anchor needed
     }

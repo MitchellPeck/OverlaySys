@@ -126,4 +126,59 @@ describe("computeTimeDisplay", () => {
     const f: Field = { key: "t", label: "T", type: "time" };
     expect(computeTimeDisplay(f, String(NOW + 90_000), NOW)).toBe("01:30");
   });
+
+  it("freezes countdown display when pausedAt is present", () => {
+    const f = field("countdown");
+    // Anchor 90s in the future, paused 30s in (after 30s, 60s remaining).
+    const encoded = encodeTimerValue({ anchor: NOW + 90_000, pausedAt: NOW - 30_000 });
+    expect(computeTimeDisplay(f, encoded, NOW)).toBe("02:00");
+    // Even as `now` advances, paused timers stay frozen.
+    expect(computeTimeDisplay(f, encoded, NOW + 5_000)).toBe("02:00");
+  });
+
+  it("freezes countup display when pausedAt is present", () => {
+    const f = field("countup");
+    const encoded = encodeTimerValue({ anchor: NOW - 90_000, pausedAt: NOW - 30_000 });
+    expect(computeTimeDisplay(f, encoded, NOW)).toBe("01:00");
+    expect(computeTimeDisplay(f, encoded, NOW + 60_000)).toBe("01:00");
+  });
+});
+
+describe("encodeTimerValue / decodeTimerValue", () => {
+  it("encodes a bare anchor as a number string for the common case", () => {
+    expect(encodeTimerValue({ anchor: 1_700_000_000_000 })).toBe("1700000000000");
+  });
+
+  it("escalates to JSON when pausedAt or durationMs are present", () => {
+    expect(encodeTimerValue({ anchor: 100, pausedAt: 50 })).toBe('{"a":100,"p":50}');
+    expect(encodeTimerValue({ anchor: 100, durationMs: 600_000 })).toBe(
+      '{"a":100,"d":600000}',
+    );
+    expect(encodeTimerValue({ anchor: 100, pausedAt: 50, durationMs: 600_000 })).toBe(
+      '{"a":100,"p":50,"d":600000}',
+    );
+  });
+
+  it("decodes a bare number to anchor-only", () => {
+    expect(decodeTimerValue("1700000000000")).toEqual({ anchor: 1_700_000_000_000 });
+  });
+
+  it("decodes JSON to the structured form", () => {
+    expect(decodeTimerValue('{"a":100,"p":50,"d":600000}')).toEqual({
+      anchor: 100,
+      pausedAt: 50,
+      durationMs: 600_000,
+    });
+  });
+
+  it("returns NaN anchor for missing / empty / unparseable input", () => {
+    expect(decodeTimerValue(undefined)).toEqual({ anchor: NaN });
+    expect(decodeTimerValue("")).toEqual({ anchor: NaN });
+    expect(decodeTimerValue("{broken json")).toEqual({ anchor: NaN });
+  });
+
+  it("round-trips through encode + decode", () => {
+    const original = { anchor: 1_700_000_000_000, pausedAt: 1_700_000_005_000, durationMs: 600_000 };
+    expect(decodeTimerValue(encodeTimerValue(original))).toEqual(original);
+  });
 });

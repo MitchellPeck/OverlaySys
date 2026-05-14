@@ -25,7 +25,12 @@ out/
 # data (per-deployment, not source)
 data/templates/*.json
 data/shows/*.json
-data/assets/*
+# Assets are content-addressed binaries pulled from a deployment or
+# imported per-user. Never commit them — they balloon the repo and
+# leak per-install content. Use a `**` glob so this catches everything
+# under the folder, not just direct children.
+data/assets/**
+!data/assets/.gitkeep
 !data/templates/.gitkeep
 !data/shows/.gitkeep
 !data/templates/fixtures/
