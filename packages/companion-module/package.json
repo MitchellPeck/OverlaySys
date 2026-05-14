@@ -11,7 +11,7 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@companion-module/base": "^1.10.0",
+    "@companion-module/base": "~1.14.1",
     "@overlaysys/core": "workspace:*",
     "@overlaysys/ws-protocol": "workspace:*",
     "ws": "^8.18.0",

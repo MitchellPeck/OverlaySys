@@ -144,7 +144,7 @@ importers:
   packages/companion-module:
     dependencies:
       '@companion-module/base':
-        specifier: ^1.10.0
+        specifier: ~1.14.1
         version: 1.14.1
       '@overlaysys/core':
         specifier: workspace:*
