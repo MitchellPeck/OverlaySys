@@ -126,10 +126,13 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
 
   private applyEvent(evt: ReducerEvent): void {
     this.state = apply(this.state, evt);
+    if (mutatesDropdownSources(evt)) {
+      this.refreshDefinitions();
+    }
     this.refreshDynamic();
   }
 
-  private refreshAll(): void {
+  private refreshDefinitions(): void {
     this.setActionDefinitions(
       actionDefinitions(this.state, (id, options) =>
         this.runAction(id, options),
@@ -140,6 +143,10 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
         feedbackPredicate(this.state, id, options),
       ),
     );
+  }
+
+  private refreshAll(): void {
+    this.refreshDefinitions();
     this.setVariableDefinitions(variableDefinitions(this.channels));
     this.setPresetDefinitions(presetDefinitions());
     this.refreshDynamic();
@@ -155,19 +162,6 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
     for (const e of localEvents) this.applyEvent(e);
     for (const m of messages) this.connection?.send(m);
 
-    if (
-      id === "load_show" ||
-      id === "clear_loaded_show" ||
-      id === "cursor_advance" ||
-      id === "cursor_set"
-    ) {
-      this.setActionDefinitions(
-        actionDefinitions(this.state, (aid, aoptions) =>
-          this.runAction(aid, aoptions),
-        ),
-      );
-    }
-
     if (id === "load_show" && typeof options.showId === "string") {
       this.currentConfig = {
         ...this.currentConfig,
@@ -179,6 +173,36 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
       this.currentConfig = { ...this.currentConfig, loadedShowId: "" };
       this.saveConfig(this.currentConfig);
     }
+  }
+}
+
+/**
+ * Returns true when the event changes anything that feeds an action or
+ * feedback dropdown. Companion only sees dropdown choices after we call
+ * setActionDefinitions / setFeedbackDefinitions, so we re-emit whenever
+ * the underlying lists move.
+ */
+function mutatesDropdownSources(evt: ReducerEvent): boolean {
+  switch (evt.type) {
+    // Server-pushed list updates and individual upserts feed dropdowns
+    // (shows, hotcards, templates, channels, rows).
+    case "show_list":
+    case "hotcard_list":
+    case "channel_list":
+    case "template_list":
+    case "song_list":
+    case "show":
+    case "hotcard":
+    case "template":
+    case "channel":
+    // Loaded-show pointer + cursor changes affect the row dropdown.
+    case "local_load_show":
+    case "local_clear_loaded_show":
+    case "local_cursor_set":
+    case "local_cursor_advance":
+      return true;
+    default:
+      return false;
   }
 }
 
