@@ -25,6 +25,7 @@ out/
 # data (per-deployment, not source)
 data/templates/*.json
 data/shows/*.json
+data/assets/*
 !data/templates/.gitkeep
 !data/shows/.gitkeep
 !data/templates/fixtures/
@@ -32,6 +33,3 @@ data/shows/*.json
 
 # tsbuild
 *.tsbuildinfo
-
-
-data/

@@ -5,14 +5,76 @@ import type { Field, TimeFormat, TimeMode } from "./template";
  * the operator UI (input parsing + preview), and any future Companion action
  * targeting timers.
  *
- * Convention: a time field's data value is an **epoch-ms timestamp** as a
- * string. For countdowns that's the moment the timer should hit zero; for
- * count-ups, the moment the timer started. The renderer subtracts from
- * `Date.now()` at tick time, so all clients display the same value regardless
- * of when they joined.
+ * Encoding: a time field's data value is either a **bare epoch-ms anchor**
+ * (just the number as a string — the original "running" format) or a
+ * **JSON-encoded object** `{a, p?, d?}` that carries additional state:
+ *
+ *   - `a` (required): epoch-ms anchor. For countdowns that's the target end;
+ *     for count-ups, the start.
+ *   - `p` (optional): epoch ms the timer was paused at. While present, the
+ *     display freezes at the value computed from `a` and `p`.
+ *   - `d` (optional): the original duration in ms, recorded at take time
+ *     for countdowns so Reset can re-derive a fresh anchor without asking
+ *     the operator to retype the duration.
  *
  * Clocks ignore the value entirely — they always read `Date.now()`.
  */
+
+/**
+ * Parsed shape of a time-field data value. `anchor` is required; the other
+ * fields are present only when the corresponding state is meaningful.
+ *
+ * `NaN` anchor signals "unparseable / missing" so callers can fall through
+ * to a zero display rather than crash on `NaN - now`.
+ */
+export type TimerValue = {
+  anchor: number;
+  pausedAt?: number;
+  durationMs?: number;
+};
+
+/**
+ * Render a TimerValue to its on-wire form. We keep the simple-anchor case
+ * as a plain number string so saved templates and existing snapshots stay
+ * human-readable; only escalate to JSON when there's extra state to carry.
+ */
+export function encodeTimerValue(v: TimerValue): string {
+  if (v.pausedAt == null && v.durationMs == null) {
+    return String(v.anchor);
+  }
+  const o: Record<string, number> = { a: v.anchor };
+  if (v.pausedAt != null) o.p = v.pausedAt;
+  if (v.durationMs != null) o.d = v.durationMs;
+  return JSON.stringify(o);
+}
+
+/**
+ * Parse an on-wire time-field value. Accepts both the bare-number legacy
+ * form and the JSON-object form. Returns `{anchor: NaN}` on unparseable
+ * input so `computeTimeDisplay` can render zero rather than crash.
+ */
+export function decodeTimerValue(s: string | undefined): TimerValue {
+  if (s == null || s === "") return { anchor: NaN };
+  if (s.startsWith("{")) {
+    try {
+      const o = JSON.parse(s) as { a?: unknown; p?: unknown; d?: unknown };
+      const anchor = Number(o.a);
+      const out: TimerValue = { anchor };
+      if (o.p != null) {
+        const p = Number(o.p);
+        if (Number.isFinite(p)) out.pausedAt = p;
+      }
+      if (o.d != null) {
+        const d = Number(o.d);
+        if (Number.isFinite(d)) out.durationMs = d;
+      }
+      return out;
+    } catch {
+      return { anchor: NaN };
+    }
+  }
+  return { anchor: Number(s) };
+}
 
 const PAD2 = (n: number): string => (n < 10 ? "0" + n : String(n));
 
@@ -108,15 +170,20 @@ export function computeTimeDisplay(field: Field, value: string | undefined, now:
   if (mode === "clock") {
     return formatClock(now, format);
   }
-  const anchor = value !== undefined && value !== "" ? Number(value) : NaN;
+  const { anchor, pausedAt } = decodeTimerValue(value);
   if (!Number.isFinite(anchor)) {
     return formatTime(0, format);
   }
+  // When paused, freeze the display at the moment the timer was paused.
+  // `pausedAt` substitutes for `now` in the same formula — so both
+  // countdown and countup naturally hold at their last-running value
+  // until the operator resumes.
+  const effectiveNow = pausedAt ?? now;
   if (mode === "countdown") {
-    return formatTime(anchor - now, format);
+    return formatTime(anchor - effectiveNow, format);
   }
   // countup
-  return formatTime(Math.max(0, now - anchor), format);
+  return formatTime(Math.max(0, effectiveNow - anchor), format);
 }
 
 /**

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeTimeDisplay, formatTime, parseDuration } from "./timeField";
+import {
+  computeTimeDisplay,
+  decodeTimerValue,
+  encodeTimerValue,
+  formatTime,
+  parseDuration,
+} from "./timeField";
 import type { Field } from "./template";
 
 describe("formatTime", () => {
