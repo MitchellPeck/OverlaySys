@@ -29,11 +29,14 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 | Fire hotcard | hotcard, channel | Take a hotcard's stored payload on a channel |
 | Load show | show | Load a show into this Companion instance |
 | Clear loaded show | — | Clear the loaded-show pointer |
-| Take row | row, channel | Take the chosen row (graphic → take, song → song_take) |
-| Take row PVW → PGM | row, from, to | Cue then promote, or song_take_pvw_to_pgm for song rows |
+| Take row (by row ID) | row, channel | Take the chosen row by its UUID — binding breaks if the loaded show changes |
+| Take row (by index) | rowIndex (1-based), channel | Take the Nth row of whatever show is loaded — bindings survive show changes |
+| Take row PVW → PGM (by row ID) | row, from, to | Cue then promote, or song_take_pvw_to_pgm for song rows |
+| Take row PVW → PGM (by index) | rowIndex, from, to | Same as above but addressed by position |
 | Take row at cursor | channel | Take whichever row the cursor is on |
 | Cursor: advance | delta | Move the cursor ±N rows (clamped) |
-| Cursor: set to row | row | Jump the cursor to a specific row |
+| Cursor: set to row (by row ID) | row | Jump the cursor to a specific row by UUID |
+| Cursor: set to row (by index) | rowIndex | Jump the cursor to the Nth row of the loaded show |
 | Song: take row | show, songRow, channel | Take a song row from any show |
 | Song: take row PVW → PGM | show, songRow, from, to | Promote a song row through preview |
 | Song: advance ± | channel, delta | song_advance |
@@ -66,7 +69,12 @@ Global:
 
 ## Feedbacks
 
-`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor`, `row_is_active`.
+`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same).
+
+### Choosing row-ID vs row-index actions/feedbacks
+
+- **By row ID** binds to a specific row's UUID. If you author one Stream Deck page per show with hand-picked rows, this is fine.
+- **By index** binds to the Nth row of whatever show is loaded. Use this when you want one bank of buttons that works across multiple shows (e.g. button 1 always fires whatever row 1 is, regardless of which show you loaded).
 
 ## Manual smoke checklist
 

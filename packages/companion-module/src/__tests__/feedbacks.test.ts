@@ -237,4 +237,64 @@ describe("feedbacks", () => {
     });
     expect(feedbackPredicate(s, "row_is_active", { rowId: "r1" })).toBe(true);
   });
+
+  it("row_at_index_is_cursor matches the 1-based cursor position", () => {
+    let s = apply(initialState(), { type: "local_load_show", showId: "show-1" });
+    s = apply(s, {
+      type: "show",
+      show: {
+        id: "show-1",
+        name: "S",
+        rows: [
+          { kind: "graphic", id: "r1", templateId: "t", data: {} },
+          { kind: "graphic", id: "r2", templateId: "t", data: {} },
+        ],
+      },
+    });
+    s = apply(s, { type: "local_cursor_set", rowId: "r2" });
+    expect(
+      feedbackPredicate(s, "row_at_index_is_cursor", { rowIndex: 2 }),
+    ).toBe(true);
+    expect(
+      feedbackPredicate(s, "row_at_index_is_cursor", { rowIndex: 1 }),
+    ).toBe(false);
+  });
+
+  it("row_at_index_is_active matches PGM by position, not UUID", () => {
+    let s = apply(initialState(), { type: "local_load_show", showId: "show-1" });
+    s = apply(s, {
+      type: "show",
+      show: {
+        id: "show-1",
+        name: "S",
+        rows: [
+          {
+            kind: "graphic",
+            id: "r1",
+            templateId: "tpl-1",
+            data: { title: "Hi" },
+          },
+        ],
+      },
+    });
+    s = apply(s, {
+      type: "state",
+      channel: "program",
+      state: {
+        channel: "program",
+        active: {
+          templateId: "tpl-1",
+          data: { title: "Hi" },
+          phase: "on",
+          takenAt: 0,
+        },
+      },
+    });
+    expect(
+      feedbackPredicate(s, "row_at_index_is_active", { rowIndex: 1 }),
+    ).toBe(true);
+    expect(
+      feedbackPredicate(s, "row_at_index_is_active", { rowIndex: 2 }),
+    ).toBe(false);
+  });
 });

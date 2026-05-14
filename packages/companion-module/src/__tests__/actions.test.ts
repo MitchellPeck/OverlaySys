@@ -303,4 +303,65 @@ describe("dispatchAction — load_show and row actions", () => {
     expect(r.messages).toEqual([]);
     expect(r.localEvents).toEqual([]);
   });
+
+  it("take_row_by_index resolves row by 1-based position", () => {
+    const r = dispatchAction(loadedShowState(), "take_row_by_index", {
+      rowIndex: 2,
+    });
+    expect(r.messages).toEqual([
+      {
+        type: "song_take",
+        channel: "program",
+        showId: "show-1",
+        songRowId: "r2",
+      },
+    ]);
+  });
+
+  it("take_row_by_index works with index 1 (first row)", () => {
+    const r = dispatchAction(loadedShowState(), "take_row_by_index", {
+      rowIndex: 1,
+    });
+    expect(r.messages).toEqual([
+      {
+        type: "take",
+        channel: "program",
+        templateId: "tpl-1",
+        data: { title: "Hi" },
+      },
+    ]);
+  });
+
+  it("take_row_by_index is a no-op when index out of range", () => {
+    const r = dispatchAction(loadedShowState(), "take_row_by_index", {
+      rowIndex: 99,
+    });
+    expect(r.messages).toEqual([]);
+  });
+
+  it("take_row_pvw_pgm_by_index resolves by index", () => {
+    const r = dispatchAction(loadedShowState(), "take_row_pvw_pgm_by_index", {
+      rowIndex: 1,
+    });
+    expect(r.messages).toEqual([
+      {
+        type: "cue",
+        channel: "preview",
+        templateId: "tpl-1",
+        data: { title: "Hi" },
+      },
+      {
+        type: "take_pvw_to_pgm",
+        fromChannel: "preview",
+        toChannel: "program",
+      },
+    ]);
+  });
+
+  it("cursor_set_by_index emits local_cursor_set with the row's id", () => {
+    const r = dispatchAction(loadedShowState(), "cursor_set_by_index", {
+      rowIndex: 2,
+    });
+    expect(r.localEvents).toEqual([{ type: "local_cursor_set", rowId: "r2" }]);
+  });
 });

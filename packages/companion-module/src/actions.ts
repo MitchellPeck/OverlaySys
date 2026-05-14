@@ -19,10 +19,13 @@ export type ActionId =
   | "load_show"
   | "clear_loaded_show"
   | "take_row"
+  | "take_row_by_index"
   | "take_row_pvw_pgm"
+  | "take_row_pvw_pgm_by_index"
   | "take_row_at_cursor"
   | "cursor_advance"
   | "cursor_set"
+  | "cursor_set_by_index"
   | "song_take_row"
   | "song_take_row_pvw_pgm"
   | "song_advance"
@@ -184,11 +187,38 @@ export function dispatchAction(
       messages.push(...rowMessages(state, row, channel));
       break;
     }
+    case "take_row_by_index": {
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
+      if (!row) break;
+      const channel =
+        str("channel") || row.channelHint || "program";
+      messages.push(...rowMessages(state, row, channel));
+      break;
+    }
     case "take_row_pvw_pgm": {
       const show = state.loadedShowId
         ? state.showCache.get(state.loadedShowId)
         : undefined;
       const row = show?.rows.find((r) => r.id === str("rowId"));
+      if (!row) break;
+      messages.push(
+        ...rowPvwPgmMessages(
+          state,
+          row,
+          str("fromChannel", "preview"),
+          str("toChannel", "program"),
+        ),
+      );
+      break;
+    }
+    case "take_row_pvw_pgm_by_index": {
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
       if (!row) break;
       messages.push(
         ...rowPvwPgmMessages(
@@ -221,6 +251,15 @@ export function dispatchAction(
     case "cursor_set":
       localEvents.push({ type: "local_cursor_set", rowId: str("rowId") });
       break;
+    case "cursor_set_by_index": {
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
+      if (!row) break;
+      localEvents.push({ type: "local_cursor_set", rowId: row.id });
+      break;
+    }
     case "song_take_row":
       messages.push({
         type: "song_take",
@@ -389,6 +428,16 @@ const deltaInput: CompanionInputFieldNumber = {
   step: 1,
 };
 
+const rowIndexInput: CompanionInputFieldNumber = {
+  id: "rowIndex",
+  type: "number",
+  label: "Row index (1-based; survives show changes)",
+  default: 1,
+  min: 1,
+  max: 200,
+  step: 1,
+};
+
 const ordinalInput: CompanionInputFieldNumber = {
   id: "ordinal",
   type: "number",
@@ -489,18 +538,32 @@ export function actionDefinitions(
       callback: wrap("clear_loaded_show"),
     },
     take_row: {
-      name: "Take row from loaded show",
+      name: "Take row from loaded show (by row ID)",
       options: [rowDropdown(state), channelDropdown(state)],
       callback: wrap("take_row"),
     },
+    take_row_by_index: {
+      name: "Take row from loaded show (by index)",
+      options: [rowIndexInput, channelDropdown(state)],
+      callback: wrap("take_row_by_index"),
+    },
     take_row_pvw_pgm: {
-      name: "Take row PVW → PGM",
+      name: "Take row PVW → PGM (by row ID)",
       options: [
         rowDropdown(state),
         channelDropdown(state, "fromChannel", "From", "preview"),
         channelDropdown(state, "toChannel", "To", "program"),
       ],
       callback: wrap("take_row_pvw_pgm"),
+    },
+    take_row_pvw_pgm_by_index: {
+      name: "Take row PVW → PGM (by index)",
+      options: [
+        rowIndexInput,
+        channelDropdown(state, "fromChannel", "From", "preview"),
+        channelDropdown(state, "toChannel", "To", "program"),
+      ],
+      callback: wrap("take_row_pvw_pgm_by_index"),
     },
     take_row_at_cursor: {
       name: "Take row at cursor",
@@ -513,9 +576,14 @@ export function actionDefinitions(
       callback: wrap("cursor_advance"),
     },
     cursor_set: {
-      name: "Cursor: set to row",
+      name: "Cursor: set to row (by row ID)",
       options: [rowDropdown(state)],
       callback: wrap("cursor_set"),
+    },
+    cursor_set_by_index: {
+      name: "Cursor: set to row (by index)",
+      options: [rowIndexInput],
+      callback: wrap("cursor_set_by_index"),
     },
     song_take_row: {
       name: "Song: take row (any show)",

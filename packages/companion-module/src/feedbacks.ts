@@ -2,6 +2,7 @@ import type { ActiveGraphic, RundownRow } from "@overlaysys/core";
 import type {
   CompanionFeedbackDefinitions,
   CompanionInputFieldDropdown,
+  CompanionInputFieldNumber,
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
 import type { CompanionState } from "./types";
@@ -17,7 +18,9 @@ export type FeedbackId =
   | "connection_lost"
   | "show_loaded"
   | "row_is_cursor"
-  | "row_is_active";
+  | "row_is_active"
+  | "row_at_index_is_cursor"
+  | "row_at_index_is_active";
 
 export type FeedbackOptions = Record<
   string,
@@ -28,7 +31,10 @@ export interface FeedbackDefinition {
   id: FeedbackId;
   name: string;
   description: string;
-  options: { id: string; type: "channel" | "hotcard" | "row" | "kind_ordinal" }[];
+  options: {
+    id: string;
+    type: "channel" | "hotcard" | "row" | "row_index" | "kind_ordinal";
+  }[];
 }
 
 export const feedbackDefinitions: FeedbackDefinition[] = [
@@ -96,16 +102,30 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "row_is_cursor",
-    name: "Row is at cursor",
+    name: "Row is at cursor (by row ID)",
     description: "True when the chosen row is at the cursor position.",
     options: [{ id: "rowId", type: "row" }],
   },
   {
     id: "row_is_active",
-    name: "Row is active on PGM",
+    name: "Row is active on PGM (by row ID)",
     description:
       "True when the chosen row's content currently matches PGM.",
     options: [{ id: "rowId", type: "row" }],
+  },
+  {
+    id: "row_at_index_is_cursor",
+    name: "Row at index is at cursor",
+    description:
+      "True when the row at the given 1-based index is at the cursor — survives show changes.",
+    options: [{ id: "rowIndex", type: "row_index" }],
+  },
+  {
+    id: "row_at_index_is_active",
+    name: "Row at index is active on PGM",
+    description:
+      "True when the row at the given 1-based index currently matches PGM — survives show changes.",
+    options: [{ id: "rowIndex", type: "row_index" }],
   },
 ];
 
@@ -209,6 +229,22 @@ export function feedbackPredicate(
       const pgm = state.channelStates.get("program");
       return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
     }
+    case "row_at_index_is_cursor": {
+      if (state.loadedShowId == null || state.loadedShowRowCursor == null)
+        return false;
+      const idx = Number(options.rowIndex ?? 1) - 1;
+      return state.loadedShowRowCursor === idx;
+    }
+    case "row_at_index_is_active": {
+      if (state.loadedShowId == null) return false;
+      const show = state.showCache.get(state.loadedShowId);
+      if (!show) return false;
+      const idx = Number(options.rowIndex ?? 1) - 1;
+      const row = show.rows[idx];
+      if (!row) return false;
+      const pgm = state.channelStates.get("program");
+      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
+    }
   }
 }
 
@@ -267,6 +303,16 @@ const kindOrdinalInput: CompanionInputFieldTextInput = {
   default: "verse:1",
 };
 
+const rowIndexInputF: CompanionInputFieldNumber = {
+  id: "rowIndex",
+  type: "number",
+  label: "Row index (1-based; survives show changes)",
+  default: 1,
+  min: 1,
+  max: 200,
+  step: 1,
+};
+
 export type FeedbackChecker = (
   id: FeedbackId,
   options: FeedbackOptions,
@@ -287,6 +333,8 @@ export function feedbackDefinitionsForSDK(
           return hotcardDropdownF(state);
         case "row":
           return rowDropdownF(state);
+        case "row_index":
+          return rowIndexInputF;
         case "kind_ordinal":
           return kindOrdinalInput;
       }

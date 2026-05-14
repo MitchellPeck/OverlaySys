@@ -69,6 +69,7 @@ export function apply(
       const meta = {
         id: evt.hotcard.id,
         name: evt.hotcard.name,
+        projectId: evt.hotcard.projectId,
         templateId: evt.hotcard.templateId,
       };
       const idx = state.hotcards.findIndex((h) => h.id === evt.hotcard.id);
