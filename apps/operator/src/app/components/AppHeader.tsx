@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
+import { getClient } from "@/lib/useWs";
 import { Pill, type PillTone } from "@overlaysys/ui";
-import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 const NAV_LINKS = [
   { href: "/", label: "Show" },
   { href: "/shows", label: "Shows" },
+  { href: "/hotcards", label: "Hotcards" },
   { href: "/songs", label: "Songs" },
   { href: "/stt", label: "STT" },
   { href: "/design", label: "Design" },
@@ -78,11 +80,33 @@ export function AppHeader({
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
         {actions}
         <SttStatusPill />
-        <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
-          {dot} {conn}
-        </span>
+        <ConnectionPill conn={conn} dot={dot} />
       </div>
     </header>
+  );
+}
+
+/**
+ * Connection state + server port. The port matters when external tools
+ * (Companion, Stream Deck) need to know where the server is listening —
+ * especially in the packaged Electron build where the port can differ
+ * from the dev default.
+ */
+function ConnectionPill({ conn, dot }: { conn: string; dot: string }) {
+  const [port, setPort] = useState<string>("");
+  useEffect(() => {
+    try {
+      const url = new URL(getClient().getUrl());
+      setPort(url.port || (url.protocol === "wss:" ? "443" : "80"));
+    } catch {
+      // ignore parse errors — fall back to no port
+    }
+  }, [conn]);
+  return (
+    <span style={{ color: "var(--text-dim)", fontSize: 12 }}>
+      {dot} {conn}
+      {port && <span style={{ marginLeft: 4 }}>:{port}</span>}
+    </span>
   );
 }
 

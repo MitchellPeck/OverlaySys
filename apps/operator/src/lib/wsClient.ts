@@ -28,9 +28,14 @@ export class WsClient {
   private retry = 0;
   private closedByUser = false;
   private url: string;
+  private keepalive: ReturnType<typeof setInterval> | null = null;
 
   constructor(url: string) {
     this.url = url;
+  }
+
+  getUrl(): string {
+    return this.url;
   }
 
   connect(): void {
@@ -60,6 +65,23 @@ export class WsClient {
       if (this.ws !== ws) return; // orphaned
       this.retry = 0;
       this.notifyStatus("open");
+      // Application-level keepalive. The browser doesn't ping idle WS
+      // connections, and during a bulk import the WS sits cold while
+      // HTTP asset uploads run for tens of seconds. Without traffic,
+      // some network paths (Electron NAT, certain proxies) GC the
+      // connection — sends afterwards succeed locally but the server
+      // never sees them. A ping every 20s keeps the path warm.
+      if (this.keepalive) clearInterval(this.keepalive);
+      this.keepalive = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          try {
+            this.ws.send(encode({ type: "ping", t: Date.now() }));
+          } catch {
+            // ws.send can throw if the socket was just closed; let the
+            // close handler trigger reconnect.
+          }
+        }
+      }, 20_000);
     });
     ws.addEventListener("message", (ev) => {
       if (this.ws !== ws) return;
@@ -72,6 +94,10 @@ export class WsClient {
     });
     ws.addEventListener("close", () => {
       if (this.ws !== ws) return; // orphaned socket closing — ignore
+      if (this.keepalive) {
+        clearInterval(this.keepalive);
+        this.keepalive = null;
+      }
       this.notifyStatus("closed");
       if (!this.closedByUser) this.scheduleReconnect();
     });
