@@ -34,9 +34,14 @@ packages/
   ws-protocol/   Zod-validated WebSocket messages
   template-engine/  GSAP runtime that mounts a Template into the DOM
   editor-kit/    Reusable editor primitives (later phases)
+  companion-module/  Bitfocus Companion module for Stream Deck control
 data/
   templates/     Template JSON files (gitignored except fixtures)
   shows/         Show / rundown JSON files
 ```
 
 See `/Users/mitchellpeck/.claude/plans/build-a-custom-html-compiled-sundae.md` for the full plan.
+
+## Companion integration
+
+A Bitfocus Companion module lives at `packages/companion-module/`. See [its HELP.md](packages/companion-module/companion/HELP.md) for install and usage, and the design spec at `docs/superpowers/specs/2026-05-12-companion-integration-design.md`.
