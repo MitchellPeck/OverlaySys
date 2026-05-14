@@ -139,7 +139,7 @@ describe("apply — show and song caches", () => {
             id: "sec1",
             kind: "verse",
             label: "V1",
-            slides: [{ id: "sl1", text: "x" }],
+            slides: [{ id: "sl1", lines: ["x"] }],
           },
         ],
         defaultArrangement: ["sec1"],

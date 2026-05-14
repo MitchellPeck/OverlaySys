@@ -119,7 +119,7 @@ export function projectVariables(
       const sectionId = sess.arrangement[sess.cursor.sectionIdx];
       const section = song?.sections.find((s) => s.id === sectionId);
       const slide = section?.slides[sess.cursor.slideIdx];
-      out[`${c}_song_slide_text`] = slide?.text.split("\n")[0] ?? "";
+      out[`${c}_song_slide_text`] = slide?.lines[0] ?? "";
       out[`${c}_song_blanked`] = sess.blanked ? "yes" : "no";
       out[`${c}_song_trust_mode`] = sess.trustMode ? "yes" : "no";
     } else {

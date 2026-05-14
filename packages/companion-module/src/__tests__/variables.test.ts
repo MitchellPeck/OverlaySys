@@ -105,7 +105,7 @@ describe("projectVariables — channel scope", () => {
             id: "sec1",
             kind: "verse",
             label: "Verse 1",
-            slides: [{ id: "sl1", text: "Line one\nLine two" }],
+            slides: [{ id: "sl1", lines: ["Line one", "Line two"] }],
           },
         ],
         defaultArrangement: ["sec1"],
