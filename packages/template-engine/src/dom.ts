@@ -144,10 +144,82 @@ function shadowToFilter(shadow: Shadow, data: Record<string, string>): string {
   return `drop-shadow(${shadow.x}px ${shadow.y}px ${shadow.blur}px ${c})`;
 }
 
+/**
+ * Walk the template's layer tree and index every layer by id. Used by the
+ * clipBy reveal-edge feature so a layer can locate its referenced clip
+ * source regardless of how deeply nested it is in groups.
+ */
+function indexLayers(layers: Layer[]): Map<string, Layer> {
+  const out = new Map<string, Layer>();
+  function visit(l: Layer): void {
+    out.set(l.id, l);
+    if (l.type === "group") for (const c of l.children) visit(c);
+  }
+  for (const l of layers) visit(l);
+  return out;
+}
+
+/**
+ * Build a CSS clip-path string for a layer's clipBy reveal.
+ *
+ * Modes:
+ *  - `inside`:  hide where this layer's box overlaps the reference's box.
+ *               Implemented as a parent-spanning outer rect with a
+ *               reference-shaped hole (evenodd fill rule).
+ *  - `outside`: only show the area inside the reference's box.
+ *               Implemented with `inset()`.
+ *  - `above` / `below` / `left` / `right`: half-plane through the
+ *               reference's far edge.
+ *
+ * The wrapper that receives this clip-path is 100% × 100% of its parent,
+ * so coordinates are in the parent's local box. We need `parentW`/`parentH`
+ * in pixels because CSS `path()` doesn't accept percentages.
+ *
+ * Scale/rotation/anchor on the reference are ignored — we use the
+ * declared box.
+ */
+function buildClipPathForReveal(
+  ref: Layer,
+  hide: "inside" | "outside" | "above" | "below" | "left" | "right",
+  parentW: number,
+  parentH: number,
+): string {
+  const t = ref.transform;
+  const x = t.x;
+  const y = t.y;
+  const w = t.w ?? 0;
+  const h = t.h ?? 0;
+  switch (hide) {
+    case "inside": {
+      // Outer rect (parent box) + inner rect (reference box) with the
+      // evenodd fill rule makes the inner rect a hole — pixels inside
+      // the reference's bbox are clipped out, everywhere else is visible.
+      const right = x + w;
+      const bottom = y + h;
+      return `path(evenodd, "M0 0 L${parentW} 0 L${parentW} ${parentH} L0 ${parentH} Z M${x} ${y} L${right} ${y} L${right} ${bottom} L${x} ${bottom} Z")`;
+    }
+    case "outside":
+      // Show only the reference's bbox; inset trims from the parent's
+      // edges down to that box.
+      return `inset(${y}px ${parentW - (x + w)}px ${parentH - (y + h)}px ${x}px)`;
+    case "below":
+      // Half-plane: hide below the reference's BOTTOM edge.
+      return `polygon(0 0, 100% 0, 100% ${y + h}px, 0 ${y + h}px)`;
+    case "above":
+      return `polygon(0 ${y}px, 100% ${y}px, 100% 100%, 0 100%)`;
+    case "right":
+      return `polygon(0 0, ${x + w}px 0, ${x + w}px 100%, 0 100%)`;
+    case "left":
+      return `polygon(${x}px 0, 100% 0, 100% 100%, ${x}px 100%)`;
+  }
+}
+
 function buildLayer(
   layer: Layer,
   data: Record<string, string>,
   nodes: LayerNodeMap,
+  layerIndex: Map<string, Layer>,
+  parentSize: { w: number; h: number },
 ): HTMLElement {
   let el: HTMLElement;
 
@@ -288,8 +360,15 @@ function buildLayer(
           el.style.clipPath = `ellipse(${m.w / 2}px ${m.h / 2}px at ${cx}px ${cy}px)`;
         }
       }
+      // Children's clipPath coords are in the group's local box, so
+      // pass the group's transform.w/h (fall back to the outer parent
+      // size when the group hasn't declared explicit dimensions).
+      const groupSize = {
+        w: layer.transform.w ?? parentSize.w,
+        h: layer.transform.h ?? parentSize.h,
+      };
       for (const child of layer.children) {
-        el.appendChild(buildLayer(child, data, nodes));
+        el.appendChild(buildLayer(child, data, nodes, layerIndex, groupSize));
       }
       break;
     }
@@ -298,6 +377,33 @@ function buildLayer(
   applyTransform(el, layer.transform);
   if (!layer.visible) el.style.display = "none";
   nodes.set(layer.id, el);
+
+  // Reveal-edge clip: wrap the layer in a parent-spanning clip container
+  // whose clip-path hides the chosen side of the reference's bounding box.
+  // The wrapper sits where `el` would have, so the parent's appendChild
+  // gets the wrapper; `el` itself stays as the GSAP-targetable node.
+  // Applied in both edit and live so the author can see the effect while
+  // authoring; if a layer becomes hard to find when clipped out, select
+  // it via the Layer Tree and move it with the inspector's x/y inputs.
+  const ref = layer.clipBy && layerIndex.get(layer.clipBy.layerId);
+  if (ref && ref.id !== layer.id) {
+    const wrapper = document.createElement("div");
+    wrapper.dataset["clipFor"] = layer.id;
+    wrapper.style.position = "absolute";
+    wrapper.style.left = "0";
+    wrapper.style.top = "0";
+    wrapper.style.width = "100%";
+    wrapper.style.height = "100%";
+    wrapper.style.pointerEvents = "none";
+    wrapper.style.clipPath = buildClipPathForReveal(
+      ref,
+      layer.clipBy!.hide,
+      parentSize.w,
+      parentSize.h,
+    );
+    wrapper.appendChild(el);
+    return wrapper;
+  }
   return el;
 }
 
@@ -316,8 +422,10 @@ export function buildTemplateDom(
   root.style.pointerEvents = "none";
 
   const nodes: LayerNodeMap = new Map();
+  const layerIndex = indexLayers(template.layers);
+  const rootSize = { w: template.size.w, h: template.size.h };
   for (const layer of template.layers) {
-    root.appendChild(buildLayer(layer, data, nodes));
+    root.appendChild(buildLayer(layer, data, nodes, layerIndex, rootSize));
   }
   return { root, nodes };
 }

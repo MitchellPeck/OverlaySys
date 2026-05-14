@@ -57,11 +57,36 @@ export const FillSchema = z.union([
 ]);
 export type Fill = z.infer<typeof FillSchema>;
 
+/**
+ * Reveal-edge / intersect clip: when set, the layer is wrapped in a
+ * clipping container whose visible region is defined relative to the
+ * referenced layer's bounding box.
+ *
+ * `hide` modes:
+ * - `inside`  — hide where this layer overlaps the reference's bbox.
+ *               The reference acts as a "mask region". Default for new
+ *               clipBys.
+ * - `outside` — inverse of inside; show only what's inside the
+ *               reference's bbox.
+ * - `above` / `below` / `left` / `right` — half-plane through the
+ *               reference's far edge. Useful for "text emerges from a
+ *               horizontal line" effects where the reference is thin.
+ *
+ * The reference layer can be invisible (`visible: false`) and still
+ * drive the clip, making it a positional marker rather than visible art.
+ */
+export const ClipBySchema = z.object({
+  layerId: z.string(),
+  hide: z.enum(["inside", "outside", "above", "below", "left", "right"]),
+});
+export type ClipBy = z.infer<typeof ClipBySchema>;
+
 const BaseLayer = {
   id: z.string(),
   name: z.string(),
   visible: z.boolean().default(true),
   transform: TransformSchema,
+  clipBy: ClipBySchema.optional(),
 };
 
 const TextLayerSchema = z.object({
@@ -187,6 +212,7 @@ export type Layer =
       transform: Transform;
       children: Layer[];
       mask?: MaskShape;
+      clipBy?: ClipBy;
     };
 
 export const LayerSchema: z.ZodType<Layer, z.ZodTypeDef, unknown> = z.lazy(() =>
@@ -254,6 +280,15 @@ export const TemplateSchema = z.object({
   fonts: z
     .array(z.object({ family: z.string(), src: z.string() }))
     .default([]),
+  /**
+   * Auto-out duration in milliseconds. When set, a successful (non-internal)
+   * take of this template schedules a server-side clear after this many ms,
+   * which makes the renderer play the out animation. Useful for self-
+   * clearing graphics like lower-thirds or stings. Cancelled if any new
+   * take/clear/promote happens on the channel before the timer fires.
+   * Internal takes (song slide advances) bypass this.
+   */
+  autoOutMs: z.number().positive().optional(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
 

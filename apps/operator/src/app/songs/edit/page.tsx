@@ -32,7 +32,22 @@ function SongEditorPageInner() {
   const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<Song | null>(cached ?? null);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [dragSecIdx, setDragSecIdx] = useState<number | null>(null);
+  const [secDropZone, setSecDropZone] = useState<{ idx: number; pos: "before" | "after" } | null>(null);
   const { dialog, confirm } = useDialog();
+
+  function moveSection(from: number, to: number) {
+    if (from === to) return;
+    setDraft((d) => {
+      if (!d) return d;
+      const next = d.sections.slice();
+      const [removed] = next.splice(from, 1);
+      if (!removed) return d;
+      const adjustedTo = from < to ? to - 1 : to;
+      next.splice(adjustedTo, 0, removed);
+      return { ...d, sections: next };
+    });
+  }
 
   useEffect(() => {
     if (conn === "open" && !cached) send({ type: "get_song", songId: id });
@@ -98,6 +113,31 @@ function SongEditorPageInner() {
       if (sec.slides.length <= 1) return d;
       sections[secIdx] = { ...sec, slides: sec.slides.filter((_, i) => i !== slideIdx) };
       return { ...d, sections };
+    });
+  }
+
+  function addSection(kind: Section["kind"] = "verse") {
+    setDraft((d) => {
+      if (!d) return d;
+      // Generate a unique kind-prefixed id by counting existing sections of
+      // the same kind. Falls back to a numeric suffix on collision so it
+      // works even when the song was authored with hand-picked ids.
+      const prefix = SECTION_ID_PREFIX[kind];
+      const sameKindCount = d.sections.filter((s) => s.kind === kind).length;
+      let n = sameKindCount + 1;
+      let id = `${prefix}${n}`;
+      while (d.sections.some((s) => s.id === id)) {
+        n += 1;
+        id = `${prefix}${n}`;
+      }
+      const label = `${KIND_LABEL[kind]} ${n}`;
+      const newSection: Section = {
+        id,
+        kind,
+        label,
+        slides: [{ id: `${id}s1`, lines: [""] }],
+      };
+      return { ...d, sections: [...d.sections, newSection] };
     });
   }
 
@@ -205,56 +245,146 @@ function SongEditorPageInner() {
       </Panel>
 
       <h2 style={{ fontSize: 14, marginBottom: 8 }}>Sections</h2>
-      {draft.sections.map((sec, secIdx) => (
-        <Panel key={sec.id} padding="md" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-            <Input
-              value={sec.label}
-              onChange={(e) => updateSection(secIdx, { label: e.target.value })}
-              style={{ fontWeight: 600, flex: 1 }}
-            />
-            <Select
-              value={sec.kind}
-              onChange={(e) => updateSection(secIdx, { kind: e.target.value as Section["kind"] })}
-              style={{ width: "auto" }}
-            >
-              <option value="verse">verse</option>
-              <option value="chorus">chorus</option>
-              <option value="bridge">bridge</option>
-              <option value="tag">tag</option>
-              <option value="intro">intro</option>
-              <option value="outro">outro</option>
-              <option value="other">other</option>
-            </Select>
-            <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
-              {sec.id}
-            </span>
-            <Button
-              onClick={() => removeSection(secIdx)}
-              variant="destructive"
-              size="sm"
-              title="Delete section"
-            >
-              Delete section
-            </Button>
+      {draft.sections.length === 0 && (
+        <p style={{ fontSize: 12, color: colors.textDim, fontStyle: "italic", marginBottom: 12 }}>
+          No sections yet. Add one below or paste lyrics.
+        </p>
+      )}
+      {draft.sections.map((sec, secIdx) => {
+        const isDragging = dragSecIdx === secIdx;
+        const dropAtMe = secDropZone?.idx === secIdx ? secDropZone.pos : null;
+        return (
+          <div
+            key={sec.id}
+            onDragOver={(e) => {
+              if (dragSecIdx === null) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              const pos: "before" | "after" =
+                e.clientY < r.top + r.height / 2 ? "before" : "after";
+              setSecDropZone({ idx: secIdx, pos });
+            }}
+            onDragLeave={(e) => {
+              // Only clear when leaving the wrapper itself, not children.
+              if (e.currentTarget === e.target) setSecDropZone(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const sourceIdxStr = e.dataTransfer.getData("text/plain");
+              const sourceIdx = Number(sourceIdxStr);
+              const z = secDropZone;
+              setSecDropZone(null);
+              setDragSecIdx(null);
+              if (Number.isNaN(sourceIdx) || !z) return;
+              const target = z.pos === "before" ? z.idx : z.idx + 1;
+              moveSection(sourceIdx, target);
+            }}
+            style={{
+              marginBottom: 16,
+              // Raw 2px borders here are intentional drop indicators —
+              // not the standardized radius/border tokens.
+              borderTop: dropAtMe === "before" ? `2px solid ${colors.green}` : "2px solid transparent",
+              borderBottom: dropAtMe === "after" ? `2px solid ${colors.green}` : "2px solid transparent",
+              opacity: isDragging ? 0.5 : 1,
+            }}
+          >
+            <Panel padding="md">
+              <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+                <span
+                  draggable
+                  onDragStart={(e) => {
+                    setDragSecIdx(secIdx);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(secIdx));
+                  }}
+                  onDragEnd={() => {
+                    setDragSecIdx(null);
+                    setSecDropZone(null);
+                  }}
+                  title="Drag to reorder section"
+                  aria-label="Drag handle"
+                  style={{
+                    cursor: "grab",
+                    color: colors.textDim,
+                    fontSize: 16,
+                    padding: "0 4px",
+                    userSelect: "none",
+                  }}
+                >
+                  ⋮⋮
+                </span>
+                <Input
+                  value={sec.label}
+                  onChange={(e) => updateSection(secIdx, { label: e.target.value })}
+                  style={{ fontWeight: 600, flex: 1 }}
+                />
+                <Select
+                  value={sec.kind}
+                  onChange={(e) => updateSection(secIdx, { kind: e.target.value as Section["kind"] })}
+                  style={{ width: "auto" }}
+                >
+                  <option value="verse">verse</option>
+                  <option value="chorus">chorus</option>
+                  <option value="bridge">bridge</option>
+                  <option value="tag">tag</option>
+                  <option value="intro">intro</option>
+                  <option value="outro">outro</option>
+                  <option value="other">other</option>
+                </Select>
+                <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
+                  {sec.id}
+                </span>
+                <Button
+                  onClick={() => removeSection(secIdx)}
+                  variant="destructive"
+                  size="sm"
+                  title="Delete section"
+                >
+                  Delete section
+                </Button>
+              </div>
+              {sec.slides.map((slide, slideIdx) => (
+                <div key={slide.id} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                  <Textarea
+                    value={slide.lines.join("\n")}
+                    onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
+                    rows={2}
+                    mono
+                    style={{ flex: 1 }}
+                  />
+                  <Button onClick={() => removeSlide(secIdx, slideIdx)} size="sm" disabled={sec.slides.length <= 1}>
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button onClick={() => addSlide(secIdx)} size="sm">+ Slide</Button>
+            </Panel>
           </div>
-          {sec.slides.map((slide, slideIdx) => (
-            <div key={slide.id} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-              <Textarea
-                value={slide.lines.join("\n")}
-                onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
-                rows={2}
-                mono
-                style={{ flex: 1 }}
-              />
-              <Button onClick={() => removeSlide(secIdx, slideIdx)} size="sm" disabled={sec.slides.length <= 1}>
-                ✕
-              </Button>
-            </div>
-          ))}
-          <Button onClick={() => addSlide(secIdx)} size="sm">+ Slide</Button>
-        </Panel>
-      ))}
+        );
+      })}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <Button onClick={() => addSection("verse")} size="sm">+ Verse</Button>
+        <Button onClick={() => addSection("chorus")} size="sm">+ Chorus</Button>
+        <Button onClick={() => addSection("bridge")} size="sm">+ Bridge</Button>
+        <Select
+          value=""
+          onChange={(e) => {
+            const v = e.target.value as Section["kind"] | "";
+            if (!v) return;
+            addSection(v);
+            e.currentTarget.value = "";
+          }}
+          style={{ width: "auto" }}
+        >
+          <option value="">+ Other section…</option>
+          <option value="tag">Tag</option>
+          <option value="intro">Intro</option>
+          <option value="outro">Outro</option>
+          <option value="other">Other</option>
+        </Select>
+      </div>
 
       <Panel title="Default Arrangement" padding="md" style={{ marginBottom: 16 }}>
         <ArrangementEditor
@@ -271,6 +401,26 @@ function SongEditorPageInner() {
     </>
   );
 }
+
+const SECTION_ID_PREFIX: Record<Section["kind"], string> = {
+  verse: "v",
+  chorus: "c",
+  bridge: "b",
+  tag: "tag",
+  intro: "intro",
+  outro: "outro",
+  other: "s",
+};
+
+const KIND_LABEL: Record<Section["kind"], string> = {
+  verse: "Verse",
+  chorus: "Chorus",
+  bridge: "Bridge",
+  tag: "Tag",
+  intro: "Intro",
+  outro: "Outro",
+  other: "Section",
+};
 
 function ArrangementEditor({
   arrangement,

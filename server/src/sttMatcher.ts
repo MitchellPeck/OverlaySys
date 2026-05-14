@@ -12,7 +12,7 @@ export const AUTO_TAKE_THRESHOLD = 0.65;
  * tokens minus stop words (see lyricTokens), so connectives like "the" and
  * "of" don't inflate the signal.
  */
-export const COVERAGE_THRESHOLD = 0.65;
+export const COVERAGE_THRESHOLD = 0.55;
 export const COVERAGE_WINDOW_MS = 8000;
 /**
  * Skip coverage-based advance for very short slides — a 2-word slide hits
@@ -35,9 +35,17 @@ interface BoundSession {
   channel: string;
   song: Song;
   arrangement: string[];
-  // Sliding window of recently-heard FOLDED tokens, with timestamps for
-  // pruning. Reset on cursor move.
+  // Sliding window of FOLDED tokens from FINAL hypotheses, with timestamps
+  // for pruning. Reset on cursor move.
   recentTokens: { token: string; t: number }[];
+  // Tokens from the most recent PARTIAL hypothesis. Whisper emits many
+  // partials per step (\r overdraws) then one final (\n). Treating them
+  // like finals would multi-count the same words; ignoring them entirely
+  // means coverage only ticks up every ~500ms (whisper's step size),
+  // which makes trust-mode auto-advance feel sluggish. So we keep the
+  // latest partial as a single replaceable snapshot — it contributes
+  // to coverage but doesn't accumulate.
+  latestPartialTokens: string[];
   lastSeenCursor: { sectionIdx: number; slideIdx: number } | null;
 }
 
@@ -65,6 +73,7 @@ export function bindSession(channel: string, song: Song, arrangement: string[]):
     song,
     arrangement: arrangement.slice(),
     recentTokens: [],
+    latestPartialTokens: [],
     lastSeenCursor: null,
   });
 }
@@ -148,25 +157,17 @@ function getSlideTokens(
 // inputs — easier to tune and to read in the debug overlay.
 
 function coverageConfidence(coverage: number, hasNextHint: boolean): number {
-  if (hasNextHint) {
-    // Next-slide token confirmation present → eligible for auto-take.
-    // Maps coverage [0.65..1.0] linearly into [0.75..1.0].
-    return clamp(
-      0.75 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.25,
-      0.75,
-      1.0,
-    );
-  }
-  // No next-slide hint: still emit so operator can see "current slide is
-  // covered", but cap below AUTO_TAKE_THRESHOLD so trust mode does NOT
-  // fire. This was the source of "triggers too early" reports — matchers
-  // were jumping on chorus-vocab repetition without confirmation that
-  // the band had actually moved on.
-  return clamp(
-    0.45 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.15,
-    0.45,
-    0.60,
+  // Map coverage [threshold..1.0] linearly into [0.70..1.0]. Always above
+  // AUTO_TAKE_THRESHOLD so coverage pre-emption can drive auto-advance —
+  // that's the whole point of pre-emption (lead the band, not chase it).
+  // A next-slide-token hint, when present, gives a small extra confidence
+  // boost so debouncing is tighter on confirmed advances.
+  const base = clamp(
+    0.70 + ((coverage - COVERAGE_THRESHOLD) / (1 - COVERAGE_THRESHOLD)) * 0.25,
+    0.70,
+    0.95,
   );
+  return clamp(base + (hasNextHint ? 0.05 : 0), 0, 1.0);
 }
 
 function overlapConfidence(
@@ -207,22 +208,33 @@ export function processHypothesis(
   const hypTokens = lyricTokens(hypothesisText);
 
   // ── Sliding-window bookkeeping ─────────────────────────────────────────
-  // Reset on cursor move — each slide has its own coverage window. Only
-  // finals contribute to the window; partials are read-only consumers.
+  // Reset on cursor move — each slide has its own coverage window.
   const cursorMoved =
     !session.lastSeenCursor ||
     session.lastSeenCursor.sectionIdx !== cursor.sectionIdx ||
     session.lastSeenCursor.slideIdx !== cursor.slideIdx;
   if (cursorMoved) {
     session.recentTokens = [];
+    session.latestPartialTokens = [];
     session.lastSeenCursor = { sectionIdx: cursor.sectionIdx, slideIdx: cursor.slideIdx };
   }
   if (isFinal) {
+    // Final tokens accumulate into the long-running window and the
+    // partial snapshot is cleared (the final supersedes the partials of
+    // the same step).
     for (const tok of hypTokens) session.recentTokens.push({ token: tok, t: now });
+    session.latestPartialTokens = [];
+  } else {
+    // Partial REPLACES the previous partial snapshot — each partial is a
+    // refinement of the same audio window, so we keep only the latest.
+    session.latestPartialTokens = hypTokens;
   }
   const cutoff = now - COVERAGE_WINDOW_MS;
   session.recentTokens = session.recentTokens.filter((entry) => entry.t >= cutoff);
+  // Coverage set = finals (windowed) ∪ latest partial snapshot. This gives
+  // sub-step responsiveness without multi-counting overdrawn partials.
   const recentSet = new Set(session.recentTokens.map((e) => e.token));
+  for (const t of session.latestPartialTokens) recentSet.add(t);
 
   // ── Compute coverage of current slide (always — used for telemetry) ────
   const currentSlide = getSlideTokens(session, cursor);
@@ -235,13 +247,13 @@ export function processHypothesis(
     coverage = coveredTokens.length / currentSlide.unique.size;
   }
 
-  // ── Strategy 1: coverage-based pre-emption with next-slide gate ────────
-  // Coverage only fires on FINAL hypotheses — partials would let the matcher
-  // jump as soon as whisper-stream's first guess is "good enough", before
-  // the recognizer has had a chance to refine.
+  // ── Strategy 1: coverage-based pre-emption ─────────────────────────────
+  // Fires for both partials and finals. Partials use the replaceable
+  // snapshot so coverage can rise mid-step rather than only on the ~500ms
+  // final cadence. The songSession layer applies a longer debounce on
+  // partial-driven schedules so unstable refinements have time to settle.
   let coverageResult: MatchResult | null = null;
   if (
-    isFinal &&
     currentSlide &&
     currentSlide.unique.size >= COVERAGE_MIN_TOKENS &&
     coverage >= COVERAGE_THRESHOLD
@@ -388,24 +400,18 @@ export function processHypothesis(
   }
 
   // ── Pick the winner ───────────────────────────────────────────────────
-  // Priority order: audible (high-confidence intentional jump) > coverage
-  // (with next-slide hint) > best of (coverage without hint, neighborhood).
-  // We always pick the highest-confidence result that clears MIN_EMIT, but
-  // audibles and coverage-with-hint are protected from being out-bid by
-  // marginal neighborhood scores.
-  const candidatesOut = [coverageResult, neighborhoodResult, audibleResult].filter(
-    (r): r is MatchResult => r !== null,
-  );
-  if (candidatesOut.length === 0) return null;
-
-  // Prefer audible if it cleared the bar.
+  // Priority is sequential, NOT by raw confidence: coverage pre-empt fires
+  // forward of the cursor by design, and a perfect match against the
+  // current cursor slide via the neighborhood pass would always score
+  // higher than a coverage-driven jump to the *next* slide. Letting that
+  // win by confidence would defeat pre-emption entirely. Order:
+  //   audible (strict-threshold operator-jump) >
+  //   coverage (proactive forward advance) >
+  //   neighborhood (cursor-local refinement)
   if (audibleResult) return audibleResult;
-
-  // Otherwise pick by confidence.
-  let best = candidatesOut[0]!;
-  for (const r of candidatesOut) {
-    if (r.confidence > best.confidence) best = r;
+  if (coverageResult) return coverageResult;
+  if (neighborhoodResult && neighborhoodResult.confidence >= MIN_EMIT_THRESHOLD) {
+    return neighborhoodResult;
   }
-  if (best.confidence < MIN_EMIT_THRESHOLD) return null;
-  return best;
+  return null;
 }

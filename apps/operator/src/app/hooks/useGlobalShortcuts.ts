@@ -56,6 +56,8 @@ export function useGlobalShortcuts(): void {
       const show = store.show;
       const selId = store.selectedRowId;
       const row = show?.rows.find((r) => r.id === selId);
+      const hotcardId = store.selectedHotcardId;
+      const hotcard = hotcardId ? store.hotcardCache[hotcardId] : null;
 
       if (e.code === "ArrowDown") {
         e.preventDefault();
@@ -92,6 +94,13 @@ export function useGlobalShortcuts(): void {
             showId: show.id,
             songRowId: row.id,
           });
+        } else if (hotcard) {
+          client.send({
+            type: "cue",
+            channel: hotcard.channelHint ?? "preview",
+            templateId: hotcard.templateId,
+            data: hotcard.data,
+          });
         }
       } else if (e.code === "Space") {
         e.preventDefault();
@@ -108,6 +117,13 @@ export function useGlobalShortcuts(): void {
             channel: "program",
             showId: show.id,
             songRowId: row.id,
+          });
+        } else if (hotcard) {
+          client.send({
+            type: "take",
+            channel: hotcard.channelHint ?? "program",
+            templateId: hotcard.templateId,
+            data: hotcard.data,
           });
         }
       } else if (e.code === "Escape") {

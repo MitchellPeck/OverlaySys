@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collectDependencies,
+  collectReferencedAssetFilenames,
+  type BundleAsset,
   type BundleSelection,
+  type Hotcard,
   type Show,
   type Song,
   type Template,
@@ -12,8 +15,9 @@ import { Button, Field, Input, Inline, Panel, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { downloadJson } from "@/lib/download";
+import { fetchAssetBase64 } from "@/lib/assetTransfer";
 
-type Tab = "songs" | "shows" | "templates";
+type Tab = "songs" | "shows" | "hotcards" | "templates";
 
 export function ExportBundle() {
   const { send } = useWs();
@@ -21,16 +25,30 @@ export function ExportBundle() {
   const songsList = useStore((s) => s.songs);
   const showMetas = useStore((s) => s.showMetas);
   const templates = useStore((s) => s.templates);
+  const hotcardsList = useStore((s) => s.hotcards);
   const songCache = useStore((s) => s.songCache);
   const showCache = useStore((s) => s.showCache);
   const templateCache = useStore((s) => s.templateCache);
+  const hotcardCache = useStore((s) => s.hotcardCache);
 
   const [tab, setTab] = useState<Tab>("songs");
   const [includeDeps, setIncludeDeps] = useState(true);
+  const [includeAssets, setIncludeAssets] = useState(true);
   const [bundleName, setBundleName] = useState("");
   const [selectedSongs, setSelectedSongs] = useState<Set<string>>(new Set());
   const [selectedShows, setSelectedShows] = useState<Set<string>>(new Set());
   const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(new Set());
+  const [selectedHotcards, setSelectedHotcards] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // "Already asked" sets so we don't re-request entities while their replies
+  // are in flight. The cache guards alone would otherwise re-fire each pending
+  // request on every cache update, spamming the server and the render loop.
+  const requestedSongs = useRef<Set<string>>(new Set());
+  const requestedTemplates = useRef<Set<string>>(new Set());
+  const requestedShows = useRef<Set<string>>(new Set());
+  const requestedHotcards = useRef<Set<string>>(new Set());
 
   // Hydrate the lists once when the page opens.
   useEffect(() => {
@@ -38,6 +56,7 @@ export function ExportBundle() {
     send({ type: "list_songs" });
     send({ type: "list_shows" });
     send({ type: "list_templates" });
+    send({ type: "list_hotcards" });
   }, [conn, send]);
 
   const storeSnapshot = useMemo(
@@ -45,8 +64,9 @@ export function ExportBundle() {
       songs: new Map<string, Song>(Object.entries(songCache)),
       templates: new Map<string, Template>(Object.entries(templateCache)),
       shows: new Map<string, Show>(Object.entries(showCache)),
+      hotcards: new Map<string, Hotcard>(Object.entries(hotcardCache)),
     }),
-    [songCache, templateCache, showCache],
+    [songCache, templateCache, showCache, hotcardCache],
   );
 
   const selection: BundleSelection = useMemo(
@@ -54,12 +74,16 @@ export function ExportBundle() {
       songIds: Array.from(selectedSongs),
       showIds: Array.from(selectedShows),
       templateIds: Array.from(selectedTemplates),
+      hotcardIds: Array.from(selectedHotcards),
     }),
-    [selectedSongs, selectedShows, selectedTemplates],
+    [selectedSongs, selectedShows, selectedTemplates, selectedHotcards],
   );
 
   const hasSelection =
-    selectedSongs.size > 0 || selectedShows.size > 0 || selectedTemplates.size > 0;
+    selectedSongs.size > 0 ||
+    selectedShows.size > 0 ||
+    selectedTemplates.size > 0 ||
+    selectedHotcards.size > 0;
 
   const preview = useMemo(() => {
     if (!hasSelection) return null;
@@ -74,14 +98,27 @@ export function ExportBundle() {
         shows: Array.from(selectedShows)
           .map((id) => showCache[id])
           .filter(Boolean) as Show[],
+        hotcards: Array.from(selectedHotcards)
+          .map((id) => hotcardCache[id])
+          .filter(Boolean) as Hotcard[],
         missing: [],
       };
     }
     return collectDependencies(selection, storeSnapshot);
   }, [
     hasSelection, includeDeps, selection, storeSnapshot, selectedSongs,
-    selectedShows, selectedTemplates, songCache, templateCache, showCache,
+    selectedShows, selectedTemplates, selectedHotcards,
+    songCache, templateCache, showCache, hotcardCache,
   ]);
+
+  const referencedAssets = useMemo(() => {
+    if (!preview) return new Set<string>();
+    return collectReferencedAssetFilenames({
+      templates: preview.templates,
+      hotcards: preview.hotcards,
+      shows: preview.shows,
+    });
+  }, [preview]);
 
   function toggle(set: Set<string>, id: string): Set<string> {
     const next = new Set(set);
@@ -89,16 +126,88 @@ export function ExportBundle() {
     return next;
   }
 
+  function fetchSong(id: string): void {
+    if (songCache[id] || requestedSongs.current.has(id)) return;
+    requestedSongs.current.add(id);
+    send({ type: "get_song", songId: id });
+  }
+  function fetchTemplate(id: string): void {
+    if (templateCache[id] || requestedTemplates.current.has(id)) return;
+    requestedTemplates.current.add(id);
+    send({ type: "get_template", templateId: id });
+  }
+  function fetchShow(id: string): void {
+    if (showCache[id] || requestedShows.current.has(id)) return;
+    requestedShows.current.add(id);
+    send({ type: "get_show", showId: id });
+  }
+  function fetchHotcard(id: string): void {
+    if (hotcardCache[id] || requestedHotcards.current.has(id)) return;
+    requestedHotcards.current.add(id);
+    send({ type: "get_hotcard", hotcardId: id });
+  }
+
+  // Eagerly hydrate every song, template, and hotcard once the meta lists
+  // land. With these in cache, selecting a show resolves its dependency
+  // walk in a single round-trip (the show itself) — the "references not
+  // found locally" warning never has a chance to appear. Same logic for
+  // hotcards so asset collection sees their data.
   useEffect(() => {
     if (conn !== "open") return;
-    for (const id of selectedSongs) if (!songCache[id]) send({ type: "get_song", songId: id });
-    for (const id of selectedShows) if (!showCache[id]) send({ type: "get_show", showId: id });
-    for (const id of selectedTemplates) if (!templateCache[id]) send({ type: "get_template", templateId: id });
-  }, [conn, send, selectedSongs, selectedShows, selectedTemplates, songCache, showCache, templateCache]);
+    for (const s of songsList) fetchSong(s.id);
+    for (const t of templates) fetchTemplate(t.id);
+    for (const h of hotcardsList) fetchHotcard(h.id);
+    // fetchSong/fetchTemplate read from refs + caches; explicit deps below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn, send, songsList, templates, hotcardsList, songCache, templateCache, hotcardCache]);
 
-  function downloadBundle() {
-    if (!preview) return;
+  useEffect(() => {
+    if (conn !== "open") return;
+    for (const id of selectedSongs) fetchSong(id);
+    for (const id of selectedShows) fetchShow(id);
+    for (const id of selectedTemplates) fetchTemplate(id);
+    for (const id of selectedHotcards) fetchHotcard(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    conn, send, selectedSongs, selectedShows, selectedTemplates, selectedHotcards,
+    songCache, showCache, templateCache, hotcardCache,
+  ]);
+
+  // Hydrate transitive deps surfaced by the dependency walk (e.g. songs and
+  // templates referenced by a selected show). With eager hydration above
+  // this is normally a no-op, but it covers the cold-cache race where a show
+  // arrives before its songs/templates have been fetched.
+  useEffect(() => {
+    if (conn !== "open" || !preview) return;
+    for (const m of preview.missing) {
+      if (m.kind === "song") fetchSong(m.id);
+      else if (m.kind === "template") fetchTemplate(m.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn, send, preview, songCache, templateCache]);
+
+  async function downloadBundle() {
+    if (!preview || downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
     const filename = `${slugify(bundleName) || "overlaysys"}.bundle.json`;
+    let assets: BundleAsset[] = [];
+    if (includeAssets && referencedAssets.size > 0) {
+      try {
+        const fetched = await Promise.all(
+          Array.from(referencedAssets).map(async (name): Promise<BundleAsset | null> => {
+            const r = await fetchAssetBase64(name);
+            if (!r) return null;
+            return { filename: r.filename, size: r.size, data: r.base64 };
+          }),
+        );
+        assets = fetched.filter((a): a is BundleAsset => a !== null);
+      } catch (err) {
+        setDownloadError(String(err));
+        setDownloading(false);
+        return;
+      }
+    }
     const bundle = {
       format: "overlaysys-bundle" as const,
       version: 1 as const,
@@ -107,8 +216,11 @@ export function ExportBundle() {
       songs: preview.songs,
       templates: preview.templates,
       shows: preview.shows,
+      hotcards: preview.hotcards,
+      assets,
     };
     downloadJson(filename, bundle);
+    setDownloading(false);
   }
 
   return (
@@ -122,7 +234,7 @@ export function ExportBundle() {
         />
       </Field>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4 }}>
         <input
           type="checkbox"
           checked={includeDeps}
@@ -131,15 +243,32 @@ export function ExportBundle() {
         Include referenced dependencies
       </label>
 
+      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={includeAssets}
+          onChange={(e) => setIncludeAssets(e.target.checked)}
+        />
+        Include binary assets (videos, fonts, images) — embeds bytes as base64
+      </label>
+
       <Inline gap={1} style={{ marginBottom: 8 }}>
-        {(["songs", "shows", "templates"] as const).map((t) => (
+        {(["songs", "shows", "hotcards", "templates"] as const).map((t) => (
           <Button
             key={t}
             size="sm"
             variant={tab === t ? "primary" : "secondary"}
             onClick={() => setTab(t)}
           >
-            {t} ({t === "songs" ? songsList.length : t === "shows" ? showMetas.length : templates.length})
+            {t} (
+            {t === "songs"
+              ? songsList.length
+              : t === "shows"
+              ? showMetas.length
+              : t === "hotcards"
+              ? hotcardsList.length
+              : templates.length}
+            )
           </Button>
         ))}
       </Inline>
@@ -170,6 +299,15 @@ export function ExportBundle() {
             label={s.name || s.id}
             checked={selectedShows.has(s.id)}
             onToggle={() => setSelectedShows((cur) => toggle(cur, s.id))}
+          />
+        ))}
+        {tab === "hotcards" && hotcardsList.map((h) => (
+          <CheckRow
+            key={h.id}
+            id={h.id}
+            label={h.name || h.id}
+            checked={selectedHotcards.has(h.id)}
+            onToggle={() => setSelectedHotcards((cur) => toggle(cur, h.id))}
           />
         ))}
         {tab === "templates" && templates.map((t) => (
@@ -209,12 +347,29 @@ export function ExportBundle() {
         <p style={{ fontSize: 12, color: colors.textDim }}>
           Will export: <strong>{preview.songs.length}</strong> song(s),{" "}
           <strong>{preview.templates.length}</strong> template(s),{" "}
-          <strong>{preview.shows.length}</strong> show(s).
+          <strong>{preview.shows.length}</strong> show(s),{" "}
+          <strong>{preview.hotcards.length}</strong> hotcard(s)
+          {includeAssets && referencedAssets.size > 0 ? (
+            <>
+              {", "}
+              <strong>{referencedAssets.size}</strong> asset(s)
+            </>
+          ) : null}
+          .
         </p>
       )}
 
-      <Button onClick={downloadBundle} disabled={!hasSelection} variant="primary" size="sm">
-        Download bundle
+      {downloadError && (
+        <p style={{ color: colors.errorText, fontSize: 12 }}>{downloadError}</p>
+      )}
+
+      <Button
+        onClick={downloadBundle}
+        disabled={!hasSelection || downloading}
+        variant="primary"
+        size="sm"
+      >
+        {downloading ? "Bundling…" : "Download bundle"}
       </Button>
     </Panel>
   );

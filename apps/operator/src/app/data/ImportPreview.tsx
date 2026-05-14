@@ -4,18 +4,31 @@ import { useState } from "react";
 import {
   detectImport,
   type Bundle,
+  type BundleAsset,
+  type Hotcard,
   type Show,
   type Song,
   type Template,
 } from "@overlaysys/core";
 import { Button, Panel, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
+import { defaultServerUrl } from "@/lib/wsClient";
+
+/**
+ * Bundle import UI. Reads a bundle (or single-entity) JSON file, shows a
+ * preview with Replace/Skip decisions per existing-id conflict, then posts
+ * the whole filtered bundle to `POST /api/import` in a single request.
+ *
+ * The server handles all of the asset-lift / URL-rewrite / fan-out save
+ * work — see `server/src/importRoute.ts`. Keeping that logic server-side
+ * avoids the half-dozen failure modes the previous WS-based loop hit.
+ */
 
 type Decision = "save" | "skip";
+type ItemKind = "song" | "template" | "show" | "hotcard";
 
 interface ItemRow {
-  kind: "song" | "template" | "show";
+  kind: ItemKind;
   id: string;
   label: string;
   conflict: boolean;
@@ -26,28 +39,52 @@ interface PreviewState {
   songs: Song[];
   templates: Template[];
   shows: Show[];
+  hotcards: Hotcard[];
+  assets: BundleAsset[];
   rows: ItemRow[];
 }
 
+interface ImportResult {
+  ok: boolean;
+  counts: {
+    templates: number;
+    hotcards: number;
+    shows: number;
+    songs: number;
+    assets: number;
+  };
+  errors: { kind: string; id: string; message: string }[];
+}
+
 export function ImportPreview() {
-  const { send } = useWs();
   const songMetas = useStore((s) => s.songs);
   const showMetas = useStore((s) => s.showMetas);
   const templates = useStore((s) => s.templates);
+  const hotcardMetas = useStore((s) => s.hotcards);
 
   const [parseError, setParseError] = useState<string | null>(null);
   const [filename, setFilename] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   function existingIds() {
     return {
       songs: new Set(songMetas.map((s) => s.id)),
       templates: new Set(templates.map((t) => t.id)),
       shows: new Set(showMetas.map((s) => s.id)),
+      hotcards: new Set(hotcardMetas.map((h) => h.id)),
     };
   }
 
-  function buildPreview(songs: Song[], templates: Template[], shows: Show[]): PreviewState {
+  function buildPreview(
+    songs: Song[],
+    templates: Template[],
+    shows: Show[],
+    hotcards: Hotcard[],
+    assets: BundleAsset[],
+  ): PreviewState {
     const ex = existingIds();
     const rows: ItemRow[] = [
       ...songs.map<ItemRow>((s) => ({
@@ -64,6 +101,13 @@ export function ImportPreview() {
         conflict: ex.templates.has(t.id),
         decision: ex.templates.has(t.id) ? "skip" : "save",
       })),
+      ...hotcards.map<ItemRow>((h) => ({
+        kind: "hotcard",
+        id: h.id,
+        label: h.name || h.id,
+        conflict: ex.hotcards.has(h.id),
+        decision: ex.hotcards.has(h.id) ? "skip" : "save",
+      })),
       ...shows.map<ItemRow>((sh) => ({
         kind: "show",
         id: sh.id,
@@ -72,13 +116,15 @@ export function ImportPreview() {
         decision: ex.shows.has(sh.id) ? "skip" : "save",
       })),
     ];
-    return { songs, templates, shows, rows };
+    return { songs, templates, shows, hotcards, assets, rows };
   }
 
   async function readFile(file: File) {
     setFilename(file.name);
     setParseError(null);
     setPreview(null);
+    setResult(null);
+    setImportError(null);
     let text: string;
     try {
       text = await file.text();
@@ -100,13 +146,15 @@ export function ImportPreview() {
     }
     if (detected.kind === "bundle") {
       const b: Bundle = detected.bundle;
-      setPreview(buildPreview(b.songs, b.templates, b.shows));
+      setPreview(buildPreview(b.songs, b.templates, b.shows, b.hotcards, b.assets));
     } else if (detected.kind === "song") {
-      setPreview(buildPreview([detected.song], [], []));
+      setPreview(buildPreview([detected.song], [], [], [], []));
     } else if (detected.kind === "template") {
-      setPreview(buildPreview([], [detected.template], []));
+      setPreview(buildPreview([], [detected.template], [], [], []));
     } else if (detected.kind === "show") {
-      setPreview(buildPreview([], [], [detected.show]));
+      setPreview(buildPreview([], [], [detected.show], [], []));
+    } else if (detected.kind === "hotcard") {
+      setPreview(buildPreview([], [], [], [detected.hotcard], []));
     }
   }
 
@@ -121,29 +169,57 @@ export function ImportPreview() {
     });
   }
 
-  function applyImport() {
-    if (!preview) return;
-    for (const row of preview.rows) {
-      if (row.decision === "skip") continue;
-      if (row.kind === "template") {
-        const t = preview.templates.find((x) => x.id === row.id);
-        if (t) send({ type: "save_template", template: t });
+  async function applyImport() {
+    if (!preview || busy) return;
+    setBusy(true);
+    setImportError(null);
+    setResult(null);
+
+    // Filter by per-row decision; assets are always included (sha-named
+    // files are idempotent on the server side).
+    const savedTemplateIds = new Set(
+      preview.rows.filter((r) => r.kind === "template" && r.decision === "save").map((r) => r.id),
+    );
+    const savedSongIds = new Set(
+      preview.rows.filter((r) => r.kind === "song" && r.decision === "save").map((r) => r.id),
+    );
+    const savedHotcardIds = new Set(
+      preview.rows.filter((r) => r.kind === "hotcard" && r.decision === "save").map((r) => r.id),
+    );
+    const savedShowIds = new Set(
+      preview.rows.filter((r) => r.kind === "show" && r.decision === "save").map((r) => r.id),
+    );
+
+    const body = {
+      templates: preview.templates.filter((t) => savedTemplateIds.has(t.id)),
+      songs: preview.songs.filter((s) => savedSongIds.has(s.id)),
+      hotcards: preview.hotcards.filter((h) => savedHotcardIds.has(h.id)),
+      shows: preview.shows.filter((s) => savedShowIds.has(s.id)),
+      assets: preview.assets,
+    };
+
+    try {
+      const res = await fetch(`${httpBase()}/api/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
       }
+      const data = (await res.json()) as ImportResult;
+      setResult(data);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
     }
-    for (const row of preview.rows) {
-      if (row.decision === "skip") continue;
-      if (row.kind === "song") {
-        const s = preview.songs.find((x) => x.id === row.id);
-        if (s) send({ type: "save_song", song: s });
-      }
-    }
-    for (const row of preview.rows) {
-      if (row.decision === "skip") continue;
-      if (row.kind === "show") {
-        const sh = preview.shows.find((x) => x.id === row.id);
-        if (sh) send({ type: "save_show", show: sh });
-      }
-    }
+  }
+
+  function dismissResult() {
+    setResult(null);
+    setImportError(null);
     setPreview(null);
     setFilename(null);
   }
@@ -187,9 +263,18 @@ export function ImportPreview() {
         <p style={{ color: colors.errorText, fontSize: 12 }}>Parse failed: {parseError}</p>
       )}
 
-      {preview && (
+      {preview && !result && (
         <>
-          <div style={{ maxHeight: 320, overflowY: "auto", border: `1px solid ${colors.border}`, borderRadius: 4, padding: 6, marginBottom: 8 }}>
+          <div
+            style={{
+              maxHeight: 320,
+              overflowY: "auto",
+              border: `1px solid ${colors.border}`,
+              borderRadius: 4,
+              padding: 6,
+              marginBottom: 8,
+            }}
+          >
             {preview.rows.length === 0 ? (
               <p style={{ fontSize: 12, color: colors.textDim }}>
                 The file contained no entities.
@@ -199,12 +284,22 @@ export function ImportPreview() {
                 <div
                   key={`${row.kind}:${row.id}`}
                   style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "4px 6px", fontSize: 13,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "4px 6px",
+                    fontSize: 13,
                     borderBottom: `1px solid ${colors.border}`,
                   }}
                 >
-                  <span style={{ minWidth: 80, fontSize: 11, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
+                  <span
+                    style={{
+                      minWidth: 80,
+                      fontSize: 11,
+                      color: colors.textDim,
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  >
                     {row.kind}
                   </span>
                   <span style={{ fontWeight: 600 }}>{row.label}</span>
@@ -240,16 +335,92 @@ export function ImportPreview() {
               ))
             )}
           </div>
+          {preview.assets.length > 0 && (
+            <p style={{ fontSize: 12, color: colors.textDim, marginBottom: 8 }}>
+              Bundle includes <strong>{preview.assets.length}</strong> binary asset(s) — they'll be restored to <code>data/assets/</code>.
+            </p>
+          )}
           <Button
             onClick={applyImport}
-            disabled={saveCount === 0}
+            disabled={(saveCount === 0 && preview.assets.length === 0) || busy}
             variant="primary"
             size="sm"
           >
-            Save {saveCount} item(s){skipCount > 0 ? `, skip ${skipCount}` : ""}
+            {busy
+              ? "Importing…"
+              : `Save ${saveCount} item(s)${skipCount > 0 ? `, skip ${skipCount}` : ""}${preview.assets.length > 0 ? ` + ${preview.assets.length} asset(s)` : ""}`}
           </Button>
         </>
       )}
+
+      {importError && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 10,
+            background: "rgba(245, 158, 11, 0.1)",
+            border: `1px solid ${colors.warn}`,
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          <strong>Import failed:</strong> {importError}
+          <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
+            Close
+          </Button>
+        </div>
+      )}
+
+      {result && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 10,
+            background: result.ok ? "rgba(34, 197, 94, 0.08)" : "rgba(245, 158, 11, 0.1)",
+            border: `1px solid ${result.ok ? colors.border : colors.warn}`,
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          <strong>
+            {result.ok ? "✓ Imported" : "Imported with errors"}: {result.counts.templates}{" "}
+            template(s), {result.counts.songs} song(s), {result.counts.hotcards} hotcard(s),{" "}
+            {result.counts.shows} show(s), {result.counts.assets} asset(s)
+          </strong>
+          {result.errors.length > 0 && (
+            <ul style={{ margin: "4px 0 0", paddingLeft: 16, color: colors.errorText }}>
+              {result.errors.map((e, i) => (
+                <li key={i}>
+                  <code>
+                    {e.kind}:{e.id}
+                  </code>{" "}
+                  {e.message}
+                </li>
+              ))}
+            </ul>
+          )}
+          <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
+            Close
+          </Button>
+        </div>
+      )}
     </Panel>
   );
+}
+
+/**
+ * HTTP origin of the server, derived from the WS URL the operator is already
+ * configured with. The operator may run on a different host than the server
+ * in dev (operator @ :3000, server @ :4000), so we can't just use
+ * `window.location.origin` here.
+ */
+function httpBase(): string {
+  const ws = defaultServerUrl();
+  try {
+    const u = new URL(ws);
+    const proto = u.protocol === "wss:" ? "https:" : "http:";
+    return `${proto}//${u.host}`;
+  } catch {
+    return typeof window !== "undefined" ? window.location.origin : "";
+  }
 }

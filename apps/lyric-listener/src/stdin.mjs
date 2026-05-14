@@ -30,7 +30,13 @@ const URL = process.env.WS_URL ?? "ws://localhost:4000/ws";
 const AUDIO_SOURCE_ID = process.env.AUDIO_SOURCE_ID ?? `stdin-${os.hostname()}`;
 const LABEL = process.env.LABEL ?? "stdin";
 
-const ws = new WebSocket(URL);
+// Match the server's maxPayload (1 GB). The default in `ws` is 100 MB,
+// which a single template/song save with embedded image data can exceed —
+// every connected client (including this listener) receives those
+// broadcasts, so a too-small client limit kills the listener with
+// "max payload size exceeded". Listener never originates large messages
+// itself; this only loosens the receive cap.
+const ws = new WebSocket(URL, { maxPayload: 1024 * 1024 * 1024 });
 
 ws.on("open", () => {
   ws.send(JSON.stringify({

@@ -61,9 +61,20 @@ export async function uploadAsset(file: File): Promise<UploadResult> {
 }
 
 /**
- * Hook left in place for the (rare) case a template was hand-edited with a
- * relative `/assets/...` URL. New uploads return absolute URLs from the
- * server, so the prefix branch usually doesn't fire.
+ * Resolve a stored asset URL for browser-level fetching. The server now
+ * returns and persists relative `/assets/<filename>` paths (see
+ * `server/src/assets.ts` and `bundleApply.normalizeAssetUrlsInTemplate`) —
+ * relative URLs are essential for packaged Electron, where the server
+ * binds to an OS-assigned ephemeral port that differs between launches.
+ *
+ * In Electron production the operator is served by the same origin as the
+ * asset endpoint, so relative URLs would resolve naturally even without
+ * this helper. In dev (`pnpm dev`) the operator runs on :3000 while the
+ * asset server is on :4000, so we have to prepend the WS server's HTTP
+ * origin for previews and direct `<img src>` rendering to work.
+ *
+ * Already-absolute URLs are returned unchanged so legacy data still loads
+ * until the server's boot migration rewrites it.
  */
 export function resolveAssetUrl(stored: string): string {
   if (!stored) return stored;

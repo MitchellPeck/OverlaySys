@@ -38,6 +38,7 @@ function bootstrap(): void {
         client.send({ type: "list_templates" });
         client.send({ type: "list_shows" });
         client.send({ type: "list_songs" });
+        client.send({ type: "list_hotcards" });
         client.send({ type: "list_channels" });
         client.send({ type: "stt_spawner_get_config" });
         break;
@@ -63,6 +64,12 @@ function bootstrap(): void {
       case "show":
         if (!store.show || store.show.id === msg.show.id) store.setShow(msg.show);
         store.setShowFull(msg.show);
+        break;
+      case "hotcard_list":
+        store.setHotcards(msg.hotcards);
+        break;
+      case "hotcard":
+        store.setHotcard(msg.hotcard);
         break;
       case "channel_list":
         store.setChannelConfigs(msg.configs);

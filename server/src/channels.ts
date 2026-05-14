@@ -1,13 +1,63 @@
 import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
 import * as songSession from "./songSession";
+import * as templates from "./templates";
 
 type Listener = (state: ChannelState) => void;
 
 const states = new Map<string, ChannelState>();
 const listeners = new Map<string, Set<Listener>>();
+// Auto-out timers keyed by channel. Set when a take/promote lands a
+// template that has autoOutMs configured; fires clear() so the renderer
+// plays its out animation. Always cancelled on any subsequent take, clear,
+// or promote so the timer for an outdated active never fires.
+const autoOutTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let takeIsInternal = false;
 let clearIsInternal = false;
+
+function cancelAutoOut(channel: string): void {
+  const t = autoOutTimers.get(channel);
+  if (t) {
+    clearTimeout(t);
+    autoOutTimers.delete(channel);
+  }
+}
+
+/**
+ * Async lookup of the just-taken template's `autoOutMs`. The template lives
+ * on disk, so this is fire-and-forget — by the time it resolves, a newer
+ * take may already have happened. We guard with a takenAt re-check so the
+ * timer is only scheduled when the active mount is still the one we asked
+ * for. Internal takes (song slides) skip this entirely.
+ */
+async function maybeScheduleAutoOut(
+  channel: string,
+  templateId: string,
+  takenAt: number,
+): Promise<void> {
+  const tpl = await templates.getTemplate(templateId);
+  const ms = tpl?.autoOutMs;
+  if (!ms || ms <= 0) return;
+  const s = states.get(channel);
+  if (!s?.active || s.active.templateId !== templateId || s.active.takenAt !== takenAt) {
+    return;
+  }
+  // Cancel any previously-scheduled timer for this channel before installing
+  // ours. Could exist if two takes raced and both reached this point.
+  cancelAutoOut(channel);
+  const timer = setTimeout(() => {
+    autoOutTimers.delete(channel);
+    const cur = states.get(channel);
+    if (
+      cur?.active &&
+      cur.active.templateId === templateId &&
+      cur.active.takenAt === takenAt
+    ) {
+      clear(channel);
+    }
+  }, ms);
+  autoOutTimers.set(channel, timer);
+}
 
 function getOrInit(channel: string): ChannelState {
   let s = states.get(channel);
@@ -53,10 +103,20 @@ export function take(channel: string, templateId: string, data: Record<string, s
       songSession.end(channel);
     }
   }
+  // Cancel any prior auto-out before we install the new active mount —
+  // even if the new take is for the same template, the timer should
+  // restart from this take's takenAt.
+  cancelAutoOut(channel);
   const s = getOrInit(channel);
   s.active = { templateId, data, phase: "in", takenAt: Date.now() };
   states.set(channel, s);
   emit(channel);
+  // Internal takes (song slide advances) bypass auto-out — songs control
+  // their own progression and shouldn't self-clear mid-set on a slide
+  // pause.
+  if (!takeIsInternal) {
+    void maybeScheduleAutoOut(channel, templateId, s.active.takenAt);
+  }
 }
 
 export function takeInternal(channel: string, templateId: string, data: Record<string, string>): void {
@@ -76,6 +136,7 @@ export function clear(channel: string): void {
     const session = songSession.getSession(channel);
     if (session) songSession.end(channel);
   }
+  cancelAutoOut(channel);
   const s = getOrInit(channel);
   if (!s.active) return;
   s.active = { ...s.active, phase: "out" };
@@ -149,6 +210,9 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   const destSession = songSession.getSession(toChannel);
   if (destSession) songSession.end(toChannel);
 
+  // Cancel any prior auto-out on the destination so the new active mount's
+  // timer starts fresh from this promotion.
+  cancelAutoOut(toChannel);
   // Put it on PGM — fresh takenAt so renderers re-mount.
   const pgm = getOrInit(toChannel);
   pgm.active = {
@@ -161,5 +225,10 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   emit(toChannel);
 
   // Clear PVW (use clear() so the post-clear null sweep still happens).
+  // clear() also cancels the source's auto-out timer for us.
   clear(fromChannel);
+
+  // Schedule auto-out on the destination if the promoted template defines
+  // it. Same async-with-takenAt-recheck pattern as take().
+  void maybeScheduleAutoOut(toChannel, queued.templateId, pgm.active.takenAt);
 }

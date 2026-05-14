@@ -11,6 +11,7 @@ import { listSongMetas, reloadSongs } from "./songs";
 import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
+import { registerImportRoutes } from "./importRoute";
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
 // PORT=0 → OS-assigned ephemeral port (used by the Electron host so two
@@ -32,6 +33,12 @@ if (STATIC_OPERATOR_DIR) {
     root: path.resolve(STATIC_OPERATOR_DIR),
     prefix: "/operator/",
     decorateReply: false,
+    // The Next.js static export uses trailingSlash:true so each route lives
+    // at `<route>/index.html`. Without `redirect:true`, a refresh on
+    // `/operator/hotcards/edit?id=…` (no trailing slash) 404s — Fastify
+    // looks for a file at that path and finds a directory. Auto-redirecting
+    // to the slashed form lets the index.html serve.
+    redirect: true,
   });
   app.log.info(`[static] operator at ${STATIC_OPERATOR_DIR} → /operator/`);
 }
@@ -40,6 +47,7 @@ if (STATIC_RENDERER_DIR) {
     root: path.resolve(STATIC_RENDERER_DIR),
     prefix: "/renderer/",
     decorateReply: false,
+    redirect: true,
   });
   app.log.info(`[static] renderer at ${STATIC_RENDERER_DIR} → /renderer/`);
 }
@@ -63,6 +71,7 @@ if (sttConfig.autoStart) {
 app.get("/health", async () => ({ ok: true, time: Date.now() }));
 
 await registerAssetRoutes(app);
+await registerImportRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };

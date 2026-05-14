@@ -30,6 +30,11 @@ export default function ShowsIndexPage() {
     setTimeout(() => router.push(`/shows/edit?id=${encodeURIComponent(id)}`), 150);
   }
 
+  function duplicate(id: string) {
+    if (conn !== "open") return;
+    send({ type: "duplicate_show", showId: id });
+  }
+
   function exportShow(id: string) {
     const cached = useStore.getState().showCache[id];
     if (cached) {
@@ -88,6 +93,9 @@ export default function ShowsIndexPage() {
                   secondary={`${s.id} · ${s.rowCount} ${s.rowCount === 1 ? "row" : "rows"}`}
                   actions={
                     <>
+                      <Button onClick={() => duplicate(s.id)} size="sm" style={{ width: 84 }}>
+                        Duplicate
+                      </Button>
                       <Button onClick={() => exportShow(s.id)} size="sm" style={{ width: 64 }}>
                         Export
                       </Button>

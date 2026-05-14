@@ -60,11 +60,17 @@ describe("BundleSchema", () => {
 
 describe("collectDependencies (skeleton)", () => {
   it("is a function that takes a selection and a store", () => {
-    const empty: BundleSelection = { songIds: [], templateIds: [], showIds: [] };
+    const empty: BundleSelection = {
+      songIds: [],
+      templateIds: [],
+      showIds: [],
+      hotcardIds: [],
+    };
     const out = collectDependencies(empty, {
       songs: new Map(),
       templates: new Map(),
       shows: new Map(),
+      hotcards: new Map(),
     });
     expect(out.songs).toEqual([]);
     expect(out.templates).toEqual([]);
@@ -129,9 +135,10 @@ describe("collectDependencies", () => {
           ]),
         ],
       ]),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: [], templateIds: [], showIds: ["show1"] },
+      { songIds: [], templateIds: [], showIds: ["show1"], hotcardIds: [] },
       store,
     );
     expect(out.shows.map((s) => s.id)).toEqual(["show1"]);
@@ -148,9 +155,10 @@ describe("collectDependencies", () => {
       songs: new Map([["s1", makeSong("s1", "tpl-default")]]),
       templates: new Map([["tpl-default", makeTemplate("tpl-default")]]),
       shows: new Map(),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: ["s1"], templateIds: [], showIds: [] },
+      { songIds: ["s1"], templateIds: [], showIds: [], hotcardIds: [] },
       store,
     );
     expect(out.songs.map((s) => s.id)).toEqual(["s1"]);
@@ -162,9 +170,10 @@ describe("collectDependencies", () => {
       songs: new Map(),
       templates: new Map([["t1", makeTemplate("t1")]]),
       shows: new Map(),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: [], templateIds: ["t1"], showIds: [] },
+      { songIds: [], templateIds: ["t1"], showIds: [], hotcardIds: [] },
       store,
     );
     expect(out.templates.map((t) => t.id)).toEqual(["t1"]);
@@ -189,9 +198,10 @@ describe("collectDependencies", () => {
           ]),
         ],
       ]),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: [], templateIds: [], showIds: ["show-stale"] },
+      { songIds: [], templateIds: [], showIds: ["show-stale"], hotcardIds: [] },
       store,
     );
     expect(out.shows.map((s) => s.id)).toEqual(["show-stale"]);
@@ -210,9 +220,10 @@ describe("collectDependencies", () => {
         ["a", makeShow("a", [{ kind: "graphic", id: "r1", templateId: "tpl-shared", data: {} }])],
         ["b", makeShow("b", [{ kind: "graphic", id: "r1", templateId: "tpl-shared", data: {} }])],
       ]),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: [], templateIds: [], showIds: ["a", "b"] },
+      { songIds: [], templateIds: [], showIds: ["a", "b"], hotcardIds: [] },
       store,
     );
     expect(out.templates.map((t) => t.id)).toEqual(["tpl-shared"]);
@@ -223,9 +234,10 @@ describe("collectDependencies", () => {
       songs: new Map([["s1", makeSong("s1")]]),
       templates: new Map([["t1", makeTemplate("t1")]]),
       shows: new Map(),
+      hotcards: new Map(),
     };
     const out = collectDependencies(
-      { songIds: ["s1"], templateIds: ["t1"], showIds: [] },
+      { songIds: ["s1"], templateIds: ["t1"], showIds: [], hotcardIds: [] },
       store,
     );
     expect(out.songs.map((s) => s.id)).toEqual(["s1"]);
@@ -234,8 +246,8 @@ describe("collectDependencies", () => {
 
   it("records missing-ref for a directly-selected id that doesn't exist in the store", () => {
     const out = collectDependencies(
-      { songIds: ["ghost"], templateIds: [], showIds: [] },
-      { songs: new Map(), templates: new Map(), shows: new Map() },
+      { songIds: ["ghost"], templateIds: [], showIds: [], hotcardIds: [] },
+      { songs: new Map(), templates: new Map(), shows: new Map(), hotcards: new Map() },
     );
     expect(out.songs).toEqual([]);
     expect(out.missing).toEqual([

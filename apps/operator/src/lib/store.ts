@@ -10,6 +10,8 @@ import type {
   Song,
   SongMeta,
   SongSessionSummary,
+  Hotcard,
+  HotcardMeta,
   SttSpawnerConfig,
   SttSpawnerStatus,
 } from "@overlaysys/core";
@@ -45,6 +47,7 @@ type StoreState = {
   showMetas: ShowMeta[];
   show: Show | null;
   selectedRowId: string | null;
+  selectedHotcardId: string | null;
   channelStates: Record<string, ChannelState>;
   channelConfigs: ChannelConfig[];
 
@@ -55,12 +58,16 @@ type StoreState = {
   sttMatches: Record<string, SttMatchSummary>;
   sttListeners: SttListenerInfo[];
 
+  hotcards: HotcardMeta[];
+  hotcardCache: Record<string, Hotcard>;
+
   setConn: (c: ConnState) => void;
   setTemplates: (t: TemplateMeta[]) => void;
   setTemplate: (t: Template) => void;
   setShowMetas: (s: ShowMeta[]) => void;
   setShow: (s: Show | null) => void;
   setSelectedRow: (id: string | null) => void;
+  setSelectedHotcard: (id: string | null) => void;
   setChannelState: (s: ChannelState) => void;
   setChannelConfigs: (c: ChannelConfig[]) => void;
   setSongs: (songs: SongMeta[]) => void;
@@ -69,6 +76,8 @@ type StoreState = {
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
   setSttMatch: (channel: string, match: SttMatchSummary) => void;
   setSttListeners: (listeners: SttListenerInfo[]) => void;
+  setHotcards: (h: HotcardMeta[]) => void;
+  setHotcard: (h: Hotcard) => void;
 
   sttSpawnerStatus: SttSpawnerStatus | null;
   sttSpawnerConfig: SttSpawnerConfig | null;
@@ -83,6 +92,7 @@ export const useStore = create<StoreState>((set) => ({
   showMetas: [],
   show: null,
   selectedRowId: null,
+  selectedHotcardId: null,
   channelStates: {},
   channelConfigs: [],
   songs: [],
@@ -91,6 +101,8 @@ export const useStore = create<StoreState>((set) => ({
   songSessions: {},
   sttMatches: {},
   sttListeners: [],
+  hotcards: [],
+  hotcardCache: {},
   sttSpawnerStatus: null,
   sttSpawnerConfig: null,
 
@@ -100,16 +112,31 @@ export const useStore = create<StoreState>((set) => ({
     set((cur) => ({ templateCache: { ...cur.templateCache, [t.id]: t } })),
   setShowMetas: (s) => set({ showMetas: s }),
   setShow: (s) =>
-    set((cur) => ({
-      show: s,
-      selectedRowId:
+    set((cur) => {
+      const nextRowId =
         s && s.rows.length > 0
           ? cur.selectedRowId && s.rows.some((r) => r.id === cur.selectedRowId)
             ? cur.selectedRowId
             : s.rows[0]!.id
-          : null,
+          : null;
+      return {
+        show: s,
+        selectedRowId: nextRowId,
+        // Auto-promoting a row to selected should clear any prior hotcard
+        // selection so the mutually-exclusive contract holds.
+        selectedHotcardId: nextRowId != null ? null : cur.selectedHotcardId,
+      };
+    }),
+  setSelectedRow: (id) =>
+    set((s) => ({
+      selectedRowId: id,
+      selectedHotcardId: id != null ? null : s.selectedHotcardId,
     })),
-  setSelectedRow: (id) => set({ selectedRowId: id }),
+  setSelectedHotcard: (id) =>
+    set((s) => ({
+      selectedHotcardId: id,
+      selectedRowId: id != null ? null : s.selectedRowId,
+    })),
   setChannelState: (s) =>
     set((cur) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
@@ -124,6 +151,9 @@ export const useStore = create<StoreState>((set) => ({
   setSttMatch: (channel, match) =>
     set((s) => ({ sttMatches: { ...s.sttMatches, [channel]: match } })),
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
+  setHotcards: (h) => set({ hotcards: h }),
+  setHotcard: (h) =>
+    set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),
   setSttSpawnerStatus: (s) => set({ sttSpawnerStatus: s }),
   setSttSpawnerConfig: (c) => set({ sttSpawnerConfig: c }),
 }));

@@ -24,19 +24,22 @@ import { planTranscode, transcodeToMp4, transcodeToWebmAlpha } from "./transcode
 
 const ASSETS_DIR = (): string => path.join(dataRoot(), "assets");
 
-// Last-resort fallback host if neither the request's Host header nor a
-// forwarded-host header is present. Should basically never trigger.
-const HOST_FALLBACK = "localhost:4000";
-
-// Allowed-extension allowlist. Keeps the store from accumulating arbitrary
-// types and matches what the editor inputs actually upload.
-const ALLOWED_EXT = new Set([
+/**
+ * Allowed-extension allowlist. Keeps the store from accumulating arbitrary
+ * types and matches what the editor inputs actually upload. Exported so the
+ * bundle-import module can validate filenames the same way before writing.
+ */
+export const ALLOWED_EXT = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif",
   ".mp4", ".webm", ".mov", ".mkv", ".m4v",
   ".woff", ".woff2", ".ttf", ".otf",
 ]);
 
-function extFromName(filename: string, mime: string): string {
+/**
+ * Pick an extension for an asset file from its filename then mime type.
+ * Falls back to "" when neither is recognized — callers should reject.
+ */
+export function extFromName(filename: string, mime: string): string {
   // Prefer the filename extension when present and recognized.
   const fromName = path.extname(filename).toLowerCase();
   if (fromName && ALLOWED_EXT.has(fromName)) return fromName;
@@ -60,6 +63,26 @@ function extFromName(filename: string, mime: string): string {
   };
   return map[mime] ?? "";
 }
+
+/**
+ * Pick an extension from a mime type alone, e.g. for inline `data:` URLs that
+ * don't carry a filename. Returns "" when the mime isn't on the allowlist.
+ */
+export function extFromMime(mime: string): string {
+  return extFromName("", mime);
+}
+
+/**
+ * Whitelist for filenames coming from untrusted callers. Matches the layout
+ * produced by `POST /api/assets` (sha256 + dot + allowed extension) so we
+ * can't be tricked into reading or writing outside ASSETS_DIR.
+ */
+export function isSafeAssetFilename(name: string): boolean {
+  if (!/^[A-Fa-f0-9]+\.[A-Za-z0-9]+$/.test(name)) return false;
+  const ext = path.extname(name).toLowerCase();
+  return ALLOWED_EXT.has(ext);
+}
+
 
 export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
   await fs.mkdir(ASSETS_DIR(), { recursive: true });
@@ -168,19 +191,16 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
       await fs.unlink(tmpPath).catch(() => {});
     }
 
-    // Build an absolute URL using the request's host header. Works in dev
-    // (`http://localhost:4000/...`) and in packaged Electron
-    // (`http://127.0.0.1:<port>/...`). The operator/renderer can move these
-    // strings around without losing the origin.
-    const proto =
-      (req.headers["x-forwarded-proto"] as string | undefined) ??
-      (req.protocol as string);
-    const host =
-      (req.headers["x-forwarded-host"] as string | undefined) ??
-      (req.headers.host as string | undefined) ??
-      `${HOST_FALLBACK}`;
+    // Relative URL is host-independent. Critical for packaged Electron,
+    // which boots the server on an ephemeral port that changes between
+    // launches — embedding the absolute host into stored template/hotcard
+    // data would break every asset reference on the next launch. The
+    // operator and renderer run on the server's origin in production, so
+    // a relative `/assets/<filename>` resolves naturally; the operator's
+    // FieldInput previews wrap with `resolveAssetUrl` for dev mode where
+    // the operator dev server (:3000) and asset server (:4000) differ.
     return {
-      url: `${proto}://${host}/assets/${finalName}`,
+      url: `/assets/${finalName}`,
       sha256,
       size,
       mime: file.mimetype ?? "",
@@ -194,6 +214,82 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
     const files = entries.filter((n) => !n.startsWith("."));
     return { assets: files.map((name) => ({ url: `/assets/${name}`, name })) };
   });
+
+  /**
+   * Read a stored asset's bytes as base64. The bundle exporter calls this to
+   * embed converted videos, fonts, and images alongside the JSON entities
+   * that reference them. We restrict to `<sha256>.<ext>` filenames so the
+   * caller can't slip in path traversal — the existing content-addressed
+   * store already enforces this naming for everything written via the
+   * upload route or the raw-write endpoint below.
+   */
+  app.get<{ Params: { filename: string } }>("/api/assets/raw/:filename", async (req, reply) => {
+    const filename = req.params.filename;
+    if (!isSafeAssetFilename(filename)) {
+      reply.code(400);
+      return { error: "invalid filename" };
+    }
+    const filePath = path.join(ASSETS_DIR(), filename);
+    let buf: Buffer;
+    try {
+      buf = await fs.readFile(filePath);
+    } catch {
+      reply.code(404);
+      return { error: "not found" };
+    }
+    return {
+      filename,
+      size: buf.length,
+      base64: buf.toString("base64"),
+    };
+  });
+
+  /**
+   * Write raw bytes to the content-addressed asset store under a caller-
+   * specified filename, bypassing the upload pipeline's transcode planner.
+   * The bundle importer uses this to restore already-converted assets back
+   * onto disk without re-encoding them. The hash is the responsibility of
+   * the caller — we trust the embedded bundle since it came out of the
+   * exporter that read the file by name in the first place.
+   */
+  app.put<{ Params: { filename: string }; Body: unknown }>(
+    "/api/assets/raw/:filename",
+    {
+      // Default 1MB is too small for video assets — match the multipart cap
+      // so large bundle imports don't 413 before reaching the handler.
+      bodyLimit: 1024 * 1024 * 1024,
+    },
+    async (req, reply) => {
+      const filename = req.params.filename;
+      if (!isSafeAssetFilename(filename)) {
+        reply.code(400);
+        return { error: "invalid filename" };
+      }
+      const body = req.body;
+      if (
+        !body ||
+        typeof body !== "object" ||
+        typeof (body as { base64?: unknown }).base64 !== "string"
+      ) {
+        reply.code(400);
+        return { error: "expected JSON body with `base64`" };
+      }
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from((body as { base64: string }).base64, "base64");
+      } catch (err) {
+        reply.code(400);
+        return { error: `bad base64: ${String(err)}` };
+      }
+      const filePath = path.join(ASSETS_DIR(), filename);
+      const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+      if (exists) {
+        return { filename, written: false, size: bytes.length };
+      }
+      await fs.writeFile(filePath, bytes);
+      return { filename, written: true, size: bytes.length };
+    },
+  );
 }
 
 // Re-export for tests / scripts that want to read the underlying file.

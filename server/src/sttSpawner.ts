@@ -43,10 +43,14 @@ function buildAugmentedPath(): string {
 const NODE_BIN = process.execPath;
 
 const RECENT_LOG_LIMIT = 100;
-// Cap the bias prompt length — whisper.cpp's --prompt accepts ~224 tokens,
-// which is roughly 800–1000 chars of English. Stay well under that so model
-// variants with smaller windows still load cleanly.
+// Whisper.cpp's --prompt (where supported) takes ~224 tokens. Bash env vars
+// have no such limit but the LM bias hint loses signal past a few hundred
+// chars — cap to keep the env value tidy.
 const MAX_BIAS_CHARS = 600;
+// Name of the env var the user's command can interpolate to receive the
+// active program-channel song's lyrics. e.g. a user-edited command:
+//   whisper-cli -m ggml-base.en.bin --prompt "$OVERLAYSYS_BIAS_PROMPT" ...
+const BIAS_ENV_VAR = "OVERLAYSYS_BIAS_PROMPT";
 
 let child: ChildProcess | null = null;
 let status: SttSpawnerStatus = {
@@ -60,31 +64,11 @@ let activeConfig: SttSpawnerConfig | null = null;
 let currentBias: string | null = null;
 const listeners = new Set<(s: SttSpawnerStatus) => void>();
 
-/**
- * Bash-quote a value for safe interpolation inside `bash -c "…"`. Wraps in
- * single quotes and escapes embedded single quotes via the standard
- * `'\''` close-escape-reopen trick.
- */
-function bashSingleQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-/**
- * Build the shell command actually handed to bash: the user's configured
- * command, optionally augmented with `--prompt "<bias>"` when the bias
- * feature is on AND the command is a whisper-stream invocation. Custom
- * non-whisper commands are returned unchanged so we don't break user
- * pipelines that happen to be wired to a different STT.
- */
-export function buildEffectiveCommand(
-  config: SttSpawnerConfig,
-  bias: string | null,
-): string {
-  const base = config.command;
-  if (!bias || !config.biasOnSongStart) return base;
-  if (!/(?:^|\s|\/)whisper-stream(?:\s|$)/.test(base)) return base;
-  const trimmed = bias.length > MAX_BIAS_CHARS ? bias.slice(0, MAX_BIAS_CHARS) : bias;
-  return `${base} --prompt ${bashSingleQuote(trimmed)}`;
+function biasEnvValue(): string {
+  if (!currentBias) return "";
+  return currentBias.length > MAX_BIAS_CHARS
+    ? currentBias.slice(0, MAX_BIAS_CHARS)
+    : currentBias;
 }
 
 function emit(): void {
@@ -126,11 +110,16 @@ export function start(config: SttSpawnerConfig): void {
   // The listener side uses NODE_BIN (the calling process's binary) instead
   // of relying on `node` being on PATH — important for packaged Electron
   // where there's no system node, only Electron-as-node.
-  const effective = buildEffectiveCommand(config, currentBias);
-  if (effective !== config.command) {
-    appendLog(`bias: program-channel song lyrics injected via --prompt`);
+  //
+  // Bias prompt is exposed as the OVERLAYSYS_BIAS_PROMPT env var rather
+  // than auto-injected as a flag — `whisper-stream` from whisper.cpp does
+  // NOT support --prompt, so a generic injection pattern would error. The
+  // user opts in by interpolating $OVERLAYSYS_BIAS_PROMPT in their command
+  // (e.g. with whisper-cli, whisper-server, or a custom wrapper).
+  const fullCommand = `${config.command} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
+  if (currentBias && config.biasOnSongStart) {
+    appendLog(`bias: ${BIAS_ENV_VAR} set (${biasEnvValue().length} chars)`);
   }
-  const fullCommand = `${effective} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
   appendLog(`spawn: ${fullCommand}`);
 
   const augmentedPath = buildAugmentedPath();
@@ -148,6 +137,10 @@ export function start(config: SttSpawnerConfig): void {
         // launched from the bash pipeline runs as JS, not as a new
         // Electron app instance.
         ELECTRON_RUN_AS_NODE: "1",
+        // Active song lyrics for STT engines that support biasing. Empty
+        // string when no program-channel song is active or the feature
+        // is disabled, so the user's command can safely reference it.
+        [BIAS_ENV_VAR]: config.biasOnSongStart ? biasEnvValue() : "",
       },
       detached: true,
     });
@@ -251,24 +244,26 @@ export function getCurrentBias(): string | null {
 }
 
 /**
- * Update the bias prompt used to augment the spawn command. If the spawner
- * is running with a different effective command, transparently restart it
- * so the new prompt is used. Idempotent: calling with the same value
- * (including null → null) is a no-op.
+ * Update the bias prompt exposed to the spawned STT process via the
+ * OVERLAYSYS_BIAS_PROMPT env var. If the spawner is currently running and
+ * the active config has biasOnSongStart enabled, the child is transparently
+ * restarted so the new env var value is picked up. Idempotent: calling with
+ * the same value (including null → null) is a no-op.
  *
- * Restart cost: whisper-stream reloads its model on start (typically 1–3s
- * for base.en, longer for larger models). The operator screen falls back
- * to manual control during that gap. Disable `biasOnSongStart` in the
- * config to skip this entirely.
+ * Restart cost: STT engines typically reload their model on start
+ * (whisper.cpp base.en is 1–3s). The operator screen falls back to manual
+ * control during that gap. Disable `biasOnSongStart` in the config to skip
+ * the restart entirely.
  */
 export function setBias(bias: string | null): void {
   if (bias === currentBias) return;
   currentBias = bias;
   if (!activeConfig) return;
+  if (!activeConfig.biasOnSongStart) return;
   if (status.state !== "running" && status.state !== "starting") return;
   // Restart in-place. The exit handler will set state="stopped"; we then
   // re-invoke start() with the same config and the new bias picked up via
-  // module-scope currentBias.
+  // module-scope currentBias / env var.
   const cfg = activeConfig;
   const c = child;
   if (!c) {

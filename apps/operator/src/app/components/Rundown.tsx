@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Field } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { csvToRows } from "@/lib/csv";
+import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { HotcardsPanel } from "./HotcardsPanel";
 
 type ImagePreview = { src: string; label: string };
 
@@ -17,9 +18,9 @@ export function Rundown() {
   const conn = useStore((s) => s.conn);
   const selectedRowId = useStore((s) => s.selectedRowId);
   const setSelectedRow = useStore((s) => s.setSelectedRow);
+  const selectedHotcardId = useStore((s) => s.selectedHotcardId);
+  const hotcardCache = useStore((s) => s.hotcardCache);
   const songs = useStore((s) => s.songs);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
   useEffect(() => {
@@ -37,79 +38,84 @@ export function Rundown() {
 
   if (!show) {
     return (
-      <p style={{ color: colors.textDim }}>
-        No show loaded. Pick one above, or import a CSV to start a new show.
-      </p>
+      <div>
+        <p style={{ color: colors.textDim }}>
+          No show loaded. Pick one above to get started.
+        </p>
+        <HotcardsPanel />
+      </div>
     );
   }
 
   function cueSelected() {
-    if (!show || !selectedRowId) return;
-    const row = show.rows.find((r) => r.id === selectedRowId);
-    if (!row) return;
-    if (row.kind === "song") {
-      send({ type: "song_take", channel: "preview", showId: show.id, songRowId: row.id });
-      return;
-    }
-    send({
-      type: "cue", channel: "preview",
-      templateId: row.templateId, data: row.data,
-    });
-  }
-
-  function takeSelected() {
-    if (!show || !selectedRowId) return;
-    const row = show.rows.find((r) => r.id === selectedRowId);
-    if (!row) return;
-    if (row.kind === "song") {
+    if (selectedRowId && show) {
+      const row = show.rows.find((r) => r.id === selectedRowId);
+      if (!row) return;
+      if (row.kind === "song") {
+        send({ type: "song_take", channel: "preview", showId: show.id, songRowId: row.id });
+        return;
+      }
       send({
-        type: "song_take_pvw_to_pgm",
-        showId: show.id,
-        songRowId: row.id,
-        fromChannel: "preview",
-        toChannel: "program",
+        type: "cue", channel: "preview",
+        templateId: row.templateId, data: row.data,
       });
       return;
     }
-    send({
-      type: "take", channel: "program",
-      templateId: row.templateId, data: row.data,
-    });
+    if (selectedHotcardId) {
+      const h = hotcardCache[selectedHotcardId];
+      if (!h) {
+        send({ type: "get_hotcard", hotcardId: selectedHotcardId });
+        return;
+      }
+      send({
+        type: "cue",
+        channel: h.channelHint ?? "preview",
+        templateId: h.templateId,
+        data: h.data,
+      });
+    }
   }
 
-  async function importCsv(file: File) {
-    setBusy(true);
-    try {
-      const rows = await csvToRows(file);
-      if (!show) return;
-      const next = { ...show, rows: [...show.rows, ...rows] };
-      send({ type: "save_show", show: next });
-    } finally {
-      setBusy(false);
+  function takeSelected() {
+    if (selectedRowId && show) {
+      const row = show.rows.find((r) => r.id === selectedRowId);
+      if (!row) return;
+      if (row.kind === "song") {
+        send({
+          type: "song_take_pvw_to_pgm",
+          showId: show.id,
+          songRowId: row.id,
+          fromChannel: "preview",
+          toChannel: "program",
+        });
+        return;
+      }
+      send({
+        type: "take", channel: "program",
+        templateId: row.templateId, data: row.data,
+      });
+      return;
+    }
+    if (selectedHotcardId) {
+      const h = hotcardCache[selectedHotcardId];
+      if (!h) {
+        send({ type: "get_hotcard", hotcardId: selectedHotcardId });
+        return;
+      }
+      send({
+        type: "take",
+        channel: h.channelHint ?? "program",
+        templateId: h.templateId,
+        data: h.data,
+      });
     }
   }
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
         <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
-      </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Button onClick={() => fileRef.current?.click()} size="md" disabled={busy} style={{ flex: 1 }}>
-          {busy ? "Importing…" : "Import CSV"}
-        </Button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".csv,text/csv"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) importCsv(f);
-            e.target.value = "";
-          }}
-        />
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -214,9 +220,8 @@ export function Rundown() {
       <p style={{ marginTop: 12, fontSize: 11, color: colors.textDim }}>
         ↑/↓ to navigate · Enter to cue · Space to take · Esc to clear · double-click row to fire instantly
       </p>
-      <p style={{ marginTop: 6, fontSize: 11, color: colors.textDim }}>
-        CSV format: first column <code>template</code>, then one column per fieldKey.
-      </p>
+
+      <HotcardsPanel />
 
       {preview && <ImagePreviewModal preview={preview} onClose={() => setPreview(null)} />}
     </div>
@@ -281,7 +286,7 @@ function ImagePreviewModal({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={preview.src}
+            src={resolveAssetUrl(preview.src)}
             alt={preview.label}
             style={{ maxWidth: "80vw", maxHeight: "75vh", display: "block" }}
           />

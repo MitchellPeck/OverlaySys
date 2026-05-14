@@ -36,13 +36,14 @@ describe("sttMatcher", () => {
     ).toBeNull();
   });
 
-  it("matches the current slide on a partial hypothesis (below coverage threshold)", () => {
+  it("matches the current slide via neighborhood when below coverage threshold", () => {
     matcher.bindSession("program", song, song.defaultArrangement);
-    // 3 of 6 unique tokens = 50% coverage, below the 65% threshold so the
-    // pre-emption path is skipped and per-hypothesis matching wins.
+    // After fold + stop-word filter, "amazing grace" = 2 of 5 unique slide
+    // content tokens = 40%, below COVERAGE_THRESHOLD. Coverage pre-emption
+    // is skipped and the neighborhood matcher returns the cursor slide.
     const r = matcher.processHypothesis(
       "program",
-      "amazing grace how",
+      "amazing grace",
       { sectionIdx: 0, slideIdx: 0 },
     );
     expect(r).not.toBeNull();
@@ -197,14 +198,14 @@ describe("sttMatcher", () => {
   });
 
   describe("coverage-based pre-emption", () => {
-    it("advances to next slide with high confidence when next-slide tokens confirm the move", () => {
+    it("advances to next slide once enough current-slide tokens have accumulated", () => {
       matcher.bindSession("program", song, song.defaultArrangement);
-      // Hypothesis covers ALL of current slide's content tokens AND includes
-      // a next-slide-only token ("saved" lives only on v1s2). Both gates
-      // pass → auto-take confidence.
+      // Single hypothesis covering the current slide's content tokens
+      // triggers coverage-based pre-emption. This is proactive: the
+      // operator screen flips ahead of the band, not after them.
       const r = matcher.processHypothesis(
         "program",
-        "amazing grace how sweet the sound saved",
+        "amazing grace how sweet the sound",
         { sectionIdx: 0, slideIdx: 0 },
       );
       expect(r).not.toBeNull();
@@ -214,36 +215,44 @@ describe("sttMatcher", () => {
       expect(r!.confidence).toBeGreaterThanOrEqual(matcher.AUTO_TAKE_THRESHOLD);
     });
 
-    it("does NOT auto-advance on coverage alone without a next-slide token", () => {
+    it("a next-slide token boosts confidence on top of coverage", () => {
       matcher.bindSession("program", song, song.defaultArrangement);
-      // Full coverage of current slide but NO next-slide tokens heard.
-      // The matcher should still surface a suggestion (so the operator
-      // sees the slide is exhausted) but the confidence must stay below
-      // AUTO_TAKE_THRESHOLD so trust mode doesn't fire prematurely.
-      const r = matcher.processHypothesis(
-        "program",
+      // Two hypotheses with the same coverage of the current slide; the
+      // second also includes a token unique to the next slide ("saved").
+      // The boosted confidence should be strictly higher.
+      matcher.bindSession("a", song, song.defaultArrangement);
+      const cursor = { sectionIdx: 0, slideIdx: 0 };
+      const noHint = matcher.processHypothesis(
+        "a",
         "amazing grace how sweet the sound",
-        { sectionIdx: 0, slideIdx: 0 },
+        cursor,
       );
-      // Coverage strategy emits a forward suggestion at sub-auto confidence.
-      // (Neighborhood strategy on the current slide can score higher; either
-      // way the auto-take gate must NOT be cleared by coverage alone.)
-      if (r && r.strategy === "coverage") {
-        expect(r.confidence).toBeLessThan(matcher.AUTO_TAKE_THRESHOLD);
-      }
+      matcher.unbindSession("a");
+      matcher.bindSession("b", song, song.defaultArrangement);
+      const withHint = matcher.processHypothesis(
+        "b",
+        "amazing grace how sweet the sound saved",
+        cursor,
+      );
+      matcher.unbindSession("b");
+      expect(noHint).not.toBeNull();
+      expect(withHint).not.toBeNull();
+      expect(withHint!.confidence).toBeGreaterThan(noHint!.confidence);
     });
 
-    it("accumulates coverage across multiple partial hypotheses (with next-slide hint)", () => {
+    it("accumulates coverage across multiple final hypotheses", () => {
       matcher.bindSession("program", song, song.defaultArrangement);
       const cursor = { sectionIdx: 0, slideIdx: 0 };
-      const r1 = matcher.processHypothesis("program", "amazing grace how", cursor);
-      // r1 might match v1s1 via per-hypothesis fallback. It should NOT yet
-      // jump to v1s2 via coverage (50% coverage, no next-slide hint).
+      // First final: 1 of 5 unique slide content tokens = 20%, well below
+      // COVERAGE_THRESHOLD. Should NOT pre-empt.
+      const r1 = matcher.processHypothesis("program", "amazing", cursor);
       if (r1 && r1.strategy === "coverage" && r1.slideIdx === 1) {
-        expect(r1.confidence).toBeLessThan(matcher.AUTO_TAKE_THRESHOLD);
+        throw new Error("coverage triggered too early");
       }
-      // Second partial: completes coverage AND brings in a next-slide token.
-      const r2 = matcher.processHypothesis("program", "sweet the sound saved", cursor);
+      // Second final accumulates with the first: now 4 of 5 content tokens
+      // are in the window. Coverage clears the threshold and we pre-empt
+      // to the next slide.
+      const r2 = matcher.processHypothesis("program", "grace sweet sound", cursor);
       expect(r2).not.toBeNull();
       expect(r2!.sectionIdx).toBe(0);
       expect(r2!.slideIdx).toBe(1);
@@ -255,7 +264,7 @@ describe("sttMatcher", () => {
       // Build up coverage on v1s1 and pre-empt to v1s2.
       const r1 = matcher.processHypothesis(
         "program",
-        "amazing grace how sweet the sound saved",
+        "amazing grace how sweet the sound",
         { sectionIdx: 0, slideIdx: 0 },
       );
       expect(r1!.slideIdx).toBe(1);
@@ -288,33 +297,35 @@ describe("sttMatcher", () => {
       }
     });
 
-    it("partial hypotheses do NOT trigger coverage pre-emption", () => {
+    it("partial hypotheses CAN drive coverage pre-emption (responsiveness)", () => {
       matcher.bindSession("program", song, song.defaultArrangement);
-      // Same text that would auto-take as a final, sent as a partial.
-      // Should NOT pre-empt — partials are unstable refinements.
+      // Partials contribute to coverage via a replaceable snapshot so
+      // trust-mode auto-advance reacts mid-step rather than waiting for
+      // whisper-stream's final cadence. The longer partial debounce in
+      // songSession gives unstable refinements time to settle.
       const r = matcher.processHypothesis(
         "program",
-        "amazing grace how sweet the sound saved",
+        "amazing grace how sweet the sound",
         { sectionIdx: 0, slideIdx: 0 },
         { isFinal: false },
       );
-      // Partial should at most surface a neighborhood match on the cursor
-      // slide, never advance via coverage.
-      if (r) {
-        expect(r.strategy).not.toBe("coverage");
-      }
+      expect(r).not.toBeNull();
+      expect(r!.strategy).toBe("coverage");
+      expect(r!.sectionIdx).toBe(0);
+      expect(r!.slideIdx).toBe(1);
     });
 
-    it("partial hypothesis tokens do NOT accumulate into the coverage window", () => {
+    it("partial snapshots are REPLACED (not accumulated) so a stale partial doesn't carry forward", () => {
       matcher.bindSession("program", song, song.defaultArrangement);
       const cursor = { sectionIdx: 0, slideIdx: 0 };
-      // Send full-coverage text as a series of partials — none of them
-      // should grow the window. A subsequent final must still be needed
-      // to trigger coverage.
+      // Each partial fully replaces the prior partial snapshot — whisper
+      // overdraws within a step, so accumulating would multi-count the
+      // same tokens. After the second partial only its tokens are live.
       matcher.processHypothesis("program", "amazing grace how", cursor, { isFinal: false });
-      matcher.processHypothesis("program", "sweet the sound", cursor, { isFinal: false });
-      // Now a final that on its own only covers 2/5 — without partials in
-      // the window, coverage should NOT fire.
+      matcher.processHypothesis("program", "sweet sound", cursor, { isFinal: false });
+      // The final's own tokens don't match v1s1 at all. With the partial
+      // window correctly replaced (not accumulated), no in-window tokens
+      // remain to push coverage over the threshold.
       const r = matcher.processHypothesis("program", "saved a wretch", cursor, { isFinal: true });
       if (r) {
         expect(r.strategy).not.toBe("coverage");

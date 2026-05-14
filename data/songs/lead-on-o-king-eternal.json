@@ -1,0 +1,119 @@
+{
+  "id": "lead-on-o-king-eternal",
+  "title": "Lead On O King Eternal",
+  "ccliNumber": "3325502",
+  "author": "Ernest Warburton Shurtleff, Henry Thomas Smart, Ovid Young",
+  "copyright": "© Words: Public Domain; Music: 1984 Laurel Press",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Lead on O King Eternal",
+            "The day of march has come"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Henceforth in fields of conquest",
+            "Thy tents shall be our home"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Thro' days of preparation",
+            "Thy grace has made us strong"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "And now O King eternal",
+            "We lift our battle song"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Lead on O King Eternal",
+            "Till sin's fierce war shall cease"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "And holiness shall whisper",
+            "The sweet Amen of peace"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "For not with swords loud clashing",
+            "Nor roll of stirring drums"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "With deeds of love and mercy",
+            "The heav'nly kingdom comes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Lead on O King Eternal",
+            "We follow not with fears"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "For gladness breaks like morning",
+            "Where'er Thy face appears"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Thy cross is lifted o'er us",
+            "We journey in its light"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "The crown awaits the conquest",
+            "Lead on O God of might"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3"
+  ]
+}

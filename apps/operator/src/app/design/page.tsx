@@ -34,6 +34,11 @@ export default function DesignIndexPage() {
     }, 150);
   }
 
+  function duplicate(id: string) {
+    if (conn !== "open") return;
+    send({ type: "duplicate_template", templateId: id });
+  }
+
   function exportTemplate(id: string) {
     const cached = useStore.getState().templateCache[id];
     if (cached) {
@@ -95,6 +100,9 @@ export default function DesignIndexPage() {
                   secondary={`${t.id} · ${t.size.w}×${t.size.h}`}
                   actions={
                     <>
+                      <Button onClick={() => duplicate(t.id)} size="sm" style={{ width: 84 }}>
+                        Duplicate
+                      </Button>
                       <Button onClick={() => exportTemplate(t.id)} size="sm" style={{ width: 64 }}>
                         Export
                       </Button>

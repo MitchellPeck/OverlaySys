@@ -3,7 +3,7 @@
 import { ColorInput, ImageInput, VideoInput } from "@overlaysys/editor-kit";
 import { Input } from "@overlaysys/ui";
 import type { Field } from "@overlaysys/core";
-import { uploadAsset } from "./uploadAsset";
+import { uploadAsset, resolveAssetUrl } from "./uploadAsset";
 
 type Props = {
   field: Field;
@@ -24,9 +24,13 @@ export function FieldInput({ field, value, onChange }: Props) {
     case "color":
       return <ColorInput value={v || "#ffffff"} onChange={onChange} />;
     case "image":
-      return <ImageInput value={v} onChange={onChange} onUpload={upload} />;
+      // Resolve `/assets/...` paths against the WS server's HTTP origin so
+      // the editor's `<img>` preview loads in dev mode (operator @ :3000,
+      // server @ :4000). In Electron production the operator is served by
+      // the asset server itself so this is a no-op.
+      return <ImageInput value={resolveAssetUrl(v)} onChange={onChange} onUpload={upload} />;
     case "video":
-      return <VideoInput value={v} onChange={onChange} onUpload={upload} />;
+      return <VideoInput value={resolveAssetUrl(v)} onChange={onChange} onUpload={upload} />;
     case "number":
       return (
         <Input

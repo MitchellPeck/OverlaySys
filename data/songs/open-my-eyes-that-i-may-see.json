@@ -1,0 +1,143 @@
+{
+  "id": "open-my-eyes-that-i-may-see",
+  "title": "Open My Eyes That I May See",
+  "ccliNumber": "68003",
+  "author": "Clara H. Fiske Scott",
+  "copyright": "© Words: Public Domain; Music: Public Domain",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Open my eyes that I may see",
+            "Glimpses of truth Thou hast for me"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Place in my hands the wonderful key",
+            "That shall unclasp and set me free"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "Silently now I wait for Thee",
+            "Ready my God Thy will to see"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Open my eyes illumine me",
+            "Spirit divine"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Open my ears that I may hear",
+            "Voices of truth Thou sendest clear"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "And while the wave notes fall on my ear",
+            "Everything false will disappear"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "kind": "chorus",
+      "label": "Chorus 2",
+      "slides": [
+        {
+          "id": "c2s1",
+          "lines": [
+            "Silently now I wait for Thee",
+            "Ready my God Thy will to see"
+          ]
+        },
+        {
+          "id": "c2s2",
+          "lines": [
+            "Open my ears illumine me",
+            "Spirit divine"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Open my mouth and let me bear",
+            "Gladly the warm truth everywhere"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Open my heart and let me prepare",
+            "Love with Thy children thus to share"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "kind": "chorus",
+      "label": "Chorus 3",
+      "slides": [
+        {
+          "id": "c3s1",
+          "lines": [
+            "Silently now I wait for Thee",
+            "Ready my God Thy will to see"
+          ]
+        },
+        {
+          "id": "c3s2",
+          "lines": [
+            "Open my heart illumine me",
+            "Spirit divine"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c2",
+    "v3",
+    "c3"
+  ]
+}

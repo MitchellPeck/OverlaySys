@@ -11,6 +11,7 @@ import * as channels from "./channels";
 import * as templates from "./templates";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import * as hotcards from "./hotcards";
 import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
@@ -137,6 +138,18 @@ export function handleConnection(
           }
           break;
         }
+        case "duplicate_template": {
+          const copy = await templates.duplicateTemplate(parsed.templateId);
+          if (!copy) {
+            send({ type: "error", code: "not_found", message: parsed.templateId });
+            break;
+          }
+          send({ type: "ack", op: "duplicate_template", id: copy.id });
+          const list = await templates.listTemplateMetas();
+          broadcast({ type: "template_list", templates: list });
+          broadcast({ type: "template", template: copy });
+          break;
+        }
         case "list_shows": {
           const list = await shows.listShowMetas();
           send({ type: "show_list", shows: list });
@@ -163,6 +176,58 @@ export function handleConnection(
             const list = await shows.listShowMetas();
             broadcast({ type: "show_list", shows: list });
           }
+          break;
+        }
+        case "duplicate_show": {
+          const copy = await shows.duplicateShow(parsed.showId);
+          if (!copy) {
+            send({ type: "error", code: "not_found", message: parsed.showId });
+            break;
+          }
+          send({ type: "ack", op: "duplicate_show", id: copy.id });
+          const list = await shows.listShowMetas();
+          broadcast({ type: "show_list", shows: list });
+          broadcast({ type: "show", show: copy });
+          break;
+        }
+        case "list_hotcards": {
+          const list = await hotcards.listHotcardMetas();
+          send({ type: "hotcard_list", hotcards: list });
+          break;
+        }
+        case "get_hotcard": {
+          const h = await hotcards.getHotcard(parsed.hotcardId);
+          if (!h) send({ type: "error", code: "not_found", message: parsed.hotcardId });
+          else send({ type: "hotcard", hotcard: h });
+          break;
+        }
+        case "save_hotcard": {
+          await hotcards.saveHotcard(parsed.hotcard);
+          send({ type: "ack", op: "save_hotcard", id: parsed.hotcard.id });
+          broadcast({ type: "hotcard", hotcard: parsed.hotcard });
+          const list = await hotcards.listHotcardMetas();
+          broadcast({ type: "hotcard_list", hotcards: list });
+          break;
+        }
+        case "delete_hotcard": {
+          const ok = await hotcards.deleteHotcard(parsed.hotcardId);
+          send({ type: "ack", op: "delete_hotcard", id: parsed.hotcardId });
+          if (ok) {
+            const list = await hotcards.listHotcardMetas();
+            broadcast({ type: "hotcard_list", hotcards: list });
+          }
+          break;
+        }
+        case "duplicate_hotcard": {
+          const copy = await hotcards.duplicateHotcard(parsed.hotcardId);
+          if (!copy) {
+            send({ type: "error", code: "not_found", message: parsed.hotcardId });
+            break;
+          }
+          send({ type: "ack", op: "duplicate_hotcard", id: copy.id });
+          const list = await hotcards.listHotcardMetas();
+          broadcast({ type: "hotcard_list", hotcards: list });
+          broadcast({ type: "hotcard", hotcard: copy });
           break;
         }
         case "list_songs": {

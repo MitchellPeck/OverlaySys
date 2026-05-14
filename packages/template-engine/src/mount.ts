@@ -1,5 +1,5 @@
 import type { Template } from "@overlaysys/core";
-import type gsap from "gsap";
+import gsap from "gsap";
 import {
   buildTemplateDom,
   updateTemplateData,
@@ -9,6 +9,16 @@ import { ensureTemplateFonts } from "./fonts";
 import { buildGsapTimeline } from "./gsap-timeline";
 
 export type MountMode = "live" | "edit";
+
+/**
+ * Fallback OUT duration in seconds when a template doesn't define an OUT
+ * timeline (or its tracks all target missing layers, so the built timeline
+ * has zero duration). The renderer awaits playOut() before destroying the
+ * mount, so without this fallback the previous template snaps off-screen
+ * the instant the next take lands. 0.5s matches the song-session stage
+ * fade — short enough to feel snappy, long enough to read as a transition.
+ */
+const DEFAULT_OUT_DURATION_S = 0.5;
 
 /**
  * Restart a paused timeline from t=0, but force GSAP to actually write the
@@ -27,6 +37,26 @@ export type MountMode = "live" | "edit";
  * the from-values), then to 0 (writes the from to the DOM), then play.
  * All three calls are synchronous so the user only sees the final state.
  */
+/**
+ * Animate the mount's root opacity from its current value to 0 over the
+ * default OUT duration. Used when the template author hasn't defined an
+ * OUT timeline — hotcards, ad-hoc graphics, anything with `out: { duration: 0, tracks: [] }`
+ * — so the swap to the next take still reads as a transition rather than
+ * a snap. The opacity tween is on the mount root rather than per-layer so
+ * it composes cleanly on top of whatever pose the layers were in when the
+ * OUT fired.
+ */
+function playDefaultOut(root: HTMLElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    gsap.to(root, {
+      opacity: 0,
+      duration: DEFAULT_OUT_DURATION_S,
+      ease: "power2.out",
+      onComplete: () => resolve(),
+    });
+  });
+}
+
 function playFromStart(tl: gsap.core.Timeline): Promise<void> {
   if ((globalThis as { __overlaysys_log?: boolean }).__overlaysys_log) {
     console.log("[overlaysys:engine] playFromStart", {
@@ -126,7 +156,11 @@ export function mountTemplate(
       return playFromStart(inTl);
     },
     playOut() {
-      if (outTl.duration() === 0) return Promise.resolve();
+      // Author didn't define an OUT (or every track targets a missing layer
+      // and the built timeline collapsed to duration 0) — fall back to a
+      // root-opacity fade so the renderer's await actually waits for a
+      // visible transition instead of resolving instantly.
+      if (outTl.duration() === 0) return playDefaultOut(root);
       return playFromStart(outTl);
     },
     seek(which, time) {

@@ -7,12 +7,14 @@ import {
   ShowSchema,
   ChannelConfigSchema,
   SongSchema,
+  HotcardSchema,
   SttSpawnerConfigSchema,
   DEFAULT_STT_SPAWNER_CONFIG,
   type Template,
   type Show,
   type ChannelConfig,
   type Song,
+  type Hotcard,
   type SttSpawnerConfig,
 } from "@overlaysys/core";
 
@@ -23,18 +25,30 @@ const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
 // the host sets OVERLAYSYS_DATA_DIR to a per-user writable location
 // (e.g. app.getPath('userData') + '/data') so user content survives
 // reinstalls and isn't trapped inside the read-only resources bundle.
-const DATA_ROOT = process.env["OVERLAYSYS_DATA_DIR"]
-  ? path.resolve(process.env["OVERLAYSYS_DATA_DIR"])
-  : path.resolve(REPO_ROOT, "data");
-/** Filesystem root for user-writable data. Public so other modules can derive
- * sibling directories (e.g. assets) without redoing the env-resolution dance. */
-export const dataRoot = (): string => DATA_ROOT;
-const TEMPLATES_DIR = path.join(DATA_ROOT, "templates");
-const SHOWS_DIR = path.join(DATA_ROOT, "shows");
-const CHANNELS_DIR = path.join(DATA_ROOT, "channels");
-const SONGS_DIR = path.join(DATA_ROOT, "songs");
-const STT_DIR = path.join(DATA_ROOT, "stt");
-const STT_CONFIG_FILE = path.join(STT_DIR, "config.json");
+/**
+ * Filesystem root for user-writable data. Resolves the env var each call
+ * rather than at module init so tests can swap `OVERLAYSYS_DATA_DIR`
+ * between cases and avoid colliding on the real `data/` tree. The cost is
+ * a `process.env` lookup per call — negligible compared to the disk IO
+ * that always follows.
+ */
+export const dataRoot = (): string =>
+  process.env["OVERLAYSYS_DATA_DIR"]
+    ? path.resolve(process.env["OVERLAYSYS_DATA_DIR"])
+    : path.resolve(REPO_ROOT, "data");
+
+const fixturesRoot = (): string =>
+  process.env["OVERLAYSYS_FIXTURES_DIR"]
+    ? path.resolve(process.env["OVERLAYSYS_FIXTURES_DIR"])
+    : dataRoot();
+
+const TEMPLATES_DIR = (): string => path.join(dataRoot(), "templates");
+const SHOWS_DIR = (): string => path.join(dataRoot(), "shows");
+const CHANNELS_DIR = (): string => path.join(dataRoot(), "channels");
+const SONGS_DIR = (): string => path.join(dataRoot(), "songs");
+const HOTCARDS_DIR = (): string => path.join(dataRoot(), "hotcards");
+const STT_DIR = (): string => path.join(dataRoot(), "stt");
+const STT_CONFIG_FILE = (): string => path.join(STT_DIR(), "config.json");
 
 // Fixture directories used to seed empty live folders. In dev they sit
 // alongside the live data ({DATA_ROOT}/<kind>/fixtures). In packaged
@@ -42,13 +56,11 @@ const STT_CONFIG_FILE = path.join(STT_DIR, "config.json");
 // the app's resources; OVERLAYSYS_FIXTURES_DIR is set by the Electron
 // host to that resources path. When unset, fixtures share the same
 // root as live data (the existing dev convention).
-const FIXTURES_ROOT = process.env["OVERLAYSYS_FIXTURES_DIR"]
-  ? path.resolve(process.env["OVERLAYSYS_FIXTURES_DIR"])
-  : DATA_ROOT;
-const TEMPLATE_FIXTURES_DIR = path.join(FIXTURES_ROOT, "templates", "fixtures");
-const SHOW_FIXTURES_DIR = path.join(FIXTURES_ROOT, "shows", "fixtures");
-const CHANNEL_FIXTURES_DIR = path.join(FIXTURES_ROOT, "channels", "fixtures");
-const SONG_FIXTURES_DIR = path.join(FIXTURES_ROOT, "songs", "fixtures");
+const TEMPLATE_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "templates", "fixtures");
+const SHOW_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "shows", "fixtures");
+const CHANNEL_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "channels", "fixtures");
+const SONG_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "songs", "fixtures");
+const HOTCARD_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "hotcards", "fixtures");
 
 async function ensureDir(p: string): Promise<void> {
   await fs.mkdir(p, { recursive: true });
@@ -91,24 +103,26 @@ async function copyMissingFixtures(srcDir: string, dstDir: string): Promise<void
 }
 
 export async function ensureSeeded(): Promise<void> {
-  await ensureDir(TEMPLATES_DIR);
-  await ensureDir(SHOWS_DIR);
-  await ensureDir(CHANNELS_DIR);
-  await ensureDir(SONGS_DIR);
-  await ensureDir(STT_DIR);
+  await ensureDir(TEMPLATES_DIR());
+  await ensureDir(SHOWS_DIR());
+  await ensureDir(CHANNELS_DIR());
+  await ensureDir(SONGS_DIR());
+  await ensureDir(HOTCARDS_DIR());
+  await ensureDir(STT_DIR());
   // Seed any fixtures that don't exist as live files yet.
-  await copyMissingFixtures(TEMPLATE_FIXTURES_DIR, TEMPLATES_DIR);
-  await copyMissingFixtures(SHOW_FIXTURES_DIR, SHOWS_DIR);
-  await copyMissingFixtures(CHANNEL_FIXTURES_DIR, CHANNELS_DIR);
-  await copyMissingFixtures(SONG_FIXTURES_DIR, SONGS_DIR);
+  await copyMissingFixtures(TEMPLATE_FIXTURES_DIR(), TEMPLATES_DIR());
+  await copyMissingFixtures(SHOW_FIXTURES_DIR(), SHOWS_DIR());
+  await copyMissingFixtures(CHANNEL_FIXTURES_DIR(), CHANNELS_DIR());
+  await copyMissingFixtures(SONG_FIXTURES_DIR(), SONGS_DIR());
+  await copyMissingFixtures(HOTCARD_FIXTURES_DIR(), HOTCARDS_DIR());
 }
 
 export async function loadAllTemplates(): Promise<Template[]> {
-  return readJsonFiles(TEMPLATES_DIR, (raw) => TemplateSchema.parse(raw));
+  return readJsonFiles(TEMPLATES_DIR(), (raw) => TemplateSchema.parse(raw));
 }
 
 export async function loadTemplate(id: string): Promise<Template | null> {
-  const file = path.join(TEMPLATES_DIR, `${id}.json`);
+  const file = path.join(TEMPLATES_DIR(), `${id}.json`);
   try {
     const raw = await fs.readFile(file, "utf8");
     return TemplateSchema.parse(JSON.parse(raw));
@@ -118,15 +132,19 @@ export async function loadTemplate(id: string): Promise<Template | null> {
 }
 
 export async function saveTemplate(template: Template): Promise<void> {
-  await ensureDir(TEMPLATES_DIR);
-  const file = path.join(TEMPLATES_DIR, `${template.id}.json`);
-  // Validate before writing — reject malformed templates rather than corrupt disk.
-  const parsed = TemplateSchema.parse(template);
-  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+  await ensureDir(TEMPLATES_DIR());
+  const file = path.join(TEMPLATES_DIR(), `${template.id}.json`);
+  // The caller has already validated against TemplateSchema at the WS
+  // boundary — `ClientMessageSchema.parse` covers it for `save_template`.
+  // Re-parsing here would run the recursive LayerSchema walk a second
+  // time, which on bundle imports with dozens of complex templates can
+  // turn a 10s save into a 30s+ save and trip the operator's per-item
+  // ack timeout. Trust the type system here.
+  await writeAtomic(file, JSON.stringify(template, null, 2));
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
-  const file = path.join(TEMPLATES_DIR, `${id}.json`);
+  const file = path.join(TEMPLATES_DIR(), `${id}.json`);
   try {
     await fs.unlink(file);
     return true;
@@ -138,11 +156,11 @@ export async function deleteTemplate(id: string): Promise<boolean> {
 // Shows ────────────────────────────────────────────────────────────────────────
 
 export async function loadAllShows(): Promise<Show[]> {
-  return readJsonFiles(SHOWS_DIR, (raw) => ShowSchema.parse(raw));
+  return readJsonFiles(SHOWS_DIR(), (raw) => ShowSchema.parse(raw));
 }
 
 export async function loadShow(id: string): Promise<Show | null> {
-  const file = path.join(SHOWS_DIR, `${id}.json`);
+  const file = path.join(SHOWS_DIR(), `${id}.json`);
   try {
     const raw = await fs.readFile(file, "utf8");
     return ShowSchema.parse(JSON.parse(raw));
@@ -152,14 +170,14 @@ export async function loadShow(id: string): Promise<Show | null> {
 }
 
 export async function saveShow(show: Show): Promise<void> {
-  await ensureDir(SHOWS_DIR);
-  const file = path.join(SHOWS_DIR, `${show.id}.json`);
-  const parsed = ShowSchema.parse(show);
-  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+  await ensureDir(SHOWS_DIR());
+  const file = path.join(SHOWS_DIR(), `${show.id}.json`);
+  // Trust the WS-layer validation — see saveTemplate for why.
+  await writeAtomic(file, JSON.stringify(show, null, 2));
 }
 
 export async function deleteShow(id: string): Promise<boolean> {
-  const file = path.join(SHOWS_DIR, `${id}.json`);
+  const file = path.join(SHOWS_DIR(), `${id}.json`);
   try {
     await fs.unlink(file);
     return true;
@@ -171,11 +189,11 @@ export async function deleteShow(id: string): Promise<boolean> {
 // Channel configs ──────────────────────────────────────────────────────────────
 
 export async function loadAllChannelConfigs(): Promise<ChannelConfig[]> {
-  return readJsonFiles(CHANNELS_DIR, (raw) => ChannelConfigSchema.parse(raw));
+  return readJsonFiles(CHANNELS_DIR(), (raw) => ChannelConfigSchema.parse(raw));
 }
 
 export async function loadChannelConfig(id: string): Promise<ChannelConfig | null> {
-  const file = path.join(CHANNELS_DIR, `${id}.json`);
+  const file = path.join(CHANNELS_DIR(), `${id}.json`);
   try {
     const raw = await fs.readFile(file, "utf8");
     return ChannelConfigSchema.parse(JSON.parse(raw));
@@ -185,14 +203,14 @@ export async function loadChannelConfig(id: string): Promise<ChannelConfig | nul
 }
 
 export async function saveChannelConfig(config: ChannelConfig): Promise<void> {
-  await ensureDir(CHANNELS_DIR);
-  const file = path.join(CHANNELS_DIR, `${config.id}.json`);
+  await ensureDir(CHANNELS_DIR());
+  const file = path.join(CHANNELS_DIR(), `${config.id}.json`);
   const parsed = ChannelConfigSchema.parse(config);
   await writeAtomic(file, JSON.stringify(parsed, null, 2));
 }
 
 export async function deleteChannelConfig(id: string): Promise<boolean> {
-  const file = path.join(CHANNELS_DIR, `${id}.json`);
+  const file = path.join(CHANNELS_DIR(), `${id}.json`);
   try {
     await fs.unlink(file);
     return true;
@@ -204,11 +222,11 @@ export async function deleteChannelConfig(id: string): Promise<boolean> {
 // Songs ────────────────────────────────────────────────────────────────────────
 
 export async function loadAllSongs(): Promise<Song[]> {
-  return readJsonFiles(SONGS_DIR, (raw) => SongSchema.parse(raw));
+  return readJsonFiles(SONGS_DIR(), (raw) => SongSchema.parse(raw));
 }
 
 export async function loadSong(id: string): Promise<Song | null> {
-  const file = path.join(SONGS_DIR, `${id}.json`);
+  const file = path.join(SONGS_DIR(), `${id}.json`);
   try {
     const raw = await fs.readFile(file, "utf8");
     return SongSchema.parse(JSON.parse(raw));
@@ -218,14 +236,45 @@ export async function loadSong(id: string): Promise<Song | null> {
 }
 
 export async function saveSong(song: Song): Promise<void> {
-  await ensureDir(SONGS_DIR);
-  const file = path.join(SONGS_DIR, `${song.id}.json`);
-  const parsed = SongSchema.parse(song);
-  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+  await ensureDir(SONGS_DIR());
+  const file = path.join(SONGS_DIR(), `${song.id}.json`);
+  await writeAtomic(file, JSON.stringify(song, null, 2));
 }
 
 export async function deleteSong(id: string): Promise<boolean> {
-  const file = path.join(SONGS_DIR, `${id}.json`);
+  const file = path.join(SONGS_DIR(), `${id}.json`);
+  try {
+    await fs.unlink(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Hotcards ─────────────────────────────────────────────────────────────────────
+
+export async function loadAllHotcards(): Promise<Hotcard[]> {
+  return readJsonFiles(HOTCARDS_DIR(), (raw) => HotcardSchema.parse(raw));
+}
+
+export async function loadHotcard(id: string): Promise<Hotcard | null> {
+  const file = path.join(HOTCARDS_DIR(), `${id}.json`);
+  try {
+    const raw = await fs.readFile(file, "utf8");
+    return HotcardSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveHotcard(hotcard: Hotcard): Promise<void> {
+  await ensureDir(HOTCARDS_DIR());
+  const file = path.join(HOTCARDS_DIR(), `${hotcard.id}.json`);
+  await writeAtomic(file, JSON.stringify(hotcard, null, 2));
+}
+
+export async function deleteHotcard(id: string): Promise<boolean> {
+  const file = path.join(HOTCARDS_DIR(), `${id}.json`);
   try {
     await fs.unlink(file);
     return true;
@@ -237,9 +286,9 @@ export async function deleteSong(id: string): Promise<boolean> {
 // STT spawner config ───────────────────────────────────────────────────────────
 
 export async function loadSttConfig(): Promise<SttSpawnerConfig> {
-  await ensureDir(STT_DIR);
+  await ensureDir(STT_DIR());
   try {
-    const raw = await fs.readFile(STT_CONFIG_FILE, "utf8");
+    const raw = await fs.readFile(STT_CONFIG_FILE(), "utf8");
     return SttSpawnerConfigSchema.parse(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_STT_SPAWNER_CONFIG };
@@ -247,7 +296,7 @@ export async function loadSttConfig(): Promise<SttSpawnerConfig> {
 }
 
 export async function saveSttConfig(config: SttSpawnerConfig): Promise<void> {
-  await ensureDir(STT_DIR);
+  await ensureDir(STT_DIR());
   const parsed = SttSpawnerConfigSchema.parse(config);
-  await writeAtomic(STT_CONFIG_FILE, JSON.stringify(parsed, null, 2));
+  await writeAtomic(STT_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
 }

@@ -88,7 +88,7 @@ export default function SttControlPage() {
               Auto-start on server boot
             </label>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <input
               type="checkbox"
               id="biasOnSongStart"
@@ -98,12 +98,27 @@ export default function SttControlPage() {
               }
             />
             <label htmlFor="biasOnSongStart" style={{ fontSize: 13 }}>
-              Bias Whisper with the active program song
+              Restart STT on program song change (bias)
             </label>
-            <span style={{ fontSize: 11, color: colors.textDim }}>
-              (restarts the child on song change; whisper-stream commands only)
-            </span>
           </div>
+          <p style={{ fontSize: 11, color: colors.textDim, marginTop: 0, marginBottom: 12, lineHeight: 1.5 }}>
+            When enabled, the active program-channel song&apos;s lyrics are exposed to your
+            command as the env var{" "}
+            <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
+              $OVERLAYSYS_BIAS_PROMPT
+            </code>
+            . Whisper.cpp&apos;s{" "}
+            <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
+              whisper-stream
+            </code>{" "}
+            does NOT support a prompt flag, so to actually use the bias you&apos;ll need a
+            command that does — e.g.{" "}
+            <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
+              whisper-cli --prompt &quot;$OVERLAYSYS_BIAS_PROMPT&quot;
+            </code>{" "}
+            wrapped in a streaming loop, or your own STT wrapper. With the box checked,
+            the child is restarted on every song change so a fresh prompt is picked up.
+          </p>
           <label
             style={{ display: "block", fontSize: 12, color: colors.textDim, marginBottom: 4 }}
           >

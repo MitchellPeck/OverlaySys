@@ -1,4 +1,5 @@
 {
   "autoStart": false,
-  "command": "whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000"
+  "command": "whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000",
+  "biasOnSongStart": true
 }

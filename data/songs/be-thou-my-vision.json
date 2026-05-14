@@ -1,0 +1,91 @@
+{
+  "id": "be-thou-my-vision",
+  "title": "Be Thou My Vision",
+  "ccliNumber": "7056332",
+  "author": "Eleanor Henrietta Hull, Mary Elizabeth Byrne, Russell Mauldin",
+  "copyright": "© Words: Public Domain; Music: 2010 Belden Street Music Publishing",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Be Thou my Vision O Lord of my heart",
+            "Naught be all else to me save that Thou art"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Thou my best thought by day or by night",
+            "Waking or sleeping Thy presence my light"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Be Thou my Wisdom and Thou my true Word",
+            "I ever with Thee and Thou with me Lord"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Thou my great Father I Thy true son",
+            "Thou in me dwelling and I with Thee one"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "High King of heaven my victory won",
+            "May I reach heaven's joys bright heaven's Sun"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Heart of my own heart whatever befall",
+            "Still be my Vision O Ruler of all"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "x1",
+      "kind": "other",
+      "label": "Ending",
+      "slides": [
+        {
+          "id": "x1s1",
+          "lines": [
+            "Be Thou my Vision"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "x1"
+  ]
+}

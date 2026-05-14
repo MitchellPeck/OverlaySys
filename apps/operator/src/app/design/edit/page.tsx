@@ -10,7 +10,7 @@ import {
   FieldsPanel,
 } from "@overlaysys/editor-kit";
 import type { Draft } from "immer";
-import type { Template } from "@overlaysys/core";
+import type { Layer, Template } from "@overlaysys/core";
 import { Button, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -290,6 +290,15 @@ function DesignPageInner() {
             onPushHistory={pushHistory}
             onUpload={uploadInspector}
           />
+          {selectedLayerId && (
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
+              <ClipBySection
+                template={draft}
+                selectedLayerId={selectedLayerId}
+                onCommit={commit}
+              />
+            </div>
+          )}
         </EditorSection>
       </div>
 
@@ -376,6 +385,143 @@ function TemplateSettings({
     </div>
   );
 }
+
+/**
+ * Flatten the template's layer tree into a list usable by a layer-picker
+ * dropdown. Excludes the layer being edited so a layer can't reference
+ * itself.
+ */
+function flattenLayers(layers: Layer[], excludeId: string): Array<{ id: string; name: string; type: Layer["type"] }> {
+  const out: Array<{ id: string; name: string; type: Layer["type"] }> = [];
+  function visit(l: Layer): void {
+    if (l.id !== excludeId) out.push({ id: l.id, name: l.name, type: l.type });
+    if (l.type === "group") for (const c of l.children) visit(c);
+  }
+  for (const l of layers) visit(l);
+  return out;
+}
+
+function findLayer(layers: Layer[], id: string): Layer | null {
+  for (const l of layers) {
+    if (l.id === id) return l;
+    if (l.type === "group") {
+      const found = findLayer(l.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function ClipBySection({
+  template,
+  selectedLayerId,
+  onCommit,
+}: {
+  template: Template;
+  selectedLayerId: string;
+  onCommit: (recipe: (d: Draft<Template>) => void) => void;
+}) {
+  const layer = findLayer(template.layers, selectedLayerId);
+  if (!layer) return null;
+  const candidates = flattenLayers(template.layers, selectedLayerId);
+  const clipBy = layer.clipBy;
+
+  function setClip(
+    layerId: string | null,
+    hide?: "inside" | "outside" | "above" | "below" | "left" | "right",
+  ) {
+    onCommit((d) => {
+      const target = findLayerInDraft(d.layers, selectedLayerId);
+      if (!target) return;
+      if (!layerId) {
+        delete target.clipBy;
+        return;
+      }
+      target.clipBy = {
+        layerId,
+        hide: hide ?? target.clipBy?.hide ?? "inside",
+      };
+    });
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 11,
+          color: colors.textDim,
+          textTransform: "uppercase",
+          letterSpacing: 1.2,
+          marginBottom: 8,
+        }}
+      >
+        Clip By
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <select
+          value={clipBy?.layerId ?? ""}
+          onChange={(e) => setClip(e.target.value || null)}
+          style={selectStyle}
+          title="Reference layer whose bounding box defines a reveal edge for this layer."
+        >
+          <option value="">none</option>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.type})
+            </option>
+          ))}
+        </select>
+        {clipBy && (
+          <select
+            value={clipBy.hide}
+            onChange={(e) =>
+              setClip(
+                clipBy.layerId,
+                e.target.value as "inside" | "outside" | "above" | "below" | "left" | "right",
+              )
+            }
+            style={selectStyle}
+            title="How the reference's bounding box masks this layer."
+          >
+            <option value="inside">hide where overlapping (inside)</option>
+            <option value="outside">show only inside reference</option>
+            <option value="below">half-plane: hide below</option>
+            <option value="above">half-plane: hide above</option>
+            <option value="right">half-plane: hide right</option>
+            <option value="left">half-plane: hide left</option>
+          </select>
+        )}
+        {clipBy && (
+          <p style={{ margin: 0, fontSize: 11, color: colors.textDim, lineHeight: 1.4 }}>
+            Set the reference layer to invisible (eye toggle in the Layers panel) to use it
+            as a positional marker without rendering it.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function findLayerInDraft(layers: Draft<Layer>[], id: string): Draft<Layer> | null {
+  for (const l of layers) {
+    if (l.id === id) return l;
+    if (l.type === "group") {
+      const found = findLayerInDraft(l.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+const selectStyle: React.CSSProperties = {
+  padding: "4px 6px",
+  background: colors.panel,
+  border: `1px solid ${colors.border}`,
+  borderRadius: 3,
+  color: colors.text,
+  fontSize: 12,
+  width: "100%",
+};
 
 function FieldsLink() {
   return (

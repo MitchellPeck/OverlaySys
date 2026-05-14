@@ -5,6 +5,7 @@ import {
   TemplateSchema,
   ShowSchema,
   SongSchema,
+  HotcardSchema,
   SttSpawnerConfigSchema,
   SttSpawnerStatusSchema,
   type TemplateMeta,
@@ -47,10 +48,17 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("get_template"), templateId: z.string() }),
   z.object({ type: z.literal("save_template"), template: TemplateSchema }),
   z.object({ type: z.literal("delete_template"), templateId: z.string() }),
+  z.object({ type: z.literal("duplicate_template"), templateId: z.string() }),
   z.object({ type: z.literal("list_shows") }),
   z.object({ type: z.literal("get_show"), showId: z.string() }),
   z.object({ type: z.literal("save_show"), show: ShowSchema }),
   z.object({ type: z.literal("delete_show"), showId: z.string() }),
+  z.object({ type: z.literal("duplicate_show"), showId: z.string() }),
+  z.object({ type: z.literal("list_hotcards") }),
+  z.object({ type: z.literal("get_hotcard"), hotcardId: z.string() }),
+  z.object({ type: z.literal("save_hotcard"), hotcard: HotcardSchema }),
+  z.object({ type: z.literal("delete_hotcard"), hotcardId: z.string() }),
+  z.object({ type: z.literal("duplicate_hotcard"), hotcardId: z.string() }),
   z.object({ type: z.literal("list_songs") }),
   z.object({ type: z.literal("get_song"), songId: z.string() }),
   z.object({ type: z.literal("save_song"), song: SongSchema }),
@@ -187,6 +195,20 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("song"),
     song: SongSchema,
+  }),
+  z.object({
+    type: z.literal("hotcard_list"),
+    hotcards: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        templateId: z.string(),
+      }),
+    ),
+  }),
+  z.object({
+    type: z.literal("hotcard"),
+    hotcard: HotcardSchema,
   }),
   z.object({
     type: z.literal("channel_list"),
