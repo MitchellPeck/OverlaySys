@@ -12,12 +12,20 @@ import type {
   SongSessionSummary,
   Hotcard,
   HotcardMeta,
+  Project,
   SttSpawnerConfig,
   SttSpawnerStatus,
 } from "@overlaysys/core";
+import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
+import { getCurrentProjectId } from "./currentProject";
 
 type ConnState = "connecting" | "open" | "closed";
-export type ShowMeta = { id: string; name: string; rowCount: number };
+export type ShowMeta = {
+  id: string;
+  name: string;
+  projectId: string;
+  rowCount: number;
+};
 
 export type SttMatchStrategy = "coverage" | "neighborhood" | "audible";
 
@@ -61,6 +69,11 @@ type StoreState = {
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
 
+  projects: Project[];
+  currentProjectId: string;
+  setProjects: (p: Project[]) => void;
+  setCurrentProjectId: (id: string) => void;
+
   setConn: (c: ConnState) => void;
   setTemplates: (t: TemplateMeta[]) => void;
   setTemplate: (t: Template) => void;
@@ -103,6 +116,11 @@ export const useStore = create<StoreState>((set) => ({
   sttListeners: [],
   hotcards: [],
   hotcardCache: {},
+  projects: [],
+  // Read from sessionStorage at store-init so a page reload keeps the
+  // operator's previously-selected project. Falls back to the seeded default.
+  currentProjectId:
+    typeof window === "undefined" ? DEFAULT_PROJECT_ID : getCurrentProjectId(),
   sttSpawnerStatus: null,
   sttSpawnerConfig: null,
 
@@ -154,6 +172,13 @@ export const useStore = create<StoreState>((set) => ({
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),
+  setProjects: (p) => set({ projects: p }),
+  setCurrentProjectId: (id) => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("overlaysys:current-project", id);
+    }
+    set({ currentProjectId: id });
+  },
   setSttSpawnerStatus: (s) => set({ sttSpawnerStatus: s }),
   setSttSpawnerConfig: (c) => set({ sttSpawnerConfig: c }),
 }));

@@ -31,6 +31,7 @@ export async function listHotcardMetas(): Promise<HotcardMeta[]> {
   return Array.from(REGISTRY.values()).map((h) => ({
     id: h.id,
     name: h.name,
+    projectId: h.projectId,
     templateId: h.templateId,
   }));
 }

@@ -6,11 +6,15 @@ import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { Pill, type PillTone } from "@overlaysys/ui";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
+import { CloudSignInButton } from "@/app/components/CloudSignInButton";
 
 const NAV_LINKS = [
   { href: "/", label: "Show" },
+  { href: "/projects", label: "Projects" },
   { href: "/shows", label: "Shows" },
   { href: "/hotcards", label: "Hotcards" },
+  { href: "/timer", label: "Timer" },
   { href: "/songs", label: "Songs" },
   { href: "/stt", label: "STT" },
   { href: "/design", label: "Design" },
@@ -77,7 +81,9 @@ export function AppHeader({
           {context}
         </div>
       )}
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+        <ProjectSwitcher />
+        <CloudSignInButton />
         {actions}
         <SttStatusPill />
         <ConnectionPill conn={conn} dot={dot} />

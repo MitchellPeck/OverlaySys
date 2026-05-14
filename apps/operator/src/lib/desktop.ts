@@ -12,6 +12,13 @@ interface ChannelWindowOptions {
   transparent?: boolean;
 }
 
+export interface ElectronCloudTokens {
+  accessToken: string;
+  refreshToken: string;
+  registryOrgId: string | null;
+  storedAt: number;
+}
+
 interface OverlaysysApi {
   openChannelWindow(channelId: string, opts?: ChannelWindowOptions): Promise<{ reused: boolean }>;
   closeChannelWindow(channelId: string): Promise<void>;
@@ -20,6 +27,15 @@ interface OverlaysysApi {
   getMode(): Promise<{ isDev: boolean; operatorUrl: string; rendererUrl: string }>;
   onChannelWindowOpened(fn: (channelId: string) => void): () => void;
   onChannelWindowClosed(fn: (channelId: string) => void): () => void;
+
+  cloudSignIn(): Promise<
+    | { ok: true; tokens: ElectronCloudTokens }
+    | { ok: false; error: string }
+  >;
+  cloudGetTokens(): Promise<ElectronCloudTokens | null>;
+  cloudSignOut(): Promise<void>;
+  onCloudSignedIn(fn: (tokens: ElectronCloudTokens) => void): () => void;
+  onCloudSignedOut(fn: () => void): () => void;
 }
 
 declare global {

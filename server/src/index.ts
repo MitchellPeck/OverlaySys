@@ -8,6 +8,7 @@ import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
+import { listProjects, reloadProjects } from "./projects";
 import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
@@ -57,8 +58,9 @@ await reloadTemplates();
 await reloadShows();
 await reloadChannelConfigs();
 await reloadSongs();
+await reloadProjects();
 app.log.info(
-  `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s)`,
+  `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
 
 // Boot STT spawner: load persisted config; auto-start if configured.
@@ -83,6 +85,10 @@ app.get("/api/shows", async () => {
 
 app.get("/api/songs", async () => {
   return { songs: await listSongMetas() };
+});
+
+app.get("/api/projects", async () => {
+  return { projects: await listProjects() };
 });
 
 await app.listen({ host: HOST, port: PORT });

@@ -1,0 +1,129 @@
+import type { Field, TimeFormat, TimeMode } from "./template";
+
+/**
+ * Time-field helpers shared by the template engine (renderer-side ticking),
+ * the operator UI (input parsing + preview), and any future Companion action
+ * targeting timers.
+ *
+ * Convention: a time field's data value is an **epoch-ms timestamp** as a
+ * string. For countdowns that's the moment the timer should hit zero; for
+ * count-ups, the moment the timer started. The renderer subtracts from
+ * `Date.now()` at tick time, so all clients display the same value regardless
+ * of when they joined.
+ *
+ * Clocks ignore the value entirely — they always read `Date.now()`.
+ */
+
+const PAD2 = (n: number): string => (n < 10 ? "0" + n : String(n));
+
+/**
+ * Render a non-negative millisecond duration as a `format` string.
+ * Negative inputs clamp to zero (countdowns past zero shouldn't flash
+ * negatives). For HH/H formats, hours overflow naturally (a 75-minute
+ * countdown reads "01:15:00").
+ */
+export function formatTime(totalMs: number, format: TimeFormat): string {
+  const totalSec = Math.max(0, Math.floor(totalMs / 1000));
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  switch (format) {
+    case "MM:SS":
+      // For ≥ 1h durations, MM rolls into a 3+ digit minute count.
+      return `${PAD2(hours * 60 + minutes)}:${PAD2(seconds)}`;
+    case "M:SS":
+      return `${hours * 60 + minutes}:${PAD2(seconds)}`;
+    case "HH:MM:SS":
+      return `${PAD2(hours)}:${PAD2(minutes)}:${PAD2(seconds)}`;
+    case "H:MM:SS":
+      return `${hours}:${PAD2(minutes)}:${PAD2(seconds)}`;
+    case "HH:MM":
+      return `${PAD2(hours)}:${PAD2(minutes)}`;
+    case "H:MM":
+      return `${hours}:${PAD2(minutes)}`;
+  }
+}
+
+/**
+ * Parse a duration like "10:00", "1:30:00", or "90" into milliseconds.
+ *
+ * Rules:
+ *   - One token  → seconds (e.g. "90" = 90s)
+ *   - Two tokens → MM:SS (e.g. "10:00" = 10m)
+ *   - Three tokens → HH:MM:SS
+ * Trailing/leading whitespace is ignored. Non-numeric tokens return null.
+ */
+export function parseDuration(s: string): number | null {
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(":").map((p) => p.trim());
+  if (parts.length > 3) return null;
+  const nums = parts.map((p) => Number(p));
+  if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  let totalSec = 0;
+  if (nums.length === 1) totalSec = nums[0]!;
+  else if (nums.length === 2) totalSec = nums[0]! * 60 + nums[1]!;
+  else totalSec = nums[0]! * 3600 + nums[1]! * 60 + nums[2]!;
+  return Math.round(totalSec * 1000);
+}
+
+/**
+ * Format the current wall-clock time. Used by `mode === "clock"` fields and
+ * by the Timer panel preview. `now` is injectable for tests.
+ */
+function formatClock(now: number, format: TimeFormat): string {
+  const d = new Date(now);
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+  const seconds = d.getSeconds();
+  switch (format) {
+    case "MM:SS":
+      return `${PAD2(minutes)}:${PAD2(seconds)}`;
+    case "M:SS":
+      return `${minutes}:${PAD2(seconds)}`;
+    case "HH:MM:SS":
+      return `${PAD2(hours)}:${PAD2(minutes)}:${PAD2(seconds)}`;
+    case "H:MM:SS":
+      return `${hours}:${PAD2(minutes)}:${PAD2(seconds)}`;
+    case "HH:MM":
+      return `${PAD2(hours)}:${PAD2(minutes)}`;
+    case "H:MM":
+      return `${hours}:${PAD2(minutes)}`;
+  }
+}
+
+const DEFAULT_FORMAT: TimeFormat = "MM:SS";
+const DEFAULT_MODE: TimeMode = "countdown";
+
+/**
+ * Compute the display string for a time field at instant `now`.
+ *
+ * `value` is the take-time data string. For countdown / countup it's parsed
+ * as an epoch-ms anchor; if missing or unparseable, the display falls back to
+ * the format's zero (e.g. "00:00") rather than NaN.
+ */
+export function computeTimeDisplay(field: Field, value: string | undefined, now: number): string {
+  const format = field.timeFormat ?? DEFAULT_FORMAT;
+  const mode = field.timeMode ?? DEFAULT_MODE;
+  if (mode === "clock") {
+    return formatClock(now, format);
+  }
+  const anchor = value !== undefined && value !== "" ? Number(value) : NaN;
+  if (!Number.isFinite(anchor)) {
+    return formatTime(0, format);
+  }
+  if (mode === "countdown") {
+    return formatTime(anchor - now, format);
+  }
+  // countup
+  return formatTime(Math.max(0, now - anchor), format);
+}
+
+/**
+ * True if this field is a time field. Centralized so consumers don't have to
+ * remember to also check that timeMode exists — a future schema change could
+ * narrow that.
+ */
+export function isTimeField(field: Field): boolean {
+  return field.type === "time";
+}

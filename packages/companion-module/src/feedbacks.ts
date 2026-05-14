@@ -251,8 +251,12 @@ export function feedbackPredicate(
 // ──── SDK-shaped definitions ─────────────────────────────────────────────
 
 function channelDropdownF(state: CompanionState): CompanionInputFieldDropdown {
-  const choices = state.channels.length
-    ? state.channels.map((c) => ({ id: c.id, label: c.name }))
+  // Match the actions module: hide mirror channels. Their runtime state is
+  // identical to the source they mirror, so selecting one would only add
+  // noise to feedback dropdowns.
+  const takeable = state.channels.filter((c) => !c.mirrorOf);
+  const choices = takeable.length
+    ? takeable.map((c) => ({ id: c.id, label: c.name }))
     : [
         { id: "program", label: "program" },
         { id: "preview", label: "preview" },

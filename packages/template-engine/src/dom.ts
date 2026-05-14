@@ -1,4 +1,5 @@
 import type {
+  Field,
   Layer,
   Template,
   TextStyle,
@@ -10,6 +11,20 @@ import type {
 import { resolveBinding } from "./bindings";
 
 export type LayerNodeMap = Map<string, HTMLElement>;
+
+/**
+ * One per text layer whose `content` binds to a time-typed field. The
+ * template-mount tick loop walks these every animation frame and rewrites
+ * `el.textContent` so the renderer doesn't need per-second WS updates to
+ * keep countdowns / clocks accurate.
+ *
+ * `el` is the inner `<span>` that actually shows text (the same element
+ * `updateTemplateData` would write to on a static text update).
+ */
+export type TimeBinding = {
+  el: HTMLElement;
+  field: Field;
+};
 
 /**
  * Apply a `crop` window to a video element by scaling and translating
@@ -220,6 +235,8 @@ function buildLayer(
   nodes: LayerNodeMap,
   layerIndex: Map<string, Layer>,
   parentSize: { w: number; h: number },
+  fieldsByKey: Map<string, Field>,
+  timeBindings: TimeBinding[],
 ): HTMLElement {
   let el: HTMLElement;
 
@@ -231,6 +248,15 @@ function buildLayer(
       const span = document.createElement("span");
       applyTextStyle(el, span, layer.style, data);
       span.textContent = resolveBinding(layer.content, data);
+      // If the content binds to a time-typed field, register the span so the
+      // mount's rAF loop ticks it every frame. The initial textContent above
+      // is just a placeholder until the first tick fires.
+      if (typeof layer.content !== "string") {
+        const f = fieldsByKey.get(layer.content.fieldKey);
+        if (f && f.type === "time") {
+          timeBindings.push({ el: span, field: f });
+        }
+      }
       el.appendChild(span);
       break;
     }
@@ -368,7 +394,9 @@ function buildLayer(
         h: layer.transform.h ?? parentSize.h,
       };
       for (const child of layer.children) {
-        el.appendChild(buildLayer(child, data, nodes, layerIndex, groupSize));
+        el.appendChild(
+          buildLayer(child, data, nodes, layerIndex, groupSize, fieldsByKey, timeBindings),
+        );
       }
       break;
     }
@@ -410,7 +438,7 @@ function buildLayer(
 export function buildTemplateDom(
   template: Template,
   data: Record<string, string>,
-): { root: HTMLElement; nodes: LayerNodeMap } {
+): { root: HTMLElement; nodes: LayerNodeMap; timeBindings: TimeBinding[] } {
   const root = document.createElement("div");
   root.dataset["templateId"] = template.id;
   root.style.position = "relative";
@@ -423,11 +451,16 @@ export function buildTemplateDom(
 
   const nodes: LayerNodeMap = new Map();
   const layerIndex = indexLayers(template.layers);
+  const fieldsByKey = new Map<string, Field>();
+  for (const f of template.fields) fieldsByKey.set(f.key, f);
+  const timeBindings: TimeBinding[] = [];
   const rootSize = { w: template.size.w, h: template.size.h };
   for (const layer of template.layers) {
-    root.appendChild(buildLayer(layer, data, nodes, layerIndex, rootSize));
+    root.appendChild(
+      buildLayer(layer, data, nodes, layerIndex, rootSize, fieldsByKey, timeBindings),
+    );
   }
-  return { root, nodes };
+  return { root, nodes, timeBindings };
 }
 
 /**
@@ -441,13 +474,22 @@ export function updateTemplateData(
   data: Record<string, string>,
   nodes: LayerNodeMap,
 ): void {
+  const fieldsByKey = new Map<string, Field>();
+  for (const f of template.fields) fieldsByKey.set(f.key, f);
+
   function walk(layer: Layer): void {
     const el = nodes.get(layer.id);
     if (!el) return;
     if (layer.type === "text") {
       const span = el.firstElementChild as HTMLElement | null;
       if (span && typeof layer.content !== "string") {
-        span.textContent = resolveBinding(layer.content, data);
+        // Skip text writes when the content is bound to a time field — the
+        // mount's rAF loop owns that span and would just fight us back on
+        // the next frame. The rAF reads `currentData` itself.
+        const f = fieldsByKey.get(layer.content.fieldKey);
+        if (!f || f.type !== "time") {
+          span.textContent = resolveBinding(layer.content, data);
+        }
       }
       // Always re-apply color in case it's bound — cheap; idempotent if literal.
       if (span) span.style.color = resolveBinding(layer.style.color, data, "#ffffff");

@@ -100,6 +100,11 @@ export function ChannelPreview({ config, state }: Props) {
           });
         }
         m.playIn().catch(() => {});
+        // Mirror the OBS renderer: fire the blink overlay on every fresh
+        // take so the sidebar preview matches what's actually on air.
+        if (tpl.blinkOnTake?.enabled) {
+          m.playBlink(tpl.blinkOnTake).catch(() => {});
+        }
       })();
       return;
     }

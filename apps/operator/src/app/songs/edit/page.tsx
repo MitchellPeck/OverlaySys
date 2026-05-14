@@ -11,6 +11,13 @@ import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PasteLyricsModal } from "../PasteLyricsModal";
+import { isCloudMode } from "@/lib/mode";
+import {
+  getSongCloud,
+  refreshSongMetasCloud,
+  refreshTemplateMetasCloud,
+  saveSongCloud,
+} from "@/lib/cloudData";
 
 // useSearchParams suspends during static prerender; wrapping it in a
 // Suspense boundary lets Next.js's static export complete (the inner
@@ -29,12 +36,27 @@ function SongEditorPageInner() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const cached = useStore((s) => s.songCache[id]);
+  const setSongInStore = useStore((s) => s.setSong);
   const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<Song | null>(cached ?? null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [dragSecIdx, setDragSecIdx] = useState<number | null>(null);
   const [secDropZone, setSecDropZone] = useState<{ idx: number; pos: "before" | "after" } | null>(null);
-  const { dialog, confirm } = useDialog();
+  const { alert, dialog, confirm } = useDialog();
+  const cloud = isCloudMode();
+
+  async function showCloudError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[songs/edit] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   function moveSection(from: number, to: number) {
     if (from === to) return;
@@ -50,9 +72,27 @@ function SongEditorPageInner() {
   }
 
   useEffect(() => {
+    if (cloud) {
+      if (!cached) {
+        getSongCloud(id)
+          .then((s) => {
+            if (s) {
+              setSongInStore(s);
+              setDraft(s);
+            }
+          })
+          .catch((err) => console.warn("[songs/edit] cloud load failed", err));
+      }
+      if (templates.length === 0) {
+        refreshTemplateMetasCloud().catch((err) =>
+          console.warn("[songs/edit] template list failed", err),
+        );
+      }
+      return;
+    }
     if (conn === "open" && !cached) send({ type: "get_song", songId: id });
     if (conn === "open" && templates.length === 0) send({ type: "list_templates" });
-  }, [conn, cached, id, send, templates.length]);
+  }, [cloud, conn, cached, id, send, templates.length, setSongInStore]);
 
   useEffect(() => {
     if (cached) setDraft(cached);
@@ -178,8 +218,18 @@ function SongEditorPageInner() {
     });
   }
 
-  function save() {
+  async function save() {
     if (!draft) return;
+    if (cloud) {
+      try {
+        await saveSongCloud(draft);
+        await refreshSongMetasCloud();
+        setSongInStore(draft);
+      } catch (err) {
+        await showCloudError("save", err);
+      }
+      return;
+    }
     send({ type: "save_song", song: draft });
   }
 

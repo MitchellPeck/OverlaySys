@@ -4,13 +4,25 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import type { ChannelConfig, Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { isCloudMode } from "@/lib/mode";
+import {
+  deleteShowCloud,
+  getShowCloud,
+  getShowUpdatedAtCloud,
+  getSongCloud,
+  getTemplateCloud,
+  refreshShowMetasCloud,
+  refreshSongMetasCloud,
+  refreshTemplateMetasCloud,
+  saveShowCloud,
+} from "@/lib/cloudData";
 
 // Suspense wrapper required by Next.js static export when the page calls
 // useSearchParams().
@@ -31,18 +43,46 @@ function ShowEditPageInner() {
   const templates = useStore((s) => s.templates);
   const songs = useStore((s) => s.songs);
   const songCache = useStore((s) => s.songCache);
+  const channelConfigs = useStore((s) => s.channelConfigs);
+  // Mirror channels reflect another channel's state; targeting one would be
+  // a no-op, so they're hidden from row-level channel hints.
+  const takeableChannels = useMemo(
+    () => channelConfigs.filter((c) => !c.mirrorOf),
+    [channelConfigs],
+  );
 
   const templateCache = useStore((s) => s.templateCache);
+  const setTemplate = useStore((s) => s.setTemplate);
+  const setSong = useStore((s) => s.setSong);
   const [draft, setDraft] = useState<Show | null>(null);
   const [dirty, setDirty] = useState(false);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
+  // Cloud `updated_at` value at the moment the editor loaded the draft.
+  // Used by save() in cloud mode to detect concurrent writes — a newer
+  // value in Supabase means another tab/user saved while we were editing.
+  const loadedAtRef = useRef<string | null>(null);
   const fetchedRef = useRef<string | null>(null);
   const { confirm, alert, dialog } = useDialog();
+  const cloud = isCloudMode();
+
+  async function showCloudError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[shows/edit] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   useEffect(() => {
     fetchedRef.current = null;
     setDraft(null);
     setDirty(false);
+    if (cloud) return; // no WS subscription in cloud mode — see effect below
     const off = getClient().on((msg) => {
       if (msg.type === "show" && msg.show.id === showId) {
         if (!dirty) setDraft(msg.show);
@@ -50,28 +90,62 @@ function ShowEditPageInner() {
     });
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showId]);
+  }, [showId, cloud]);
 
   useEffect(() => {
+    if (cloud) {
+      if (fetchedRef.current === showId) return;
+      fetchedRef.current = showId;
+      // Pull the show + template + song metadata from Supabase. Show
+      // payload populates `draft` directly; template/song meta feeds the
+      // same store slices the WS path populates so downstream readers
+      // don't care which mode we're in.
+      Promise.all([
+        getShowCloud(showId),
+        getShowUpdatedAtCloud(showId),
+        refreshTemplateMetasCloud(),
+        refreshSongMetasCloud(),
+      ])
+        .then(([show, updatedAt]) => {
+          if (show) setDraft(show);
+          loadedAtRef.current = updatedAt;
+        })
+        .catch((err) => console.warn("[shows/edit] cloud load failed", err));
+      return;
+    }
     if (conn !== "open") return;
     if (fetchedRef.current === showId) return;
     fetchedRef.current = showId;
     send({ type: "get_show", showId });
     send({ type: "list_templates" });
     send({ type: "list_songs" });
-  }, [conn, showId, send]);
+  }, [cloud, conn, showId, send]);
 
   useEffect(() => {
     if (!draft) return;
-    const needed = new Set(
+    // Hydrate template bodies for: rows that already reference them PLUS
+    // every other template in the library. The "every other" pass is what
+    // makes addRow's defaultChannel prefill work — without it, Add row
+    // picks templates[0] but its body hasn't been fetched, so the
+    // defaultChannel hint is silently dropped.
+    const needed = new Set<string>(
       draft.rows.flatMap((r) => (r.kind === "graphic" ? [r.templateId] : [])),
     );
+    for (const meta of templates) needed.add(meta.id);
     for (const id of needed) {
-      if (!templateCache[id] && conn === "open") {
+      if (!id) continue;
+      if (templateCache[id]) continue;
+      if (cloud) {
+        getTemplateCloud(id)
+          .then((t) => {
+            if (t) setTemplate(t);
+          })
+          .catch((err) => console.warn(`[shows/edit] template ${id}`, err));
+      } else if (conn === "open") {
         send({ type: "get_template", templateId: id });
       }
     }
-  }, [draft, templateCache, conn, send]);
+  }, [draft, templates, templateCache, cloud, conn, send, setTemplate]);
 
   useEffect(() => {
     if (!draft) return;
@@ -79,11 +153,18 @@ function ShowEditPageInner() {
       draft.rows.flatMap((r) => (r.kind === "song" ? [r.songId] : [])),
     );
     for (const id of needed) {
-      if (!songCache[id] && conn === "open") {
+      if (songCache[id]) continue;
+      if (cloud) {
+        getSongCloud(id)
+          .then((s) => {
+            if (s) setSong(s);
+          })
+          .catch((err) => console.warn(`[shows/edit] song ${id}`, err));
+      } else if (conn === "open") {
         send({ type: "get_song", songId: id });
       }
     }
-  }, [draft, songCache, conn, send]);
+  }, [draft, songCache, cloud, conn, send, setSong]);
 
   function update(recipe: (s: Show) => void) {
     setDraft((cur) => {
@@ -95,16 +176,57 @@ function ShowEditPageInner() {
     });
   }
 
-  function save() {
+  async function save() {
     if (!draft) return;
+    if (cloud) {
+      try {
+        // Conflict detection: compare cloud's current updated_at against
+        // the snapshot we loaded with. Newer means somebody else saved
+        // in the meantime. Confirm before overwriting.
+        if (loadedAtRef.current) {
+          const cur = await getShowUpdatedAtCloud(draft.id);
+          if (cur && cur > loadedAtRef.current) {
+            const ok = await confirm({
+              title: "Cloud has newer changes",
+              message: (
+                <>
+                  This show was updated in the cloud after you loaded it. Save
+                  anyway and overwrite their changes?
+                </>
+              ),
+              confirmLabel: "Overwrite",
+              destructive: true,
+            });
+            if (!ok) return;
+          }
+        }
+        await saveShowCloud(draft);
+        await refreshShowMetasCloud();
+        // Refresh the loaded timestamp so subsequent saves don't re-prompt.
+        loadedAtRef.current = await getShowUpdatedAtCloud(draft.id);
+        setDirty(false);
+      } catch (err) {
+        await showCloudError("save", err);
+      }
+      return;
+    }
     send({ type: "save_show", show: draft });
     setDirty(false);
   }
 
-  function revert() {
+  async function revert() {
     fetchedRef.current = null;
     setDraft(null);
     setDirty(false);
+    if (cloud) {
+      try {
+        const show = await getShowCloud(showId);
+        if (show) setDraft(show);
+      } catch (err) {
+        await showCloudError("revert", err);
+      }
+      return;
+    }
     send({ type: "get_show", showId });
   }
 
@@ -121,14 +243,36 @@ function ShowEditPageInner() {
       destructive: true,
     });
     if (!ok) return;
+    if (cloud) {
+      try {
+        await deleteShowCloud(draft.id);
+        await refreshShowMetasCloud();
+        router.push("/shows");
+      } catch (err) {
+        await showCloudError("delete", err);
+      }
+      return;
+    }
     send({ type: "delete_show", showId: draft.id });
     setTimeout(() => router.push("/shows"), 150);
   }
 
   function addRow() {
     update((s) => {
-      const firstTpl = templates[0]?.id ?? "";
-      s.rows.push({ kind: "graphic", id: uuid(), templateId: firstTpl, data: {} });
+      const firstMeta = templates[0];
+      const firstTpl = firstMeta?.id ?? "";
+      // Prefer the meta's defaultChannel (always available from list_templates)
+      // and fall back to the cached body. Reading from the meta avoids the
+      // race where the operator clicks Add row before the body has loaded.
+      const channelHint =
+        firstMeta?.defaultChannel || templateCache[firstTpl]?.defaultChannel || undefined;
+      s.rows.push({
+        kind: "graphic",
+        id: uuid(),
+        templateId: firstTpl,
+        data: {},
+        ...(channelHint ? { channelHint } : {}),
+      });
     });
   }
 
@@ -237,7 +381,12 @@ function ShowEditPageInner() {
           <>
             <Button onClick={remove} variant="danger" size="sm">Delete</Button>
             <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button onClick={save} variant="primary" size="sm" disabled={!dirty || conn !== "open"}>
+            <Button
+              onClick={save}
+              variant="primary"
+              size="sm"
+              disabled={!dirty || (!cloud && conn !== "open")}
+            >
               Save (⌘S)
             </Button>
           </>
@@ -252,6 +401,7 @@ function ShowEditPageInner() {
             templateCache={templateCache}
             songs={songs}
             songCache={songCache}
+            channels={takeableChannels}
             dragRowId={dragRowId}
             onDragRowId={setDragRowId}
             onMoveRow={moveRow}
@@ -275,6 +425,7 @@ function RundownTable({
   templateCache,
   songs,
   songCache,
+  channels,
   dragRowId,
   onDragRowId,
   onMoveRow,
@@ -286,6 +437,7 @@ function RundownTable({
   templateCache: Record<string, Template>;
   songs: SongMeta[];
   songCache: Record<string, Song>;
+  channels: ChannelConfig[];
   dragRowId: string | null;
   onDragRowId: (id: string | null) => void;
   onMoveRow: (sourceId: string, targetId: string, where: "before" | "after") => void;
@@ -338,6 +490,7 @@ function RundownTable({
                 songs={songs}
                 songCache={songCache}
                 templates={templates}
+                channels={channels}
                 onUpdate={onUpdate}
                 {...dragProps}
               />
@@ -349,6 +502,7 @@ function RundownTable({
               row={row}
               templates={templates}
               template={templateCache[row.templateId] ?? null}
+              channels={channels}
               onUpdate={onUpdate}
               {...dragProps}
             />
@@ -364,6 +518,7 @@ function RundownRowEditor({
   index,
   templates,
   template,
+  channels,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -376,6 +531,7 @@ function RundownRowEditor({
   index: number;
   templates: TemplateMeta[];
   template: Template | null;
+  channels: ChannelConfig[];
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -439,7 +595,18 @@ function RundownRowEditor({
       <td style={{ ...td, width: 220 }}>
         <Select
           value={row.templateId}
-          onChange={(e) => patchRow({ templateId: e.target.value })}
+          onChange={(e) => {
+            const nextId = e.target.value;
+            // Prefill channelHint from the new template's defaultChannel
+            // only when the row has no hint yet — don't clobber a hint the
+            // operator deliberately picked.
+            const nextMeta = templates.find((t) => t.id === nextId);
+            const nextHint =
+              row.channelHint ??
+              nextMeta?.defaultChannel ??
+              undefined;
+            patchRow({ templateId: nextId, channelHint: nextHint });
+          }}
         >
           {!templates.some((t) => t.id === row.templateId) && (
             <option value={row.templateId}>{row.templateId} (missing)</option>
@@ -453,16 +620,11 @@ function RundownRowEditor({
         <FieldsEditor template={template} data={row.data} onChange={setData} />
       </td>
       <td style={{ ...td, width: 100 }}>
-        <Select
-          value={row.channelHint ?? ""}
-          onChange={(e) =>
-            patchRow({ channelHint: e.target.value ? e.target.value : undefined })
-          }
-        >
-          <option value="">(any)</option>
-          <option value="program">program</option>
-          <option value="preview">preview</option>
-        </Select>
+        <ChannelHintSelect
+          value={row.channelHint}
+          onChange={(v) => patchRow({ channelHint: v })}
+          channels={channels}
+        />
       </td>
       <td style={{ ...td, width: 200 }}>
         <Input
@@ -486,6 +648,7 @@ function SongRowEditor({
   songs,
   songCache,
   templates,
+  channels,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -499,6 +662,7 @@ function SongRowEditor({
   songs: SongMeta[];
   songCache: Record<string, Song>;
   templates: TemplateMeta[];
+  channels: ChannelConfig[];
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -603,14 +767,11 @@ function SongRowEditor({
         )}
       </td>
       <td style={{ ...td, width: 100 }}>
-        <Select
-          value={row.channelHint ?? ""}
-          onChange={(e) => patchRow({ channelHint: e.target.value ? e.target.value : undefined })}
-        >
-          <option value="">(any)</option>
-          <option value="program">program</option>
-          <option value="preview">preview</option>
-        </Select>
+        <ChannelHintSelect
+          value={row.channelHint}
+          onChange={(v) => patchRow({ channelHint: v })}
+          channels={channels}
+        />
       </td>
       <td style={{ ...td, width: 200 }}>
         <Input
@@ -687,6 +848,38 @@ function FieldsEditor({
         </div>
       ))}
     </div>
+  );
+}
+
+function ChannelHintSelect({
+  value,
+  onChange,
+  channels,
+}: {
+  value: string | undefined;
+  onChange: (v: string | undefined) => void;
+  channels: ChannelConfig[];
+}) {
+  const current = value ?? "";
+  const knownChannel = current && channels.some((c) => c.id === current);
+  // Preserve out-of-list values rather than silently dropping them — a row
+  // might reference a channel that's been removed or is now a mirror, and we
+  // don't want a save to quietly overwrite that hint.
+  return (
+    <Select
+      value={current}
+      onChange={(e) => onChange(e.target.value ? e.target.value : undefined)}
+    >
+      <option value="">(any)</option>
+      {!knownChannel && current && (
+        <option value={current}>{current} (missing)</option>
+      )}
+      {channels.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </Select>
   );
 }
 

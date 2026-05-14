@@ -14,11 +14,38 @@ export const TransformSchema = z.object({
 });
 export type Transform = z.infer<typeof TransformSchema>;
 
+/**
+ * `time` is a reactive field type. The renderer ticks the bound text layer
+ * locally every animation frame instead of waiting on per-second WS updates,
+ * so we get sub-second precision without chatty traffic. Mode is locked at
+ * template-author time — operators just supply the anchor value:
+ *   - countdown: epoch ms of the target end. Display = remaining time.
+ *   - countup:   epoch ms of the start. Display = elapsed time.
+ *   - clock:     anchor ignored. Display = current wall-clock time.
+ * Format selects which placeholders (HH, MM, SS) appear.
+ */
+export const TimeModeSchema = z.enum(["countdown", "countup", "clock"]);
+export type TimeMode = z.infer<typeof TimeModeSchema>;
+
+export const TimeFormatSchema = z.enum([
+  "MM:SS",
+  "M:SS",
+  "HH:MM:SS",
+  "H:MM:SS",
+  "HH:MM",
+  "H:MM",
+]);
+export type TimeFormat = z.infer<typeof TimeFormatSchema>;
+
 export const FieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(["text", "image", "color", "number", "video"]),
+  type: z.enum(["text", "image", "color", "number", "video", "time"]),
   default: z.string().optional(),
+  // Only meaningful when `type === "time"`. Kept optional on the schema so
+  // existing template files (no time fields) keep parsing untouched.
+  timeMode: TimeModeSchema.optional(),
+  timeFormat: TimeFormatSchema.optional(),
 });
 export type Field = z.infer<typeof FieldSchema>;
 
@@ -289,7 +316,33 @@ export const TemplateSchema = z.object({
    * Internal takes (song slide advances) bypass this.
    */
   autoOutMs: z.number().positive().optional(),
+  /**
+   * On every fresh take of this template (each new `takenAt`), the renderer
+   * overlays a full-stage color flash `count` times, each cycle taking
+   * `durationMs`. Effectively a "look at me" cue — useful for attention
+   * graphics like lower-third stings. Updates (same take, new data) do
+   * NOT re-blink; taking again on a live channel DOES re-blink.
+   */
+  blinkOnTake: z
+    .object({
+      enabled: z.boolean().default(false),
+      color: z.string().default("#ffffff"),
+      durationMs: z.number().positive().default(500),
+      count: z.number().int().positive().default(2),
+    })
+    .optional(),
+  /**
+   * Suggested channel for this template. Operator UI uses it as the
+   * default channel when adding a row to a rundown or when picking the
+   * template in the take panel. Empty / unset means "no preference."
+   */
+  defaultChannel: z.string().optional(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
+export type BlinkOnTake = NonNullable<z.infer<typeof TemplateSchema>["blinkOnTake"]>;
 
-export type TemplateMeta = Pick<Template, "id" | "name" | "size">;
+// TemplateMeta carries everything the operator UI needs without forcing a
+// full template body fetch. `defaultChannel` is here so adding a row in the
+// rundown editor can prefill channelHint from `templates[i].defaultChannel`
+// before the body has been loaded into the cache.
+export type TemplateMeta = Pick<Template, "id" | "name" | "size" | "defaultChannel">;

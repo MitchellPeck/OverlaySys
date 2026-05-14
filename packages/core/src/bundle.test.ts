@@ -9,6 +9,7 @@ import {
   type BundleSelection,
   type StoreSnapshot,
 } from "./bundle";
+import { type Project } from "./project";
 
 describe("BundleSchema", () => {
   it("accepts a minimal valid bundle", () => {
@@ -55,6 +56,31 @@ describe("BundleSchema", () => {
     expect(ok.songs).toEqual([]);
     expect(ok.templates).toEqual([]);
     expect(ok.shows).toEqual([]);
+  });
+
+  it("accepts an optional project descriptor", () => {
+    const project: Project = {
+      id: "sunday-services",
+      name: "Sunday Services",
+      createdAt: "2026-05-14T00:00:00.000Z",
+      updatedAt: "2026-05-14T00:00:00.000Z",
+    };
+    const ok = BundleSchema.parse({
+      format: "overlaysys-bundle",
+      version: 1,
+      exportedAt: "2026-05-08T00:00:00Z",
+      project,
+    });
+    expect(ok.project?.id).toBe("sunday-services");
+  });
+
+  it("leaves project undefined when omitted", () => {
+    const ok = BundleSchema.parse({
+      format: "overlaysys-bundle",
+      version: 1,
+      exportedAt: "2026-05-08T00:00:00Z",
+    });
+    expect(ok.project).toBeUndefined();
   });
 });
 
@@ -109,7 +135,7 @@ function makeTemplate(id: string): Template {
 }
 
 function makeShow(id: string, rows: Show["rows"]): Show {
-  return { id, name: id, rows };
+  return { id, name: id, projectId: "default", rows };
 }
 
 describe("collectDependencies", () => {

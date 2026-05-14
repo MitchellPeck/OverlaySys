@@ -6,6 +6,7 @@ import {
   type Bundle,
   type BundleAsset,
   type Hotcard,
+  type Project,
   type Show,
   type Song,
   type Template,
@@ -13,6 +14,15 @@ import {
 import { Button, Panel, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { defaultServerUrl } from "@/lib/wsClient";
+import { isCloudMode } from "@/lib/mode";
+import {
+  applyBundleCloud,
+  refreshHotcardMetasCloud,
+  refreshProjectsCloud,
+  refreshShowMetasCloud,
+  refreshSongMetasCloud,
+  refreshTemplateMetasCloud,
+} from "@/lib/cloudData";
 
 /**
  * Bundle import UI. Reads a bundle (or single-entity) JSON file, shows a
@@ -42,6 +52,12 @@ interface PreviewState {
   hotcards: Hotcard[];
   assets: BundleAsset[];
   rows: ItemRow[];
+  /**
+   * Carried from the source bundle when present. Cloud import forwards it
+   * to applyBundleCloud so shows and hotcards land scoped to the right
+   * project — see server/src/importRoute.ts for the local-mode equivalent.
+   */
+  project?: Project;
 }
 
 interface ImportResult {
@@ -51,6 +67,7 @@ interface ImportResult {
     hotcards: number;
     shows: number;
     songs: number;
+    projects?: number;
     assets: number;
   };
   errors: { kind: string; id: string; message: string }[];
@@ -84,6 +101,7 @@ export function ImportPreview() {
     shows: Show[],
     hotcards: Hotcard[],
     assets: BundleAsset[],
+    project?: Project,
   ): PreviewState {
     const ex = existingIds();
     const rows: ItemRow[] = [
@@ -116,7 +134,15 @@ export function ImportPreview() {
         decision: ex.shows.has(sh.id) ? "skip" : "save",
       })),
     ];
-    return { songs, templates, shows, hotcards, assets, rows };
+    return {
+      songs,
+      templates,
+      shows,
+      hotcards,
+      assets,
+      rows,
+      ...(project ? { project } : {}),
+    };
   }
 
   async function readFile(file: File) {
@@ -146,7 +172,9 @@ export function ImportPreview() {
     }
     if (detected.kind === "bundle") {
       const b: Bundle = detected.bundle;
-      setPreview(buildPreview(b.songs, b.templates, b.shows, b.hotcards, b.assets));
+      setPreview(
+        buildPreview(b.songs, b.templates, b.shows, b.hotcards, b.assets, b.project),
+      );
     } else if (detected.kind === "song") {
       setPreview(buildPreview([detected.song], [], [], [], []));
     } else if (detected.kind === "template") {
@@ -199,17 +227,50 @@ export function ImportPreview() {
     };
 
     try {
-      const res = await fetch(`${httpBase()}/api/import`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+      if (isCloudMode()) {
+        // Reconstruct the Bundle envelope applyBundleCloud expects.
+        // The preview UI strips the `format`/`version` shell when it parses
+        // an incoming bundle, so we synthesize a fresh one here. Any
+        // `project` descriptor the source bundle carried is preserved on
+        // the preview state and forwarded so shows/hotcards land scoped.
+        const result = await applyBundleCloud({
+          format: "overlaysys-bundle",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          ...(preview.project ? { project: preview.project } : {}),
+          templates: body.templates,
+          songs: body.songs,
+          hotcards: body.hotcards,
+          shows: body.shows,
+          assets: body.assets,
+        });
+        // Refresh in-memory caches so the operator UI reflects what just
+        // landed on the cloud without a hard reload.
+        await Promise.all([
+          refreshProjectsCloud(),
+          refreshTemplateMetasCloud(),
+          refreshSongMetasCloud(),
+          refreshShowMetasCloud(),
+          refreshHotcardMetasCloud(),
+        ]).catch(() => {});
+        setResult({
+          ok: result.errors.length === 0,
+          counts: result.counts,
+          errors: result.errors,
+        });
+      } else {
+        const res = await fetch(`${httpBase()}/api/import`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+        }
+        const data = (await res.json()) as ImportResult;
+        setResult(data);
       }
-      const data = (await res.json()) as ImportResult;
-      setResult(data);
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {

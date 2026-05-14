@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import "./globals.css";
+import { CloudBoot } from "./components/CloudBoot";
 
 export const metadata = {
   title: "OverlaySys Operator",
@@ -9,7 +10,9 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <CloudBoot>{children}</CloudBoot>
+      </body>
     </html>
   );
 }

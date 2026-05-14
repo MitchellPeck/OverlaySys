@@ -79,8 +79,24 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
                   onChange={(e) => {
                     const next = e.target.value as Field["type"];
                     // Reset the default when switching type so we don't carry a
-                    // hex string into a number field, etc.
-                    patch(f.key, { type: next, default: defaultForType(next) });
+                    // hex string into a number field, etc. Time-specific
+                    // sub-config (timeMode/timeFormat) gets seeded with sane
+                    // defaults so the field works without further configuration.
+                    const patchObj: Partial<Field> =
+                      next === "time"
+                        ? {
+                            type: next,
+                            default: "",
+                            timeMode: f.timeMode ?? "countdown",
+                            timeFormat: f.timeFormat ?? "MM:SS",
+                          }
+                        : {
+                            type: next,
+                            default: defaultForType(next),
+                            timeMode: undefined,
+                            timeFormat: undefined,
+                          };
+                    patch(f.key, patchObj);
                   }}
                   style={inputStyle}
                 >
@@ -89,8 +105,49 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
                   <option value="video">video</option>
                   <option value="color">color</option>
                   <option value="number">number</option>
+                  <option value="time">time</option>
                 </select>
               </div>
+              {f.type === "time" && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: "grid",
+                    gridTemplateColumns: "60px 1fr 1fr",
+                    gap: 6,
+                    alignItems: "center",
+                  }}
+                  title="Mode is locked at template-author time. Operators just supply the duration / start anchor."
+                >
+                  <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>mode</span>
+                  <select
+                    value={f.timeMode ?? "countdown"}
+                    onChange={(e) =>
+                      patch(f.key, { timeMode: e.target.value as NonNullable<Field["timeMode"]> })
+                    }
+                    style={inputStyle}
+                  >
+                    <option value="countdown">countdown</option>
+                    <option value="countup">count up</option>
+                    <option value="clock">clock</option>
+                  </select>
+                  <select
+                    value={f.timeFormat ?? "MM:SS"}
+                    onChange={(e) =>
+                      patch(f.key, { timeFormat: e.target.value as NonNullable<Field["timeFormat"]> })
+                    }
+                    style={inputStyle}
+                    title="Display format"
+                  >
+                    <option value="MM:SS">MM:SS</option>
+                    <option value="M:SS">M:SS</option>
+                    <option value="HH:MM:SS">HH:MM:SS</option>
+                    <option value="H:MM:SS">H:MM:SS</option>
+                    <option value="HH:MM">HH:MM</option>
+                    <option value="H:MM">H:MM</option>
+                  </select>
+                </div>
+              )}
               <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>default</span>
                 <DefaultEditor field={f} onChange={(v) => patch(f.key, { default: v })} onUpload={onUpload} />
@@ -130,6 +187,17 @@ function DefaultEditor({
           placeholder="0"
           style={inputStyle}
         />
+      );
+    case "time":
+      // No useful "default" for a time field — operators always supply the
+      // anchor at take time. Display a hint instead of a free-text input so
+      // authors don't try to type "10:00" here (it would be stale on every
+      // take). Editing-side preview lives in the time-field row's own
+      // mode/format selects above.
+      return (
+        <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)", fontStyle: "italic" }}>
+          set at take time
+        </span>
       );
     case "text":
     default:

@@ -7,6 +7,7 @@ const nextConfig = {
     "@overlaysys/ws-protocol",
     "@overlaysys/template-engine",
     "@overlaysys/editor-kit",
+    "@overlaysys/supabase",
   ],
   // Static export for Electron packaging. The whole operator UI is
   // client-rendered (every page has "use client") and talks to the

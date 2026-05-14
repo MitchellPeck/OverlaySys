@@ -1,4 +1,5 @@
-import type { Template } from "@overlaysys/core";
+import type { BlinkOnTake, Template } from "@overlaysys/core";
+import { computeTimeDisplay } from "@overlaysys/core";
 import gsap from "gsap";
 import {
   buildTemplateDom,
@@ -104,6 +105,14 @@ export type MountedTemplate = {
   playIn(): Promise<void>;
   /** Play the `out` timeline. Resolves when the out-animation completes. */
   playOut(): Promise<void>;
+  /**
+   * Flash a color overlay above the template `count` times. Each cycle takes
+   * `durationMs` (split evenly between opacity 0→1 and 1→0). The overlay is
+   * cleaned up when the animation finishes; calling again while a previous
+   * blink is still running cancels the old one and starts fresh so two
+   * rapid takes don't visibly stack.
+   */
+  playBlink(opts: BlinkOnTake): Promise<void>;
   /** Seek a named timeline to a given time (for editor scrubbing). */
   seek(timeline: "in" | "out", time: number): void;
   /** Hot-update field-bound text/image content without re-animating. */
@@ -111,6 +120,32 @@ export type MountedTemplate = {
   /** Tear down: remove from DOM and kill timelines. */
   destroy(): void;
 };
+
+/**
+ * Inject the blink keyframes once per document. Using a CSS animation (vs.
+ * a GSAP tween) sidesteps a subtle problem we hit with GSAP: the new tween
+ * would race with playIn / songFade GSAP work and sometimes never paint the
+ * intermediate frame. CSS keyframes are owned by the browser scheduler and
+ * always paint.
+ *
+ * 0% / 100% are at opacity 0 so the overlay vanishes cleanly between (and
+ * after) cycles. 50% is the peak — the animation runs `count` iterations,
+ * each `durationMs`, so one cycle = "off → on → off".
+ */
+const BLINK_KEYFRAMES = `@keyframes overlaysys-blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}`;
+let blinkKeyframesInjected = false;
+function ensureBlinkKeyframes(): void {
+  if (blinkKeyframesInjected) return;
+  if (typeof document === "undefined") return;
+  const style = document.createElement("style");
+  style.dataset["overlaysysBlinkKeyframes"] = "1";
+  style.textContent = BLINK_KEYFRAMES;
+  document.head.appendChild(style);
+  blinkKeyframesInjected = true;
+}
 
 export function mountTemplate(
   host: HTMLElement,
@@ -125,7 +160,7 @@ export function mountTemplate(
   // visible effect is a brief FOUT on the very first mount of a template
   // that uses a not-yet-cached font.
   void ensureTemplateFonts(template);
-  const { root, nodes } = buildTemplateDom(template, merged);
+  const { root, nodes, timeBindings } = buildTemplateDom(template, merged);
   host.appendChild(root);
 
   // Edit mode wants clicks on layers to reach the editor's pointerdown
@@ -139,6 +174,64 @@ export function mountTemplate(
   // explicitly via seek() so they own the "design pose" semantics.
 
   let currentData = merged;
+
+  // Blink overlay state. We share one overlay div across rapid re-takes;
+  // restarting the CSS animation just resets the same node rather than
+  // accumulating layers.
+  ensureBlinkKeyframes();
+  let blinkOverlay: HTMLElement | null = null;
+  let blinkTimeout: ReturnType<typeof setTimeout> | null = null;
+  function ensureBlinkOverlay(color: string): HTMLElement {
+    if (!blinkOverlay) {
+      const div = document.createElement("div");
+      div.dataset["overlaysysBlink"] = "1";
+      div.style.position = "absolute";
+      div.style.inset = "0";
+      div.style.pointerEvents = "none";
+      // High enough to sit above every layer but still inside the stage's
+      // overflow:hidden clip so the flash doesn't leak past the 1920×1080
+      // box in the editor.
+      div.style.zIndex = "9999";
+      div.style.opacity = "0";
+      root.appendChild(div);
+      blinkOverlay = div;
+    }
+    blinkOverlay.style.background = color;
+    return blinkOverlay;
+  }
+
+  // Per-frame ticker for time-typed fields. Cheap when `timeBindings` is
+  // empty (no template has time fields → no rAF scheduled). When there ARE
+  // bindings, one rAF callback updates every span; we de-dupe writes by
+  // comparing against the last value so the browser doesn't repaint when
+  // the display string hasn't changed (e.g. between frames within the same
+  // wall second).
+  let rafId: number | null = null;
+  const lastWritten = new WeakMap<HTMLElement, string>();
+  function tick(): void {
+    const now = Date.now();
+    for (const b of timeBindings) {
+      const next = computeTimeDisplay(b.field, currentData[b.field.key], now);
+      if (lastWritten.get(b.el) !== next) {
+        b.el.textContent = next;
+        lastWritten.set(b.el, next);
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+  function startTicker(): void {
+    if (rafId != null || timeBindings.length === 0) return;
+    // Write once synchronously so the first frame paints correct values
+    // instead of whatever resolveBinding produced from the raw anchor string.
+    tick();
+  }
+  function stopTicker(): void {
+    if (rafId != null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+  }
+  startTicker();
 
   return {
     root,
@@ -163,6 +256,39 @@ export function mountTemplate(
       if (outTl.duration() === 0) return playDefaultOut(root);
       return playFromStart(outTl);
     },
+    playBlink(opts) {
+      // Disabled, or pathological config — render nothing rather than no-op
+      // silently, since the caller relies on this being cheap to call.
+      if (!opts.enabled) return Promise.resolve();
+      const count = Math.max(1, Math.floor(opts.count));
+      const cycleMs = Math.max(50, opts.durationMs);
+      const overlay = ensureBlinkOverlay(opts.color);
+
+      // Cancel any in-flight blink: clear the pending completion timeout and
+      // wipe the CSS animation. Without the reflow before re-applying, a
+      // rapid re-take wouldn't restart the animation — CSS only restarts on
+      // a change, and going from `animation: …` to itself is a no-change.
+      if (blinkTimeout) {
+        clearTimeout(blinkTimeout);
+        blinkTimeout = null;
+      }
+      overlay.style.animation = "none";
+      overlay.style.opacity = "0";
+      // Force a layout flush so the browser sees the "none" state before
+      // we re-assign the animation property.
+      void overlay.offsetHeight;
+      overlay.style.animation = `overlaysys-blink ${cycleMs}ms ease ${count}`;
+
+      const totalMs = cycleMs * count;
+      return new Promise<void>((resolve) => {
+        blinkTimeout = setTimeout(() => {
+          blinkTimeout = null;
+          overlay.style.animation = "none";
+          overlay.style.opacity = "0";
+          resolve();
+        }, totalMs + 16);
+      });
+    },
     seek(which, time) {
       const tl = which === "in" ? inTl : outTl;
       tl.pause();
@@ -175,6 +301,11 @@ export function mountTemplate(
       updateTemplateData(template, currentData, nodes as LayerNodeMap);
     },
     destroy() {
+      stopTicker();
+      if (blinkTimeout) {
+        clearTimeout(blinkTimeout);
+        blinkTimeout = null;
+      }
       inTl.kill();
       outTl.kill();
       root.remove();

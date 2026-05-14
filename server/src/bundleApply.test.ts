@@ -158,6 +158,7 @@ describe("liftHotcard / liftShow", () => {
     const h: Hotcard = {
       id: "h1",
       name: "h",
+      projectId: "default",
       templateId: "t1",
       data: { logo: ONE_PX_PNG_DATA_URL, title: "Hello" },
     };
@@ -170,6 +171,7 @@ describe("liftHotcard / liftShow", () => {
     const s: Show = {
       id: "s1",
       name: "s",
+      projectId: "default",
       rows: [
         { kind: "graphic", id: "r1", templateId: "t1", data: { logo: ONE_PX_PNG_DATA_URL } },
         { kind: "song", id: "r2", songId: "song-x", lyricTemplateId: "t1" },
@@ -215,6 +217,7 @@ describe("rewriteAssetUrlsIn*", () => {
     const h: Hotcard = {
       id: "h",
       name: "h",
+      projectId: "default",
       templateId: "t1",
       data: { logo: `/assets/${ONE_PX_PNG_SHA}.png` },
     };
@@ -226,6 +229,7 @@ describe("rewriteAssetUrlsIn*", () => {
     const s: Show = {
       id: "s",
       name: "s",
+      projectId: "default",
       rows: [
         { kind: "graphic", id: "r", templateId: "t1", data: { title: "hi", external: "https://x.com" } },
       ],

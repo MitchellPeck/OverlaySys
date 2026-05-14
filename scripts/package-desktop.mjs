@@ -62,10 +62,33 @@ async function exists(p) {
 
 async function main() {
   // 1. Operator static export.
+  //
+  // Next.js 14+ errors on `output: "export"` when any route handlers exist
+  // (the cloud-only signed-upload endpoint at app/api/assets/signed-upload).
+  // Move the api/ folder aside before the build and put it back after, so
+  // the static export tree has no route handlers but the source remains.
   await step("operator → static export", async () => {
-    await run("pnpm", ["--filter", "operator", "exec", "next", "build"], {
-      env: { NEXT_BUILD_STATIC: "1" },
-    });
+    const apiDir = path.join(REPO_ROOT, "apps", "operator", "src", "app", "api");
+    const apiDirTmp = path.join(
+      REPO_ROOT,
+      "apps",
+      "operator",
+      "src",
+      "_api-staging",
+    );
+    const hasApi = await exists(apiDir);
+    if (hasApi) {
+      await fs.rename(apiDir, apiDirTmp);
+    }
+    try {
+      await run("pnpm", ["--filter", "operator", "exec", "next", "build"], {
+        env: { NEXT_BUILD_STATIC: "1" },
+      });
+    } finally {
+      if (hasApi) {
+        await fs.rename(apiDirTmp, apiDir);
+      }
+    }
   });
 
   // 2. Renderer build.
@@ -76,6 +99,41 @@ async function main() {
   // 3. Electron main/preload compile.
   await step("desktop → tsc", async () => {
     await run("pnpm", ["--filter", "@overlaysys/desktop", "build"]);
+  });
+
+  // 3b. Bake env values from apps/desktop/.env into the dist tree so the
+  // packaged app ships with the values inline — no per-machine config
+  // needed. Source .env files are NOT included in the build; only the
+  // generated JSON is. `.env.local` wins over `.env` (matches the
+  // runtime loader's precedence in main.ts).
+  await step("desktop → bake env", async () => {
+    const desktopRoot = path.join(REPO_ROOT, "apps", "desktop");
+    const baked = {};
+    for (const fname of [".env", ".env.local"]) {
+      const file = path.join(desktopRoot, fname);
+      const raw = await fs.readFile(file, "utf8").catch(() => null);
+      if (raw === null) continue;
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq < 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let value = trimmed.slice(eq + 1).trim();
+        if (
+          (value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))
+        ) {
+          value = value.slice(1, -1);
+        }
+        if (key) baked[key] = value;
+      }
+    }
+    const out = path.join(desktopRoot, "dist", "baked-env.json");
+    await fs.writeFile(out, JSON.stringify(baked, null, 2), "utf8");
+    process.stdout.write(
+      `  wrote ${Object.keys(baked).length} key(s) to dist/baked-env.json\n`,
+    );
   });
 
   // 4. Reset the staged dir.

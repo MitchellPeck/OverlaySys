@@ -52,12 +52,19 @@ export function Rundown() {
       const row = show.rows.find((r) => r.id === selectedRowId);
       if (!row) return;
       if (row.kind === "song") {
-        send({ type: "song_take", channel: "preview", showId: show.id, songRowId: row.id });
+        send({
+          type: "song_take",
+          channel: row.channelHint ?? "preview",
+          showId: show.id,
+          songRowId: row.id,
+        });
         return;
       }
       send({
-        type: "cue", channel: "preview",
-        templateId: row.templateId, data: row.data,
+        type: "cue",
+        channel: row.channelHint ?? "preview",
+        templateId: row.templateId,
+        data: row.data,
       });
       return;
     }
@@ -86,13 +93,15 @@ export function Rundown() {
           showId: show.id,
           songRowId: row.id,
           fromChannel: "preview",
-          toChannel: "program",
+          toChannel: row.channelHint ?? "program",
         });
         return;
       }
       send({
-        type: "take", channel: "program",
-        templateId: row.templateId, data: row.data,
+        type: "take",
+        channel: row.channelHint ?? "program",
+        templateId: row.templateId,
+        data: row.data,
       });
       return;
     }
@@ -142,7 +151,7 @@ export function Rundown() {
                       showId: show.id,
                       songRowId: row.id,
                       fromChannel: "preview",
-                      toChannel: "program",
+                      toChannel: row.channelHint ?? "program",
                     });
                   }}
                   style={{
@@ -182,7 +191,7 @@ export function Rundown() {
                   setSelectedRow(row.id);
                   send({
                     type: "take",
-                    channel: "program",
+                    channel: row.channelHint ?? "program",
                     templateId: row.templateId,
                     data: row.data,
                   });

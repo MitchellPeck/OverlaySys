@@ -2,6 +2,7 @@
 
 import { WsClient, defaultServerUrl } from "./wsClient";
 import { useStore } from "./store";
+import { isCloudMode } from "./mode";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 const CHANNELS_TO_WATCH = ["program", "preview"] as const;
@@ -20,9 +21,20 @@ export function getClient(): WsClient {
  * Bootstrap the WS singleton: register listeners and open the connection.
  * Module-scoped so it runs exactly once per browser tab, regardless of how
  * many times useWs is mounted across page navigations.
+ *
+ * In cloud mode this is a no-op — there's no local WS server to connect
+ * to. Cloud-mode pages read data through lib/cloudData.ts instead.
  */
 function bootstrap(): void {
   if (bootstrapped || typeof window === "undefined") return;
+  if (isCloudMode()) {
+    // Mark bootstrapped so we don't keep re-entering, but skip the actual
+    // connection. The store's `conn` field stays as "connecting" forever
+    // in cloud mode; UI gates that surface a WS connection state check it
+    // via isCloudMode() instead (Phase 3 components).
+    bootstrapped = true;
+    return;
+  }
   bootstrapped = true;
   const client = getClient();
 
@@ -40,6 +52,7 @@ function bootstrap(): void {
         client.send({ type: "list_songs" });
         client.send({ type: "list_hotcards" });
         client.send({ type: "list_channels" });
+        client.send({ type: "list_projects" });
         client.send({ type: "stt_spawner_get_config" });
         break;
       case "state":
@@ -70,6 +83,15 @@ function bootstrap(): void {
         break;
       case "hotcard":
         store.setHotcard(msg.hotcard);
+        break;
+      case "project_list":
+        store.setProjects(msg.projects);
+        break;
+      case "project":
+        // Re-fetch the full list so additions and renames show up everywhere
+        // a `projects` selector is mounted — the discriminated union doesn't
+        // give us a per-id update store slice today.
+        client.send({ type: "list_projects" });
         break;
       case "channel_list":
         store.setChannelConfigs(msg.configs);
@@ -113,5 +135,10 @@ function bootstrap(): void {
 
 export function useWs(): { send: (msg: ClientMessage) => void } {
   bootstrap();
+  if (isCloudMode()) {
+    // No WS in cloud mode. Returning a no-op send keeps existing call sites
+    // type-safe while we migrate them to cloud-aware data paths page by page.
+    return { send: () => {} };
+  }
   return { send: (msg) => getClient().send(msg) };
 }

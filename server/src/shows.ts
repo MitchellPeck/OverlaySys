@@ -27,12 +27,13 @@ async function ensureLoaded(): Promise<void> {
 }
 
 export async function listShowMetas(): Promise<
-  { id: string; name: string; rowCount: number }[]
+  { id: string; name: string; projectId: string; rowCount: number }[]
 > {
   await ensureLoaded();
   return Array.from(REGISTRY.values()).map((s) => ({
     id: s.id,
     name: s.name,
+    projectId: s.projectId,
     rowCount: s.rows.length,
   }));
 }
@@ -61,6 +62,7 @@ export async function duplicateShow(sourceId: string): Promise<Show | null> {
   const copy: Show = {
     id: `show-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
+    projectId: src.projectId,
     rows: src.rows.map((row) => ({ ...row, id: randomUUID() })),
   };
   await storage.saveShow(copy);

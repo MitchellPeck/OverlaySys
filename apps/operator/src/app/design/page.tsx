@@ -10,6 +10,13 @@ import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { downloadJson } from "@/lib/download";
 import { AppHeader } from "@/app/components/AppHeader";
+import { isCloudMode } from "@/lib/mode";
+import {
+  deleteTemplateCloud,
+  getTemplateCloud,
+  refreshTemplateMetasCloud,
+  saveTemplateCloud,
+} from "@/lib/cloudData";
 
 export default function DesignIndexPage() {
   const router = useRouter();
@@ -17,29 +24,84 @@ export default function DesignIndexPage() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const [busy, setBusy] = useState(false);
-  const { confirm, dialog } = useDialog();
+  const { alert, confirm, dialog } = useDialog();
+  const cloud = isCloudMode();
+
+  async function showError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[design] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   useEffect(() => {
-    if (conn === "open") send({ type: "list_templates" });
-  }, [conn, send]);
+    if (cloud) {
+      refreshTemplateMetasCloud().catch((err) =>
+        console.warn("[design] cloud list failed", err),
+      );
+    } else if (conn === "open") {
+      send({ type: "list_templates" });
+    }
+  }, [cloud, conn, send]);
 
-  function createNew() {
+  async function createNew() {
     if (busy) return;
     setBusy(true);
     const id = `template-${uuid().slice(0, 8)}`;
     const tpl = blankTemplate(id, "Untitled");
-    send({ type: "save_template", template: tpl });
-    setTimeout(() => {
-      router.push(`/design/edit?id=${encodeURIComponent(id)}`);
-    }, 150);
+    try {
+      if (cloud) {
+        await saveTemplateCloud(tpl);
+        await refreshTemplateMetasCloud();
+        router.push(`/design/edit?id=${encodeURIComponent(id)}`);
+      } else {
+        send({ type: "save_template", template: tpl });
+        setTimeout(() => {
+          router.push(`/design/edit?id=${encodeURIComponent(id)}`);
+        }, 150);
+      }
+    } catch (err) {
+      setBusy(false);
+      await showError("create", err);
+    }
   }
 
-  function duplicate(id: string) {
+  async function duplicate(id: string) {
+    if (cloud) {
+      try {
+        const src = await getTemplateCloud(id);
+        if (!src) throw new Error("source template not found");
+        const copyId = `template-${uuid().slice(0, 8)}`;
+        // Editor-kit's blankTemplate isn't quite the right shape for a
+        // full duplicate — just spread + new id + " (copy)" name.
+        const copy = { ...src, id: copyId, name: `${src.name} (copy)` };
+        await saveTemplateCloud(copy);
+        await refreshTemplateMetasCloud();
+      } catch (err) {
+        await showError("duplicate", err);
+      }
+      return;
+    }
     if (conn !== "open") return;
     send({ type: "duplicate_template", templateId: id });
   }
 
-  function exportTemplate(id: string) {
+  async function exportTemplate(id: string) {
+    if (cloud) {
+      try {
+        const t = await getTemplateCloud(id);
+        if (t) downloadJson(`${id}.json`, t);
+      } catch (err) {
+        await showError("export", err);
+      }
+      return;
+    }
     const cached = useStore.getState().templateCache[id];
     if (cached) {
       downloadJson(`${id}.json`, cached);
@@ -68,7 +130,17 @@ export default function DesignIndexPage() {
       confirmLabel: "Delete",
       destructive: true,
     });
-    if (ok) send({ type: "delete_template", templateId });
+    if (!ok) return;
+    if (cloud) {
+      try {
+        await deleteTemplateCloud(templateId);
+        await refreshTemplateMetasCloud();
+      } catch (err) {
+        await showError("delete", err);
+      }
+      return;
+    }
+    send({ type: "delete_template", templateId });
   }
 
   return (
@@ -78,7 +150,7 @@ export default function DesignIndexPage() {
         actions={
           <Button
             onClick={createNew}
-            disabled={conn !== "open" || busy}
+            disabled={(!cloud && conn !== "open") || busy}
             variant="primary"
             size="sm"
           >

@@ -16,6 +16,17 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { downloadJson } from "@/lib/download";
 import { fetchAssetBase64 } from "@/lib/assetTransfer";
+import { isCloudMode } from "@/lib/mode";
+import {
+  getHotcardCloud,
+  getShowCloud,
+  getSongCloud,
+  getTemplateCloud,
+  refreshHotcardMetasCloud,
+  refreshShowMetasCloud,
+  refreshSongMetasCloud,
+  refreshTemplateMetasCloud,
+} from "@/lib/cloudData";
 
 type Tab = "songs" | "shows" | "hotcards" | "templates";
 
@@ -50,14 +61,25 @@ export function ExportBundle() {
   const requestedShows = useRef<Set<string>>(new Set());
   const requestedHotcards = useRef<Set<string>>(new Set());
 
+  const cloud = isCloudMode();
+
   // Hydrate the lists once when the page opens.
   useEffect(() => {
+    if (cloud) {
+      Promise.all([
+        refreshSongMetasCloud(),
+        refreshShowMetasCloud(),
+        refreshTemplateMetasCloud(),
+        refreshHotcardMetasCloud(),
+      ]).catch((err) => console.warn("[export] cloud list failed", err));
+      return;
+    }
     if (conn !== "open") return;
     send({ type: "list_songs" });
     send({ type: "list_shows" });
     send({ type: "list_templates" });
     send({ type: "list_hotcards" });
-  }, [conn, send]);
+  }, [cloud, conn, send]);
 
   const storeSnapshot = useMemo(
     () => ({
@@ -129,21 +151,53 @@ export function ExportBundle() {
   function fetchSong(id: string): void {
     if (songCache[id] || requestedSongs.current.has(id)) return;
     requestedSongs.current.add(id);
+    if (cloud) {
+      getSongCloud(id)
+        .then((s) => {
+          if (s) useStore.getState().setSong(s);
+        })
+        .catch((err) => console.warn(`[export] song ${id}`, err));
+      return;
+    }
     send({ type: "get_song", songId: id });
   }
   function fetchTemplate(id: string): void {
     if (templateCache[id] || requestedTemplates.current.has(id)) return;
     requestedTemplates.current.add(id);
+    if (cloud) {
+      getTemplateCloud(id)
+        .then((t) => {
+          if (t) useStore.getState().setTemplate(t);
+        })
+        .catch((err) => console.warn(`[export] template ${id}`, err));
+      return;
+    }
     send({ type: "get_template", templateId: id });
   }
   function fetchShow(id: string): void {
     if (showCache[id] || requestedShows.current.has(id)) return;
     requestedShows.current.add(id);
+    if (cloud) {
+      getShowCloud(id)
+        .then((s) => {
+          if (s) useStore.getState().setShowFull(s);
+        })
+        .catch((err) => console.warn(`[export] show ${id}`, err));
+      return;
+    }
     send({ type: "get_show", showId: id });
   }
   function fetchHotcard(id: string): void {
     if (hotcardCache[id] || requestedHotcards.current.has(id)) return;
     requestedHotcards.current.add(id);
+    if (cloud) {
+      getHotcardCloud(id)
+        .then((h) => {
+          if (h) useStore.getState().setHotcard(h);
+        })
+        .catch((err) => console.warn(`[export] hotcard ${id}`, err));
+      return;
+    }
     send({ type: "get_hotcard", hotcardId: id });
   }
 
@@ -153,16 +207,16 @@ export function ExportBundle() {
   // found locally" warning never has a chance to appear. Same logic for
   // hotcards so asset collection sees their data.
   useEffect(() => {
-    if (conn !== "open") return;
+    if (!cloud && conn !== "open") return;
     for (const s of songsList) fetchSong(s.id);
     for (const t of templates) fetchTemplate(t.id);
     for (const h of hotcardsList) fetchHotcard(h.id);
     // fetchSong/fetchTemplate read from refs + caches; explicit deps below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conn, send, songsList, templates, hotcardsList, songCache, templateCache, hotcardCache]);
+  }, [cloud, conn, send, songsList, templates, hotcardsList, songCache, templateCache, hotcardCache]);
 
   useEffect(() => {
-    if (conn !== "open") return;
+    if (!cloud && conn !== "open") return;
     for (const id of selectedSongs) fetchSong(id);
     for (const id of selectedShows) fetchShow(id);
     for (const id of selectedTemplates) fetchTemplate(id);

@@ -177,6 +177,12 @@ export function Renderer({ channel, debug = false }: Props) {
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
         m.playIn().catch(() => {});
+        // Blink overlay fires in parallel with playIn so the IN animation
+        // continues underneath. Catch to keep the takenAt flow alive if the
+        // blink tween errors for any reason.
+        if (tpl.blinkOnTake?.enabled) {
+          m.playBlink(tpl.blinkOnTake).catch(() => {});
+        }
 
         if (sessionStart) {
           requestAnimationFrame(() => {

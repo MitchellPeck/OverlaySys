@@ -95,7 +95,10 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
           <BindingControl
             template={template}
             value={layer.content}
-            allowedTypes={["text"]}
+            // Time fields render as a string each frame, so they're a valid
+            // source for a text layer's content — that's how countdowns /
+            // clocks attach to a styled text layer.
+            allowedTypes={["text", "time"]}
             onChange={(v) => patchLayer({ content: v } as Partial<Layer>)}
           />
           <NumberRow
@@ -618,7 +621,7 @@ function BindingControl({
   template: Template;
   label?: string;
   value: string | { fieldKey: string };
-  allowedTypes: ("text" | "image" | "color" | "number" | "video")[];
+  allowedTypes: ("text" | "image" | "color" | "number" | "video" | "time")[];
   /** Which input control to use when the value is a literal string. */
   literalKind?: "text" | "color" | "image" | "video";
   onChange: (v: string | { fieldKey: string }) => void;

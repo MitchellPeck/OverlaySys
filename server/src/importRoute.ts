@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type {
   Hotcard,
+  Project,
   Show,
   Song,
   Template,
@@ -9,6 +10,7 @@ import * as templates from "./templates";
 import * as hotcards from "./hotcards";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import * as projects from "./projects";
 import * as bundleApply from "./bundleApply";
 import { broadcast } from "./broadcast";
 
@@ -36,6 +38,14 @@ interface ImportBody {
   hotcards?: Hotcard[];
   shows?: Show[];
   songs?: Song[];
+  /**
+   * Optional project descriptor carried in project bundles. When present, the
+   * project is upserted on import; any included shows/hotcards inherit its
+   * id (regardless of the projectId baked into the bundle entities) so a
+   * project re-imported to a fresh installation lands under a single project
+   * the operator can see.
+   */
+  project?: Project;
   assets?: { filename: string; data: string }[];
 }
 
@@ -46,6 +56,7 @@ interface ImportResponse {
     hotcards: number;
     shows: number;
     songs: number;
+    projects: number;
     assets: number;
   };
   errors: { kind: string; id: string; message: string }[];
@@ -61,13 +72,33 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         reply.code(400);
         return {
           ok: false,
-          counts: { templates: 0, hotcards: 0, shows: 0, songs: 0, assets: 0 },
+          counts: { templates: 0, hotcards: 0, shows: 0, songs: 0, projects: 0, assets: 0 },
           errors: [{ kind: "body", id: "", message: "expected JSON object" }],
         };
       }
 
       const errors: ImportResponse["errors"] = [];
-      const counts = { templates: 0, hotcards: 0, shows: 0, songs: 0, assets: 0 };
+      const counts = { templates: 0, hotcards: 0, shows: 0, songs: 0, projects: 0, assets: 0 };
+
+      // 0. If a project descriptor is present, upsert it first so the
+      //    incoming shows/hotcards can land under a project that exists.
+      //    `targetProjectId` is the slug we stamp on every imported show
+      //    and hotcard, overriding whatever projectId the bundle carried
+      //    so a re-import onto a fresh installation merges cleanly.
+      let targetProjectId: string | undefined;
+      if (body.project) {
+        try {
+          await projects.saveProject(body.project);
+          targetProjectId = body.project.id;
+          counts.projects += 1;
+        } catch (err) {
+          errors.push({
+            kind: "project",
+            id: body.project.id,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       // 1. Restore embedded assets first so any entities saved below that
       //    reference them resolve immediately.
@@ -119,7 +150,10 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       for (const h of body.hotcards ?? []) {
         try {
           const lifted = await bundleApply.liftHotcard(h);
-          await hotcards.saveHotcard(lifted);
+          const scoped = targetProjectId
+            ? { ...lifted, projectId: targetProjectId }
+            : lifted;
+          await hotcards.saveHotcard(scoped);
           counts.hotcards += 1;
         } catch (err) {
           errors.push({
@@ -133,7 +167,10 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       for (const sh of body.shows ?? []) {
         try {
           const lifted = await bundleApply.liftShow(sh);
-          await shows.saveShow(lifted);
+          const scoped = targetProjectId
+            ? { ...lifted, projectId: targetProjectId }
+            : lifted;
+          await shows.saveShow(scoped);
           counts.shows += 1;
         } catch (err) {
           errors.push({
@@ -158,6 +195,9 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       }
       if (counts.songs > 0) {
         broadcast({ type: "song_list", songs: await songs.listSongMetas() });
+      }
+      if (counts.projects > 0) {
+        broadcast({ type: "project_list", projects: await projects.listProjects() });
       }
 
       return { ok: errors.length === 0, counts, errors };

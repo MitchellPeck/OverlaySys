@@ -12,6 +12,7 @@ import * as templates from "./templates";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as hotcards from "./hotcards";
+import * as projects from "./projects";
 import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
@@ -188,6 +189,28 @@ export function handleConnection(
           const list = await shows.listShowMetas();
           broadcast({ type: "show_list", shows: list });
           broadcast({ type: "show", show: copy });
+          break;
+        }
+        case "list_projects": {
+          const list = await projects.listProjects();
+          send({ type: "project_list", projects: list });
+          break;
+        }
+        case "save_project": {
+          await projects.saveProject(parsed.project);
+          send({ type: "ack", op: "save_project", id: parsed.project.id });
+          broadcast({ type: "project", project: parsed.project });
+          const list = await projects.listProjects();
+          broadcast({ type: "project_list", projects: list });
+          break;
+        }
+        case "delete_project": {
+          const ok = await projects.deleteProject(parsed.projectId);
+          send({ type: "ack", op: "delete_project", id: parsed.projectId });
+          if (ok) {
+            const list = await projects.listProjects();
+            broadcast({ type: "project_list", projects: list });
+          }
           break;
         }
         case "list_hotcards": {

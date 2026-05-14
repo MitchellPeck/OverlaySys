@@ -1,6 +1,8 @@
 "use client";
 
 import { defaultServerUrl } from "./wsClient";
+import { isCloudMode } from "./mode";
+import { resolveAssetUrlCloud, uploadAssetCloud } from "./cloudData";
 
 /**
  * Derive the HTTP base for asset uploads from the WS URL the operator is
@@ -31,14 +33,21 @@ export type UploadResult = {
 };
 
 /**
- * Upload a binary file to the server's content-addressed asset store.
- * Returns a relative URL like `/assets/<sha256>.<ext>` that's safe to embed
- * in templates — the renderer/canvas resolves it against the same origin.
+ * Upload a binary file to the content-addressed asset store. In local
+ * mode that's the Fastify server's `/api/assets` endpoint; in cloud mode
+ * it's Supabase Storage's `overlaysys-assets` bucket. Returns the same
+ * shape either way: a relative URL like `/assets/<sha256>.<ext>` that's
+ * safe to embed in template payloads. `resolveAssetUrl` rewrites that
+ * relative path to whatever host actually serves the bytes.
  *
  * Throws on network failure or non-2xx responses; the caller is responsible
  * for surfacing the error to the user.
  */
 export async function uploadAsset(file: File): Promise<UploadResult> {
+  if (isCloudMode()) {
+    return uploadAssetCloud(file);
+  }
+
   const fd = new FormData();
   fd.append("file", file, file.name);
 
@@ -78,6 +87,9 @@ export async function uploadAsset(file: File): Promise<UploadResult> {
  */
 export function resolveAssetUrl(stored: string): string {
   if (!stored) return stored;
+  if (isCloudMode()) {
+    return resolveAssetUrlCloud(stored);
+  }
   if (stored.startsWith("/assets/")) return `${httpBase()}${stored}`;
   return stored;
 }

@@ -80,4 +80,23 @@ describe("ShowSchema (legacy compat)", () => {
     expect(show.rows[0]!.kind).toBe("graphic");
     expect(show.rows[1]!.kind).toBe("song");
   });
+
+  it("backfills missing projectId to the default project", () => {
+    const show = ShowSchema.parse({
+      id: "s1",
+      name: "Service",
+      rows: [],
+    });
+    expect(show.projectId).toBe("default");
+  });
+
+  it("preserves explicit projectId on read", () => {
+    const show = ShowSchema.parse({
+      id: "s1",
+      name: "Service",
+      projectId: "christmas-eve",
+      rows: [],
+    });
+    expect(show.projectId).toBe("christmas-eve");
+  });
 });

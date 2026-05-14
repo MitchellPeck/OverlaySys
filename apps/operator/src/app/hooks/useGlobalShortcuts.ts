@@ -83,14 +83,14 @@ export function useGlobalShortcuts(): void {
         if (row && row.kind === "graphic") {
           client.send({
             type: "cue",
-            channel: "preview",
+            channel: row.channelHint ?? "preview",
             templateId: row.templateId,
             data: row.data,
           });
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",
-            channel: "program",
+            channel: row.channelHint ?? "preview",
             showId: show.id,
             songRowId: row.id,
           });
@@ -107,14 +107,14 @@ export function useGlobalShortcuts(): void {
         if (row && row.kind === "graphic") {
           client.send({
             type: "take",
-            channel: "program",
+            channel: row.channelHint ?? "program",
             templateId: row.templateId,
             data: row.data,
           });
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",
-            channel: "program",
+            channel: row.channelHint ?? "program",
             showId: show.id,
             songRowId: row.id,
           });

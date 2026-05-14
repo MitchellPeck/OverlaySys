@@ -6,6 +6,7 @@ import {
   ShowSchema,
   SongSchema,
   HotcardSchema,
+  ProjectSchema,
   SttSpawnerConfigSchema,
   SttSpawnerStatusSchema,
   type TemplateMeta,
@@ -54,6 +55,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("save_show"), show: ShowSchema }),
   z.object({ type: z.literal("delete_show"), showId: z.string() }),
   z.object({ type: z.literal("duplicate_show"), showId: z.string() }),
+  z.object({ type: z.literal("list_projects") }),
+  z.object({ type: z.literal("save_project"), project: ProjectSchema }),
+  z.object({ type: z.literal("delete_project"), projectId: z.string() }),
   z.object({ type: z.literal("list_hotcards") }),
   z.object({ type: z.literal("get_hotcard"), hotcardId: z.string() }),
   z.object({ type: z.literal("save_hotcard"), hotcard: HotcardSchema }),
@@ -166,6 +170,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
         id: z.string(),
         name: z.string(),
         size: z.object({ w: z.number(), h: z.number() }),
+        defaultChannel: z.string().optional(),
       }),
     ),
   }),
@@ -175,11 +180,26 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("show_list"),
-    shows: z.array(z.object({ id: z.string(), name: z.string(), rowCount: z.number() })),
+    shows: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        projectId: z.string(),
+        rowCount: z.number(),
+      }),
+    ),
   }),
   z.object({
     type: z.literal("show"),
     show: ShowSchema,
+  }),
+  z.object({
+    type: z.literal("project_list"),
+    projects: z.array(ProjectSchema),
+  }),
+  z.object({
+    type: z.literal("project"),
+    project: ProjectSchema,
   }),
   z.object({
     type: z.literal("song_list"),
@@ -202,6 +222,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
       z.object({
         id: z.string(),
         name: z.string(),
+        projectId: z.string(),
         templateId: z.string(),
       }),
     ),

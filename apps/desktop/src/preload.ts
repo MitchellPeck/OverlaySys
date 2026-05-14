@@ -13,6 +13,13 @@ interface ChannelWindowOptions {
   transparent?: boolean;
 }
 
+interface CloudTokens {
+  accessToken: string;
+  refreshToken: string;
+  registryOrgId: string | null;
+  storedAt: number;
+}
+
 interface OverlaysysApi {
   /**
    * Open a renderer window for the given channel. If a window for that
@@ -45,6 +52,27 @@ interface OverlaysysApi {
    */
   onChannelWindowOpened(fn: (channelId: string) => void): () => void;
   onChannelWindowClosed(fn: (channelId: string) => void): () => void;
+
+  /**
+   * Start the cloud sign-in flow: opens the system browser at
+   * apps.mitchellpeck.com with a localhost-loopback return URL. Resolves
+   * once the user finishes; rejects on timeout or on flow abort.
+   */
+  cloudSignIn(): Promise<
+    | { ok: true; tokens: CloudTokens }
+    | { ok: false; error: string }
+  >;
+
+  /** Read the persisted cloud session (null if not signed in). */
+  cloudGetTokens(): Promise<CloudTokens | null>;
+
+  /** Clear the stored cloud session. */
+  cloudSignOut(): Promise<void>;
+
+  /** Subscribe to the "tokens just arrived" event after a successful sign-in. */
+  onCloudSignedIn(fn: (tokens: CloudTokens) => void): () => void;
+  /** Subscribe to sign-out events. */
+  onCloudSignedOut(fn: () => void): () => void;
 }
 
 const api: OverlaysysApi = {
@@ -66,6 +94,21 @@ const api: OverlaysysApi = {
     const handler = (_event: Electron.IpcRendererEvent, channelId: string) => fn(channelId);
     ipcRenderer.on("overlaysys:channel-window-closed", handler);
     return () => ipcRenderer.removeListener("overlaysys:channel-window-closed", handler);
+  },
+
+  cloudSignIn: () => ipcRenderer.invoke("overlaysys:cloud-sign-in"),
+  cloudGetTokens: () => ipcRenderer.invoke("overlaysys:cloud-get-tokens"),
+  cloudSignOut: () => ipcRenderer.invoke("overlaysys:cloud-sign-out"),
+  onCloudSignedIn: (fn) => {
+    const handler = (_event: Electron.IpcRendererEvent, tokens: CloudTokens) =>
+      fn(tokens);
+    ipcRenderer.on("overlaysys:cloud-signed-in", handler);
+    return () => ipcRenderer.removeListener("overlaysys:cloud-signed-in", handler);
+  },
+  onCloudSignedOut: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("overlaysys:cloud-signed-out", handler);
+    return () => ipcRenderer.removeListener("overlaysys:cloud-signed-out", handler);
   },
 };
 

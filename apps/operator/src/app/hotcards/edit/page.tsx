@@ -3,13 +3,23 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { produce } from "immer";
-import type { Hotcard, Template } from "@overlaysys/core";
+import type { ChannelConfig, Hotcard, Template } from "@overlaysys/core";
 import { Button, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { isCloudMode } from "@/lib/mode";
+import {
+  deleteHotcardCloud,
+  getHotcardCloud,
+  getHotcardUpdatedAtCloud,
+  getTemplateCloud,
+  refreshHotcardMetasCloud,
+  refreshTemplateMetasCloud,
+  saveHotcardCloud,
+} from "@/lib/cloudData";
 
 export default function HotcardEditPage() {
   return (
@@ -27,15 +37,37 @@ function HotcardEditPageInner() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
+  const setTemplate = useStore((s) => s.setTemplate);
+  const channelConfigs = useStore((s) => s.channelConfigs);
+  const takeableChannels = useMemo(
+    () => channelConfigs.filter((c) => !c.mirrorOf),
+    [channelConfigs],
+  );
   const [draft, setDraft] = useState<Hotcard | null>(null);
   const [dirty, setDirty] = useState(false);
   const fetchedRef = useRef<string | null>(null);
-  const { confirm, dialog } = useDialog();
+  const loadedAtRef = useRef<string | null>(null);
+  const { alert, confirm, dialog } = useDialog();
+  const cloud = isCloudMode();
+
+  async function showCloudError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[hotcards/edit] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   useEffect(() => {
     fetchedRef.current = null;
     setDraft(null);
     setDirty(false);
+    if (cloud) return;
     const off = getClient().on((msg) => {
       if (msg.type === "hotcard" && msg.hotcard.id === hotcardId) {
         if (!dirty) setDraft(msg.hotcard);
@@ -43,22 +75,48 @@ function HotcardEditPageInner() {
     });
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotcardId]);
+  }, [hotcardId, cloud]);
 
   useEffect(() => {
+    if (cloud) {
+      if (fetchedRef.current === hotcardId) return;
+      fetchedRef.current = hotcardId;
+      Promise.all([
+        getHotcardCloud(hotcardId),
+        getHotcardUpdatedAtCloud(hotcardId),
+        refreshTemplateMetasCloud(),
+      ])
+        .then(([h, updatedAt]) => {
+          if (h) setDraft(h);
+          loadedAtRef.current = updatedAt;
+        })
+        .catch((err) => console.warn("[hotcards/edit] cloud load failed", err));
+      return;
+    }
     if (conn !== "open") return;
     if (fetchedRef.current === hotcardId) return;
     fetchedRef.current = hotcardId;
     send({ type: "get_hotcard", hotcardId });
     send({ type: "list_templates" });
-  }, [conn, hotcardId, send]);
+  }, [cloud, conn, hotcardId, send]);
 
   useEffect(() => {
-    if (!draft || conn !== "open") return;
-    if (!templateCache[draft.templateId]) {
+    if (!draft) return;
+    if (templateCache[draft.templateId]) return;
+    if (cloud) {
+      getTemplateCloud(draft.templateId)
+        .then((t) => {
+          if (t) setTemplate(t);
+        })
+        .catch((err) =>
+          console.warn(`[hotcards/edit] template ${draft.templateId}`, err),
+        );
+      return;
+    }
+    if (conn === "open") {
       send({ type: "get_template", templateId: draft.templateId });
     }
-  }, [draft, templateCache, conn, send]);
+  }, [draft, templateCache, cloud, conn, send, setTemplate]);
 
   function update(recipe: (h: Hotcard) => void) {
     setDraft((cur) => {
@@ -70,16 +128,53 @@ function HotcardEditPageInner() {
     });
   }
 
-  function save() {
+  async function save() {
     if (!draft) return;
+    if (cloud) {
+      try {
+        if (loadedAtRef.current) {
+          const cur = await getHotcardUpdatedAtCloud(draft.id);
+          if (cur && cur > loadedAtRef.current) {
+            const ok = await confirm({
+              title: "Cloud has newer changes",
+              message: (
+                <>
+                  This hotcard was updated in the cloud after you loaded it.
+                  Save anyway and overwrite their changes?
+                </>
+              ),
+              confirmLabel: "Overwrite",
+              destructive: true,
+            });
+            if (!ok) return;
+          }
+        }
+        await saveHotcardCloud(draft);
+        await refreshHotcardMetasCloud();
+        loadedAtRef.current = await getHotcardUpdatedAtCloud(draft.id);
+        setDirty(false);
+      } catch (err) {
+        await showCloudError("save", err);
+      }
+      return;
+    }
     send({ type: "save_hotcard", hotcard: draft });
     setDirty(false);
   }
 
-  function revert() {
+  async function revert() {
     fetchedRef.current = null;
     setDraft(null);
     setDirty(false);
+    if (cloud) {
+      try {
+        const h = await getHotcardCloud(hotcardId);
+        if (h) setDraft(h);
+      } catch (err) {
+        await showCloudError("revert", err);
+      }
+      return;
+    }
     send({ type: "get_hotcard", hotcardId });
   }
 
@@ -96,6 +191,16 @@ function HotcardEditPageInner() {
       destructive: true,
     });
     if (!ok) return;
+    if (cloud) {
+      try {
+        await deleteHotcardCloud(draft.id);
+        await refreshHotcardMetasCloud();
+        router.push("/hotcards");
+      } catch (err) {
+        await showCloudError("delete", err);
+      }
+      return;
+    }
     send({ type: "delete_hotcard", hotcardId: draft.id });
     setTimeout(() => router.push("/hotcards"), 150);
   }
@@ -166,7 +271,12 @@ function HotcardEditPageInner() {
           <>
             <Button onClick={remove} variant="danger" size="sm">Delete</Button>
             <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button onClick={save} variant="primary" size="sm" disabled={!dirty || conn !== "open"}>
+            <Button
+              onClick={save}
+              variant="primary"
+              size="sm"
+              disabled={!dirty || (!cloud && conn !== "open")}
+            >
               Save (⌘S)
             </Button>
           </>
@@ -190,18 +300,15 @@ function HotcardEditPageInner() {
           </Row>
 
           <Row label="Channel hint">
-            <Select
-              value={draft.channelHint ?? ""}
-              onChange={(e) =>
+            <ChannelHintSelect
+              value={draft.channelHint}
+              onChange={(v) =>
                 update((h) => {
-                  h.channelHint = e.target.value ? e.target.value : undefined;
+                  h.channelHint = v;
                 })
               }
-            >
-              <option value="">(any)</option>
-              <option value="program">program</option>
-              <option value="preview">preview</option>
-            </Select>
+              channels={takeableChannels}
+            />
           </Row>
 
           <Row label="Notes">
@@ -263,6 +370,35 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
+  );
+}
+
+function ChannelHintSelect({
+  value,
+  onChange,
+  channels,
+}: {
+  value: string | undefined;
+  onChange: (v: string | undefined) => void;
+  channels: ChannelConfig[];
+}) {
+  const current = value ?? "";
+  const knownChannel = current && channels.some((c) => c.id === current);
+  return (
+    <Select
+      value={current}
+      onChange={(e) => onChange(e.target.value ? e.target.value : undefined)}
+    >
+      <option value="">(any)</option>
+      {!knownChannel && current && (
+        <option value={current}>{current} (missing)</option>
+      )}
+      {channels.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </Select>
   );
 }
 

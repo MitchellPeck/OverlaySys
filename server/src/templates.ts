@@ -36,6 +36,10 @@ export async function listTemplateMetas(): Promise<TemplateMeta[]> {
     id: t.id,
     name: t.name,
     size: t.size,
+    // Surface defaultChannel on the meta so callers (operator's rundown
+    // editor, take panel) can prefill channelHint without needing the
+    // template body in cache.
+    ...(t.defaultChannel ? { defaultChannel: t.defaultChannel } : {}),
   }));
 }
 

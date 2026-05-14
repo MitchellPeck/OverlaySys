@@ -21,6 +21,102 @@ import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
+import fs from "node:fs";
+import {
+  clearTokens as clearCloudTokens,
+  loadTokens as loadCloudTokens,
+  startSignIn as startCloudSignIn,
+} from "./cloudAuth";
+
+// ── .env loading ──────────────────────────────────────────────────────────
+//
+// Electron main is plain Node.js — `.env` isn't auto-loaded. Read
+// apps/desktop/.env and .env.local (if present) and merge into
+// process.env *before* anything else uses them, so cloudAuth and other
+// modules see OVERLAYSYS_REGISTRY_APP_ID etc.
+//
+// Search order, first hit wins per key:
+//   1. process.env (shell already-set wins; .env doesn't override)
+//   2. apps/desktop/.env.local (dev-only, gitignored)
+//   3. apps/desktop/.env (shared dev config)
+//
+// In packaged builds the .env files won't be present alongside main.js;
+// packaged users set env vars via the OS launcher or we'll surface a
+// settings UI later. Dev path is what matters here.
+function loadEnvFile(file: string): void {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return;
+  }
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    // Strip optional surrounding quotes.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key && !(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+// __dirname at runtime is `apps/desktop/dist` in dev, or the directory
+// containing main.js inside the asar in packaged builds. Both layouts
+// keep main.js next to baked-env.json (written by package-desktop.mjs)
+// and one level above any sibling `.env` (dev only).
+const desktopRoot = path.resolve(__dirname, "..");
+loadEnvFile(path.join(desktopRoot, ".env.local"));
+loadEnvFile(path.join(desktopRoot, ".env"));
+
+// Packaged builds ship `dist/baked-env.json` next to main.js. Source .env
+// files are NOT bundled into the asar — only the generated JSON is. The
+// values come from `apps/desktop/.env` at package time (see
+// scripts/package-desktop.mjs).
+function loadBakedEnv(file: string): void {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch {
+    return;
+  }
+  let parsed: Record<string, string>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return;
+  }
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "string" && key && !(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+loadBakedEnv(path.join(__dirname, "baked-env.json"));
+// Packaged-build fallback: user-writable env file. The path can't be
+// resolved until app.whenReady fires (getPath requires the app to be
+// initialized), so kick it off lazily once Electron is ready and re-apply
+// before any IPC handler that needs the values runs.
+let userDataEnvLoaded = false;
+function ensureUserDataEnv(): void {
+  if (userDataEnvLoaded) return;
+  userDataEnvLoaded = true;
+  try {
+    const userData = app.getPath("userData");
+    loadEnvFile(path.join(userData, ".env"));
+  } catch {
+    // app not ready yet — safe to retry on next call
+    userDataEnvLoaded = false;
+  }
+}
 
 const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 
@@ -103,7 +199,11 @@ function spawnServer(): Promise<{ port: number }> {
     // PORT=0 in env to fall back to an OS-assigned ephemeral port if
     // running multiple instances side-by-side.
     PORT: process.env["PORT"] ?? "4000",
-    HOST: "127.0.0.1",
+    // Bind to all interfaces so renderer windows and Companion/Stream Deck
+    // running on another machine on the LAN can reach the server. Local
+    // Electron windows still hit 127.0.0.1 fine since loopback is part of
+    // "all interfaces". Override with HOST=127.0.0.1 for loopback-only.
+    HOST: process.env["HOST"] ?? "0.0.0.0",
     NODE_PATH: sharedNodePath,
     OVERLAYSYS_DATA_DIR: userDataDir,
     OVERLAYSYS_FIXTURES_DIR: fixturesDir,
@@ -367,6 +467,32 @@ function registerIpc(): void {
       : `http://${serverHost}:${serverPort}/renderer/`,
     serverPort,
   }));
+
+  // ── Cloud auth ────────────────────────────────────────────────────────
+  // Sign-in opens the system browser at apps.mitchellpeck.com's
+  // /api/apps/<id>/open endpoint with a localhost loopback `return`
+  // URL. See src/cloudAuth.ts for the full flow.
+  ipcMain.handle("overlaysys:cloud-sign-in", async () => {
+    ensureUserDataEnv();
+    try {
+      const tokens = await startCloudSignIn();
+      return { ok: true, tokens };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("overlaysys:cloud-get-tokens", async () => {
+    ensureUserDataEnv();
+    return loadCloudTokens();
+  });
+
+  ipcMain.handle("overlaysys:cloud-sign-out", async () => {
+    await clearCloudTokens();
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("overlaysys:cloud-signed-out");
+    }
+  });
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

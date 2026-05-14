@@ -3,6 +3,7 @@ import { SongSchema, type Song } from "./song";
 import { TemplateSchema, type Template } from "./template";
 import { ShowSchema, type Show } from "./show";
 import { HotcardSchema, type Hotcard } from "./hotcard";
+import { ProjectSchema, type Project } from "./project";
 
 /**
  * A binary asset embedded in a bundle. `filename` is the content-addressed
@@ -24,6 +25,13 @@ export const BundleSchema = z.object({
   version: z.literal(1),
   exportedAt: z.string(),
   name: z.string().optional(),
+  /**
+   * Optional project descriptor. When present, the bundle represents a
+   * project export: included shows and hotcards belong to this project and
+   * the importer should create/update the Project on apply. Library exports
+   * (a single song or template with no project context) omit this field.
+   */
+  project: ProjectSchema.optional(),
   songs: z.array(SongSchema).default([]),
   templates: z.array(TemplateSchema).default([]),
   shows: z.array(ShowSchema).default([]),

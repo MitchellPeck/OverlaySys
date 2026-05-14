@@ -1,0 +1,17 @@
+# OverlaySys lives in apps-portal's Supabase project under the `overlaysys`
+# schema. To apply migrations, link this directory to apps-portal's project
+# ref (NOT a separate OverlaySys project). See docs/cloud-setup.md.
+
+project_id = "REPLACE_WITH_APPS_PORTAL_PROJECT_REF"
+
+[db]
+major_version = 15
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "overlaysys"]
+
+[storage]
+enabled = true
+file_size_limit = "5GiB"

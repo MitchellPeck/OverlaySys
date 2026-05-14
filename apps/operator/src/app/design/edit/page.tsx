@@ -17,6 +17,13 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { uploadAsset } from "@/lib/uploadAsset";
 import { AppHeader } from "@/app/components/AppHeader";
+import { isCloudMode } from "@/lib/mode";
+import {
+  getTemplateCloud,
+  refreshTemplateMetasCloud,
+  saveTemplateCloud,
+} from "@/lib/cloudData";
+import { useDialog } from "@/lib/dialog";
 
 const uploadInspector = async (file: File): Promise<string> =>
   (await uploadAsset(file)).url;
@@ -59,24 +66,50 @@ function DesignPageInner() {
 
   const fetchedRef = useRef<string | null>(null);
   const playRafRef = useRef<number | null>(null);
+  const cloud = isCloudMode();
+  const { alert, dialog } = useDialog();
+
+  async function showCloudError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[design/edit] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   useEffect(() => {
     fetchedRef.current = null;
     setDraft(null);
+    if (cloud) return;
     const off = getClient().on((msg) => {
       if (msg.type === "template" && msg.template.id === templateId) {
         if (!useEditor.getState().dirty) setDraft(msg.template);
       }
     });
     return off;
-  }, [templateId, setDraft]);
+  }, [templateId, setDraft, cloud]);
 
   useEffect(() => {
+    if (cloud) {
+      if (fetchedRef.current === templateId) return;
+      fetchedRef.current = templateId;
+      getTemplateCloud(templateId)
+        .then((t) => {
+          if (t) setDraft(t);
+        })
+        .catch((err) => console.warn("[design/edit] cloud load failed", err));
+      return;
+    }
     if (conn !== "open") return;
     if (fetchedRef.current === templateId) return;
     fetchedRef.current = templateId;
     send({ type: "get_template", templateId });
-  }, [conn, templateId, send]);
+  }, [cloud, conn, templateId, send, setDraft]);
 
   const previewData = useMemo<Record<string, string>>(() => {
     if (!draft) return {};
@@ -174,16 +207,35 @@ function DesignPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing]);
 
-  function save() {
+  async function save() {
     const cur = useEditor.getState().draft;
     if (!cur) return;
+    if (cloud) {
+      try {
+        await saveTemplateCloud(cur);
+        await refreshTemplateMetasCloud();
+        markSaved();
+      } catch (err) {
+        await showCloudError("save", err);
+      }
+      return;
+    }
     send({ type: "save_template", template: cur });
     markSaved();
   }
 
-  function revert() {
+  async function revert() {
     fetchedRef.current = null;
     setDraft(null);
+    if (cloud) {
+      try {
+        const t = await getTemplateCloud(templateId);
+        if (t) setDraft(t);
+      } catch (err) {
+        await showCloudError("revert", err);
+      }
+      return;
+    }
     send({ type: "get_template", templateId });
   }
 
@@ -237,7 +289,12 @@ function DesignPageInner() {
             <Button onClick={undo} variant="ghost" size="sm">↶ Undo</Button>
             <Button onClick={redo} variant="ghost" size="sm">↷ Redo</Button>
             <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button onClick={save} variant="primary" size="sm" disabled={!dirty || conn !== "open"}>
+            <Button
+              onClick={save}
+              variant="primary"
+              size="sm"
+              disabled={!dirty || (!cloud && conn !== "open")}
+            >
               Save (⌘S)
             </Button>
           </>
@@ -322,6 +379,7 @@ function DesignPageInner() {
           onPushHistory={pushHistory}
         />
       </div>
+      {dialog}
     </main>
   );
 }
@@ -335,6 +393,16 @@ function TemplateSettings({
 }) {
   const seconds =
     template.autoOutMs && template.autoOutMs > 0 ? template.autoOutMs / 1000 : 0;
+  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelChoices = useMemo(
+    () => channelConfigs.filter((c) => !c.mirrorOf),
+    [channelConfigs],
+  );
+  const blink = template.blinkOnTake;
+  // Show the blink-config inputs whenever the object exists (even if
+  // disabled), so the operator can leave saved color / duration / count
+  // values intact while toggling the feature off and back on.
+  const showBlinkConfig = !!blink;
   return (
     <div>
       <div
@@ -368,23 +436,173 @@ function TemplateSettings({
             });
           }}
           title="Auto-clear this template N seconds after it's taken. Empty / 0 to disable."
-          style={{
-            width: 80,
-            padding: "4px 6px",
-            background: colors.panel,
-            border: `1px solid ${colors.border}`,
-            borderRadius: 3,
-            color: colors.text,
-            fontSize: 12,
-          }}
+          style={settingsInputStyle}
         />
         <span style={{ color: colors.textDim, fontSize: 11 }}>
           seconds {seconds > 0 ? "" : "(off)"}
         </span>
       </label>
+
+      <label
+        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 8 }}
+        title="Suggested channel — prefills the channel selector in the Take panel and channelHint when this template is added to a rundown."
+      >
+        <span style={{ minWidth: 70 }}>Default ch.</span>
+        <select
+          value={template.defaultChannel ?? ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            onCommit((d) => {
+              if (!v) delete d.defaultChannel;
+              else d.defaultChannel = v;
+            });
+          }}
+          style={{ ...settingsInputStyle, width: "auto", flex: 1 }}
+        >
+          <option value="">(none)</option>
+          {/* Preserve out-of-list values rather than silently drop them when
+              a previously-set channel was removed or became a mirror. */}
+          {template.defaultChannel &&
+            !channelChoices.some((c) => c.id === template.defaultChannel) && (
+              <option value={template.defaultChannel}>
+                {template.defaultChannel} (missing)
+              </option>
+            )}
+          {channelChoices.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label
+        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 8 }}
+        title="Flash a color overlay on each take. Re-taking the same template re-blinks; updates (same take) do not."
+      >
+        <input
+          type="checkbox"
+          checked={blink?.enabled ?? false}
+          onChange={(e) => {
+            const next = e.target.checked;
+            onCommit((d) => {
+              if (next) {
+                // Seed defaults the first time the operator turns it on so
+                // the renderer has a usable config without further input.
+                if (!d.blinkOnTake) {
+                  d.blinkOnTake = {
+                    enabled: true,
+                    color: "#ffffff",
+                    durationMs: 500,
+                    count: 2,
+                  };
+                } else {
+                  d.blinkOnTake.enabled = true;
+                }
+              } else if (d.blinkOnTake) {
+                d.blinkOnTake.enabled = false;
+              }
+            });
+          }}
+        />
+        <span style={{ minWidth: 70 }}>Blink on take</span>
+      </label>
+
+      {showBlinkConfig && (
+        <div
+          style={{
+            marginTop: 6,
+            marginLeft: 22,
+            display: "grid",
+            gridTemplateColumns: "70px 1fr 1fr",
+            gap: 6,
+            alignItems: "center",
+            fontSize: 12,
+          }}
+        >
+          <span style={{ color: colors.textDim, fontSize: 11 }}>color</span>
+          <input
+            type="color"
+            value={blink?.color ?? "#ffffff"}
+            onChange={(e) => {
+              const v = e.target.value;
+              onCommit((d) => {
+                if (!d.blinkOnTake) return;
+                d.blinkOnTake.color = v;
+              });
+            }}
+            style={{
+              width: "100%",
+              height: 24,
+              padding: 0,
+              border: `1px solid ${colors.border}`,
+              borderRadius: 3,
+              background: "transparent",
+            }}
+          />
+          <input
+            value={blink?.color ?? "#ffffff"}
+            onChange={(e) => {
+              const v = e.target.value;
+              onCommit((d) => {
+                if (!d.blinkOnTake) return;
+                d.blinkOnTake.color = v;
+              });
+            }}
+            style={{ ...settingsInputStyle, fontFamily: "ui-monospace, monospace" }}
+          />
+
+          <span style={{ color: colors.textDim, fontSize: 11 }}>duration</span>
+          <input
+            type="number"
+            min={50}
+            step={50}
+            value={blink?.durationMs ?? 500}
+            onChange={(e) => {
+              const v = Math.max(50, Math.round(Number(e.target.value)));
+              if (!Number.isFinite(v)) return;
+              onCommit((d) => {
+                if (!d.blinkOnTake) return;
+                d.blinkOnTake.durationMs = v;
+              });
+            }}
+            style={settingsInputStyle}
+          />
+          <span style={{ color: colors.textDim, fontSize: 11 }}>ms per cycle</span>
+
+          <span style={{ color: colors.textDim, fontSize: 11 }}>count</span>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            step={1}
+            value={blink?.count ?? 2}
+            onChange={(e) => {
+              const v = Math.max(1, Math.min(20, Math.round(Number(e.target.value))));
+              if (!Number.isFinite(v)) return;
+              onCommit((d) => {
+                if (!d.blinkOnTake) return;
+                d.blinkOnTake.count = v;
+              });
+            }}
+            style={settingsInputStyle}
+          />
+          <span style={{ color: colors.textDim, fontSize: 11 }}>blinks</span>
+        </div>
+      )}
     </div>
   );
 }
+
+const settingsInputStyle: React.CSSProperties = {
+  width: 80,
+  padding: "4px 6px",
+  background: colors.panel,
+  border: `1px solid ${colors.border}`,
+  borderRadius: 3,
+  color: colors.text,
+  fontSize: 12,
+};
 
 /**
  * Flatten the template's layer tree into a list usable by a layer-picker

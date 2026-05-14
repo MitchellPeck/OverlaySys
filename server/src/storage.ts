@@ -8,13 +8,16 @@ import {
   ChannelConfigSchema,
   SongSchema,
   HotcardSchema,
+  ProjectSchema,
   SttSpawnerConfigSchema,
+  DEFAULT_PROJECT_ID,
   DEFAULT_STT_SPAWNER_CONFIG,
   type Template,
   type Show,
   type ChannelConfig,
   type Song,
   type Hotcard,
+  type Project,
   type SttSpawnerConfig,
 } from "@overlaysys/core";
 
@@ -47,6 +50,7 @@ const SHOWS_DIR = (): string => path.join(dataRoot(), "shows");
 const CHANNELS_DIR = (): string => path.join(dataRoot(), "channels");
 const SONGS_DIR = (): string => path.join(dataRoot(), "songs");
 const HOTCARDS_DIR = (): string => path.join(dataRoot(), "hotcards");
+const PROJECTS_DIR = (): string => path.join(dataRoot(), "projects");
 const STT_DIR = (): string => path.join(dataRoot(), "stt");
 const STT_CONFIG_FILE = (): string => path.join(STT_DIR(), "config.json");
 
@@ -108,6 +112,7 @@ export async function ensureSeeded(): Promise<void> {
   await ensureDir(CHANNELS_DIR());
   await ensureDir(SONGS_DIR());
   await ensureDir(HOTCARDS_DIR());
+  await ensureDir(PROJECTS_DIR());
   await ensureDir(STT_DIR());
   // Seed any fixtures that don't exist as live files yet.
   await copyMissingFixtures(TEMPLATE_FIXTURES_DIR(), TEMPLATES_DIR());
@@ -115,6 +120,27 @@ export async function ensureSeeded(): Promise<void> {
   await copyMissingFixtures(CHANNEL_FIXTURES_DIR(), CHANNELS_DIR());
   await copyMissingFixtures(SONG_FIXTURES_DIR(), SONGS_DIR());
   await copyMissingFixtures(HOTCARD_FIXTURES_DIR(), HOTCARDS_DIR());
+  // Always make sure the default Project exists. New installs land with
+  // an empty projects/ dir; legacy installs that pre-date the concept
+  // need the slug their shows and hotcards now reference.
+  await ensureDefaultProject();
+}
+
+async function ensureDefaultProject(): Promise<void> {
+  const file = path.join(PROJECTS_DIR(), `${DEFAULT_PROJECT_ID}.json`);
+  const exists = await fs
+    .stat(file)
+    .then(() => true)
+    .catch(() => false);
+  if (exists) return;
+  const now = new Date().toISOString();
+  const project: Project = {
+    id: DEFAULT_PROJECT_ID,
+    name: "Default Project",
+    createdAt: now,
+    updatedAt: now,
+  };
+  await writeAtomic(file, JSON.stringify(project, null, 2));
 }
 
 export async function loadAllTemplates(): Promise<Template[]> {
@@ -275,6 +301,39 @@ export async function saveHotcard(hotcard: Hotcard): Promise<void> {
 
 export async function deleteHotcard(id: string): Promise<boolean> {
   const file = path.join(HOTCARDS_DIR(), `${id}.json`);
+  try {
+    await fs.unlink(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Projects ─────────────────────────────────────────────────────────────────────
+
+export async function loadAllProjects(): Promise<Project[]> {
+  return readJsonFiles(PROJECTS_DIR(), (raw) => ProjectSchema.parse(raw));
+}
+
+export async function loadProject(id: string): Promise<Project | null> {
+  const file = path.join(PROJECTS_DIR(), `${id}.json`);
+  try {
+    const raw = await fs.readFile(file, "utf8");
+    return ProjectSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveProject(project: Project): Promise<void> {
+  await ensureDir(PROJECTS_DIR());
+  const file = path.join(PROJECTS_DIR(), `${project.id}.json`);
+  const parsed = ProjectSchema.parse(project);
+  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+}
+
+export async function deleteProject(id: string): Promise<boolean> {
+  const file = path.join(PROJECTS_DIR(), `${id}.json`);
   try {
     await fs.unlink(file);
     return true;

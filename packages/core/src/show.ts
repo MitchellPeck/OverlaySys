@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_PROJECT_ID } from "./project";
 
 export const GraphicRowSchema = z.object({
   kind: z.literal("graphic"),
@@ -42,9 +43,28 @@ export const RundownRowSchema = z.preprocess(
 );
 export type RundownRow = z.infer<typeof RundownRowSchema>;
 
-export const ShowSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  rows: z.array(RundownRowSchema),
-});
+/**
+ * Shows pre-dating the Project concept have no `projectId`. Default missing
+ * values to the seeded default project on read; writes always include the
+ * field. Mirrors the row-kind backfill pattern above.
+ */
+export const ShowSchema = z.preprocess(
+  (raw) => {
+    if (
+      raw &&
+      typeof raw === "object" &&
+      !Array.isArray(raw) &&
+      !("projectId" in (raw as Record<string, unknown>))
+    ) {
+      return { projectId: DEFAULT_PROJECT_ID, ...(raw as Record<string, unknown>) };
+    }
+    return raw;
+  },
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    projectId: z.string(),
+    rows: z.array(RundownRowSchema),
+  }),
+);
 export type Show = z.infer<typeof ShowSchema>;

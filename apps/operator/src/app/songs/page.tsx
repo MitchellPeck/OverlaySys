@@ -11,78 +11,135 @@ import { AppHeader } from "@/app/components/AppHeader";
 import { ImportFromFileModal } from "./ImportFromFileModal";
 import { downloadJson } from "@/lib/download";
 import type { Song } from "@overlaysys/core";
+import { isCloudMode } from "@/lib/mode";
+import {
+  deleteSongCloud,
+  getSongCloud,
+  refreshSongMetasCloud,
+  saveSongCloud,
+} from "@/lib/cloudData";
 
 export default function SongsPage() {
   const { send } = useWs();
   const router = useRouter();
   const songs = useStore((s) => s.songs);
   const conn = useStore((s) => s.conn);
-  const { confirm, dialog } = useDialog();
+  const { alert, confirm, dialog } = useDialog();
   const [importOpen, setImportOpen] = useState(false);
+  const cloud = isCloudMode();
+
+  async function showError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[songs] cloud ${action} failed`, err);
+    await alert({
+      title: `Cloud ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
   useEffect(() => {
-    if (conn === "open") send({ type: "list_songs" });
-  }, [conn, send]);
+    if (cloud) {
+      refreshSongMetasCloud().catch((err) =>
+        console.warn("[songs] cloud list failed", err),
+      );
+    } else if (conn === "open") {
+      send({ type: "list_songs" });
+    }
+  }, [cloud, conn, send]);
 
-  function newSong() {
-    if (conn !== "open") return;
+  async function newSong() {
     const id = `song-${uuid().slice(0, 8)}`;
-    send({
-      type: "save_song",
-      song: {
-        id,
-        title: "",
-        sections: [
-          {
-            id: "v1",
-            kind: "verse",
-            label: "Verse 1",
-            slides: [{ id: "v1s1", lines: [""] }],
-          },
-        ],
-        defaultArrangement: ["v1"],
-      },
-    });
+    const song: Song = {
+      id,
+      title: "",
+      sections: [
+        {
+          id: "v1",
+          kind: "verse",
+          label: "Verse 1",
+          slides: [{ id: "v1s1", lines: [""] }],
+        },
+      ],
+      defaultArrangement: ["v1"],
+    };
+    if (cloud) {
+      try {
+        await saveSongCloud(song);
+        await refreshSongMetasCloud();
+        router.push(`/songs/edit?id=${encodeURIComponent(id)}`);
+      } catch (err) {
+        await showError("create", err);
+      }
+      return;
+    }
+    if (conn !== "open") return;
+    send({ type: "save_song", song });
     setTimeout(() => router.push(`/songs/edit?id=${encodeURIComponent(id)}`), 150);
   }
 
-  async function handleImportSubmit(song: Song) {
-    if (song.ccliNumber) {
-      const existing = songs.find(
-        (s) => s.ccliNumber === song.ccliNumber && s.id !== song.id,
-      );
-      if (existing) {
-        const replace = await confirm({
-          title: "Song already exists",
-          message: (
-            <>
-              A song with CCLI # <strong>{song.ccliNumber}</strong> already exists:{" "}
-              <strong>{existing.title || existing.id}</strong>.
-              <br />
-              Click <strong>Replace</strong> to overwrite that song, or <strong>Cancel</strong> to import as a new copy.
-            </>
-          ),
-          confirmLabel: "Replace",
-          cancelLabel: "Import as new copy",
-          destructive: true,
-        });
-        if (replace) {
-          send({ type: "save_song", song: { ...song, id: existing.id } });
-        } else {
-          const baseSlug = song.id;
-          let n = 2;
-          while (songs.some((s) => s.id === `${baseSlug}-${n}`)) n++;
-          send({ type: "save_song", song: { ...song, id: `${baseSlug}-${n}` } });
-        }
-        setImportOpen(false);
-        return;
-      }
+  async function persistSong(song: Song): Promise<void> {
+    if (cloud) {
+      await saveSongCloud(song);
+      await refreshSongMetasCloud();
+      return;
     }
     send({ type: "save_song", song });
-    setImportOpen(false);
   }
 
-  function exportSong(id: string) {
+  async function handleImportSubmit(song: Song) {
+    try {
+      if (song.ccliNumber) {
+        const existing = songs.find(
+          (s) => s.ccliNumber === song.ccliNumber && s.id !== song.id,
+        );
+        if (existing) {
+          const replace = await confirm({
+            title: "Song already exists",
+            message: (
+              <>
+                A song with CCLI # <strong>{song.ccliNumber}</strong> already exists:{" "}
+                <strong>{existing.title || existing.id}</strong>.
+                <br />
+                Click <strong>Replace</strong> to overwrite that song, or <strong>Cancel</strong> to import as a new copy.
+              </>
+            ),
+            confirmLabel: "Replace",
+            cancelLabel: "Import as new copy",
+            destructive: true,
+          });
+          if (replace) {
+            await persistSong({ ...song, id: existing.id });
+          } else {
+            const baseSlug = song.id;
+            let n = 2;
+            while (songs.some((s) => s.id === `${baseSlug}-${n}`)) n++;
+            await persistSong({ ...song, id: `${baseSlug}-${n}` });
+          }
+          setImportOpen(false);
+          return;
+        }
+      }
+      await persistSong(song);
+      setImportOpen(false);
+    } catch (err) {
+      await showError("import", err);
+    }
+  }
+
+  async function exportSong(id: string) {
+    if (cloud) {
+      try {
+        const song = await getSongCloud(id);
+        if (song) downloadJson(`${id}.json`, song);
+      } catch (err) {
+        await showError("export", err);
+      }
+      return;
+    }
     const cached = useStore.getState().songCache[id];
     if (cached) {
       downloadJson(`${id}.json`, cached);
@@ -111,7 +168,17 @@ export default function SongsPage() {
       confirmLabel: "Delete",
       destructive: true,
     });
-    if (ok) send({ type: "delete_song", songId: id });
+    if (!ok) return;
+    if (cloud) {
+      try {
+        await deleteSongCloud(id);
+        await refreshSongMetasCloud();
+      } catch (err) {
+        await showError("delete", err);
+      }
+      return;
+    }
+    send({ type: "delete_song", songId: id });
   }
 
   return (
@@ -120,10 +187,19 @@ export default function SongsPage() {
         title="Songs"
         actions={
           <>
-            <Button onClick={() => setImportOpen(true)} disabled={conn !== "open"} size="sm">
+            <Button
+              onClick={() => setImportOpen(true)}
+              disabled={!cloud && conn !== "open"}
+              size="sm"
+            >
               Import from file…
             </Button>
-            <Button onClick={newSong} disabled={conn !== "open"} variant="primary" size="sm">
+            <Button
+              onClick={newSong}
+              disabled={!cloud && conn !== "open"}
+              variant="primary"
+              size="sm"
+            >
               + New Song
             </Button>
           </>

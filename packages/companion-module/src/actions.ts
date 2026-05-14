@@ -332,8 +332,12 @@ function channelDropdown(
   label = "Channel",
   defaultId?: string,
 ): CompanionInputFieldDropdown {
-  const choices = state.channels.length
-    ? state.channels.map((c) => ({ id: c.id, label: c.name }))
+  // Mirror channels reflect another channel's runtime state. Taking on a
+  // mirror would be a no-op since the renderer subscribes to the source, so
+  // hide them from action targets entirely.
+  const takeable = state.channels.filter((c) => !c.mirrorOf);
+  const choices = takeable.length
+    ? takeable.map((c) => ({ id: c.id, label: c.name }))
     : [
         { id: "program", label: "program" },
         { id: "preview", label: "preview" },

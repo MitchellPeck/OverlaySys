@@ -69,6 +69,9 @@ importers:
       '@overlaysys/ws-protocol':
         specifier: workspace:*
         version: link:../../packages/ws-protocol
+      '@supabase/supabase-js':
+        specifier: ^2.45.0
+        version: 2.105.4
       gsap:
         specifier: ^3.12.5
         version: 3.15.0
