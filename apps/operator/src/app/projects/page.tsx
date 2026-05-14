@@ -14,6 +14,7 @@ import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteProjectCloud,
@@ -303,7 +304,7 @@ export default function ProjectsIndexPage() {
   }
 
   return (
-    <>
+    <PageShell>
       <AppHeader
         title="Projects"
         actions={
@@ -317,8 +318,7 @@ export default function ProjectsIndexPage() {
           </Button>
         }
       />
-      <main style={{ padding: 24 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <PageBody maxWidth={720}>
           {cloudReady && (
             <div
               style={{
@@ -433,10 +433,9 @@ export default function ProjectsIndexPage() {
               })}
             </EntityList>
           )}
-        </div>
-      </main>
+      </PageBody>
       {dialog}
-    </>
+    </PageShell>
   );
 }
 

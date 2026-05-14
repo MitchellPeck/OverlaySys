@@ -10,6 +10,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { PasteLyricsModal } from "../PasteLyricsModal";
 import { isCloudMode } from "@/lib/mode";
 import {
@@ -234,7 +235,7 @@ function SongEditorPageInner() {
   }
 
   return (
-    <>
+    <PageShell>
       <AppHeader
         context={
           <h1 style={{ margin: 0, fontSize: 16 }}>
@@ -248,7 +249,7 @@ function SongEditorPageInner() {
           </>
         }
       />
-      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
+      <PageBody maxWidth={1100}>
 
       {pasteOpen && draft && (
         <PasteLyricsModal
@@ -446,9 +447,9 @@ function SongEditorPageInner() {
           Sections can repeat. Drag chips to reorder.
         </p>
       </Panel>
-      </div>
+      </PageBody>
       {dialog}
-    </>
+    </PageShell>
   );
 }
 

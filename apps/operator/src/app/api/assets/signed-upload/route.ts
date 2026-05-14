@@ -31,6 +31,31 @@ import { ASSETS_BUCKET } from "@overlaysys/supabase";
 // some caching unless this is set.
 export const dynamic = "force-dynamic";
 
+// CORS headers attached to every response from this route. The route is
+// called cross-origin by:
+//   - Electron renderer (running at http://127.0.0.1:<port>)
+//   - The cloud operator itself when not same-origin
+// The endpoint accepts Bearer tokens for auth, not cookies, so wildcard
+// origin is safe (CORS doesn't protect token-authed APIs the way it
+// protects cookie-authed ones).
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Max-Age": "86400",
+} as const;
+
+function cors(res: NextResponse): NextResponse {
+  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+    res.headers.set(k, v);
+  }
+  return res;
+}
+
+export async function OPTIONS(): Promise<Response> {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 interface SignedUploadRequest {
   sha256: string;
   ext?: string;
@@ -47,31 +72,31 @@ export async function POST(req: NextRequest) {
   const supabaseUrl = process.env["NEXT_PUBLIC_SUPABASE_URL"];
   const serviceRoleKey = process.env["SUPABASE_SERVICE_ROLE_KEY"];
   if (!supabaseUrl || !serviceRoleKey) {
-    return NextResponse.json(
+    return cors(NextResponse.json(
       { error: "server misconfigured: missing Supabase env vars" },
       { status: 500 },
-    );
+    ));
   }
 
   const auth = req.headers.get("authorization");
   const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
   if (!token) {
-    return NextResponse.json({ error: "missing bearer token" }, { status: 401 });
+    return cors(NextResponse.json({ error: "missing bearer token" }, { status: 401 }));
   }
 
   const body = (await req.json().catch(() => null)) as SignedUploadRequest | null;
   if (!body || typeof body.sha256 !== "string" || typeof body.orgId !== "string") {
-    return NextResponse.json(
+    return cors(NextResponse.json(
       { error: "expected { sha256, orgId, ext? }" },
       { status: 400 },
-    );
+    ));
   }
   // SHA256 hex is 64 chars; sanitize to defend against path traversal.
   if (!/^[a-f0-9]{64}$/i.test(body.sha256)) {
-    return NextResponse.json({ error: "invalid sha256" }, { status: 400 });
+    return cors(NextResponse.json({ error: "invalid sha256" }, { status: 400 }));
   }
   if (body.ext && !/^[a-zA-Z0-9]{1,16}$/.test(body.ext)) {
-    return NextResponse.json({ error: "invalid extension" }, { status: 400 });
+    return cors(NextResponse.json({ error: "invalid extension" }, { status: 400 }));
   }
   // orgId is a UUID — validate against the canonical format.
   if (
@@ -79,7 +104,7 @@ export async function POST(req: NextRequest) {
       body.orgId,
     )
   ) {
-    return NextResponse.json({ error: "invalid orgId" }, { status: 400 });
+    return cors(NextResponse.json({ error: "invalid orgId" }, { status: 400 }));
   }
 
   // Validate the user's JWT and resolve their auth.users.id.
@@ -88,7 +113,7 @@ export async function POST(req: NextRequest) {
   });
   const { data: userResp, error: userErr } = await admin.auth.getUser(token);
   if (userErr || !userResp?.user) {
-    return NextResponse.json({ error: "invalid token" }, { status: 401 });
+    return cors(NextResponse.json({ error: "invalid token" }, { status: 401 }));
   }
   const userId = userResp.user.id;
 
@@ -101,16 +126,16 @@ export async function POST(req: NextRequest) {
     .eq("id", body.orgId)
     .contains("members", [userId]);
   if (orgErr) {
-    return NextResponse.json(
+    return cors(NextResponse.json(
       { error: `org lookup failed: ${orgErr.message}` },
       { status: 500 },
-    );
+    ));
   }
   if (!orgRows || orgRows.length === 0) {
-    return NextResponse.json(
+    return cors(NextResponse.json(
       { error: "not a member of that org" },
       { status: 403 },
-    );
+    ));
   }
 
   // Mint the signed upload URL via service-role storage client.
@@ -120,10 +145,10 @@ export async function POST(req: NextRequest) {
     .from(ASSETS_BUCKET)
     .createSignedUploadUrl(path, { upsert: true });
   if (signErr || !signed) {
-    return NextResponse.json(
+    return cors(NextResponse.json(
       { error: `sign failed: ${signErr?.message ?? "unknown"}` },
       { status: 500 },
-    );
+    ));
   }
 
   const response: SignedUploadResponse = {
@@ -131,5 +156,5 @@ export async function POST(req: NextRequest) {
     token: signed.token,
     path,
   };
-  return NextResponse.json(response);
+  return cors(NextResponse.json(response));
 }

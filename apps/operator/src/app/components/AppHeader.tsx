@@ -5,12 +5,17 @@ import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { Pill, type PillTone } from "@overlaysys/ui";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
 import { CloudSignInButton } from "@/app/components/CloudSignInButton";
+import { isCloudMode } from "@/lib/mode";
 
-const NAV_LINKS = [
-  { href: "/", label: "Show" },
+// `hideInCloud` marks routes that don't make sense in the web deploy. The
+// Show view drives a live device (channel takes, song mode, etc.) and is
+// pure noise without a paired Electron instance — same reason TakePanel
+// disables itself in cloud mode.
+const NAV_LINKS: { href: string; label: string; hideInCloud?: boolean }[] = [
+  { href: "/", label: "Show", hideInCloud: true },
   { href: "/projects", label: "Projects" },
   { href: "/shows", label: "Shows" },
   { href: "/hotcards", label: "Hotcards" },
@@ -34,6 +39,11 @@ export function AppHeader({
   const pathname = usePathname() ?? "/";
   const conn = useStore((s) => s.conn);
   const dot = { connecting: "🟡", open: "🟢", closed: "🔴" }[conn];
+  const cloud = isCloudMode();
+  const visibleNavLinks = useMemo(
+    () => NAV_LINKS.filter((l) => !(cloud && l.hideInCloud)),
+    [cloud],
+  );
 
   function isActive(href: string): boolean {
     if (href === "/") return pathname === "/";
@@ -54,7 +64,7 @@ export function AppHeader({
       <strong>OverlaySys</strong>
       <span style={{ color: "var(--text-dim)" }}>Operator</span>
       <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
-        {NAV_LINKS.map((link) => (
+        {visibleNavLinks.map((link) => (
           <Link
             key={link.href}
             href={link.href}
