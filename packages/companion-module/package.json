@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
     "test": "cd ../.. && vitest run packages/companion-module",
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@types/ws": "^8.5.12",
+    "esbuild": "^0.25.0",
     "typescript": "^5.6.0"
   }
 }
