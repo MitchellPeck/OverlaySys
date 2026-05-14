@@ -32,3 +32,6 @@ data/shows/*.json
 
 # tsbuild
 *.tsbuildinfo
+
+
+data/
