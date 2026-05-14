@@ -1,23 +1,28 @@
 {
+  "$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+  "type": "connection",
   "id": "overlaysys",
-  "name": "overlaysys",
+  "name": "OverlaySys",
   "shortname": "OverlaySys",
   "description": "Control OverlaySys (channels, hotcards, song rundown, STT) from Companion.",
   "version": "0.0.1",
   "license": "MIT",
-  "repository": "https://github.com/mitchellpeck/OverlaySys",
+  "repository": "git+https://github.com/mitchellpeck/OverlaySys.git",
   "bugs": "https://github.com/mitchellpeck/OverlaySys/issues",
   "maintainers": [
-    { "name": "Mitchell Peck", "email": "me@mitchellpeck.com" }
+    {
+      "name": "Mitchell Peck",
+      "email": "me@mitchellpeck.com"
+    }
   ],
   "runtime": {
     "type": "node22",
     "api": "nodejs-ipc",
-    "apiVersion": "1.10.0",
+    "apiVersion": "0.0.0",
     "entrypoint": "../dist/index.js"
   },
+  "legacyIds": [],
   "manufacturer": "OverlaySys",
   "products": ["OverlaySys server"],
-  "keywords": ["broadcast", "graphics", "worship", "stt"],
-  "legacyIds": []
+  "keywords": ["broadcast", "graphics", "worship", "stt"]
 }
