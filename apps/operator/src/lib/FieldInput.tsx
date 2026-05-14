@@ -3,7 +3,7 @@
 import { ColorInput, ImageInput, VideoInput } from "@overlaysys/editor-kit";
 import { Input, colors } from "@overlaysys/ui";
 import type { Field } from "@overlaysys/core";
-import { parseDuration } from "@overlaysys/core";
+import { decodeTimerValue, encodeTimerValue, parseDuration } from "@overlaysys/core";
 import { useEffect, useState } from "react";
 import { uploadAsset, resolveAssetUrl } from "./uploadAsset";
 
@@ -84,12 +84,12 @@ function TimeFieldInput({ field, value, onChange }: Props) {
   }
 
   if (mode === "countup") {
-    const anchor = value ? Number(value) : NaN;
+    const { anchor } = decodeTimerValue(value);
     const stamp = Number.isFinite(anchor) ? new Date(anchor).toLocaleTimeString() : "(unset)";
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <button
-          onClick={() => onChange(String(Date.now()))}
+          onClick={() => onChange(encodeTimerValue({ anchor: Date.now() }))}
           style={smallBtnStyle}
           title="Set the count-up start to right now"
         >
@@ -130,7 +130,10 @@ function DurationInput({
   function commit(): void {
     const ms = parseDuration(text);
     if (ms == null) return;
-    onChange(String(Date.now() + ms));
+    // Always encode durationMs so the Active timers panel's Reset can
+    // re-derive the original duration without falling back to "current
+    // remaining" (which would lock in any ±N nudges).
+    onChange(encodeTimerValue({ anchor: Date.now() + ms, durationMs: ms }));
   }
 
   return (
@@ -151,13 +154,14 @@ function DurationInput({
 }
 
 /**
- * If `value` is an epoch-ms anchor in the future, render it as a remaining
- * duration string ("10:00"). Past anchors and unset values render as the
- * empty string so the field reads as "ready to type."
+ * If `value` encodes a countdown anchor in the future, render it as a
+ * remaining duration string ("10:00"). Past anchors and unset values
+ * render empty so the field reads as "ready to type." Handles both the
+ * bare-number and JSON-object encodings.
  */
 function deriveDurationText(value: string | undefined): string {
   if (!value) return "";
-  const anchor = Number(value);
+  const { anchor } = decodeTimerValue(value);
   if (!Number.isFinite(anchor)) return "";
   const remainingMs = anchor - Date.now();
   if (remainingMs <= 0) return "";
