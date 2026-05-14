@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import Link from "next/link";
 import { colors, fontSize, fontWeight, radius, space } from "./tokens";
 
 /**
@@ -95,9 +96,13 @@ export function EntityRow({
       }}
     >
       {href ? (
-        <a href={href} style={cardStyle}>
+        // next/link applies the configured basePath at runtime — required
+        // so URLs work both in dev (no basePath) and in the packaged static
+        // export (basePath = /operator). A plain <a> would skip this and
+        // 404 in the packaged build.
+        <Link href={href} style={cardStyle}>
           {card}
-        </a>
+        </Link>
       ) : (
         <div style={cardStyle}>{card}</div>
       )}
