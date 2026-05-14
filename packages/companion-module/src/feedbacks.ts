@@ -1,4 +1,9 @@
 import type { ActiveGraphic, RundownRow } from "@overlaysys/core";
+import type {
+  CompanionFeedbackDefinitions,
+  CompanionInputFieldDropdown,
+  CompanionInputFieldTextInput,
+} from "@companion-module/base";
 import type { CompanionState } from "./types";
 
 export type FeedbackId =
@@ -205,4 +210,95 @@ export function feedbackPredicate(
       return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
     }
   }
+}
+
+// ──── SDK-shaped definitions ─────────────────────────────────────────────
+
+function channelDropdownF(state: CompanionState): CompanionInputFieldDropdown {
+  const choices = state.channels.length
+    ? state.channels.map((c) => ({ id: c.id, label: c.name }))
+    : [
+        { id: "program", label: "program" },
+        { id: "preview", label: "preview" },
+      ];
+  return {
+    id: "channel",
+    type: "dropdown",
+    label: "Channel",
+    default: choices[0]?.id ?? "program",
+    choices,
+  };
+}
+
+function hotcardDropdownF(state: CompanionState): CompanionInputFieldDropdown {
+  const choices = state.hotcards.map((h) => ({ id: h.id, label: h.name }));
+  return {
+    id: "hotcardId",
+    type: "dropdown",
+    label: "Hotcard",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no hotcards)" }],
+  };
+}
+
+function rowDropdownF(state: CompanionState): CompanionInputFieldDropdown {
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  const choices = show
+    ? show.rows.map((r, i) => ({
+        id: r.id,
+        label: `${i + 1}. ${r.kind === "song" ? "♪ " : ""}${r.id}`,
+      }))
+    : [];
+  return {
+    id: "rowId",
+    type: "dropdown",
+    label: "Row",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no show loaded)" }],
+  };
+}
+
+const kindOrdinalInput: CompanionInputFieldTextInput = {
+  id: "kind_ordinal",
+  type: "textinput",
+  label: "Kind:Ordinal (e.g. verse:2)",
+  default: "verse:1",
+};
+
+export type FeedbackChecker = (
+  id: FeedbackId,
+  options: FeedbackOptions,
+) => boolean;
+
+export function feedbackDefinitionsForSDK(
+  state: CompanionState,
+  isTrue: FeedbackChecker,
+): CompanionFeedbackDefinitions {
+  const defs: CompanionFeedbackDefinitions = {};
+
+  for (const d of feedbackDefinitions) {
+    const opts = d.options.map((o) => {
+      switch (o.type) {
+        case "channel":
+          return channelDropdownF(state);
+        case "hotcard":
+          return hotcardDropdownF(state);
+        case "row":
+          return rowDropdownF(state);
+        case "kind_ordinal":
+          return kindOrdinalInput;
+      }
+    });
+    defs[d.id] = {
+      name: d.name,
+      description: d.description,
+      type: "boolean",
+      defaultStyle: { color: 0xffffff, bgcolor: 0x00aa00 },
+      options: opts,
+      callback: (fb) => isTrue(d.id, fb.options as FeedbackOptions),
+    };
+  }
+  return defs;
 }

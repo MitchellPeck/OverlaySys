@@ -1,5 +1,12 @@
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import type { RundownRow } from "@overlaysys/core";
+import type {
+  CompanionActionDefinitions,
+  CompanionInputFieldDropdown,
+  CompanionInputFieldTextInput,
+  CompanionInputFieldNumber,
+  CompanionInputFieldCheckbox,
+} from "@companion-module/base";
 import type { LocalEvent } from "./state";
 import type { CompanionState } from "./types";
 
@@ -276,4 +283,298 @@ export function dispatchAction(
   }
 
   return { messages, localEvents };
+}
+
+// ──── SDK-shaped definitions for Companion ────────────────────────────────
+
+function channelDropdown(
+  state: CompanionState,
+  id = "channel",
+  label = "Channel",
+  defaultId?: string,
+): CompanionInputFieldDropdown {
+  const choices = state.channels.length
+    ? state.channels.map((c) => ({ id: c.id, label: c.name }))
+    : [
+        { id: "program", label: "program" },
+        { id: "preview", label: "preview" },
+      ];
+  return {
+    id,
+    type: "dropdown",
+    label,
+    default: defaultId ?? choices[0]?.id ?? "program",
+    choices,
+  };
+}
+
+function showDropdown(
+  state: CompanionState,
+  id = "showId",
+): CompanionInputFieldDropdown {
+  const choices = state.shows.map((s) => ({ id: s.id, label: s.name }));
+  return {
+    id,
+    type: "dropdown",
+    label: "Show",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no shows)" }],
+  };
+}
+
+function hotcardDropdown(
+  state: CompanionState,
+  id = "hotcardId",
+): CompanionInputFieldDropdown {
+  const choices = state.hotcards.map((h) => ({ id: h.id, label: h.name }));
+  return {
+    id,
+    type: "dropdown",
+    label: "Hotcard",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no hotcards)" }],
+  };
+}
+
+function templateDropdown(
+  state: CompanionState,
+  id = "templateId",
+): CompanionInputFieldDropdown {
+  const choices = state.templates.map((t) => ({ id: t.id, label: t.name }));
+  return {
+    id,
+    type: "dropdown",
+    label: "Template",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no templates)" }],
+  };
+}
+
+function rowDropdown(
+  state: CompanionState,
+  id = "rowId",
+): CompanionInputFieldDropdown {
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  const choices = show
+    ? show.rows.map((r, i) => ({
+        id: r.id,
+        label: `${i + 1}. ${r.kind === "song" ? "♪ " : ""}${r.id}`,
+      }))
+    : [];
+  return {
+    id,
+    type: "dropdown",
+    label: "Row",
+    default: choices[0]?.id ?? "",
+    choices: choices.length ? choices : [{ id: "", label: "(no show loaded)" }],
+  };
+}
+
+const dataInput: CompanionInputFieldTextInput = {
+  id: "data",
+  type: "textinput",
+  label: "Data (key=value lines)",
+  default: "",
+};
+
+const deltaInput: CompanionInputFieldNumber = {
+  id: "delta",
+  type: "number",
+  label: "Delta",
+  default: 1,
+  min: -100,
+  max: 100,
+  step: 1,
+};
+
+const ordinalInput: CompanionInputFieldNumber = {
+  id: "ordinal",
+  type: "number",
+  label: "Ordinal",
+  default: 1,
+  min: 1,
+  max: 50,
+  step: 1,
+};
+
+const kindInput: CompanionInputFieldDropdown = {
+  id: "kind",
+  type: "dropdown",
+  label: "Section kind",
+  default: "verse",
+  choices: [
+    { id: "verse", label: "Verse" },
+    { id: "chorus", label: "Chorus" },
+    { id: "bridge", label: "Bridge" },
+    { id: "tag", label: "Tag" },
+    { id: "intro", label: "Intro" },
+    { id: "outro", label: "Outro" },
+    { id: "other", label: "Other" },
+  ],
+};
+
+const sectionIdInput: CompanionInputFieldTextInput = {
+  id: "sectionId",
+  type: "textinput",
+  label: "Section ID",
+  default: "",
+};
+
+const trustInput: CompanionInputFieldCheckbox = {
+  id: "trustMode",
+  type: "checkbox",
+  label: "Trust mode",
+  default: false,
+};
+
+export type ActionRunner = (id: ActionId, options: ActionOptions) => void;
+
+export function actionDefinitions(
+  state: CompanionState,
+  run: ActionRunner,
+): CompanionActionDefinitions {
+  const wrap =
+    (id: ActionId) =>
+    async (event: { options: Record<string, unknown> }): Promise<void> => {
+      run(id, event.options as ActionOptions);
+    };
+
+  return {
+    take_template: {
+      name: "Take template",
+      options: [
+        channelDropdown(state),
+        templateDropdown(state),
+        dataInput,
+      ],
+      callback: wrap("take_template"),
+    },
+    clear: {
+      name: "Clear channel",
+      options: [channelDropdown(state)],
+      callback: wrap("clear"),
+    },
+    cue_template: {
+      name: "Cue template",
+      options: [
+        channelDropdown(state),
+        templateDropdown(state),
+        dataInput,
+      ],
+      callback: wrap("cue_template"),
+    },
+    take_pvw_to_pgm: {
+      name: "Take PVW → PGM",
+      options: [
+        channelDropdown(state, "fromChannel", "From", "preview"),
+        channelDropdown(state, "toChannel", "To", "program"),
+      ],
+      callback: wrap("take_pvw_to_pgm"),
+    },
+    fire_hotcard: {
+      name: "Fire hotcard",
+      options: [hotcardDropdown(state), channelDropdown(state)],
+      callback: wrap("fire_hotcard"),
+    },
+    load_show: {
+      name: "Load show (this Companion instance)",
+      options: [showDropdown(state)],
+      callback: wrap("load_show"),
+    },
+    clear_loaded_show: {
+      name: "Clear loaded show",
+      options: [],
+      callback: wrap("clear_loaded_show"),
+    },
+    take_row: {
+      name: "Take row from loaded show",
+      options: [rowDropdown(state), channelDropdown(state)],
+      callback: wrap("take_row"),
+    },
+    take_row_pvw_pgm: {
+      name: "Take row PVW → PGM",
+      options: [
+        rowDropdown(state),
+        channelDropdown(state, "fromChannel", "From", "preview"),
+        channelDropdown(state, "toChannel", "To", "program"),
+      ],
+      callback: wrap("take_row_pvw_pgm"),
+    },
+    take_row_at_cursor: {
+      name: "Take row at cursor",
+      options: [channelDropdown(state)],
+      callback: wrap("take_row_at_cursor"),
+    },
+    cursor_advance: {
+      name: "Cursor: advance",
+      options: [deltaInput],
+      callback: wrap("cursor_advance"),
+    },
+    cursor_set: {
+      name: "Cursor: set to row",
+      options: [rowDropdown(state)],
+      callback: wrap("cursor_set"),
+    },
+    song_take_row: {
+      name: "Song: take row (any show)",
+      options: [
+        showDropdown(state),
+        { ...rowDropdown(state), id: "songRowId" },
+        channelDropdown(state),
+      ],
+      callback: wrap("song_take_row"),
+    },
+    song_take_row_pvw_pgm: {
+      name: "Song: take row PVW → PGM (any show)",
+      options: [
+        showDropdown(state),
+        { ...rowDropdown(state), id: "songRowId" },
+        channelDropdown(state, "fromChannel", "From", "preview"),
+        channelDropdown(state, "toChannel", "To", "program"),
+      ],
+      callback: wrap("song_take_row_pvw_pgm"),
+    },
+    song_advance: {
+      name: "Song: advance ±",
+      options: [channelDropdown(state), deltaInput],
+      callback: wrap("song_advance"),
+    },
+    song_jump_section: {
+      name: "Song: jump to section",
+      options: [channelDropdown(state), sectionIdInput],
+      callback: wrap("song_jump_section"),
+    },
+    song_jump_kind: {
+      name: "Song: jump by section kind + ordinal",
+      options: [channelDropdown(state), kindInput, ordinalInput],
+      callback: wrap("song_jump_kind"),
+    },
+    song_blank: {
+      name: "Song: blank",
+      options: [channelDropdown(state)],
+      callback: wrap("song_blank"),
+    },
+    song_end: {
+      name: "Song: end",
+      options: [channelDropdown(state)],
+      callback: wrap("song_end"),
+    },
+    song_set_trust: {
+      name: "Song: set trust mode",
+      options: [channelDropdown(state), trustInput],
+      callback: wrap("song_set_trust"),
+    },
+    stt_start: {
+      name: "STT: start spawner",
+      options: [],
+      callback: wrap("stt_start"),
+    },
+    stt_stop: {
+      name: "STT: stop spawner",
+      options: [],
+      callback: wrap("stt_stop"),
+    },
+  };
 }
