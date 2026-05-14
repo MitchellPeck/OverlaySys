@@ -98,7 +98,11 @@ function spawnServer(): Promise<{ port: number }> {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ELECTRON_RUN_AS_NODE: "1",
-    PORT: "0",
+    // Default to 4000 so external integrations (Companion, Stream Deck,
+    // anything that connects to the WS) can target a known port. Set
+    // PORT=0 in env to fall back to an OS-assigned ephemeral port if
+    // running multiple instances side-by-side.
+    PORT: process.env["PORT"] ?? "4000",
     HOST: "127.0.0.1",
     NODE_PATH: sharedNodePath,
     OVERLAYSYS_DATA_DIR: userDataDir,
