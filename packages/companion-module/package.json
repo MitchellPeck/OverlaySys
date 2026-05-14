@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --dir src",
+    "test": "cd ../.. && vitest run packages/companion-module",
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
