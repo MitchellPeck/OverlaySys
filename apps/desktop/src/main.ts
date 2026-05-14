@@ -103,10 +103,7 @@ function spawnServer(): Promise<{ port: number }> {
     // PORT=0 in env to fall back to an OS-assigned ephemeral port if
     // running multiple instances side-by-side.
     PORT: process.env["PORT"] ?? "4000",
-    // Bind to all interfaces so the server is reachable from the LAN —
-    // required for Companion / Stream Deck running on a separate control
-    // machine. Override with HOST=127.0.0.1 in env for loopback-only.
-    HOST: process.env["HOST"] ?? "0.0.0.0",
+    HOST: "127.0.0.1",
     NODE_PATH: sharedNodePath,
     OVERLAYSYS_DATA_DIR: userDataDir,
     OVERLAYSYS_FIXTURES_DIR: fixturesDir,
