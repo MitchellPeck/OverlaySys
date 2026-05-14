@@ -4,6 +4,7 @@ import type {
   Show,
   Song,
   SongMeta,
+  Hotcard,
   HotcardMeta,
   TemplateMeta,
   SttSpawnerStatus,
@@ -32,6 +33,7 @@ export interface CompanionState {
   shows: ShowMeta[];
   songs: SongMeta[];
   hotcards: HotcardMeta[];
+  hotcardCache: Map<string, Hotcard>;
   channels: ChannelConfig[];
   showCache: Map<string, Show>;
   songCache: Map<string, Song>;
@@ -51,6 +53,7 @@ export function initialState(): CompanionState {
     shows: [],
     songs: [],
     hotcards: [],
+    hotcardCache: new Map(),
     channels: [],
     showCache: new Map(),
     songCache: new Map(),
