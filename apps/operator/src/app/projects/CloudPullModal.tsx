@@ -16,11 +16,13 @@ import type {
   Template,
 } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
+import { useWs } from "@/lib/useWs";
 import {
   buildCloudProjectBundle,
   listCloudProjects,
 } from "@/lib/projectSync";
 import { defaultServerUrl } from "@/lib/wsClient";
+import { diffEntity, type FieldDiff } from "@/lib/diffEntity";
 
 /**
  * Pull-from-cloud picker + per-entity review.
@@ -45,6 +47,15 @@ interface ItemRow {
   label: string;
   conflict: boolean;
   decision: Decision;
+  /**
+   * Set once local payload + cloud payload are both available. `null`
+   * means "still fetching local for diff"; empty array means "no
+   * differences" (id matches, content matches); non-empty means the
+   * specific top-level fields that differ. Always undefined for
+   * non-conflict rows.
+   */
+  diff?: FieldDiff[] | null;
+  expanded?: boolean;
 }
 
 interface PreviewState {
@@ -59,11 +70,16 @@ export function CloudPullModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const { send } = useWs();
   const localSongs = useStore((s) => s.songs);
   const localTemplates = useStore((s) => s.templates);
   const localShows = useStore((s) => s.showMetas);
   const localHotcards = useStore((s) => s.hotcards);
   const localProjects = useStore((s) => s.projects);
+  const songCache = useStore((s) => s.songCache);
+  const templateCache = useStore((s) => s.templateCache);
+  const showCache = useStore((s) => s.showCache);
+  const hotcardCache = useStore((s) => s.hotcardCache);
 
   const [cloudProjects, setCloudProjects] = useState<Project[] | null>(null);
   const [picked, setPicked] = useState<string>("");
@@ -128,6 +144,64 @@ export function CloudPullModal({
       return { ...p, rows };
     });
   }
+
+  function toggleExpand(idx: number) {
+    setPreview((p) => {
+      if (!p) return p;
+      const rows = p.rows.slice();
+      const row = rows[idx];
+      if (!row) return p;
+      rows[idx] = { ...row, expanded: !row.expanded };
+      return { ...p, rows };
+    });
+  }
+
+  // For every conflicting row, request the local payload via WS so we can
+  // compute a field diff against the cloud version. Caches fill async; an
+  // effect below re-runs when caches change and stamps diff results.
+  useEffect(() => {
+    if (!preview) return;
+    for (const row of preview.rows) {
+      if (!row.conflict) continue;
+      if (cacheHas(row, songCache, templateCache, showCache, hotcardCache)) continue;
+      sendGet(send, row);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview?.bundle.project?.id]);
+
+  // Recompute diffs whenever the local caches change. This runs even
+  // before all fetches complete — diff rows show "computing…" until
+  // both sides are available.
+  useEffect(() => {
+    if (!preview) return;
+    let mutated = false;
+    const rows = preview.rows.map<ItemRow>((row) => {
+      if (!row.conflict) return row;
+      const local = lookupLocal(row, songCache, templateCache, showCache, hotcardCache);
+      if (!local) {
+        if (row.diff === undefined) {
+          mutated = true;
+          return { ...row, diff: null };
+        }
+        return row;
+      }
+      const cloud = lookupCloud(row, preview.bundle);
+      if (!cloud) return row;
+      const next = diffEntity(local, cloud);
+      // Only mark as changed if the diff result actually differs from
+      // what we last set. Otherwise React rerenders thrash this effect.
+      if (
+        row.diff === undefined ||
+        row.diff === null ||
+        !sameDiff(row.diff, next)
+      ) {
+        mutated = true;
+        return { ...row, diff: next };
+      }
+      return row;
+    });
+    if (mutated) setPreview({ ...preview, rows });
+  }, [preview, songCache, templateCache, showCache, hotcardCache]);
 
   function setAll(decision: Decision) {
     setPreview((p) => {
@@ -361,60 +435,92 @@ export function CloudPullModal({
           <div
             key={`${row.kind}:${row.id}`}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "6px 8px",
               border: "1px solid var(--border)",
               borderRadius: 4,
               fontSize: 12,
               background: row.conflict ? "var(--panel-2)" : "transparent",
             }}
           >
-            <span
+            <div
               style={{
-                width: 70,
-                color: colors.textDim,
-                textTransform: "uppercase",
-                fontSize: 10,
-                letterSpacing: 0.5,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 8px",
               }}
             >
-              {row.kind}
-            </span>
-            <span style={{ flex: 1 }}>
-              {row.label}
-              {row.conflict && (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    color: colors.accent2,
-                    fontSize: 10,
-                    fontWeight: 600,
-                  }}
+              <span
+                style={{
+                  width: 70,
+                  color: colors.textDim,
+                  textTransform: "uppercase",
+                  fontSize: 10,
+                  letterSpacing: 0.5,
+                }}
+              >
+                {row.kind}
+              </span>
+              <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {row.label}
+                {row.conflict && <ConflictBadge diff={row.diff} />}
+                {row.conflict && Array.isArray(row.diff) && row.diff.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(i)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: colors.textDim,
+                      cursor: "pointer",
+                      fontSize: 11,
+                      padding: 0,
+                    }}
+                  >
+                    {row.expanded ? "▼ hide" : "▶ show diff"}
+                  </button>
+                )}
+              </span>
+              <span style={{ display: "flex", gap: 4 }}>
+                <Button
+                  size="sm"
+                  variant={row.decision === "skip" ? "primary" : "ghost"}
+                  onClick={() => setDecision(i, "skip")}
+                  style={{ width: 56 }}
                 >
-                  ⚠ already local
-                </span>
-              )}
-            </span>
-            <span style={{ display: "flex", gap: 4 }}>
-              <Button
-                size="sm"
-                variant={row.decision === "skip" ? "primary" : "ghost"}
-                onClick={() => setDecision(i, "skip")}
-                style={{ width: 56 }}
+                  Skip
+                </Button>
+                <Button
+                  size="sm"
+                  variant={row.decision === "save" ? "primary" : "ghost"}
+                  onClick={() => setDecision(i, "save")}
+                  style={{ width: 70 }}
+                >
+                  {row.conflict ? "Replace" : "Save"}
+                </Button>
+              </span>
+            </div>
+            {row.expanded && Array.isArray(row.diff) && row.diff.length > 0 && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  padding: "6px 8px 8px",
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
               >
-                Skip
-              </Button>
-              <Button
-                size="sm"
-                variant={row.decision === "save" ? "primary" : "ghost"}
-                onClick={() => setDecision(i, "save")}
-                style={{ width: 70 }}
-              >
-                {row.conflict ? "Replace" : "Save"}
-              </Button>
-            </span>
+                {row.diff.map((d) => (
+                  <div key={d.key} style={{ display: "flex", gap: 6 }}>
+                    <span style={{ width: 100, color: colors.textDim }}>{d.key}</span>
+                    <span style={{ flex: 1, color: colors.red }}>{d.beforeSummary}</span>
+                    <span style={{ color: colors.textDim }}>→</span>
+                    <span style={{ flex: 1, color: colors.green ?? colors.accent2 }}>{d.afterSummary}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -500,5 +606,128 @@ function httpBase(): string {
     return `${proto}//${u.host}`;
   } catch {
     return typeof window !== "undefined" ? window.location.origin : "";
+  }
+}
+
+// ─── conflict resolution helpers ──────────────────────────────────────────
+
+function ConflictBadge({ diff }: { diff: FieldDiff[] | null | undefined }) {
+  if (diff === undefined) {
+    return (
+      <span
+        style={{
+          color: colors.accent2,
+          fontSize: 10,
+          fontWeight: 600,
+        }}
+      >
+        ⚠ already local
+      </span>
+    );
+  }
+  if (diff === null) {
+    return (
+      <span
+        style={{ color: colors.textDim, fontSize: 10 }}
+      >
+        comparing…
+      </span>
+    );
+  }
+  if (diff.length === 0) {
+    return (
+      <span
+        style={{ color: colors.textDim, fontSize: 10, fontWeight: 600 }}
+      >
+        ✓ identical
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{ color: colors.accent2, fontSize: 10, fontWeight: 600 }}
+    >
+      ⚠ {diff.length} field{diff.length === 1 ? "" : "s"} differ
+    </span>
+  );
+}
+
+function sameDiff(a: FieldDiff[] | null, b: FieldDiff[]): boolean {
+  if (!Array.isArray(a)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.key !== y.key || x.beforeSummary !== y.beforeSummary || x.afterSummary !== y.afterSummary) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function cacheHas(
+  row: ItemRow,
+  songCache: Record<string, Song>,
+  templateCache: Record<string, Template>,
+  showCache: Record<string, Show>,
+  hotcardCache: Record<string, Hotcard>,
+): boolean {
+  switch (row.kind) {
+    case "song":
+      return !!songCache[row.id];
+    case "template":
+      return !!templateCache[row.id];
+    case "show":
+      return !!showCache[row.id];
+    case "hotcard":
+      return !!hotcardCache[row.id];
+  }
+}
+
+function lookupLocal(
+  row: ItemRow,
+  songCache: Record<string, Song>,
+  templateCache: Record<string, Template>,
+  showCache: Record<string, Show>,
+  hotcardCache: Record<string, Hotcard>,
+): unknown {
+  switch (row.kind) {
+    case "song":
+      return songCache[row.id];
+    case "template":
+      return templateCache[row.id];
+    case "show":
+      return showCache[row.id];
+    case "hotcard":
+      return hotcardCache[row.id];
+  }
+}
+
+function lookupCloud(row: ItemRow, bundle: Bundle): unknown {
+  switch (row.kind) {
+    case "song":
+      return bundle.songs.find((s) => s.id === row.id);
+    case "template":
+      return bundle.templates.find((t) => t.id === row.id);
+    case "show":
+      return bundle.shows.find((s) => s.id === row.id);
+    case "hotcard":
+      return bundle.hotcards.find((h) => h.id === row.id);
+  }
+}
+
+function sendGet(
+  send: (msg: import("@overlaysys/ws-protocol").ClientMessage) => void,
+  row: ItemRow,
+): void {
+  switch (row.kind) {
+    case "song":
+      return send({ type: "get_song", songId: row.id });
+    case "template":
+      return send({ type: "get_template", templateId: row.id });
+    case "show":
+      return send({ type: "get_show", showId: row.id });
+    case "hotcard":
+      return send({ type: "get_hotcard", hotcardId: row.id });
   }
 }
