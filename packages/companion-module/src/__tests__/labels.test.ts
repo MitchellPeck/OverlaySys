@@ -88,6 +88,7 @@ describe("sectionDisplayLabel", () => {
       },
     ],
     defaultArrangement: ["sec1", "sec2"],
+    customFields: {},
   };
 
   it("returns the label for the section at the cursor", () => {

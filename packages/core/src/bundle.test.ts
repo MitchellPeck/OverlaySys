@@ -117,6 +117,7 @@ function makeSong(id: string, defaultLyricTemplateId?: string): Song {
     title: id,
     sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["x"] }] }],
     defaultArrangement: ["v1"],
+    customFields: {},
     ...(defaultLyricTemplateId !== undefined ? { defaultLyricTemplateId } : {}),
   };
 }
@@ -135,7 +136,7 @@ function makeTemplate(id: string): Template {
 }
 
 function makeShow(id: string, rows: Show["rows"]): Show {
-  return { id, name: id, projectId: "default", rows };
+  return { id, name: id, projectId: "default", rows, songs: [] };
 }
 
 describe("collectDependencies", () => {

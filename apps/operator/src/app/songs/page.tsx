@@ -65,6 +65,7 @@ export default function SongsPage() {
         },
       ],
       defaultArrangement: ["v1"],
+      customFields: {},
     };
     if (cloud) {
       try {

@@ -25,16 +25,40 @@ export const SectionSchema = z.object({
 });
 export type Section = z.infer<typeof SectionSchema>;
 
-export const SongSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  ccliNumber: z.string().optional(),
-  author: z.string().optional(),
-  copyright: z.string().optional(),
-  defaultLyricTemplateId: z.string().optional(),
-  sections: z.array(SectionSchema).min(1),
-  defaultArrangement: z.array(z.string()),
-});
+/**
+ * Songs predating custom fields and sub-take defaults have no `customFields`
+ * key. Default missing `customFields` to `{}` on read; writes always include
+ * the field. Mirrors the row-kind / projectId backfill patterns in `show.ts`.
+ */
+export const SongSchema = z.preprocess(
+  (raw) => {
+    if (
+      raw &&
+      typeof raw === "object" &&
+      !Array.isArray(raw) &&
+      !("customFields" in (raw as Record<string, unknown>))
+    ) {
+      return { customFields: {}, ...(raw as Record<string, unknown>) };
+    }
+    return raw;
+  },
+  z.object({
+    id: z.string(),
+    title: z.string(),
+    ccliNumber: z.string().optional(),
+    author: z.string().optional(),
+    copyright: z.string().optional(),
+    defaultLyricTemplateId: z.string().optional(),
+    sections: z.array(SectionSchema).min(1),
+    defaultArrangement: z.array(z.string()),
+    customFields: z.record(z.string(), z.string()),
+    defaultIntroTemplateId: z.string().optional(),
+    defaultIntroFieldMap: z.record(z.string(), z.string()).optional(),
+    defaultOutroTemplateId: z.string().optional(),
+    defaultOutroFieldMap: z.record(z.string(), z.string()).optional(),
+    defaultChannel: z.string().optional(),
+  }),
+);
 export type Song = z.infer<typeof SongSchema>;
 
 export type SongMeta = Pick<Song, "id" | "title" | "ccliNumber" | "author">;

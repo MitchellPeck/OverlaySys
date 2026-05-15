@@ -77,4 +77,31 @@ describe("SongSchema", () => {
     expect(parsed.ccliNumber).toBe("22025");
     expect(parsed.defaultLyricTemplateId).toBe("lyric-default");
   });
+
+  it("backfills missing customFields to an empty object (legacy compat)", () => {
+    // `minimal` deliberately omits `customFields` to simulate legacy data.
+    const parsed = SongSchema.parse(minimal);
+    expect(parsed.customFields).toEqual({});
+  });
+
+  it("preserves explicit customFields and sub-take defaults on round-trip", () => {
+    const parsed = SongSchema.parse({
+      ...minimal,
+      customFields: { writtenFor: "Easter", key: "G" },
+      defaultIntroTemplateId: "intro-default",
+      defaultIntroFieldMap: { title: "title", subtitle: "writtenFor" },
+      defaultOutroTemplateId: "outro-default",
+      defaultOutroFieldMap: { tagline: "writtenFor" },
+      defaultChannel: "program",
+    });
+    expect(parsed.customFields).toEqual({ writtenFor: "Easter", key: "G" });
+    expect(parsed.defaultIntroTemplateId).toBe("intro-default");
+    expect(parsed.defaultIntroFieldMap).toEqual({
+      title: "title",
+      subtitle: "writtenFor",
+    });
+    expect(parsed.defaultOutroTemplateId).toBe("outro-default");
+    expect(parsed.defaultOutroFieldMap).toEqual({ tagline: "writtenFor" });
+    expect(parsed.defaultChannel).toBe("program");
+  });
 });

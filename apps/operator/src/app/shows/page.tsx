@@ -64,6 +64,7 @@ export default function ShowsIndexPage() {
       name: "New Show",
       projectId: getCurrentProjectId(),
       rows: [],
+      songs: [],
     };
     if (cloud) {
       try {
