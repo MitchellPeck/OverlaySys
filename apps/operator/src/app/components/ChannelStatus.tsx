@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { colors, radius } from "@overlaysys/ui";
 import { ChannelPreview } from "./ChannelPreview";
+import { ChannelWindowSettingsPopover } from "./ChannelWindowSettingsPopover";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
 
 export function ChannelStatus({
@@ -33,6 +35,43 @@ export function ChannelStatus({
   onClear?: () => void;
 }) {
   const active = state?.active ?? null;
+
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hasPrefs, setHasPrefs] = useState(false);
+  const [fallbackWarning, setFallbackWarning] = useState<{
+    configuredLabel: string | null;
+    actualLabel: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isElectron() || !config) return;
+    const api = getDesktopApi();
+    if (!api) return;
+    let cancelled = false;
+    const refresh = async () => {
+      const [prefsFile, resolutions] = await Promise.all([
+        api.getChannelWindowPrefs(),
+        api.getChannelWindowResolutions(),
+      ]);
+      if (cancelled) return;
+      setHasPrefs(!!prefsFile.channels[config.id]);
+      const r = resolutions[config.id];
+      setFallbackWarning(
+        r && r.matchedBy === "fallback" && r.configuredLabel
+          ? { configuredLabel: r.configuredLabel, actualLabel: r.actualLabel }
+          : null,
+      );
+    };
+    void refresh();
+    const offOpened = api.onChannelWindowOpened(refresh);
+    const offClosed = api.onChannelWindowClosed(refresh);
+    return () => {
+      cancelled = true;
+      offOpened();
+      offClosed();
+    };
+  }, [config]);
+
   return (
     <div
       style={{
@@ -54,6 +93,14 @@ export function ChannelStatus({
         >
           ● {label}
         </div>
+        {fallbackWarning && (
+          <div
+            title={`Configured for ${fallbackWarning.configuredLabel}; using ${fallbackWarning.actualLabel}`}
+            style={{ fontSize: 11, color: colors.warn }}
+          >
+            ⚠
+          </div>
+        )}
         {(mirrorOf || renderMode === "matte") && (
           <div style={{ fontSize: 10, color: colors.textDim, fontWeight: 400 }}>
             {mirrorOf && <>↳ {mirrorOf}</>}
@@ -83,30 +130,83 @@ export function ChannelStatus({
             </button>
           )}
           {(href || config) && (
-            <button
-              onClick={() => {
-                if (isElectron() && config) {
-                  getDesktopApi()?.openChannelWindow(config.id);
-                } else if (href) {
-                  window.open(href, "_blank", "noreferrer");
-                }
-              }}
-              title="Open renderer"
-              style={{
-                width: 22,
-                height: 18,
-                background: "transparent",
-                color: accent,
-                border: `1px solid ${colors.border}`,
-                borderRadius: radius.sm,
-                cursor: "pointer",
-                fontSize: 10,
-                padding: 0,
-                lineHeight: 1,
-              }}
-            >
-              ↗
-            </button>
+            <>
+              {hasPrefs && (
+                <button
+                  onClick={() => {
+                    const api = getDesktopApi();
+                    if (api && config) void api.reopenChannelOnConfiguredDisplay(config.id);
+                  }}
+                  title="Reopen on configured display"
+                  style={{
+                    width: 22,
+                    height: 18,
+                    background: "transparent",
+                    color: accent,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: radius.sm,
+                    cursor: "pointer",
+                    fontSize: 10,
+                    padding: 0,
+                    lineHeight: 1,
+                  }}
+                >
+                  ⟳
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  if (isElectron() && config) {
+                    getDesktopApi()?.openChannelWindow(config.id);
+                  } else if (href) {
+                    window.open(href, "_blank", "noreferrer");
+                  }
+                }}
+                title="Open renderer"
+                style={{
+                  width: 22,
+                  height: 18,
+                  background: "transparent",
+                  color: accent,
+                  border: `1px solid ${colors.border}`,
+                  borderRadius: radius.sm,
+                  cursor: "pointer",
+                  fontSize: 10,
+                  padding: 0,
+                  lineHeight: 1,
+                }}
+              >
+                ↗
+              </button>
+              {isElectron() && config && (
+                <div style={{ position: "relative" }}>
+                  <button
+                    onClick={() => setSettingsOpen((v) => !v)}
+                    title="Window settings"
+                    style={{
+                      width: 22,
+                      height: 18,
+                      background: "transparent",
+                      color: settingsOpen ? accent : colors.textDim,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: radius.sm,
+                      cursor: "pointer",
+                      fontSize: 10,
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
+                  >
+                    ⚙
+                  </button>
+                  {settingsOpen && (
+                    <ChannelWindowSettingsPopover
+                      channelId={config.id}
+                      onClose={() => setSettingsOpen(false)}
+                    />
+                  )}
+                </div>
+              )}
+            </>
           )}
           {onClear && (
             <button
