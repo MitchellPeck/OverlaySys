@@ -144,6 +144,9 @@ export function SongTakeStrip({
     // Highlight progression: intro → lyrics → outro → none.
     // Before any take: first segment (intro if present, else lyrics).
     // After firing X: the segment after X in the canonical order, if present.
+    // Special case: when lyrics is the LAST present segment (no outro), the
+    // highlight stays on lyrics after firing so each subsequent click reads
+    // as "the obvious next action" rather than going un-highlighted.
     const order: Segment[] = ["intro", "lyrics", "outro"];
     if (lastFired === null) {
       return segments[0] ?? null;
@@ -152,6 +155,9 @@ export function SongTakeStrip({
     for (let i = idx + 1; i < order.length; i++) {
       const seg = order[i]!;
       if (segments.includes(seg)) return seg;
+    }
+    if (lastFired === "lyrics" && segments[segments.length - 1] === "lyrics") {
+      return "lyrics";
     }
     return null;
   }
