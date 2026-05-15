@@ -458,6 +458,68 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   return win;
 }
 
+/**
+ * Resolve the target display for a channel and open its renderer
+ * window. Records the resolution result so the operator UI can
+ * surface fallbacks. Honors `forceRecreate` to support the "Reopen
+ * on configured display" action.
+ */
+function openConfiguredChannelWindow(
+  channelId: string,
+  prefs: ChannelWindowPrefs,
+  overrides: Partial<ChannelWindowOptions> = {},
+  forceRecreate = false,
+): { reused: boolean } {
+  const file = loadPrefs(prefsFilePath());
+  const displays = currentDisplaysSnapshot();
+  const primary = screen.getPrimaryDisplay();
+  const resolved = resolveDisplay(prefs, {
+    displays,
+    cached: file.displays,
+    primary: {
+      id: primary.id,
+      label: primary.label,
+      bounds: { ...primary.bounds },
+      internal: primary.internal,
+    },
+  });
+
+  const cachedFor = file.displays.find((c) => c.id === prefs.displayId);
+  channelResolutions.set(channelId, {
+    matchedBy: resolved.matchedBy,
+    configuredLabel: cachedFor?.label ?? null,
+    actualLabel: resolved.display.label,
+    actualDisplayId: resolved.display.id,
+  });
+
+  // Refresh the display cache with whatever we just resolved.
+  if (resolved.matchedBy !== "fallback") {
+    file.displays = updateDisplayCache(file.displays, displays, file.channels);
+    savePrefs(prefsFilePath(), file);
+  }
+
+  const existing = channelWindows.get(channelId);
+  if (existing && !existing.isDestroyed()) {
+    if (forceRecreate) {
+      existing.close();
+    } else {
+      existing.focus();
+      return { reused: true };
+    }
+  }
+
+  const opts: ChannelWindowOptions = {
+    fullscreen: prefs.fullscreen,
+    frameless: prefs.frameless,
+    alwaysOnTop: prefs.alwaysOnTop,
+    transparent: prefs.transparent,
+    displayId: resolved.display.id,
+    ...overrides,
+  };
+  createChannelWindow(channelId, opts);
+  return { reused: false };
+}
+
 // ── Native menu ──────────────────────────────────────────────────────────────
 
 function buildMenu(): void {
@@ -534,6 +596,14 @@ function registerIpc(): void {
     (_event, channelId: string, opts?: ChannelWindowOptions) => {
       if (typeof channelId !== "string" || !channelId) {
         throw new Error("channelId required");
+      }
+      // If we have stored prefs for this channel, layer the caller's
+      // explicit `opts` on top — but use prefs as the base (display,
+      // fullscreen, etc.).
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (prefs) {
+        return openConfiguredChannelWindow(channelId, prefs, opts ?? {}, false);
       }
       const existing = channelWindows.get(channelId);
       if (existing && !existing.isDestroyed()) {
@@ -612,6 +682,20 @@ function registerIpc(): void {
     return Object.fromEntries(channelResolutions);
   });
 
+  ipcMain.handle(
+    "overlaysys:reopen-channel-on-configured-display",
+    (_event, channelId: string) => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (!prefs) return { reused: false, reason: "no-prefs" as const };
+      openConfiguredChannelWindow(channelId, prefs, {}, /* forceRecreate */ true);
+      return { reused: false };
+    },
+  );
+
   // ── Cloud auth ────────────────────────────────────────────────────────
   // Sign-in opens the system browser at apps.mitchellpeck.com's
   // /api/apps/<id>/open endpoint with a localhost loopback `return`
@@ -659,6 +743,20 @@ async function boot(): Promise<void> {
   buildMenu();
   registerIpc();
   operatorWindow = createOperatorWindow();
+
+  // Auto-open configured channel windows. Done after the operator
+  // window so closing the operator (which closes all channel windows)
+  // is the canonical lifecycle owner.
+  try {
+    const file = loadPrefs(prefsFilePath());
+    for (const [channelId, prefs] of Object.entries(file.channels)) {
+      if (prefs.autoOpen) {
+        openConfiguredChannelWindow(channelId, prefs, {}, false);
+      }
+    }
+  } catch (err) {
+    console.error("[desktop] auto-open failed:", err);
+  }
 }
 
 app.whenReady().then(boot);
