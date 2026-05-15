@@ -1,9 +1,52 @@
 import fs from "node:fs";
 import path from "node:path";
-import {
-  WindowPrefsFileSchema,
-  type WindowPrefsFile,
+import { z } from "zod";
+import type {
+  CachedDisplay,
+  ChannelWindowPrefs,
+  WindowPrefsFile,
 } from "@overlaysys/core";
+
+// NOTE: this schema is duplicated from `@overlaysys/core`'s
+// `channelWindowPrefs.ts` on purpose. `@overlaysys/core` is consumed
+// as raw TypeScript (its package.json `main` points at `src/index.ts`),
+// so importing the schema *value* at runtime in the Electron main
+// process — which is compiled by tsc and run by plain Node — would
+// force a `require()` of a `.ts` file and crash on launch.
+// Keep this structurally identical to the upstream schema. If
+// `@overlaysys/core` ever ships a compiled `dist/`, collapse this back
+// into a single import.
+const WindowPrefsFileSchema = z.object({
+  version: z.literal(1).default(1),
+  displays: z
+    .array(
+      z.object({
+        id: z.number(),
+        label: z.string(),
+        bounds: z.object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number(),
+          height: z.number(),
+        }),
+        internal: z.boolean(),
+      }),
+    )
+    .default([]),
+  channels: z
+    .record(
+      z.string(),
+      z.object({
+        autoOpen: z.boolean().default(false),
+        displayId: z.number().optional(),
+        fullscreen: z.boolean().default(false),
+        frameless: z.boolean().default(false),
+        alwaysOnTop: z.boolean().default(false),
+        transparent: z.boolean().default(false),
+      }),
+    )
+    .default({}),
+});
 
 const DEFAULTS: WindowPrefsFile = {
   version: 1,
@@ -33,8 +76,6 @@ export function savePrefs(file: string, prefs: WindowPrefsFile): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(validated, null, 2), "utf8");
 }
-
-import type { CachedDisplay, ChannelWindowPrefs } from "@overlaysys/core";
 
 /**
  * Subset of Electron's `Display` used by resolve/fingerprint. Defined
