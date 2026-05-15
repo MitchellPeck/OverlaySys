@@ -4,6 +4,7 @@
   "ccliNumber": "68003",
   "author": "Clara H. Fiske Scott",
   "copyright": "© Words: Public Domain; Music: Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
   "sections": [
     {
       "id": "v1",
@@ -139,5 +140,18 @@
     "c2",
     "v3",
     "c3"
-  ]
+  ],
+  "customFields": {
+    "hymn_num": "#454"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "defaultOutroTemplateId": "lyric-default",
+  "defaultOutroFieldMap": {
+    "text": "copyright"
+  },
+  "defaultChannel": "program"
 }

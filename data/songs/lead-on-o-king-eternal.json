@@ -4,6 +4,7 @@
   "ccliNumber": "3325502",
   "author": "Ernest Warburton Shurtleff, Henry Thomas Smart, Ovid Young",
   "copyright": "© Words: Public Domain; Music: 1984 Laurel Press",
+  "defaultLyricTemplateId": "lyric-default",
   "sections": [
     {
       "id": "v1",
@@ -115,5 +116,18 @@
     "v1",
     "v2",
     "v3"
-  ]
+  ],
+  "customFields": {
+    "hymn_num": "#580"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "defaultOutroTemplateId": "lyric-default",
+  "defaultOutroFieldMap": {
+    "text": "copyright"
+  },
+  "defaultChannel": "program"
 }
