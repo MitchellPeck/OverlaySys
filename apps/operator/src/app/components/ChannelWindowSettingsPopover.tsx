@@ -21,9 +21,11 @@ const DEFAULT_PREFS: ChannelWindowPrefs = {
 export function ChannelWindowSettingsPopover({
   channelId,
   onClose,
+  onSaved,
 }: {
   channelId: string;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const api = getDesktopApi();
   const [displays, setDisplays] = useState<CachedDisplay[]>([]);
@@ -66,6 +68,7 @@ export function ChannelWindowSettingsPopover({
   const onSave = async () => {
     await api.setChannelWindowPrefs(channelId, prefs);
     setDirty(false);
+    onSaved?.();
     onClose();
   };
 

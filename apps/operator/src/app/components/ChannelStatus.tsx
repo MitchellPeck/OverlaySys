@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { colors, radius } from "@overlaysys/ui";
 import { ChannelPreview } from "./ChannelPreview";
@@ -43,34 +43,35 @@ export function ChannelStatus({
     actualLabel: string;
   } | null>(null);
 
+  const refreshPrefsState = useCallback(async () => {
+    if (!isElectron() || !config) return;
+    const api = getDesktopApi();
+    if (!api) return;
+    const [prefsFile, resolutions] = await Promise.all([
+      api.getChannelWindowPrefs(),
+      api.getChannelWindowResolutions(),
+    ]);
+    setHasPrefs(!!prefsFile.channels[config.id]);
+    const r = resolutions[config.id];
+    setFallbackWarning(
+      r && r.matchedBy === "fallback" && r.configuredLabel
+        ? { configuredLabel: r.configuredLabel, actualLabel: r.actualLabel }
+        : null,
+    );
+  }, [config]);
+
   useEffect(() => {
     if (!isElectron() || !config) return;
     const api = getDesktopApi();
     if (!api) return;
-    let cancelled = false;
-    const refresh = async () => {
-      const [prefsFile, resolutions] = await Promise.all([
-        api.getChannelWindowPrefs(),
-        api.getChannelWindowResolutions(),
-      ]);
-      if (cancelled) return;
-      setHasPrefs(!!prefsFile.channels[config.id]);
-      const r = resolutions[config.id];
-      setFallbackWarning(
-        r && r.matchedBy === "fallback" && r.configuredLabel
-          ? { configuredLabel: r.configuredLabel, actualLabel: r.actualLabel }
-          : null,
-      );
-    };
-    void refresh();
-    const offOpened = api.onChannelWindowOpened(refresh);
-    const offClosed = api.onChannelWindowClosed(refresh);
+    void refreshPrefsState();
+    const offOpened = api.onChannelWindowOpened(() => void refreshPrefsState());
+    const offClosed = api.onChannelWindowClosed(() => void refreshPrefsState());
     return () => {
-      cancelled = true;
       offOpened();
       offClosed();
     };
-  }, [config]);
+  }, [config, refreshPrefsState]);
 
   return (
     <div
@@ -202,6 +203,7 @@ export function ChannelStatus({
                     <ChannelWindowSettingsPopover
                       channelId={config.id}
                       onClose={() => setSettingsOpen(false)}
+                      onSaved={() => void refreshPrefsState()}
                     />
                   )}
                 </div>
