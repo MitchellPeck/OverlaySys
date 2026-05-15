@@ -126,13 +126,23 @@ function SongEditorPageInner() {
   // the FieldMappingTable. The store keeps a separate `templates` (meta-only)
   // list for the picker dropdowns and a `templateCache` (full payload) for
   // editors — we need the latter for `template.fields`.
+  //
+  // Deps are narrowed to just the two template ids (plus WS/cloud state) so
+  // typing in unrelated fields (e.g. the title input) doesn't re-fire this.
+  // `templateCache` is intentionally read via a one-shot `useStore.getState()`
+  // call instead of being a dep — a cache population shouldn't re-fire the
+  // effect, and the in-flight `if (templateCache[id])` check below guards
+  // against duplicate fetches on the next legitimate re-run.
+  const introTplId = draft?.defaultIntroTemplateId;
+  const outroTplId = draft?.defaultOutroTemplateId;
   useEffect(() => {
-    if (!draft) return;
-    const needed = new Set<string>();
-    if (draft.defaultIntroTemplateId) needed.add(draft.defaultIntroTemplateId);
-    if (draft.defaultOutroTemplateId) needed.add(draft.defaultOutroTemplateId);
+    const needed: string[] = [];
+    if (introTplId) needed.push(introTplId);
+    if (outroTplId) needed.push(outroTplId);
+    if (needed.length === 0) return;
+    const cacheNow = useStore.getState().templateCache;
     for (const templateId of needed) {
-      if (templateCache[templateId]) continue;
+      if (cacheNow[templateId]) continue;
       if (cloud) {
         getTemplateCloud(templateId)
           .then((t) => {
@@ -145,14 +155,71 @@ function SongEditorPageInner() {
         send({ type: "get_template", templateId });
       }
     }
-  }, [
-    draft,
-    templateCache,
-    cloud,
-    conn,
-    send,
-    setTemplate,
-  ]);
+  }, [introTplId, outroTplId, cloud, conn, send, setTemplate]);
+
+  // Derived data for the Custom Fields + Defaults sections. The cheap pieces
+  // (projectSchema, adHocKeys) recompute each render; the expensive ones
+  // (listSongFieldDescriptors, suggestFieldMap) are memoized so typing in
+  // unrelated inputs doesn't re-run them. All useMemo calls live ABOVE the
+  // early-return below to keep hook order stable across renders.
+  const projectSchema =
+    projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [];
+  const songFieldDescriptors = useMemo(
+    () =>
+      draft ? listSongFieldDescriptors(draft, projectSchema) : [],
+    [draft, projects, currentProjectId],
+  );
+  const introTemplate = draft?.defaultIntroTemplateId
+    ? templateCache[draft.defaultIntroTemplateId]
+    : undefined;
+  const outroTemplate = draft?.defaultOutroTemplateId
+    ? templateCache[draft.defaultOutroTemplateId]
+    : undefined;
+  const introSuggestions: Record<string, SuggestedFieldMatch> = useMemo(
+    () => (introTemplate ? suggestFieldMap(introTemplate.fields, songFieldDescriptors) : {}),
+    [introTemplate, songFieldDescriptors],
+  );
+  const outroSuggestions: Record<string, SuggestedFieldMatch> = useMemo(
+    () => (outroTemplate ? suggestFieldMap(outroTemplate.fields, songFieldDescriptors) : {}),
+    [outroTemplate, songFieldDescriptors],
+  );
+
+  // One-shot seeding for the cold-cache scenario: changeSubTakeTemplate runs
+  // while the template payload isn't in cache yet, the load effect later
+  // populates it, and we want suggestions to appear automatically instead of
+  // forcing the operator to re-pick the template. Re-running is guarded by
+  // confirmedKeys being empty — once the user has touched any row (including
+  // clearing it), we leave the map alone.
+  useEffect(() => {
+    if (!draft || !introTemplate) return;
+    if (introConfirmed.size > 0) return;
+    if (Object.keys(draft.defaultIntroFieldMap ?? {}).length > 0) return;
+    const next: Record<string, string> = {};
+    const exacts = new Set<string>();
+    for (const [k, s] of Object.entries(introSuggestions)) {
+      if (s.kind !== "none") next[k] = s.songFieldKey;
+      if (s.kind === "exact") exacts.add(k);
+    }
+    if (Object.keys(next).length === 0) return;
+    setDraft((d) => (d ? { ...d, defaultIntroFieldMap: next } : d));
+    setIntroConfirmed(exacts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- introSuggestions/confirmed/draft are checked above; seeding fires only on the cold→warm transition
+  }, [introTemplate]);
+  useEffect(() => {
+    if (!draft || !outroTemplate) return;
+    if (outroConfirmed.size > 0) return;
+    if (Object.keys(draft.defaultOutroFieldMap ?? {}).length > 0) return;
+    const next: Record<string, string> = {};
+    const exacts = new Set<string>();
+    for (const [k, s] of Object.entries(outroSuggestions)) {
+      if (s.kind !== "none") next[k] = s.songFieldKey;
+      if (s.kind === "exact") exacts.add(k);
+    }
+    if (Object.keys(next).length === 0) return;
+    setDraft((d) => (d ? { ...d, defaultOutroFieldMap: next } : d));
+    setOutroConfirmed(exacts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mirror of intro seeding effect above
+  }, [outroTemplate]);
 
   if (!draft) return <div style={{ padding: 24 }}>Loading…</div>;
 
@@ -160,29 +227,10 @@ function SongEditorPageInner() {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   }
 
-  // Derived data for the Custom Fields + Defaults sections. Recomputed each
-  // render — none of these are expensive and `draft` changes on every keystroke.
-  const projectSchema =
-    projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [];
   const projectSchemaKeyMap = new Map(projectSchema.map((f) => [f.key, f]));
   const adHocKeys = Object.keys(draft.customFields)
     .filter((k) => !projectSchemaKeyMap.has(k))
     .sort();
-  const songFieldDescriptors = listSongFieldDescriptors(draft, projectSchema);
-  // Full template payloads live in templateCache (the picker dropdowns use
-  // `templates`, which is meta-only and lacks the `fields` array).
-  const introTemplate = draft.defaultIntroTemplateId
-    ? templateCache[draft.defaultIntroTemplateId]
-    : undefined;
-  const outroTemplate = draft.defaultOutroTemplateId
-    ? templateCache[draft.defaultOutroTemplateId]
-    : undefined;
-  const introSuggestions: Record<string, SuggestedFieldMatch> = introTemplate
-    ? suggestFieldMap(introTemplate.fields, songFieldDescriptors)
-    : {};
-  const outroSuggestions: Record<string, SuggestedFieldMatch> = outroTemplate
-    ? suggestFieldMap(outroTemplate.fields, songFieldDescriptors)
-    : {};
 
   function addAdHocField() {
     const key = newFieldKey.trim();
@@ -360,19 +408,23 @@ function SongEditorPageInner() {
     for (const [key, s] of Object.entries(suggestions)) {
       if (s.kind !== "none") nextMap[key] = s.songFieldKey;
     }
+    // Normalize empty maps to undefined: schema is .optional() and we want
+    // "absent" rather than "explicitly empty" to be the canonical form.
+    const persistedMap =
+      templateId && Object.keys(nextMap).length > 0 ? nextMap : undefined;
     setDraft((d) => {
       if (!d) return d;
       if (which === "intro") {
         return {
           ...d,
           defaultIntroTemplateId: templateId,
-          defaultIntroFieldMap: templateId ? nextMap : undefined,
+          defaultIntroFieldMap: persistedMap,
         };
       }
       return {
         ...d,
         defaultOutroTemplateId: templateId,
-        defaultOutroFieldMap: templateId ? nextMap : undefined,
+        defaultOutroFieldMap: persistedMap,
       };
     });
     // Exact-match rows don't need confirmation; they render the ✓ indicator.
@@ -543,11 +595,6 @@ function SongEditorPageInner() {
             {newFieldError}
           </div>
         )}
-        {/* Note on schema-defined fields: removing the value just clears the
-            input. We intentionally keep the key in `customFields` (with `""`)
-            so the project schema's row stays visible in the form; the wire
-            format permits empty strings. Removing the project schema entry
-            entirely is done from the Projects page. */}
       </Panel>
 
       <Panel title="Defaults" padding="md" style={{ marginBottom: 16 }}>
@@ -582,7 +629,12 @@ function SongEditorPageInner() {
               value={draft.defaultIntroFieldMap ?? {}}
               suggestions={introSuggestions}
               confirmedKeys={introConfirmed}
-              onChange={(next) => setMeta("defaultIntroFieldMap", next)}
+              onChange={(next) =>
+                setMeta(
+                  "defaultIntroFieldMap",
+                  Object.keys(next).length === 0 ? undefined : next,
+                )
+              }
               onConfirm={(key) =>
                 setIntroConfirmed((prev) => {
                   if (prev.has(key)) return prev;
@@ -626,7 +678,12 @@ function SongEditorPageInner() {
               value={draft.defaultOutroFieldMap ?? {}}
               suggestions={outroSuggestions}
               confirmedKeys={outroConfirmed}
-              onChange={(next) => setMeta("defaultOutroFieldMap", next)}
+              onChange={(next) =>
+                setMeta(
+                  "defaultOutroFieldMap",
+                  Object.keys(next).length === 0 ? undefined : next,
+                )
+              }
               onConfirm={(key) =>
                 setOutroConfirmed((prev) => {
                   if (prev.has(key)) return prev;
