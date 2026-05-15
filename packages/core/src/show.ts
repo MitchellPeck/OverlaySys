@@ -24,10 +24,18 @@ export const SongRowSchema = z.object({
   introTemplateId: z.string().optional(),
   /** Per-row override of the intro field map (templateFieldKey -> songFieldKey). */
   introFieldMap: z.record(z.string(), z.string()).optional(),
+  /**
+   * Per-row override of the intro field literals (templateFieldKey -> template
+   * string). See {@link Song.defaultIntroFieldLiterals} for syntax; literal
+   * cascade is row → ShowSong → Song.
+   */
+  introFieldLiterals: z.record(z.string(), z.string()).optional(),
   /** Per-row override of the outro template; falls back to ShowSong / Song default. */
   outroTemplateId: z.string().optional(),
   /** Per-row override of the outro field map (templateFieldKey -> songFieldKey). */
   outroFieldMap: z.record(z.string(), z.string()).optional(),
+  /** Per-row override of the outro field literals. See introFieldLiterals. */
+  outroFieldLiterals: z.record(z.string(), z.string()).optional(),
   /** When true, the operator has explicitly opted out of an intro sub-take for this row. */
   skipIntro: z.boolean().optional(),
   /** When true, the operator has explicitly opted out of an outro sub-take for this row. */
@@ -47,8 +55,15 @@ export const ShowSongSchema = z.object({
   channelOverride: z.string().optional(),
   introTemplateId: z.string().optional(),
   introFieldMap: z.record(z.string(), z.string()).optional(),
+  /**
+   * Per-show override of intro field literals (templateFieldKey -> template
+   * string). See {@link Song.defaultIntroFieldLiterals} for syntax.
+   */
+  introFieldLiterals: z.record(z.string(), z.string()).optional(),
   outroTemplateId: z.string().optional(),
   outroFieldMap: z.record(z.string(), z.string()).optional(),
+  /** Per-show override of outro field literals. See introFieldLiterals. */
+  outroFieldLiterals: z.record(z.string(), z.string()).optional(),
   lyricTemplateId: z.string().optional(),
   customFieldOverrides: z.record(z.string(), z.string()).optional(),
 });

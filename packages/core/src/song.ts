@@ -55,9 +55,19 @@ export const SongSchema = z.preprocess(
     defaultIntroTemplateId: z.string().optional(),
     /** Song-level default intro field map (templateFieldKey -> songFieldKey). */
     defaultIntroFieldMap: z.record(z.string(), z.string()).optional(),
+    /**
+     * Song-level default intro field literals (templateFieldKey -> template
+     * string). The template string can contain `{key}` tokens which are
+     * substituted at take time via interpolateSongString — see
+     * songResolution.ts. Literals win over the field map when both are set
+     * for the same template field.
+     */
+    defaultIntroFieldLiterals: z.record(z.string(), z.string()).optional(),
     defaultOutroTemplateId: z.string().optional(),
     /** Song-level default outro field map (templateFieldKey -> songFieldKey). */
     defaultOutroFieldMap: z.record(z.string(), z.string()).optional(),
+    /** Song-level default outro field literals. See defaultIntroFieldLiterals. */
+    defaultOutroFieldLiterals: z.record(z.string(), z.string()).optional(),
     defaultChannel: z.string().optional(),
   }),
 );

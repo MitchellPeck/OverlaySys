@@ -627,11 +627,18 @@ function SongEditorPageInner() {
               templateFields={introTemplate.fields}
               songFields={songFieldDescriptors}
               value={draft.defaultIntroFieldMap ?? {}}
+              literals={draft.defaultIntroFieldLiterals ?? {}}
               suggestions={introSuggestions}
               confirmedKeys={introConfirmed}
               onChange={(next) =>
                 setMeta(
                   "defaultIntroFieldMap",
+                  Object.keys(next).length === 0 ? undefined : next,
+                )
+              }
+              onLiteralsChange={(next) =>
+                setMeta(
+                  "defaultIntroFieldLiterals",
                   Object.keys(next).length === 0 ? undefined : next,
                 )
               }
@@ -676,11 +683,18 @@ function SongEditorPageInner() {
               templateFields={outroTemplate.fields}
               songFields={songFieldDescriptors}
               value={draft.defaultOutroFieldMap ?? {}}
+              literals={draft.defaultOutroFieldLiterals ?? {}}
               suggestions={outroSuggestions}
               confirmedKeys={outroConfirmed}
               onChange={(next) =>
                 setMeta(
                   "defaultOutroFieldMap",
+                  Object.keys(next).length === 0 ? undefined : next,
+                )
+              }
+              onLiteralsChange={(next) =>
+                setMeta(
+                  "defaultOutroFieldLiterals",
                   Object.keys(next).length === 0 ? undefined : next,
                 )
               }

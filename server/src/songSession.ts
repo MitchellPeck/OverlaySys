@@ -261,8 +261,23 @@ export function setTrust(channel: string, trustMode: boolean): void {
 }
 
 export function end(channel: string): void {
+  if (!endSessionOnly(channel)) return;
+  channels.clear(channel);
+}
+
+/**
+ * Tear down session state without calling `channels.clear`. Returns true if a
+ * session was actually torn down. Used when the caller is about to install a
+ * new active mount (e.g. an outro `take` after the lyrics session) and doesn't
+ * want the renderer to play an OUT animation for the lyric template followed
+ * immediately by an IN for the new template — the double-emit causes the new
+ * template to snap in instead of animating.
+ *
+ * Safe to call when no session is active (returns false).
+ */
+export function endSessionOnly(channel: string): boolean {
   const s = sessions.get(channel);
-  if (!s) return;
+  if (!s) return false;
   const timer = autoAdvanceTimers.get(channel);
   if (timer) {
     clearTimeout(timer);
@@ -271,8 +286,8 @@ export function end(channel: string): void {
   sttMatcher.unbindSession(channel);
   sessions.delete(channel);
   channels.setSongSessionSummary(channel, null);
-  channels.clear(channel);
   if (channel === PROGRAM_CHANNEL) refreshProgramBias();
+  return true;
 }
 
 /**

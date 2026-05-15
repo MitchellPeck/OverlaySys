@@ -117,9 +117,9 @@ export function SongOverrideEditor({
     [outroTemplate, songFieldDescriptors],
   );
 
-  // Field maps for the table: when an override exists use it (possibly empty
-  // = "all fields cleared"); otherwise show the song default so operators see
-  // what's effective without having to toggle override.
+  // Field maps + literals for the table: when an override exists use it
+  // (possibly empty = "all fields cleared"); otherwise show the song default so
+  // operators see what's effective without having to toggle override.
   const effectiveIntroMap =
     entry.introTemplateId !== undefined
       ? entry.introFieldMap ?? {}
@@ -128,16 +128,24 @@ export function SongOverrideEditor({
     entry.outroTemplateId !== undefined
       ? entry.outroFieldMap ?? {}
       : song.defaultOutroFieldMap ?? {};
+  const effectiveIntroLiterals =
+    entry.introTemplateId !== undefined
+      ? entry.introFieldLiterals ?? {}
+      : song.defaultIntroFieldLiterals ?? {};
+  const effectiveOutroLiterals =
+    entry.outroTemplateId !== undefined
+      ? entry.outroFieldLiterals ?? {}
+      : song.defaultOutroFieldLiterals ?? {};
 
   function overrideTemplate(which: "intro" | "outro", templateId: string | undefined) {
     const songDefault =
       which === "intro" ? song.defaultIntroTemplateId : song.defaultOutroTemplateId;
-    // Reverting to song default clears both the template + the field map.
+    // Reverting to song default clears the template, field map, AND literals.
     if (templateId === undefined) {
       onChange(
         which === "intro"
-          ? { introTemplateId: undefined, introFieldMap: undefined }
-          : { outroTemplateId: undefined, outroFieldMap: undefined },
+          ? { introTemplateId: undefined, introFieldMap: undefined, introFieldLiterals: undefined }
+          : { outroTemplateId: undefined, outroFieldMap: undefined, outroFieldLiterals: undefined },
       );
       if (which === "intro") setIntroConfirmed(new Set());
       else setOutroConfirmed(new Set());
@@ -180,6 +188,16 @@ export function SongOverrideEditor({
   function setOutroMap(next: Record<string, string>) {
     onChange({
       outroFieldMap: Object.keys(next).length === 0 ? undefined : next,
+    });
+  }
+  function setIntroLiterals(next: Record<string, string>) {
+    onChange({
+      introFieldLiterals: Object.keys(next).length === 0 ? undefined : next,
+    });
+  }
+  function setOutroLiterals(next: Record<string, string>) {
+    onChange({
+      outroFieldLiterals: Object.keys(next).length === 0 ? undefined : next,
     });
   }
 
@@ -308,9 +326,11 @@ export function SongOverrideEditor({
             templateFields={introTemplate.fields}
             songFields={songFieldDescriptors}
             value={effectiveIntroMap}
+            literals={effectiveIntroLiterals}
             suggestions={introSuggestions}
             confirmedKeys={introConfirmed}
             onChange={setIntroMap}
+            onLiteralsChange={setIntroLiterals}
             onConfirm={(key) =>
               setIntroConfirmed((prev) => {
                 if (prev.has(key)) return prev;
@@ -353,9 +373,11 @@ export function SongOverrideEditor({
             templateFields={outroTemplate.fields}
             songFields={songFieldDescriptors}
             value={effectiveOutroMap}
+            literals={effectiveOutroLiterals}
             suggestions={outroSuggestions}
             confirmedKeys={outroConfirmed}
             onChange={setOutroMap}
+            onLiteralsChange={setOutroLiterals}
             onConfirm={(key) =>
               setOutroConfirmed((prev) => {
                 if (prev.has(key)) return prev;

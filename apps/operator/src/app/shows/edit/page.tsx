@@ -889,6 +889,7 @@ function SongRowEditor({
           value={row.channelHint}
           onChange={(v) => patchRow({ channelHint: v })}
           channels={channels}
+          inheritedValue={inheritedChannel}
         />
       </td>
       <td style={{ ...td, width: 200 }}>
@@ -1126,13 +1127,27 @@ function ChannelHintSelect({
   value,
   onChange,
   channels,
+  inheritedValue,
 }: {
   value: string | undefined;
   onChange: (v: string | undefined) => void;
   channels: ChannelConfig[];
+  /**
+   * Cascade-resolved channel that applies when `value` is undefined. Used to
+   * label the empty option so the operator sees the actual at-take channel
+   * (e.g. "(inherited: Program)") instead of a bare "(any)" that hides where
+   * the song's defaultChannel is winding up.
+   */
+  inheritedValue?: string;
 }) {
   const current = value ?? "";
   const knownChannel = current && channels.some((c) => c.id === current);
+  const inheritedLabel = inheritedValue
+    ? channels.find((c) => c.id === inheritedValue)?.name ?? inheritedValue
+    : null;
+  const emptyLabel = inheritedLabel
+    ? `(inherited: ${inheritedLabel})`
+    : "(any)";
   // Preserve out-of-list values rather than silently dropping them — a row
   // might reference a channel that's been removed or is now a mirror, and we
   // don't want a save to quietly overwrite that hint.
@@ -1141,7 +1156,7 @@ function ChannelHintSelect({
       value={current}
       onChange={(e) => onChange(e.target.value ? e.target.value : undefined)}
     >
-      <option value="">(any)</option>
+      <option value="">{emptyLabel}</option>
       {!knownChannel && current && (
         <option value={current}>{current} (missing)</option>
       )}

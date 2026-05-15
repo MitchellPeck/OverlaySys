@@ -6,6 +6,7 @@ import {
   resolveOutroTake,
   suggestFieldMap,
   listSongFieldDescriptors,
+  interpolateSongString,
 } from "./songResolution";
 import type { Song } from "./song";
 import type { ShowSong, SongRow } from "./show";
@@ -359,5 +360,158 @@ describe("listSongFieldDescriptors", () => {
     const out = listSongFieldDescriptors(song);
     const wk = out.find((d) => d.key === "weird_key")!;
     expect(wk).toEqual({ key: "weird_key", label: "weird_key", type: "text" });
+  });
+});
+
+// --- interpolateSongString ------------------------------------------------
+
+describe("interpolateSongString", () => {
+  it("substitutes built-in song fields", () => {
+    const song = makeSong({ title: "Be Thou My Vision", author: "Dallan Forgaill" });
+    expect(interpolateSongString("{title} by {author}", makeRow(), undefined, song)).toBe(
+      "Be Thou My Vision by Dallan Forgaill",
+    );
+  });
+
+  it("substitutes custom fields via the cascade", () => {
+    const song = makeSong({ customFields: { hymnNumber: "152" } });
+    expect(interpolateSongString("Hymn #{hymnNumber}", makeRow(), undefined, song)).toBe(
+      "Hymn #152",
+    );
+  });
+
+  it("honors ShowSong customFieldOverrides over Song.customFields", () => {
+    const song = makeSong({ customFields: { hymnNumber: "152" } });
+    const showSong: ShowSong = { songId: "song1", customFieldOverrides: { hymnNumber: "999" } };
+    expect(interpolateSongString("#{hymnNumber}", makeRow(), showSong, song)).toBe("#999");
+  });
+
+  it("treats {{ as a literal { (and }} as }) ", () => {
+    const song = makeSong({ title: "x" });
+    expect(interpolateSongString("{{title}} is the {title}", makeRow(), undefined, song)).toBe(
+      "{title} is the x",
+    );
+    expect(interpolateSongString("a }} b", makeRow(), undefined, song)).toBe("a } b");
+  });
+
+  it("resolves unknown keys to an empty string", () => {
+    const song = makeSong();
+    expect(interpolateSongString("[{nonexistent}]", makeRow(), undefined, song)).toBe("[]");
+  });
+
+  it("emits unterminated `{` verbatim instead of throwing", () => {
+    const song = makeSong({ title: "x" });
+    expect(interpolateSongString("prefix {title and no close", makeRow(), undefined, song)).toBe(
+      "prefix {title and no close",
+    );
+  });
+
+  it("handles multiple substitutions in one string", () => {
+    const song = makeSong({
+      title: "Amazing Grace",
+      author: "John Newton",
+      ccliNumber: "22025",
+      customFields: { hymnNumber: "278" },
+    });
+    expect(
+      interpolateSongString(
+        "{title} ({author}) — CCLI {ccliNumber} — Hymn {hymnNumber}",
+        makeRow(),
+        undefined,
+        song,
+      ),
+    ).toBe("Amazing Grace (John Newton) — CCLI 22025 — Hymn 278");
+  });
+});
+
+// --- Literal-value cascade in resolveIntroTake ----------------------------
+
+describe("resolveIntroTake — literals", () => {
+  const tpl = makeTemplate("intro-tpl", [
+    { key: "title", label: "Title", type: "text", default: "" },
+    { key: "subtitle", label: "Subtitle", type: "text", default: "" },
+  ]);
+  const templates = [tpl];
+
+  it("uses song-level intro literals with interpolation", () => {
+    const song = makeSong({
+      title: "Amazing Grace",
+      customFields: { hymnNumber: "278" },
+      defaultIntroTemplateId: "intro-tpl",
+      defaultIntroFieldLiterals: { subtitle: "Hymn #{hymnNumber}" },
+    });
+    const out = resolveIntroTake(makeRow(), undefined, song, templates);
+    expect(out?.fieldValues).toEqual({
+      title: "",
+      subtitle: "Hymn #278",
+    });
+  });
+
+  it("ShowSong literals override Song defaults (whole-object)", () => {
+    const song = makeSong({
+      defaultIntroTemplateId: "intro-tpl",
+      defaultIntroFieldLiterals: { subtitle: "From song" },
+    });
+    const showSong: ShowSong = {
+      songId: "song1",
+      introFieldLiterals: { subtitle: "From show" },
+    };
+    const out = resolveIntroTake(makeRow(), showSong, song, templates);
+    expect(out?.fieldValues.subtitle).toBe("From show");
+  });
+
+  it("Row literals override ShowSong and Song", () => {
+    const song = makeSong({
+      defaultIntroTemplateId: "intro-tpl",
+      defaultIntroFieldLiterals: { subtitle: "From song" },
+    });
+    const showSong: ShowSong = {
+      songId: "song1",
+      introFieldLiterals: { subtitle: "From show" },
+    };
+    const row = makeRow({ introFieldLiterals: { subtitle: "From row" } });
+    const out = resolveIntroTake(row, showSong, song, templates);
+    expect(out?.fieldValues.subtitle).toBe("From row");
+  });
+
+  it("literal wins over field map when both target the same template field", () => {
+    const song = makeSong({
+      title: "Amazing Grace",
+      customFields: { hymnNumber: "278" },
+      defaultIntroTemplateId: "intro-tpl",
+      defaultIntroFieldMap: { subtitle: "hymnNumber" },
+      defaultIntroFieldLiterals: { subtitle: "Literal wins" },
+    });
+    const out = resolveIntroTake(makeRow(), undefined, song, templates);
+    expect(out?.fieldValues.subtitle).toBe("Literal wins");
+  });
+
+  it("template fields without a literal still resolve through the map cascade", () => {
+    const song = makeSong({
+      title: "Amazing Grace",
+      defaultIntroTemplateId: "intro-tpl",
+      defaultIntroFieldMap: { title: "title" }, // template "title" ← song "title"
+      defaultIntroFieldLiterals: { subtitle: "static" },
+    });
+    const out = resolveIntroTake(makeRow(), undefined, song, templates);
+    expect(out?.fieldValues).toEqual({
+      title: "Amazing Grace",
+      subtitle: "static",
+    });
+  });
+});
+
+describe("resolveOutroTake — literals", () => {
+  it("honors the outro literal cascade", () => {
+    const tpl = makeTemplate("outro-tpl", [
+      { key: "footer", label: "Footer", type: "text", default: "" },
+    ]);
+    const song = makeSong({
+      defaultOutroTemplateId: "outro-tpl",
+      defaultOutroFieldLiterals: { footer: "© {copyright}" },
+      copyright: "Public Domain",
+    });
+    const out = resolveOutroTake(makeRow(), undefined, song, [tpl]);
+    expect(out?.fieldValues.footer).toBe("© Public Domain");
   });
 });

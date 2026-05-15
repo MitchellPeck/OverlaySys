@@ -69,6 +69,57 @@ export interface ResolvedTake {
 }
 
 /**
+ * Substitutes `{key}` tokens in `template` with values resolved through
+ * {@link resolveCustomFieldValue}. Supports built-in song fields ("title",
+ * "ccliNumber", "author", "copyright") and any custom field key, with the
+ * usual Row → ShowSong → Song cascade for custom values.
+ *
+ * - `{{` and `}}` escape to literal `{` and `}` respectively.
+ * - An unknown `{key}` resolves to an empty string. Brace expressions that
+ *   never get a closing `}` are emitted verbatim.
+ *
+ * Intended for use by the intro/outro literal-value resolver — see
+ * {@link resolveIntroTake} / {@link resolveOutroTake}.
+ */
+export function interpolateSongString(
+  template: string,
+  row: SongRow,
+  showSong: ShowSong | undefined,
+  song: Song,
+): string {
+  let out = "";
+  let i = 0;
+  while (i < template.length) {
+    const ch = template[i];
+    if (ch === "{") {
+      if (template[i + 1] === "{") {
+        out += "{";
+        i += 2;
+        continue;
+      }
+      const end = template.indexOf("}", i + 1);
+      if (end < 0) {
+        // Unterminated `{` — emit the rest verbatim. Treating this as an error
+        // would break ergonomics for templates that happen to mention braces.
+        out += template.slice(i);
+        break;
+      }
+      const key = template.slice(i + 1, end);
+      const value = resolveCustomFieldValue(key, row, showSong, song);
+      out += value ?? "";
+      i = end + 1;
+    } else if (ch === "}" && template[i + 1] === "}") {
+      out += "}";
+      i += 2;
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
  * Shared core of resolveIntroTake / resolveOutroTake — differs only in which
  * row/show/song properties feed the cascade. Pulled into a helper so the two
  * public entry points stay one-liners and there's a single place to fix.
@@ -81,6 +132,9 @@ function resolveSubTake(args: {
   rowFieldMap: Record<string, string> | undefined;
   showFieldMap: Record<string, string> | undefined;
   songFieldMap: Record<string, string> | undefined;
+  rowFieldLiterals: Record<string, string> | undefined;
+  showFieldLiterals: Record<string, string> | undefined;
+  songFieldLiterals: Record<string, string> | undefined;
   templates: Template[];
   row: SongRow;
   showSong: ShowSong | undefined;
@@ -94,6 +148,9 @@ function resolveSubTake(args: {
     rowFieldMap,
     showFieldMap,
     songFieldMap,
+    rowFieldLiterals,
+    showFieldLiterals,
+    songFieldLiterals,
     templates,
     row,
     showSong,
@@ -105,15 +162,24 @@ function resolveSubTake(args: {
   const template = templates.find((t) => t.id === templateId);
   if (!template) return null;
 
-  // Template id and field map cascade independently. If a row overrides only the
-  // template id, it can still inherit the show or song field map even though those
-  // keys may not match the new template — callers (the editor UI) should re-confirm
-  // the map when changing the template.
+  // Template id, field map, and field literals all cascade independently as
+  // whole-object replacements. A row that overrides only the template id can
+  // still inherit lower-level maps/literals even though their keys may not
+  // match the new template — callers (the editor UI) should re-confirm both
+  // when changing the template. Within a single resolution, literals win
+  // over map entries when both target the same template field key.
   const fieldMap: Record<string, string> =
     rowFieldMap ?? showFieldMap ?? songFieldMap ?? {};
+  const fieldLiterals: Record<string, string> =
+    rowFieldLiterals ?? showFieldLiterals ?? songFieldLiterals ?? {};
 
   const fieldValues: Record<string, string> = {};
   for (const field of template.fields) {
+    const literal = fieldLiterals[field.key];
+    if (literal !== undefined) {
+      fieldValues[field.key] = interpolateSongString(literal, row, showSong, song);
+      continue;
+    }
     const songFieldKey = fieldMap[field.key];
     if (songFieldKey !== undefined) {
       const value = resolveCustomFieldValue(songFieldKey, row, showSong, song);
@@ -145,6 +211,9 @@ export function resolveIntroTake(
     rowFieldMap: row.introFieldMap,
     showFieldMap: showSong?.introFieldMap,
     songFieldMap: song.defaultIntroFieldMap,
+    rowFieldLiterals: row.introFieldLiterals,
+    showFieldLiterals: showSong?.introFieldLiterals,
+    songFieldLiterals: song.defaultIntroFieldLiterals,
     templates,
     row,
     showSong,
@@ -167,6 +236,9 @@ export function resolveOutroTake(
     rowFieldMap: row.outroFieldMap,
     showFieldMap: showSong?.outroFieldMap,
     songFieldMap: song.defaultOutroFieldMap,
+    rowFieldLiterals: row.outroFieldLiterals,
+    showFieldLiterals: showSong?.outroFieldLiterals,
+    songFieldLiterals: song.defaultOutroFieldLiterals,
     templates,
     row,
     showSong,

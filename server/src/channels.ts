@@ -96,12 +96,12 @@ export function subscribe(channel: string, listener: Listener): () => void {
 
 export function take(channel: string, templateId: string, data: Record<string, string>): void {
   if (!takeIsInternal) {
-    const session = songSession.getSession(channel);
-    if (session) {
-      // External take while a song session is live → end the session, then
-      // proceed with the new take.
-      songSession.end(channel);
-    }
+    // External take while a song session is live → tear down the session, but
+    // SKIP channels.clear: the new active mount we're about to install
+    // replaces the lyric template, and emitting a "phase: out" first causes
+    // the renderer to snap-in instead of cross-fade. endSessionOnly returns
+    // true only when there was a session to drop.
+    songSession.endSessionOnly(channel);
   }
   // Cancel any prior auto-out before we install the new active mount —
   // even if the new take is for the same template, the timer should
