@@ -27,6 +27,18 @@ import {
   loadTokens as loadCloudTokens,
   startSignIn as startCloudSignIn,
 } from "./cloudAuth";
+import {
+  loadPrefs,
+  savePrefs,
+  resolveDisplay,
+  updateDisplayCache,
+  fingerprintDisplay,
+  type MatchedBy,
+} from "./windowPrefs";
+import type {
+  ChannelWindowPrefs,
+  WindowPrefsFile,
+} from "@overlaysys/core";
 
 // ── .env loading ──────────────────────────────────────────────────────────
 //
@@ -126,6 +138,33 @@ let serverHost = "127.0.0.1";
 
 let operatorWindow: BrowserWindow | null = null;
 const channelWindows = new Map<string, BrowserWindow>();
+
+interface ChannelResolution {
+  matchedBy: MatchedBy;
+  configuredLabel: string | null;
+  actualLabel: string;
+  actualDisplayId: number;
+}
+
+const channelResolutions = new Map<string, ChannelResolution>();
+
+function prefsFilePath(): string {
+  return path.join(app.getPath("userData"), "data", "channel-window-prefs.json");
+}
+
+function currentDisplaysSnapshot() {
+  return screen.getAllDisplays().map((d) => ({
+    id: d.id,
+    label: d.label,
+    bounds: {
+      x: d.bounds.x,
+      y: d.bounds.y,
+      width: d.bounds.width,
+      height: d.bounds.height,
+    },
+    internal: d.internal,
+  }));
+}
 
 interface ChannelWindowOptions {
   frameless?: boolean;
@@ -544,6 +583,34 @@ function registerIpc(): void {
       : `http://${serverHost}:${serverPort}/renderer/`,
     serverPort,
   }));
+
+  ipcMain.handle("overlaysys:get-displays", () => currentDisplaysSnapshot());
+
+  ipcMain.handle("overlaysys:get-channel-window-prefs", (): WindowPrefsFile => {
+    return loadPrefs(prefsFilePath());
+  });
+
+  ipcMain.handle(
+    "overlaysys:set-channel-window-prefs",
+    (_event, channelId: string, prefs: ChannelWindowPrefs): WindowPrefsFile => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      file.channels[channelId] = prefs;
+      file.displays = updateDisplayCache(
+        file.displays,
+        currentDisplaysSnapshot(),
+        file.channels,
+      );
+      savePrefs(prefsFilePath(), file);
+      return file;
+    },
+  );
+
+  ipcMain.handle("overlaysys:get-channel-window-resolutions", () => {
+    return Object.fromEntries(channelResolutions);
+  });
 
   // ── Cloud auth ────────────────────────────────────────────────────────
   // Sign-in opens the system browser at apps.mitchellpeck.com's
