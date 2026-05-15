@@ -131,6 +131,84 @@ function ensureUserDataEnv(): void {
   }
 }
 
+// ── Boot logging ─────────────────────────────────────────────────────────────
+//
+// Windows GUI Electron processes have no attached console — anything
+// written to stdout/stderr is discarded by the OS. Mirror every console
+// call and the server child's output into <userData>/boot.log so a
+// packaged install can be debugged post-mortem (look in
+// %APPDATA%\OverlaySys\boot.log on Windows,
+// ~/Library/Application Support/OverlaySys/boot.log on macOS).
+
+let bootLogStream: fs.WriteStream | null = null;
+const bootLogQueue: string[] = [];
+
+function appendBootLog(line: string): void {
+  const stamped = `[${new Date().toISOString()}] ${line}\n`;
+  if (bootLogStream) {
+    bootLogStream.write(stamped);
+    return;
+  }
+  bootLogQueue.push(stamped);
+  if (bootLogQueue.length > 1000) bootLogQueue.shift();
+}
+
+function initBootLog(): void {
+  if (bootLogStream) return;
+  let dir: string;
+  try {
+    dir = app.getPath("userData");
+  } catch {
+    return;
+  }
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "boot.log");
+    const stream = fs.createWriteStream(file, { flags: "a" });
+    stream.write(
+      `\n[${new Date().toISOString()}] ── boot log opened ─ pid=${process.pid} ──\n`,
+    );
+    while (bootLogQueue.length > 0) stream.write(bootLogQueue.shift()!);
+    bootLogStream = stream;
+  } catch {
+    // best-effort; if we can't open the log we still proceed
+  }
+}
+
+function fmtLogArg(a: unknown): string {
+  if (a instanceof Error) return `${a.message}\n${a.stack ?? ""}`;
+  if (typeof a === "string") return a;
+  try {
+    return JSON.stringify(a);
+  } catch {
+    return String(a);
+  }
+}
+
+for (const level of ["log", "info", "warn", "error"] as const) {
+  const orig = console[level].bind(console);
+  console[level] = (...args: unknown[]) => {
+    try {
+      const tag = level === "log" || level === "info" ? "" : `[${level}] `;
+      appendBootLog(tag + args.map(fmtLogArg).join(" "));
+    } catch {
+      // never let logging mask the original call
+    }
+    orig(...(args as []));
+  };
+}
+
+process.on("uncaughtException", (err) => {
+  appendBootLog(`[uncaughtException] ${err.message}\n${err.stack ?? ""}`);
+});
+process.on("unhandledRejection", (reason) => {
+  const msg =
+    reason instanceof Error
+      ? `${reason.message}\n${reason.stack ?? ""}`
+      : String(reason);
+  appendBootLog(`[unhandledRejection] ${msg}`);
+});
+
 const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 
 let serverChild: ChildProcess | null = null;
@@ -275,6 +353,9 @@ function spawnServer(): Promise<{ port: number }> {
     child.stdout?.on("data", (chunk) => {
       const s = chunk.toString();
       process.stdout.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server] ${line}`);
+      }
       buffer += s;
       // Look for the magic OVERLAYSYS_PORT=<n> line emitted by the server
       // once it's fully bound.
@@ -286,7 +367,11 @@ function spawnServer(): Promise<{ port: number }> {
       }
     });
     child.stderr?.on("data", (chunk) => {
-      process.stderr.write(`[server] ${chunk.toString()}`);
+      const s = chunk.toString();
+      process.stderr.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server:err] ${line}`);
+      }
     });
 
     child.on("exit", (code, signal) => {
@@ -360,7 +445,23 @@ function createOperatorWindow(): BrowserWindow {
     },
   });
 
-  win.loadURL(operatorUrl());
+  const opUrl = operatorUrl();
+  console.log(`[desktop] operator window: loading ${opUrl}`);
+  win.loadURL(opUrl);
+
+  win.webContents.on(
+    "did-fail-load",
+    (_e, code, description, validatedURL) => {
+      console.error(
+        `[desktop] operator did-fail-load: code=${code} desc=${description} url=${validatedURL}`,
+      );
+    },
+  );
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(
+      `[desktop] operator render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     const sameOrigin =
@@ -736,6 +837,10 @@ function registerIpc(): void {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  initBootLog();
+  console.log(
+    `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
+  );
   if (!isDev) {
     try {
       const { port } = await spawnServer();
