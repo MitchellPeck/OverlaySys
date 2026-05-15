@@ -5,12 +5,18 @@
 // even though we only load localhost content).
 
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  ChannelWindowPrefs,
+  WindowPrefsFile,
+  CachedDisplay,
+} from "@overlaysys/core";
 
 interface ChannelWindowOptions {
   frameless?: boolean;
   alwaysOnTop?: boolean;
   fullscreen?: boolean;
   transparent?: boolean;
+  displayId?: number;
 }
 
 interface CloudTokens {
@@ -41,6 +47,34 @@ interface OverlaysysApi {
    * (returns false).
    */
   setChannelWindowOptions(channelId: string, opts: ChannelWindowOptions): Promise<boolean>;
+
+  /** List of currently-attached displays for the picker UI. */
+  getDisplays(): Promise<CachedDisplay[]>;
+
+  /** Current persisted prefs file. */
+  getChannelWindowPrefs(): Promise<WindowPrefsFile>;
+
+  /** Merge-and-persist the prefs for one channel. Returns the new file. */
+  setChannelWindowPrefs(
+    channelId: string,
+    prefs: ChannelWindowPrefs,
+  ): Promise<WindowPrefsFile>;
+
+  /** In-memory resolution info per open channel (id → result). */
+  getChannelWindowResolutions(): Promise<
+    Record<string, {
+      matchedBy: "id" | "label" | "bounds" | "fallback";
+      configuredLabel: string | null;
+      actualLabel: string;
+      actualDisplayId: number;
+    }>
+  >;
+
+  /** Close (if open) and recreate the channel window on its configured display. */
+  reopenChannelOnConfiguredDisplay(channelId: string): Promise<{ reused: boolean; reason?: "no-prefs" }>;
+
+  /** Briefly flash a large number on every attached display. */
+  identifyDisplays(): Promise<void>;
 
   /** App mode + the URLs the host points at. */
   getMode(): Promise<{ isDev: boolean; operatorUrl: string; rendererUrl: string }>;
@@ -84,6 +118,15 @@ const api: OverlaysysApi = {
     ipcRenderer.invoke("overlaysys:list-channel-windows"),
   setChannelWindowOptions: (channelId, opts) =>
     ipcRenderer.invoke("overlaysys:set-channel-window-options", channelId, opts),
+  getDisplays: () => ipcRenderer.invoke("overlaysys:get-displays"),
+  getChannelWindowPrefs: () => ipcRenderer.invoke("overlaysys:get-channel-window-prefs"),
+  setChannelWindowPrefs: (channelId, prefs) =>
+    ipcRenderer.invoke("overlaysys:set-channel-window-prefs", channelId, prefs),
+  getChannelWindowResolutions: () =>
+    ipcRenderer.invoke("overlaysys:get-channel-window-resolutions"),
+  reopenChannelOnConfiguredDisplay: (channelId) =>
+    ipcRenderer.invoke("overlaysys:reopen-channel-on-configured-display", channelId),
+  identifyDisplays: () => ipcRenderer.invoke("overlaysys:identify-displays"),
   getMode: () => ipcRenderer.invoke("overlaysys:get-mode"),
   onChannelWindowOpened: (fn) => {
     const handler = (_event: Electron.IpcRendererEvent, channelId: string) => fn(channelId);

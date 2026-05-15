@@ -5,11 +5,18 @@
 // undefined and helpers below are no-ops. When in Electron, IPC calls
 // flow through to the main process.
 
+import type {
+  ChannelWindowPrefs,
+  WindowPrefsFile,
+  CachedDisplay,
+} from "@overlaysys/core";
+
 interface ChannelWindowOptions {
   frameless?: boolean;
   alwaysOnTop?: boolean;
   fullscreen?: boolean;
   transparent?: boolean;
+  displayId?: number;
 }
 
 export interface ElectronCloudTokens {
@@ -24,6 +31,34 @@ interface OverlaysysApi {
   closeChannelWindow(channelId: string): Promise<void>;
   listChannelWindows(): Promise<string[]>;
   setChannelWindowOptions(channelId: string, opts: ChannelWindowOptions): Promise<boolean>;
+  /** List of currently-attached displays for the picker UI. */
+  getDisplays(): Promise<CachedDisplay[]>;
+
+  /** Current persisted prefs file. */
+  getChannelWindowPrefs(): Promise<WindowPrefsFile>;
+
+  /** Merge-and-persist the prefs for one channel. Returns the new file. */
+  setChannelWindowPrefs(
+    channelId: string,
+    prefs: ChannelWindowPrefs,
+  ): Promise<WindowPrefsFile>;
+
+  /** In-memory resolution info per open channel (id → result). */
+  getChannelWindowResolutions(): Promise<
+    Record<string, {
+      matchedBy: "id" | "label" | "bounds" | "fallback";
+      configuredLabel: string | null;
+      actualLabel: string;
+      actualDisplayId: number;
+    }>
+  >;
+
+  /** Close (if open) and recreate the channel window on its configured display. */
+  reopenChannelOnConfiguredDisplay(channelId: string): Promise<{ reused: boolean; reason?: "no-prefs" }>;
+
+  /** Briefly flash a large number on every attached display. */
+  identifyDisplays(): Promise<void>;
+
   getMode(): Promise<{ isDev: boolean; operatorUrl: string; rendererUrl: string }>;
   onChannelWindowOpened(fn: (channelId: string) => void): () => void;
   onChannelWindowClosed(fn: (channelId: string) => void): () => void;
