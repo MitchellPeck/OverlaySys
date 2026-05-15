@@ -178,7 +178,10 @@ export function getSession(channel: string): SongSessionSummary | null {
 export function advance(channel: string, delta: number): void {
   const s = sessions.get(channel);
   if (!s) return;
-  let { sectionIdx, slideIdx } = s.cursor;
+  const startSection = s.cursor.sectionIdx;
+  const startSlide = s.cursor.slideIdx;
+  let sectionIdx = startSection;
+  let slideIdx = startSlide;
   let remaining = delta;
 
   const step = remaining > 0 ? 1 : -1;
@@ -198,6 +201,10 @@ export function advance(channel: string, delta: number): void {
     }
     remaining -= step;
   }
+  // If the cursor didn't move (operator hit advance at the last slide, or
+  // back at the first), do nothing — including no re-render. Re-rendering
+  // would replay the IN animation in place, which reads as a glitch.
+  if (sectionIdx === startSection && slideIdx === startSlide) return;
   s.cursor = { sectionIdx, slideIdx };
   render(s, /* forceMount */ true);
 }
@@ -261,21 +268,25 @@ export function setTrust(channel: string, trustMode: boolean): void {
 }
 
 export function end(channel: string): void {
-  if (!endSessionOnly(channel)) return;
+  if (!tearDownSession(channel)) return;
+  channels.setSongSessionSummary(channel, null);
   channels.clear(channel);
 }
 
 /**
- * Tear down session state without calling `channels.clear`. Returns true if a
- * session was actually torn down. Used when the caller is about to install a
- * new active mount (e.g. an outro `take` after the lyrics session) and doesn't
- * want the renderer to play an OUT animation for the lyric template followed
- * immediately by an IN for the new template — the double-emit causes the new
- * template to snap in instead of animating.
+ * Tear down internal session state (timers, STT binding, session map, bias).
+ * Does NOT touch channel state — the caller is responsible for clearing
+ * songSession + emitting. Returns true if a session was actually torn down.
+ *
+ * Used by channels.take when a song session is live and the operator is
+ * taking a graphic over it: the take needs the "session went away" delta and
+ * the "new active mount" delta to land in a single state event so the
+ * renderer's session-end stage fade doesn't hide the new template's IN
+ * animation (which manifests as the new template "snapping in").
  *
  * Safe to call when no session is active (returns false).
  */
-export function endSessionOnly(channel: string): boolean {
+export function tearDownSession(channel: string): boolean {
   const s = sessions.get(channel);
   if (!s) return false;
   const timer = autoAdvanceTimers.get(channel);
@@ -285,8 +296,19 @@ export function endSessionOnly(channel: string): boolean {
   }
   sttMatcher.unbindSession(channel);
   sessions.delete(channel);
-  channels.setSongSessionSummary(channel, null);
   if (channel === PROGRAM_CHANNEL) refreshProgramBias();
+  return true;
+}
+
+/**
+ * Tear down the session AND publish the cleared songSession on the channel
+ * state (emits). Use for end-of-song operator actions where no follow-up
+ * take is coming; for the take-replaces-song flow use {@link tearDownSession}
+ * so the caller can coalesce the channel update with its new active mount.
+ */
+export function endSessionOnly(channel: string): boolean {
+  if (!tearDownSession(channel)) return false;
+  channels.setSongSessionSummary(channel, null);
   return true;
 }
 

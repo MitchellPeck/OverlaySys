@@ -35,6 +35,13 @@ const SONG_FADE_DIP_MIN = 0.25;
 export function Renderer({ channel, debug = false }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef<MountedTemplate | null>(null);
+  // Tracks the templateId of the current mount so the takenAt-change handler
+  // can distinguish same-template swaps (lyric slide advance, same-template
+  // outro) from different-template transitions. Same-template swaps reuse the
+  // mount and run its OUT → update → IN animation, so layers outside the
+  // template's in/out timelines (e.g. the shadow band on a lyric template)
+  // stay in place.
+  const lastTemplateIdRef = useRef<string | null>(null);
   const lastTakenAtRef = useRef<number>(0);
   const templateCacheRef = useRef<Map<string, Template>>(new Map());
   const pendingTemplateLoads = useRef<Map<string, ((t: Template) => void)[]>>(
@@ -126,6 +133,7 @@ export function Renderer({ channel, debug = false }: Props) {
         if (mountedRef.current) {
           const m = mountedRef.current;
           mountedRef.current = null;
+          lastTemplateIdRef.current = null;
           await triggerOut(m).catch(() => {});
           m.destroy();
         }
@@ -139,15 +147,38 @@ export function Renderer({ channel, debug = false }: Props) {
 
         if (phase === "out") return;
 
-        // Sequential transition: play the previous mount's out animation
-        // to completion, destroy it, then mount the new template and play
-        // its in animation. Total transition time is out-duration +
-        // in-duration. If a newer take arrives during the out (operator
-        // pressing space rapidly), the takenAt guard below abandons this
-        // flow so the newer take's flow can take over.
         const myTakenAt = takenAt;
         const previous = mountedRef.current;
+
+        // Same-template swap: lyric slide advance, or an outro/intro that
+        // happens to reuse the same template. Reuse the mount, run its OUT
+        // → data swap → IN. Only layers the template's in/out timelines
+        // target will animate (e.g. on a lyric template the text element
+        // fades while the shadow band stays put). Pre-condition: a session
+        // start is NOT pending (those want the full mount cycle so the
+        // session-boundary fade lands correctly).
+        if (
+          previous &&
+          lastTemplateIdRef.current === templateId &&
+          !pendingSessionStartRef.current
+        ) {
+          // Direct playOut (not triggerOut): the WeakSet guard would suppress
+          // the second-and-subsequent playOut calls on the same mount, which
+          // is exactly what we DON'T want here.
+          await previous.playOut().catch(() => {});
+          if (myTakenAt !== lastTakenAtRef.current) return;
+          previous.update(data);
+          await previous.playIn().catch(() => {});
+          return;
+        }
+
+        // Different-template (or fresh) transition: play the previous mount's
+        // out animation to completion, destroy it, then mount the new template
+        // and play its in animation. Total transition time is out-duration +
+        // in-duration. If a newer take arrives during the out, the takenAt
+        // guard below abandons this flow so the newer take's flow can take over.
         mountedRef.current = null;
+        lastTemplateIdRef.current = null;
 
         const tpl = await ensureTemplate(templateId);
 
@@ -176,6 +207,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
+        lastTemplateIdRef.current = templateId;
         m.playIn().catch(() => {});
         // Blink overlay fires in parallel with playIn so the IN animation
         // continues underneath. Catch to keep the takenAt flow alive if the
@@ -198,6 +230,7 @@ export function Renderer({ channel, debug = false }: Props) {
       if (phase === "out" && mountedRef.current) {
         const m = mountedRef.current;
         mountedRef.current = null;
+        lastTemplateIdRef.current = null;
         triggerOut(m).finally(() => m.destroy());
         return;
       }
