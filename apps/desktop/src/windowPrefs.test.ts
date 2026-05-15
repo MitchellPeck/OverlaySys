@@ -43,3 +43,119 @@ describe("loadPrefs / savePrefs", () => {
     expect(loadPrefs(file)).toEqual({ version: 1, displays: [], channels: {} });
   });
 });
+
+import { resolveDisplay, type DisplayLike } from "./windowPrefs";
+
+function display(over: Partial<DisplayLike>): DisplayLike {
+  return {
+    id: 1,
+    label: "Built-in",
+    bounds: { x: 0, y: 0, width: 1512, height: 982 },
+    internal: true,
+    ...over,
+  };
+}
+
+describe("resolveDisplay", () => {
+  const builtIn = display({ id: 1, label: "Built-in", internal: true });
+  const dell = display({
+    id: 2,
+    label: "DELL U2718Q",
+    bounds: { x: 1512, y: 0, width: 3840, height: 2160 },
+    internal: false,
+  });
+  const displays = [builtIn, dell];
+
+  it("matches by exact id", () => {
+    const result = resolveDisplay(
+      { displayId: 2 },
+      { displays, cached: [], primary: builtIn },
+    );
+    expect(result.display).toBe(dell);
+    expect(result.matchedBy).toBe("id");
+  });
+
+  it("matches by label when id rotates", () => {
+    const result = resolveDisplay(
+      { displayId: 999 },
+      {
+        displays,
+        cached: [
+          {
+            id: 999,
+            label: "DELL U2718Q",
+            bounds: { x: 0, y: 0, width: 1, height: 1 },
+            internal: false,
+          },
+        ],
+        primary: builtIn,
+      },
+    );
+    expect(result.display).toBe(dell);
+    expect(result.matchedBy).toBe("label");
+  });
+
+  it("matches by bounds + internal flag when label differs", () => {
+    const result = resolveDisplay(
+      { displayId: 999 },
+      {
+        displays,
+        cached: [
+          {
+            id: 999,
+            label: "Some Other Name",
+            bounds: { x: 0, y: 0, width: 3840, height: 2160 },
+            internal: false,
+          },
+        ],
+        primary: builtIn,
+      },
+    );
+    expect(result.display).toBe(dell);
+    expect(result.matchedBy).toBe("bounds");
+  });
+
+  it("falls back to primary when nothing matches", () => {
+    const result = resolveDisplay(
+      { displayId: 999 },
+      { displays, cached: [], primary: builtIn },
+    );
+    expect(result.display).toBe(builtIn);
+    expect(result.matchedBy).toBe("fallback");
+  });
+
+  it("falls back when prefs have no displayId", () => {
+    const result = resolveDisplay(
+      {},
+      { displays, cached: [], primary: builtIn },
+    );
+    expect(result.display).toBe(builtIn);
+    expect(result.matchedBy).toBe("fallback");
+  });
+
+  it("breaks ties by display order", () => {
+    const twin = display({
+      id: 3,
+      label: "Twin",
+      bounds: { x: 1512, y: 0, width: 3840, height: 2160 },
+      internal: false,
+    });
+    const result = resolveDisplay(
+      { displayId: 999 },
+      {
+        displays: [twin, dell],
+        cached: [
+          {
+            id: 999,
+            label: "Mismatch",
+            bounds: { x: 0, y: 0, width: 3840, height: 2160 },
+            internal: false,
+          },
+        ],
+        primary: builtIn,
+      },
+    );
+    expect(result.display).toBe(twin);
+    expect(result.matchedBy).toBe("bounds");
+  });
+});

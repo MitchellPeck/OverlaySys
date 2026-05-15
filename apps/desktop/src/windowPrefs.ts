@@ -33,3 +33,74 @@ export function savePrefs(file: string, prefs: WindowPrefsFile): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(validated, null, 2), "utf8");
 }
+
+import type { CachedDisplay, ChannelWindowPrefs } from "@overlaysys/core";
+
+/**
+ * Subset of Electron's `Display` used by resolve/fingerprint. Defined
+ * structurally so the module stays free of an `electron` import and
+ * remains unit-testable with plain object fixtures.
+ */
+export interface DisplayLike {
+  id: number;
+  label: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  internal: boolean;
+}
+
+export type MatchedBy = "id" | "label" | "bounds" | "fallback";
+
+export interface ResolveContext {
+  /** Currently-attached displays, in `screen.getAllDisplays()` order. */
+  displays: DisplayLike[];
+  /** Cached display fingerprints from a previous successful match. */
+  cached: CachedDisplay[];
+  /** Used when nothing else matches. */
+  primary: DisplayLike;
+}
+
+export interface ResolveResult {
+  display: DisplayLike;
+  matchedBy: MatchedBy;
+}
+
+export function resolveDisplay(
+  prefs: Pick<ChannelWindowPrefs, "displayId">,
+  ctx: ResolveContext,
+): ResolveResult {
+  const want = prefs.displayId;
+  if (want === undefined) return { display: ctx.primary, matchedBy: "fallback" };
+
+  // 1. Exact id.
+  const byId = ctx.displays.find((d) => d.id === want);
+  if (byId) return { display: byId, matchedBy: "id" };
+
+  // Look up the cached fingerprint for that id, if any.
+  const cached = ctx.cached.find((c) => c.id === want);
+  if (cached) {
+    // 2. Same label.
+    const byLabel = ctx.displays.find((d) => d.label === cached.label);
+    if (byLabel) return { display: byLabel, matchedBy: "label" };
+
+    // 3. Same bounds.width × bounds.height + internal flag. First hit wins.
+    const byBounds = ctx.displays.find(
+      (d) =>
+        d.internal === cached.internal &&
+        d.bounds.width === cached.bounds.width &&
+        d.bounds.height === cached.bounds.height,
+    );
+    if (byBounds) return { display: byBounds, matchedBy: "bounds" };
+  }
+
+  // 4. Fallback.
+  return { display: ctx.primary, matchedBy: "fallback" };
+}
+
+export function fingerprintDisplay(d: DisplayLike): CachedDisplay {
+  return {
+    id: d.id,
+    label: d.label,
+    bounds: { ...d.bounds },
+    internal: d.internal,
+  };
+}
