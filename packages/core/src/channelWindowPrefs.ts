@@ -7,6 +7,13 @@ import { z } from "zod";
  * do not leak across rigs when projects are synced.
  */
 
+/**
+ * Snapshot of an Electron `Display`'s identifying fields, captured at
+ * the moment we last successfully resolved a configured channel to a
+ * screen. Used as a fallback fingerprint when `Display.id` rotates
+ * across reboots / sleep cycles — see `resolveDisplay` in the desktop
+ * host.
+ */
 export const CachedDisplaySchema = z.object({
   id: z.number(),
   label: z.string(),
