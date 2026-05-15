@@ -6,6 +6,7 @@ export * from "./project";
 export * from "./storageAdapter";
 export * from "./channel";
 export * from "./channelConfig";
+export * from "./channelWindowPrefs";
 export * from "./song";
 export * from "./songParser";
 export * from "./songSelectParser";
