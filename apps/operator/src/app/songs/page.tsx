@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
+import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { ManagementList } from "@/app/components/ManagementList";
 import { ImportFromFileModal } from "./ImportFromFileModal";
 import { downloadJson } from "@/lib/download";
 import type { Song } from "@overlaysys/core";
@@ -28,6 +27,7 @@ export default function SongsPage() {
   const { alert, confirm, dialog } = useDialog();
   const [importOpen, setImportOpen] = useState(false);
   const cloud = isCloudMode();
+  const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -52,11 +52,11 @@ export default function SongsPage() {
     }
   }, [cloud, conn, send]);
 
-  async function newSong() {
+  async function createSong(title: string): Promise<string> {
     const id = `song-${uuid().slice(0, 8)}`;
     const song: Song = {
       id,
-      title: "",
+      title,
       sections: [
         {
           id: "v1",
@@ -69,18 +69,13 @@ export default function SongsPage() {
       customFields: {},
     };
     if (cloud) {
-      try {
-        await saveSongCloud(song);
-        await refreshSongMetasCloud();
-        router.push(`/songs/edit?id=${encodeURIComponent(id)}`);
-      } catch (err) {
-        await showError("create", err);
-      }
-      return;
+      await saveSongCloud(song);
+      await refreshSongMetasCloud();
+      return id;
     }
-    if (conn !== "open") return;
+    if (conn !== "open") throw new Error("WS not connected");
     send({ type: "save_song", song });
-    setTimeout(() => router.push(`/songs/edit?id=${encodeURIComponent(id)}`), 150);
+    return id;
   }
 
   async function persistSong(song: Song): Promise<void> {
@@ -159,91 +154,51 @@ export default function SongsPage() {
     setTimeout(tick, 50);
   }
 
-  async function removeSong(id: string, title: string) {
-    const ok = await confirm({
-      title: "Delete song",
-      message: (
-        <>
-          Delete <strong>{title || id}</strong>? This removes the JSON file.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
+  async function deleteSong(song: Song): Promise<void> {
     if (cloud) {
-      try {
-        await deleteSongCloud(id);
-        await refreshSongMetasCloud();
-      } catch (err) {
-        await showError("delete", err);
-      }
+      await deleteSongCloud(song.id);
+      await refreshSongMetasCloud();
       return;
     }
-    send({ type: "delete_song", songId: id });
+    send({ type: "delete_song", songId: song.id });
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <ManagementList<Song>
         title="Songs"
-        actions={
-          <>
-            <Button
-              onClick={() => setImportOpen(true)}
-              disabled={!cloud && conn !== "open"}
-              size="sm"
-            >
-              Import from file…
-            </Button>
-            <Button
-              onClick={newSong}
-              disabled={!cloud && conn !== "open"}
-              variant="primary"
-              size="sm"
-            >
-              + New Song
-            </Button>
-          </>
+        entityNoun="song"
+        items={songs}
+        disabled={disabled}
+        secondaryActions={
+          <Button
+            onClick={() => setImportOpen(true)}
+            disabled={disabled}
+            size="sm"
+          >
+            Import from file…
+          </Button>
         }
+        createFn={createSong}
+        onCreated={(id) => router.push(`/songs/edit?id=${encodeURIComponent(id)}`)}
+        deleteFn={deleteSong}
+        rowKey={(s) => s.id}
+        rowHref={(s) => `/songs/edit?id=${encodeURIComponent(s.id)}`}
+        rowPrimary={(s) => s.title || <em style={{ color: colors.textDim }}>(untitled)</em>}
+        rowSecondary={(s) =>
+          [
+            s.id,
+            s.author ? `by ${s.author}` : null,
+            s.ccliNumber ? `CCLI ${s.ccliNumber}` : null,
+          ].filter(Boolean).join(" · ")
+        }
+        rowActions={(s) => (
+          <Button onClick={() => exportSong(s.id)} size="sm" style={{ width: 64 }}>
+            Export
+          </Button>
+        )}
+        itemDisplayName={(s) => s.title || s.id}
       />
-      <PageBody maxWidth={720}>
-          {songs.length === 0 ? (
-            <p style={{ color: colors.textDim, fontSize: 13 }}>
-              No songs yet. Create one to get started.
-            </p>
-          ) : (
-            <EntityList>
-              {songs.map((s) => (
-                <EntityRow
-                  key={s.id}
-                  href={`/songs/edit?id=${encodeURIComponent(s.id)}`}
-                  primary={s.title || <em style={{ color: colors.textDim }}>(untitled)</em>}
-                  secondary={[
-                    s.id,
-                    s.author ? `by ${s.author}` : null,
-                    s.ccliNumber ? `CCLI ${s.ccliNumber}` : null,
-                  ].filter(Boolean).join(" · ")}
-                  actions={
-                    <>
-                      <Button onClick={() => exportSong(s.id)} size="sm" style={{ width: 64 }}>
-                        Export
-                      </Button>
-                      <IconButton
-                        onClick={() => removeSong(s.id, s.title)}
-                        title="Delete song"
-                        size={44}
-                        style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
-                      >
-                        ×
-                      </IconButton>
-                    </>
-                  }
-                />
-              ))}
-            </EntityList>
-          )}
-      </PageBody>
       {importOpen && (
         <ImportFromFileModal
           existingIds={new Set(songs.map((s) => s.id))}
@@ -252,6 +207,6 @@ export default function SongsPage() {
         />
       )}
       {dialog}
-    </PageShell>
+    </>
   );
 }

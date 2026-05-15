@@ -1,7 +1,12 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type SttSpawnerConfig, type SttSpawnerStatus } from "@overlaysys/core";
+import {
+  buildSttCommand,
+  commandUsesBias,
+  type SttSpawnerConfig,
+  type SttSpawnerStatus,
+} from "@overlaysys/core";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
@@ -113,10 +118,13 @@ export function start(config: SttSpawnerConfig): void {
   //
   // Bias prompt is exposed as the OVERLAYSYS_BIAS_PROMPT env var rather
   // than auto-injected as a flag — `whisper-stream` from whisper.cpp does
-  // NOT support --prompt, so a generic injection pattern would error. The
-  // user opts in by interpolating $OVERLAYSYS_BIAS_PROMPT in their command
-  // (e.g. with whisper-cli, whisper-server, or a custom wrapper).
-  const fullCommand = `${config.command} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
+  // NOT support --prompt (verified: it errors with "unknown argument"),
+  // so a generic injection pattern would prevent the spawner from starting.
+  // The user opts in to bias by setting customCommand to a wrapper that
+  // interpolates $OVERLAYSYS_BIAS_PROMPT (e.g. whisper-cli, which supports
+  // --prompt).
+  const userCommand = buildSttCommand(config);
+  const fullCommand = `${userCommand} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
   if (currentBias && config.biasOnSongStart) {
     appendLog(`bias: ${BIAS_ENV_VAR} set (${biasEnvValue().length} chars)`);
   }
@@ -261,6 +269,15 @@ export function setBias(bias: string | null): void {
   if (!activeConfig) return;
   if (!activeConfig.biasOnSongStart) return;
   if (status.state !== "running" && status.state !== "starting") return;
+  // If the active command doesn't reference $OVERLAYSYS_BIAS_PROMPT,
+  // restarting just costs us model-reload time (1–3s on base.en) without
+  // any actual bias change reaching the child. Default whisper-stream
+  // falls into this bucket — skip the churn.
+  if (!commandUsesBias(activeConfig)) {
+    appendLog("bias: command does not reference $OVERLAYSYS_BIAS_PROMPT — skipping restart");
+    emit();
+    return;
+  }
   // Restart in-place. The exit handler will set state="stopped"; we then
   // re-invoke start() with the same config and the new bias picked up via
   // module-scope currentBias / env var.

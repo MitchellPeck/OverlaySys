@@ -9,6 +9,10 @@ import {
   ProjectSchema,
   SttSpawnerConfigSchema,
   SttSpawnerStatusSchema,
+  SttPresenceSchema,
+  SttModelFileSchema,
+  SttCaptureDeviceSchema,
+  SttInstallProgressSchema,
   type TemplateMeta,
 } from "@overlaysys/core";
 
@@ -161,6 +165,25 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("stt_spawner_start") }),
   z.object({ type: z.literal("stt_spawner_stop") }),
+  // Presence / installer flows. The operator's /stt page sends these to
+  // poll for whisper-stream binary availability, list installed models,
+  // enumerate capture devices, and drive auto-install. Server responds
+  // with `stt_presence` / `stt_models` / `stt_capture_devices` and streams
+  // `stt_install_progress` for the duration of any active install job.
+  z.object({ type: z.literal("stt_check_presence") }),
+  z.object({ type: z.literal("stt_list_models") }),
+  z.object({ type: z.literal("stt_enumerate_capture_devices") }),
+  z.object({ type: z.literal("stt_install_binary") }),
+  z.object({
+    type: z.literal("stt_download_model"),
+    url: z.string().min(1),
+    // .bin filename. Must not contain path separators — installer enforces.
+    filename: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("stt_cancel_install"),
+    jobId: z.string(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -308,6 +331,25 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("stt_spawner_config"),
     config: SttSpawnerConfigSchema,
+  }),
+  z.object({
+    type: z.literal("stt_presence"),
+    presence: SttPresenceSchema,
+  }),
+  z.object({
+    type: z.literal("stt_models"),
+    models: z.array(SttModelFileSchema),
+    // Resolved absolute path of the managed models directory — the UI
+    // shows it so users can locate / drop in their own .bin files.
+    modelsDir: z.string(),
+  }),
+  z.object({
+    type: z.literal("stt_capture_devices"),
+    devices: z.array(SttCaptureDeviceSchema),
+  }),
+  z.object({
+    type: z.literal("stt_install_progress"),
+    progress: SttInstallProgressSchema,
   }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

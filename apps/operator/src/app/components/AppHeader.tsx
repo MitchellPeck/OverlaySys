@@ -11,17 +11,18 @@ import { CloudSignInButton } from "@/app/components/CloudSignInButton";
 import { isCloudMode } from "@/lib/mode";
 
 // `hideInCloud` marks routes that don't make sense in the web deploy. The
-// Show view drives a live device (channel takes, song mode, etc.) and is
-// pure noise without a paired Electron instance — same reason TakePanel
-// disables itself in cloud mode.
+// Show view drives a live device, Timer fires live takes, and STT spawns a
+// local process — none work without a paired Electron instance. Same reason
+// TakePanel disables itself in cloud mode. The cloud build is for authoring
+// and management; live-operation surfaces are desktop-only.
 const NAV_LINKS: { href: string; label: string; hideInCloud?: boolean }[] = [
   { href: "/", label: "Show", hideInCloud: true },
   { href: "/projects", label: "Projects" },
   { href: "/shows", label: "Shows" },
   { href: "/hotcards", label: "Hotcards" },
-  { href: "/timer", label: "Timer" },
+  { href: "/timer", label: "Timer", hideInCloud: true },
   { href: "/songs", label: "Songs" },
-  { href: "/stt", label: "STT" },
+  { href: "/stt", label: "STT", hideInCloud: true },
   { href: "/design", label: "Design" },
   { href: "/channels", label: "Channels" },
   { href: "/data", label: "Data" },
@@ -50,54 +51,86 @@ export function AppHeader({
     return pathname === href || pathname.startsWith(href + "/");
   }
 
+  // The sub-header row exists when the page provides any of title/context/
+  // actions or wants the project switcher visible. Show pages with their
+  // own custom chrome (e.g. `/`) pass none of these and get a single-row
+  // header. Project switcher follows the page context, not the global nav,
+  // so it lives in the sub-header row.
+  const hasSubHeader = title !== undefined || context !== undefined || actions !== undefined;
+
   return (
     <header
       style={{
-        padding: "10px 16px",
         borderBottom: "1px solid var(--border)",
         background: "var(--panel)",
         display: "flex",
-        alignItems: "center",
-        gap: 12,
+        flexDirection: "column",
       }}
     >
-      <strong>OverlaySys</strong>
-      <span style={{ color: "var(--text-dim)" }}>Operator</span>
-      <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
-        {visibleNavLinks.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            style={isActive(link.href) ? navLinkActiveStyle : navLinkStyle}
-          >
-            {link.label}
-          </Link>
-        ))}
-      </nav>
-      {title !== undefined && (
-        <h1 style={{ margin: 0, marginLeft: 8, fontSize: 16, fontWeight: 600 }}>{title}</h1>
-      )}
-      {context && (
+      {/* Primary row: brand + nav (left) | status + account (right) */}
+      <div
+        style={{
+          padding: "10px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <strong>OverlaySys</strong>
+        <span style={{ color: "var(--text-dim)" }}>Operator</span>
+        <nav style={{ marginLeft: 24, display: "flex", gap: 12 }}>
+          {visibleNavLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              style={isActive(link.href) ? navLinkActiveStyle : navLinkStyle}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          {!cloud && <SttStatusPill />}
+          {!cloud && <ConnectionPill conn={conn} dot={dot} />}
+          <CloudSignInButton />
+        </div>
+      </div>
+      {/* Sub-header row: page title + context + project switcher (left) | page actions (right) */}
+      {hasSubHeader && (
         <div
           style={{
-            marginLeft: 8,
-            color: "var(--text-dim)",
-            fontSize: 13,
+            padding: "8px 16px",
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 12,
+            borderTop: "1px solid var(--border)",
+            background: "var(--bg)",
           }}
         >
-          {context}
+          {title !== undefined && (
+            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>{title}</h1>
+          )}
+          {context && (
+            <div
+              style={{
+                color: "var(--text-dim)",
+                fontSize: 13,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              {context}
+            </div>
+          )}
+          <ProjectSwitcher />
+          {actions && (
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+              {actions}
+            </div>
+          )}
         </div>
       )}
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-        <ProjectSwitcher />
-        <CloudSignInButton />
-        {actions}
-        <SttStatusPill />
-        <ConnectionPill conn={conn} dot={dot} />
-      </div>
     </header>
   );
 }

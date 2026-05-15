@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { SttSpawnerConfig } from "@overlaysys/core";
 import { Button, Panel, Pill, Textarea, colors, type PillTone } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { isCloudMode } from "@/lib/mode";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 
@@ -17,6 +19,17 @@ const STATE_TONES: Record<string, PillTone> = {
 };
 
 export default function SttControlPage() {
+  const router = useRouter();
+  // STT spawns a local process via the WS server; nothing to manage in the
+  // cloud build. Same redirect pattern as the Show page in `/` for cloud.
+  useEffect(() => {
+    if (isCloudMode()) router.replace("/shows");
+  }, [router]);
+  if (isCloudMode()) return null;
+  return <SttControlPageLocal />;
+}
+
+function SttControlPageLocal() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const status = useStore((s) => s.sttSpawnerStatus);

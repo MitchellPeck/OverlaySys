@@ -6,6 +6,7 @@ import { Button, IconButton, Input, Panel, Select, colors, radius } from "@overl
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
+import { isCloudMode } from "@/lib/mode";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 
@@ -76,10 +77,30 @@ export default function ChannelsPage() {
     if (ok) send({ type: "delete_channel", channelId: id });
   }
 
+  const cloud = isCloudMode();
+
   return (
     <PageShell>
       <AppHeader title="Channels" />
       <PageBody maxWidth={980}>
+          {cloud && (
+            <div
+              style={{
+                background: "var(--panel-2)",
+                border: `1px solid ${colors.border}`,
+                borderRadius: 6,
+                padding: 12,
+                marginBottom: 16,
+                color: colors.textDim,
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              Channel configuration is editable here, but <strong>live state and
+              per-device window placement</strong> are managed in the desktop app.
+              Channels created here will be available to any paired desktop.
+            </div>
+          )}
           <p style={{ color: colors.textDim, fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
             Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
             <strong>Normal</strong> renders content as authored;{" "}

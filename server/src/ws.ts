@@ -22,6 +22,7 @@ import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
+import * as sttInstaller from "./sttInstaller";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 
@@ -51,6 +52,12 @@ sttListener.subscribe((listeners) => {
 
 sttSpawner.subscribe((status) => {
   broadcast({ type: "stt_spawner_status", status });
+});
+
+// Fan install / download progress out to every connected client so multiple
+// operator windows watching the STT page all see the same progress bar.
+sttInstaller.subscribeInstall((progress) => {
+  broadcast({ type: "stt_install_progress", progress });
 });
 
 // Whenever the program channel's active song changes, push the song's text
@@ -510,6 +517,56 @@ export function handleConnection(
         }
         case "stt_spawner_stop": {
           sttSpawner.stop();
+          break;
+        }
+        case "stt_check_presence": {
+          const cfg = await storage.loadSttConfig();
+          const presence = await sttInstaller.checkPresence(cfg.modelPath);
+          send({ type: "stt_presence", presence });
+          // Replay any in-flight install jobs so the requesting client
+          // catches up to ongoing downloads without waiting for the next tick.
+          for (const job of sttInstaller.listActiveJobs()) {
+            send({ type: "stt_install_progress", progress: job });
+          }
+          break;
+        }
+        case "stt_list_models": {
+          const models = await sttInstaller.listModels();
+          send({
+            type: "stt_models",
+            models,
+            modelsDir: sttInstaller.getModelsDir(),
+          });
+          break;
+        }
+        case "stt_enumerate_capture_devices": {
+          const devices = await sttInstaller.enumerateCaptureDevices();
+          send({ type: "stt_capture_devices", devices });
+          break;
+        }
+        case "stt_install_binary": {
+          try {
+            sttInstaller.installBinary();
+            send({ type: "ack", op: "stt_install_binary" });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_install_unsupported", message });
+          }
+          break;
+        }
+        case "stt_download_model": {
+          try {
+            sttInstaller.downloadModel(parsed.url, parsed.filename);
+            send({ type: "ack", op: "stt_download_model", id: parsed.filename });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_download_invalid", message });
+          }
+          break;
+        }
+        case "stt_cancel_install": {
+          sttInstaller.cancelInstall(parsed.jobId);
+          send({ type: "ack", op: "stt_cancel_install", id: parsed.jobId });
           break;
         }
       }

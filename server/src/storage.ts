@@ -348,7 +348,21 @@ export async function loadSttConfig(): Promise<SttSpawnerConfig> {
   await ensureDir(STT_DIR());
   try {
     const raw = await fs.readFile(STT_CONFIG_FILE(), "utf8");
-    return SttSpawnerConfigSchema.parse(JSON.parse(raw));
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    // Migrate pre-dropdown configs that stored a single `command` string.
+    // Move it into `customCommand` so the user's existing pipeline survives,
+    // and prune the legacy key before Zod parsing (which would silently drop
+    // it but leaves a confusing on-disk artifact).
+    if (
+      obj &&
+      typeof obj === "object" &&
+      typeof obj["command"] === "string" &&
+      typeof obj["customCommand"] !== "string"
+    ) {
+      obj["customCommand"] = obj["command"];
+    }
+    if (obj && typeof obj === "object") delete obj["command"];
+    return SttSpawnerConfigSchema.parse(obj);
   } catch {
     return { ...DEFAULT_STT_SPAWNER_CONFIG };
   }

@@ -15,6 +15,10 @@ import type {
   Project,
   SttSpawnerConfig,
   SttSpawnerStatus,
+  SttPresence,
+  SttModelFile,
+  SttCaptureDevice,
+  SttInstallProgress,
 } from "@overlaysys/core";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
@@ -96,6 +100,20 @@ type StoreState = {
   sttSpawnerConfig: SttSpawnerConfig | null;
   setSttSpawnerStatus: (s: SttSpawnerStatus) => void;
   setSttSpawnerConfig: (c: SttSpawnerConfig) => void;
+
+  sttPresence: SttPresence | null;
+  sttModels: SttModelFile[];
+  sttModelsDir: string | null;
+  sttCaptureDevices: SttCaptureDevice[];
+  // Progress entries keyed by jobId. "binary" for the whisper-cpp install,
+  // filename (e.g. "ggml-base.en.bin") for model downloads. Updated in
+  // place by the install_progress handler; cleared when the job ends so
+  // the UI's progress card disappears on completion.
+  sttInstallJobs: Record<string, SttInstallProgress>;
+  setSttPresence: (p: SttPresence) => void;
+  setSttModels: (models: SttModelFile[], modelsDir: string) => void;
+  setSttCaptureDevices: (d: SttCaptureDevice[]) => void;
+  setSttInstallProgress: (p: SttInstallProgress) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -123,6 +141,11 @@ export const useStore = create<StoreState>((set) => ({
     typeof window === "undefined" ? DEFAULT_PROJECT_ID : getCurrentProjectId(),
   sttSpawnerStatus: null,
   sttSpawnerConfig: null,
+  sttPresence: null,
+  sttModels: [],
+  sttModelsDir: null,
+  sttCaptureDevices: [],
+  sttInstallJobs: {},
 
   setConn: (c) => set({ conn: c }),
   setTemplates: (t) => set({ templates: t }),
@@ -181,4 +204,19 @@ export const useStore = create<StoreState>((set) => ({
   },
   setSttSpawnerStatus: (s) => set({ sttSpawnerStatus: s }),
   setSttSpawnerConfig: (c) => set({ sttSpawnerConfig: c }),
+  setSttPresence: (p) => set({ sttPresence: p }),
+  setSttModels: (models, modelsDir) => set({ sttModels: models, sttModelsDir: modelsDir }),
+  setSttCaptureDevices: (d) => set({ sttCaptureDevices: d }),
+  setSttInstallProgress: (p) =>
+    set((cur) => {
+      // Drop terminal jobs from the active map after we've propagated the
+      // final state to subscribers — keeps the UI's "in-flight" set tight.
+      const next = { ...cur.sttInstallJobs, [p.jobId]: p };
+      if (p.state === "done" || p.state === "cancelled" || p.state === "error") {
+        // Hold the terminal state in the map for one render so the UI can
+        // show "✓ installed" / error messages, then prune on next update.
+        return { sttInstallJobs: next };
+      }
+      return { sttInstallJobs: next };
+    }),
 }));
