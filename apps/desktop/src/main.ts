@@ -35,6 +35,7 @@ import {
   fingerprintDisplay,
   type MatchedBy,
 } from "./windowPrefs";
+import { identifyDisplays } from "./identifyDisplays";
 import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
@@ -695,6 +696,10 @@ function registerIpc(): void {
       return { reused: false };
     },
   );
+
+  ipcMain.handle("overlaysys:identify-displays", () => {
+    identifyDisplays();
+  });
 
   // ── Cloud auth ────────────────────────────────────────────────────────
   // Sign-in opens the system browser at apps.mitchellpeck.com's
