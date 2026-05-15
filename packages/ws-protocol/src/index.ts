@@ -104,6 +104,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     channel: z.string(),
   }),
   z.object({
+    // Fire a single sub-take (intro / lyrics / outro) for a song row. The
+    // server resolves the Song → ShowSong → Row cascade for template id,
+    // field map, and field literals, then dispatches whichever underlying
+    // wire flow is right for the chosen sub: a graphic `take` for intro and
+    // outro, and `song_take` (or `song_advance` if a same-song session is
+    // live) for lyrics. `channel` is optional — when omitted, the server
+    // uses the cascade-resolved channel.
+    type: z.literal("take_song_sub"),
+    showId: z.string(),
+    songRowId: z.string(),
+    sub: z.enum(["intro", "lyrics", "outro"]),
+    channel: z.string().optional(),
+  }),
+  z.object({
     // Promote a song session: if `fromChannel` already has a session for
     // `songRowId`, copy its cursor (and trustMode) to a fresh session on
     // `toChannel`, then end the source. Otherwise start a fresh session

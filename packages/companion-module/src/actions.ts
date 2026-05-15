@@ -27,7 +27,11 @@ export type ActionId =
   | "cursor_set"
   | "cursor_set_by_index"
   | "song_take_row"
+  | "song_take_row_by_index"
   | "song_take_row_pvw_pgm"
+  | "song_take_row_pvw_pgm_by_index"
+  | "song_take_sub"
+  | "song_take_sub_by_index"
   | "song_advance"
   | "song_jump_section"
   | "song_jump_kind"
@@ -268,6 +272,24 @@ export function dispatchAction(
         songRowId: str("songRowId"),
       });
       break;
+    case "song_take_row_by_index": {
+      // Look up the row in the loaded show by 1-based index, then dispatch
+      // the existing song_take. Index variant must use the loaded show
+      // because the row dropdown only enumerates loaded-show rows — same
+      // pattern as take_row_by_index above.
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
+      if (!row || row.kind !== "song") break;
+      messages.push({
+        type: "song_take",
+        channel: str("channel", "program"),
+        showId: show!.id,
+        songRowId: row.id,
+      });
+      break;
+    }
     case "song_take_row_pvw_pgm":
       messages.push({
         type: "song_take_pvw_to_pgm",
@@ -277,6 +299,53 @@ export function dispatchAction(
         toChannel: str("toChannel", "program"),
       });
       break;
+    case "song_take_row_pvw_pgm_by_index": {
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
+      if (!row || row.kind !== "song") break;
+      messages.push({
+        type: "song_take_pvw_to_pgm",
+        showId: show!.id,
+        songRowId: row.id,
+        fromChannel: str("fromChannel", "preview"),
+        toChannel: str("toChannel", "program"),
+      });
+      break;
+    }
+    case "song_take_sub": {
+      // Fire one sub-take (intro / lyrics / outro) for a song row. Server
+      // resolves the cascade (template id, field map, field literals) and
+      // dispatches the right wire message under the hood.
+      const sub = str("sub") as "intro" | "lyrics" | "outro";
+      if (sub !== "intro" && sub !== "lyrics" && sub !== "outro") break;
+      messages.push({
+        type: "take_song_sub",
+        showId: str("showId"),
+        songRowId: str("songRowId"),
+        sub,
+        ...(str("channel") ? { channel: str("channel") } : {}),
+      });
+      break;
+    }
+    case "song_take_sub_by_index": {
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      const row = show?.rows[num("rowIndex", 1) - 1];
+      if (!row || row.kind !== "song") break;
+      const sub = str("sub") as "intro" | "lyrics" | "outro";
+      if (sub !== "intro" && sub !== "lyrics" && sub !== "outro") break;
+      messages.push({
+        type: "take_song_sub",
+        showId: show!.id,
+        songRowId: row.id,
+        sub,
+        ...(str("channel") ? { channel: str("channel") } : {}),
+      });
+      break;
+    }
     case "song_advance":
       messages.push({
         type: "song_advance",
@@ -482,6 +551,18 @@ const trustInput: CompanionInputFieldCheckbox = {
   default: false,
 };
 
+const subTakeInput: CompanionInputFieldDropdown = {
+  id: "sub",
+  type: "dropdown",
+  label: "Sub-take",
+  default: "lyrics",
+  choices: [
+    { id: "intro", label: "Intro" },
+    { id: "lyrics", label: "Lyrics" },
+    { id: "outro", label: "Outro" },
+  ],
+};
+
 export type ActionRunner = (id: ActionId, options: ActionOptions) => void;
 
 export function actionDefinitions(
@@ -598,6 +679,11 @@ export function actionDefinitions(
       ],
       callback: wrap("song_take_row"),
     },
+    song_take_row_by_index: {
+      name: "Song: take row from loaded show (by index)",
+      options: [rowIndexInput, channelDropdown(state)],
+      callback: wrap("song_take_row_by_index"),
+    },
     song_take_row_pvw_pgm: {
       name: "Song: take row PVW → PGM (any show)",
       options: [
@@ -607,6 +693,35 @@ export function actionDefinitions(
         channelDropdown(state, "toChannel", "To", "program"),
       ],
       callback: wrap("song_take_row_pvw_pgm"),
+    },
+    song_take_row_pvw_pgm_by_index: {
+      name: "Song: take row PVW → PGM from loaded show (by index)",
+      options: [
+        rowIndexInput,
+        channelDropdown(state, "fromChannel", "From", "preview"),
+        channelDropdown(state, "toChannel", "To", "program"),
+      ],
+      callback: wrap("song_take_row_pvw_pgm_by_index"),
+    },
+    song_take_sub: {
+      name: "Song: take sub-take (intro / lyrics / outro) by row ID",
+      options: [
+        showDropdown(state),
+        { ...rowDropdown(state), id: "songRowId" },
+        subTakeInput,
+        // Optional channel override; empty = use the cascade-resolved channel.
+        { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" },
+      ],
+      callback: wrap("song_take_sub"),
+    },
+    song_take_sub_by_index: {
+      name: "Song: take sub-take (intro / lyrics / outro) from loaded show (by index)",
+      options: [
+        rowIndexInput,
+        subTakeInput,
+        { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" },
+      ],
+      callback: wrap("song_take_sub_by_index"),
     },
     song_advance: {
       name: "Song: advance ±",

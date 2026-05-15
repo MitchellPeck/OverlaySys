@@ -7,6 +7,11 @@ import {
   encode,
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
+import {
+  resolveIntroTake,
+  resolveOutroTake,
+  resolveSongChannel,
+} from "@overlaysys/core";
 import * as channels from "./channels";
 import * as templates from "./templates";
 import * as shows from "./shows";
@@ -351,6 +356,87 @@ export function handleConnection(
         }
         case "song_end": {
           songSession.end(parsed.channel);
+          break;
+        }
+        case "take_song_sub": {
+          // Resolve the Song → ShowSong → Row cascade for the chosen sub-take
+          // and dispatch the right underlying flow. Intro/outro fire a graphic
+          // `take` with resolved field values; lyrics either advances an
+          // already-live same-song session or starts a fresh one.
+          const show = await shows.getShow(parsed.showId);
+          if (!show) {
+            send({ type: "error", code: "not_found", message: parsed.showId });
+            break;
+          }
+          const row = show.rows.find((r) => r.id === parsed.songRowId);
+          if (!row || row.kind !== "song") {
+            send({ type: "error", code: "not_found", message: parsed.songRowId });
+            break;
+          }
+          const song = await songs.getSong(row.songId);
+          if (!song) {
+            send({ type: "error", code: "not_found", message: row.songId });
+            break;
+          }
+          const showSong = show.songs.find((e) => e.songId === row.songId);
+          const lyricTpl = await templates.getTemplate(row.lyricTemplateId);
+          const resolvedChannel =
+            parsed.channel ??
+            resolveSongChannel(row, showSong, song, lyricTpl ?? undefined) ??
+            "program";
+          if (parsed.sub === "intro" || parsed.sub === "outro") {
+            // Pull the specific intro/outro template (resolveIntroTake takes a
+            // list and looks up by id — we hand it the single relevant body to
+            // avoid a registry-wide load).
+            const subTplId =
+              parsed.sub === "intro"
+                ? row.introTemplateId ??
+                  showSong?.introTemplateId ??
+                  song.defaultIntroTemplateId
+                : row.outroTemplateId ??
+                  showSong?.outroTemplateId ??
+                  song.defaultOutroTemplateId;
+            if (!subTplId) {
+              send({
+                type: "error",
+                code: "not_configured",
+                message: `no ${parsed.sub} template`,
+              });
+              break;
+            }
+            const subTpl = await templates.getTemplate(subTplId);
+            if (!subTpl) {
+              send({ type: "error", code: "not_found", message: subTplId });
+              break;
+            }
+            const tpls = [subTpl];
+            const take =
+              parsed.sub === "intro"
+                ? resolveIntroTake(row, showSong, song, tpls)
+                : resolveOutroTake(row, showSong, song, tpls);
+            if (!take) {
+              send({
+                type: "error",
+                code: "not_configured",
+                message: `${parsed.sub} resolved to null`,
+              });
+              break;
+            }
+            channels.take(resolvedChannel, take.templateId, take.fieldValues);
+            break;
+          }
+          // sub === "lyrics": advance an existing same-song session, else start.
+          const liveSession = songSession.getSession(resolvedChannel);
+          if (liveSession && liveSession.songId === row.songId) {
+            songSession.advance(resolvedChannel, 1);
+          } else {
+            songSession.start(resolvedChannel, {
+              song,
+              lyricTemplateId: row.lyricTemplateId,
+              arrangement: row.arrangement ?? song.defaultArrangement,
+              trustMode: row.trustMode ?? false,
+            });
+          }
           break;
         }
         case "list_channels": {
