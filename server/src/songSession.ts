@@ -269,7 +269,12 @@ export function setTrust(channel: string, trustMode: boolean): void {
 
 export function end(channel: string): void {
   if (!tearDownSession(channel)) return;
-  channels.setSongSessionSummary(channel, null);
+  // Defer the songSession-cleared emit so it coalesces with the phase=out
+  // emit from channels.clear. That single combined state event lets the
+  // renderer distinguish "session ended" (active.phase=out) from "session
+  // ended because a take replaced it" (active.phase=in, emitted by
+  // channels.take's coalesced path).
+  channels.setSongSessionSummary(channel, null, { deferEmit: true });
   channels.clear(channel);
 }
 

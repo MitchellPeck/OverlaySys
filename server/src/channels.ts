@@ -182,6 +182,7 @@ export function update(channel: string, data: Record<string, string>): void {
 export function setSongSessionSummary(
   channel: string,
   summary: SongSessionSummary | null,
+  options?: { deferEmit?: boolean },
 ): void {
   const s = getOrInit(channel);
   if (summary === null) {
@@ -190,7 +191,11 @@ export function setSongSessionSummary(
     s.songSession = summary;
   }
   states.set(channel, s);
-  emit(channel);
+  // `deferEmit` lets a caller coalesce the songSession delta with a follow-up
+  // state mutation (e.g. songSession.end → channels.clear, where we want one
+  // event carrying both "hasSession=false" and "active.phase=out" so the
+  // renderer can tell a true end from a take-replaces-session).
+  if (!options?.deferEmit) emit(channel);
 }
 
 export function setActiveNull(channel: string): void {

@@ -162,10 +162,13 @@ export function Renderer({ channel, debug = false }: Props) {
           lastTemplateIdRef.current === templateId &&
           !pendingSessionStartRef.current
         ) {
-          // Direct playOut (not triggerOut): the WeakSet guard would suppress
-          // the second-and-subsequent playOut calls on the same mount, which
-          // is exactly what we DON'T want here.
-          await previous.playOut().catch(() => {});
+          // playOutTimeline (not playOut, not triggerOut): we want ONLY the
+          // template's own outTl to run — no root-opacity fade. Layers the
+          // template chose not to animate (e.g. a gradient shape behind a
+          // lyric template's text) stay put across the swap. The WeakSet
+          // guard in triggerOut would also suppress this on subsequent
+          // slides, which is wrong for slide-to-slide continuation.
+          await previous.playOutTimeline().catch(() => {});
           if (myTakenAt !== lastTakenAtRef.current) return;
           previous.update(data);
           await previous.playIn().catch(() => {});
@@ -272,17 +275,29 @@ export function Renderer({ channel, debug = false }: Props) {
           pendingSessionStartRef.current = true;
         }
         if (!hasSession && hadSession) {
-          // Fade out: transition opacity to 0, then once it lands snap
-          // back to 1 (no transition) so the next non-song take starts
-          // at full opacity instantly.
-          setSongFadeTransitionMs(SONG_FADE_MS);
-          setSongFadeOpacity(0);
-          if (songFadeOutTimerRef.current) clearTimeout(songFadeOutTimerRef.current);
-          songFadeOutTimerRef.current = setTimeout(() => {
-            setSongFadeTransitionMs(0);
-            setSongFadeOpacity(1);
-            songFadeOutTimerRef.current = null;
-          }, SONG_FADE_MS + 50);
+          // The session went away. Two cases:
+          //   - channel is going dark (clear / song_end): state.active is
+          //     null or its phase is "out". Apply the stage fade — gradient
+          //     and all template layers should disappear together.
+          //   - a take replaced the session (operator hit outro or any
+          //     graphic over the song): state.active is a new mount in
+          //     phase "in". Skip the stage fade — that new mount carries
+          //     the visuals. If it's the same template (same-template
+          //     outro), the smooth-swap branch above handles continuity;
+          //     if it's a different template, the destroy+remount branch
+          //     handles the cross-fade.
+          const isEnd =
+            !msg.state.active || msg.state.active.phase === "out";
+          if (isEnd) {
+            setSongFadeTransitionMs(SONG_FADE_MS);
+            setSongFadeOpacity(0);
+            if (songFadeOutTimerRef.current) clearTimeout(songFadeOutTimerRef.current);
+            songFadeOutTimerRef.current = setTimeout(() => {
+              setSongFadeTransitionMs(0);
+              setSongFadeOpacity(1);
+              songFadeOutTimerRef.current = null;
+            }, SONG_FADE_MS + 50);
+          }
         }
         lastHadSongSessionRef.current = hasSession;
         setLatestState(msg.state);
