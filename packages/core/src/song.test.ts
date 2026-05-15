@@ -77,4 +77,45 @@ describe("SongSchema", () => {
     expect(parsed.ccliNumber).toBe("22025");
     expect(parsed.defaultLyricTemplateId).toBe("lyric-default");
   });
+
+  it("backfills missing customFields to an empty object (legacy compat)", () => {
+    // Inline raw object (no shared fixture) so the omitted `customFields` key
+    // is visible at the test site and can't be silently negated later.
+    const legacy = {
+      id: "legacy-song",
+      title: "Legacy",
+      sections: [
+        {
+          id: "v1",
+          kind: "verse",
+          label: "Verse 1",
+          slides: [{ id: "v1s1", lines: ["line one"] }],
+        },
+      ],
+      defaultArrangement: ["v1"],
+    };
+    const parsed = SongSchema.parse(legacy);
+    expect(parsed.customFields).toEqual({});
+  });
+
+  it("preserves explicit customFields and sub-take defaults on round-trip", () => {
+    const parsed = SongSchema.parse({
+      ...minimal,
+      customFields: { writtenFor: "Easter", key: "G" },
+      defaultIntroTemplateId: "intro-default",
+      defaultIntroFieldMap: { title: "title", subtitle: "writtenFor" },
+      defaultOutroTemplateId: "outro-default",
+      defaultOutroFieldMap: { tagline: "writtenFor" },
+      defaultChannel: "program",
+    });
+    expect(parsed.customFields).toEqual({ writtenFor: "Easter", key: "G" });
+    expect(parsed.defaultIntroTemplateId).toBe("intro-default");
+    expect(parsed.defaultIntroFieldMap).toEqual({
+      title: "title",
+      subtitle: "writtenFor",
+    });
+    expect(parsed.defaultOutroTemplateId).toBe("outro-default");
+    expect(parsed.defaultOutroFieldMap).toEqual({ tagline: "writtenFor" });
+    expect(parsed.defaultChannel).toBe("program");
+  });
 });

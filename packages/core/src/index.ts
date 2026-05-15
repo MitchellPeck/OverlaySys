@@ -7,6 +7,7 @@ export * from "./storageAdapter";
 export * from "./channel";
 export * from "./channelConfig";
 export * from "./song";
+export * from "./songResolution";
 export * from "./songParser";
 export * from "./songSelectParser";
 export * from "./sectionEmit";

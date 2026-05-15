@@ -28,6 +28,7 @@ import {
 } from "@/lib/projectSync";
 import { defaultServerUrl } from "@/lib/wsClient";
 import { hasCloudSessionHint } from "@/lib/cloudSession";
+import { CustomFieldSchemaModal } from "./CustomFieldSchemaModal";
 
 /**
  * The Projects page lists every Project in the local data dir and lets the
@@ -119,6 +120,38 @@ export default function ProjectsIndexPage() {
     } else {
       send({ type: "save_project", project });
       setCurrentProjectId(id);
+    }
+  }
+
+  // Custom-field schema editor: tracks the project currently being edited.
+  // Persistence mirrors rename() — local mode goes through the WS save_project
+  // message, cloud mode talks to Supabase directly.
+  const [schemaEditing, setSchemaEditing] = useState<Project | null>(null);
+
+  async function saveSchema(
+    p: Project,
+    schema: Project["songCustomFieldSchema"],
+  ) {
+    const updated: Project = {
+      ...p,
+      updatedAt: new Date().toISOString(),
+    };
+    // Empty list → field absent (it's .optional() in the schema). Avoid
+    // persisting `[]` since that's semantically distinct.
+    if (schema && schema.length > 0) {
+      updated.songCustomFieldSchema = schema;
+    } else {
+      delete updated.songCustomFieldSchema;
+    }
+    if (cloud) {
+      try {
+        await saveProjectCloud(updated);
+        await refreshProjectsCloud();
+      } catch (err) {
+        await showError("save custom fields", err);
+      }
+    } else {
+      send({ type: "save_project", project: updated });
     }
   }
 
@@ -409,6 +442,14 @@ export default function ProjectsIndexPage() {
                         >
                           Rename
                         </Button>
+                        <Button
+                          onClick={() => setSchemaEditing(p)}
+                          size="sm"
+                          style={{ width: 104 }}
+                          title="Edit recommended song custom fields"
+                        >
+                          Custom fields
+                        </Button>
                         <IconButton
                           onClick={() => remove(p)}
                           title={
@@ -436,6 +477,17 @@ export default function ProjectsIndexPage() {
         </div>
       </main>
       {dialog}
+      {schemaEditing && (
+        <CustomFieldSchemaModal
+          project={schemaEditing}
+          onCancel={() => setSchemaEditing(null)}
+          onSave={async (schema) => {
+            const p = schemaEditing;
+            setSchemaEditing(null);
+            await saveSchema(p, schema);
+          }}
+        />
+      )}
     </>
   );
 }

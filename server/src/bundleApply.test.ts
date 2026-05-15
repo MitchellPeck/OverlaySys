@@ -176,6 +176,7 @@ describe("liftHotcard / liftShow", () => {
         { kind: "graphic", id: "r1", templateId: "t1", data: { logo: ONE_PX_PNG_DATA_URL } },
         { kind: "song", id: "r2", songId: "song-x", lyricTemplateId: "t1" },
       ],
+      songs: [],
     };
     const out = await liftShow(s);
     const r1 = out.rows[0];
@@ -233,6 +234,7 @@ describe("rewriteAssetUrlsIn*", () => {
       rows: [
         { kind: "graphic", id: "r", templateId: "t1", data: { title: "hi", external: "https://x.com" } },
       ],
+      songs: [],
     };
     const out = rewriteAssetUrlsInShow(s, origin);
     const row = out.rows[0];

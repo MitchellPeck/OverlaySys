@@ -109,6 +109,7 @@ describe("projectVariables — channel scope", () => {
           },
         ],
         defaultArrangement: ["sec1"],
+        customFields: {},
       },
     });
     s = apply(s, {

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { ChannelConfig, Show, RundownRow, GraphicRow, SongRow, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import type { ChannelConfig, Show, RundownRow, GraphicRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -12,6 +12,7 @@ import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
 import { isCloudMode } from "@/lib/mode";
+import { SongsInShowPanel } from "./SongsInShowPanel";
 import {
   deleteShowCloud,
   getShowCloud,
@@ -287,10 +288,19 @@ function ShowEditPageInner() {
     }
     update((s) => {
       const cachedSong = songCache[firstSong.id];
+      // Lyric template cascade: ShowSong override → song default → first template.
+      const showSong = s.songs.find((e) => e.songId === firstSong.id);
       const lyricTemplateId =
+        showSong?.lyricTemplateId ??
         cachedSong?.defaultLyricTemplateId ??
         templates[0]?.id ??
         "";
+      // Auto-add to the Songs panel so the operator can layer show-level
+      // overrides without an extra click. Silent — matches the UX agreed in
+      // plan review.
+      if (!showSong) {
+        s.songs.push({ songId: firstSong.id });
+      }
       s.rows.push({
         kind: "song",
         id: uuid(),
@@ -395,6 +405,15 @@ function ShowEditPageInner() {
 
       <div style={{ overflow: "auto", padding: "16px 24px" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+          <SongsInShowPanel
+            draft={draft}
+            songs={songs}
+            songCache={songCache}
+            templates={templates}
+            templateCache={templateCache}
+            channels={takeableChannels}
+            onUpdate={update}
+          />
           <RundownTable
             draft={draft}
             templates={templates}
@@ -483,10 +502,12 @@ function RundownTable({
             onDelete: () => onDeleteRow(row.id),
           };
           if (row.kind === "song") {
+            const showSong = draft.songs.find((e) => e.songId === row.songId);
             return (
               <SongRowEditor
                 key={row.id}
                 row={row}
+                showSong={showSong}
                 songs={songs}
                 songCache={songCache}
                 templates={templates}
@@ -644,6 +665,7 @@ function RundownRowEditor({
 
 function SongRowEditor({
   row,
+  showSong,
   index,
   songs,
   songCache,
@@ -658,6 +680,7 @@ function SongRowEditor({
   onDelete,
 }: {
   row: SongRow;
+  showSong: ShowSong | undefined;
   index: number;
   songs: SongMeta[];
   songCache: Record<string, Song>;
@@ -672,29 +695,89 @@ function SongRowEditor({
   onDelete: () => void;
 }) {
   const [dropZone, setDropZone] = useState<"before" | "after" | null>(null);
+  // Per-row overrides are collapsed by default — most users won't need them
+  // and the row stays compact. Local state per editor instance.
+  const [overridesOpen, setOverridesOpen] = useState(false);
 
   function patchRow(patch: Partial<SongRow>) {
     onUpdate((s) => {
       const r = s.rows.find((r) => r.id === row.id);
       if (!r || r.kind !== "song") return;
-      Object.assign(r, patch);
+      // Build the patched row by applying each entry — explicit `undefined`
+      // values clear keys rather than persisting as undefined-in-object, since
+      // the schema treats these fields as `.optional()`.
+      for (const [key, value] of Object.entries(patch) as Array<
+        [keyof SongRow, SongRow[keyof SongRow]]
+      >) {
+        if (value === undefined) {
+          delete (r as Record<string, unknown>)[key as string];
+        } else {
+          (r as Record<string, unknown>)[key as string] = value;
+        }
+      }
     });
   }
 
   function pickSong(songId: string) {
     const cached = songCache[songId];
-    const defaultTpl = cached?.defaultLyricTemplateId;
     onUpdate((s) => {
       const r = s.rows.find((r) => r.id === row.id);
       if (!r || r.kind !== "song") return;
+      const changed = r.songId !== songId;
       r.songId = songId;
-      if (defaultTpl) r.lyricTemplateId = defaultTpl;
+      // Lyric template cascade mirrors addSongRow:
+      // ShowSong.lyricTemplateId → Song.defaultLyricTemplateId → first template.
+      const targetShowSong = s.songs.find((e) => e.songId === songId);
+      const nextLyricTpl =
+        targetShowSong?.lyricTemplateId ??
+        cached?.defaultLyricTemplateId ??
+        templates[0]?.id;
+      if (nextLyricTpl) r.lyricTemplateId = nextLyricTpl;
+      // When the songId actually changes, the per-row intro/outro overrides
+      // (template ids + field maps + skip flags) belonged to the old song and
+      // are almost certainly wrong for the new one (field maps are template-
+      // shape-specific). Clear them; the operator can reapply if desired.
+      if (changed) {
+        delete (r as Record<string, unknown>).introTemplateId;
+        delete (r as Record<string, unknown>).introFieldMap;
+        delete (r as Record<string, unknown>).outroTemplateId;
+        delete (r as Record<string, unknown>).outroFieldMap;
+        delete (r as Record<string, unknown>).skipIntro;
+        delete (r as Record<string, unknown>).skipOutro;
+      }
+      // Mirror addSongRow's auto-add behavior — picking a different library
+      // song from this row should also register it on the Songs panel so
+      // show-level overrides have a place to live.
+      if (!s.songs.some((e) => e.songId === songId)) {
+        s.songs.push({ songId });
+      }
     });
   }
 
   const songMeta = songs.find((s) => s.id === row.songId);
+  // Resolve inherited values for the override visualization. Cascade:
+  // row → ShowSong → Song. The label uses the template `name` when known,
+  // falling back to the raw id for missing/unloaded entries.
+  const cachedSong = songCache[row.songId];
+  const inheritedLyricTplId =
+    showSong?.lyricTemplateId ?? cachedSong?.defaultLyricTemplateId;
+  const inheritedIntroTplId =
+    showSong?.introTemplateId ?? cachedSong?.defaultIntroTemplateId;
+  const inheritedOutroTplId =
+    showSong?.outroTemplateId ?? cachedSong?.defaultOutroTemplateId;
+  const inheritedChannel =
+    showSong?.channelOverride ?? cachedSong?.defaultChannel;
+  function tplName(id: string | undefined): string {
+    if (!id) return "(none)";
+    return templates.find((t) => t.id === id)?.name ?? id;
+  }
+  function chanName(id: string | undefined): string {
+    if (!id) return "(any)";
+    return channels.find((c) => c.id === id)?.name ?? id;
+  }
 
   return (
+    <>
     <tr
       draggable
       onDragStart={(e) => {
@@ -760,6 +843,41 @@ function SongRowEditor({
             ))}
           </Select>
         </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6, fontSize: 11 }}>
+          <label style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer", color: colors.textDim }}>
+            <input
+              type="checkbox"
+              checked={!!row.skipIntro}
+              onChange={(e) => patchRow({ skipIntro: e.target.checked || undefined })}
+            />
+            Skip intro
+          </label>
+          <label style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer", color: colors.textDim }}>
+            <input
+              type="checkbox"
+              checked={!!row.skipOutro}
+              onChange={(e) => patchRow({ skipOutro: e.target.checked || undefined })}
+            />
+            Skip outro
+          </label>
+          <button
+            type="button"
+            onClick={() => setOverridesOpen((v) => !v)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: colors.accent,
+              cursor: "pointer",
+              padding: 0,
+              fontSize: 11,
+              textDecoration: "underline",
+              marginLeft: "auto",
+            }}
+            aria-expanded={overridesOpen}
+          >
+            {overridesOpen ? "▾ Hide overrides" : "▸ Per-row overrides"}
+          </button>
+        </div>
         {row.arrangement && row.arrangement.length > 0 && (
           <div style={{ fontSize: 11, color: colors.textDim, marginTop: 4 }}>
             arrangement override: {row.arrangement.join(" → ")}
@@ -786,6 +904,159 @@ function SongRowEditor({
         </IconButton>
       </td>
     </tr>
+    {overridesOpen && (
+      <tr style={{ background: "rgba(255, 177, 58, 0.04)" }}>
+        <td colSpan={6} style={{ padding: "8px 16px 12px 48px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11 }}>
+            <div style={{ color: colors.textDim, marginBottom: 4 }}>
+              Per-row overrides — sit on top of any show-level overrides.
+            </div>
+            <RowOverrideField
+              label="Intro template"
+              isOverridden={row.introTemplateId !== undefined}
+              inheritedLabel={inheritedIntroTplId ? tplName(inheritedIntroTplId) : "(none — skip)"}
+              onRevert={() => patchRow({ introTemplateId: undefined, introFieldMap: undefined })}
+              onOverride={() =>
+                patchRow({
+                  introTemplateId: inheritedIntroTplId ?? templates[0]?.id ?? "",
+                })
+              }
+            >
+              <RowTemplateSelect
+                value={row.introTemplateId}
+                templates={templates}
+                onChange={(v) => patchRow({ introTemplateId: v })}
+                allowEmpty
+              />
+            </RowOverrideField>
+            <RowOverrideField
+              label="Outro template"
+              isOverridden={row.outroTemplateId !== undefined}
+              inheritedLabel={inheritedOutroTplId ? tplName(inheritedOutroTplId) : "(none — skip)"}
+              onRevert={() => patchRow({ outroTemplateId: undefined, outroFieldMap: undefined })}
+              onOverride={() =>
+                patchRow({
+                  outroTemplateId: inheritedOutroTplId ?? templates[0]?.id ?? "",
+                })
+              }
+            >
+              <RowTemplateSelect
+                value={row.outroTemplateId}
+                templates={templates}
+                onChange={(v) => patchRow({ outroTemplateId: v })}
+                allowEmpty
+              />
+            </RowOverrideField>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", color: colors.textDim }}>
+              <span style={{ width: 100, flexShrink: 0 }}>Lyric template</span>
+              <span style={{ flex: 1, fontStyle: "italic" }}>
+                Set above — currently {tplName(row.lyricTemplateId)}
+                {inheritedLyricTplId && row.lyricTemplateId !== inheritedLyricTplId && (
+                  <> (show default: {tplName(inheritedLyricTplId)})</>
+                )}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", color: colors.textDim }}>
+              <span style={{ width: 100, flexShrink: 0 }}>Channel</span>
+              <span style={{ flex: 1, fontStyle: "italic" }}>
+                Set in the Channel column — inherits from {chanName(inheritedChannel)} if blank.
+              </span>
+            </div>
+          </div>
+        </td>
+      </tr>
+    )}
+    </>
+  );
+}
+
+/**
+ * Inline row used in {@link SongRowEditor}'s expanded override panel. Mirrors
+ * `OverrideRow` from `SongsInShowPanel` but compact and inline-styled to fit
+ * inside the rundown table's row spacing.
+ */
+function RowOverrideField({
+  label,
+  isOverridden,
+  inheritedLabel,
+  onRevert,
+  onOverride,
+  children,
+}: {
+  label: string;
+  isOverridden: boolean;
+  inheritedLabel: string;
+  onRevert: () => void;
+  onOverride: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ width: 100, flexShrink: 0, color: colors.textDim }}>{label}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {isOverridden ? (
+          children
+        ) : (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "2px 8px",
+              border: `1px dashed ${colors.border}`,
+              borderRadius: 4,
+              color: colors.textDim,
+              fontStyle: "italic",
+            }}
+            title="Inherited from show value"
+          >
+            {inheritedLabel}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={isOverridden ? onRevert : onOverride}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: colors.accent,
+          cursor: "pointer",
+          fontSize: 11,
+          padding: 0,
+          textDecoration: "underline",
+        }}
+      >
+        {isOverridden ? "Use show value" : "Override"}
+      </button>
+    </div>
+  );
+}
+
+function RowTemplateSelect({
+  value,
+  templates,
+  onChange,
+  allowEmpty,
+}: {
+  value: string | undefined;
+  templates: TemplateMeta[];
+  onChange: (v: string | undefined) => void;
+  allowEmpty?: boolean;
+}) {
+  const current = value ?? "";
+  const known = current && templates.some((t) => t.id === current);
+  return (
+    <Select
+      value={current}
+      onChange={(e) => onChange(e.target.value || undefined)}
+    >
+      {allowEmpty && <option value="">(none — skip)</option>}
+      {!known && current && (
+        <option value={current}>{current} (missing)</option>
+      )}
+      {templates.map((t) => (
+        <option key={t.id} value={t.id}>{t.name}</option>
+      ))}
+    </Select>
   );
 }
 

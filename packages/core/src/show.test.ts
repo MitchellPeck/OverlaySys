@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RundownRowSchema, ShowSchema } from "./show";
+import { RundownRowSchema, ShowSchema, ShowSongSchema } from "./show";
 
 describe("RundownRowSchema", () => {
   it("parses a graphic row with explicit kind", () => {
@@ -60,6 +60,59 @@ describe("RundownRowSchema", () => {
       }),
     ).toThrow();
   });
+
+  it("accepts a song row with sub-take overrides and skip flags", () => {
+    const row = RundownRowSchema.parse({
+      kind: "song",
+      id: "r5",
+      songId: "amazing-grace",
+      lyricTemplateId: "lyric-default",
+      introTemplateId: "intro-special",
+      introFieldMap: { title: "title" },
+      outroTemplateId: "outro-special",
+      outroFieldMap: { tagline: "writtenFor" },
+      skipIntro: false,
+      skipOutro: true,
+    });
+    if (row.kind !== "song") throw new Error("expected song");
+    expect(row.introTemplateId).toBe("intro-special");
+    expect(row.introFieldMap).toEqual({ title: "title" });
+    expect(row.outroTemplateId).toBe("outro-special");
+    expect(row.outroFieldMap).toEqual({ tagline: "writtenFor" });
+    expect(row.skipIntro).toBe(false);
+    expect(row.skipOutro).toBe(true);
+  });
+});
+
+describe("ShowSongSchema", () => {
+  it("parses a minimal ShowSong entry", () => {
+    const s = ShowSongSchema.parse({ songId: "amazing-grace" });
+    expect(s.songId).toBe("amazing-grace");
+    expect(s.channelOverride).toBeUndefined();
+  });
+
+  it("round-trips all override fields", () => {
+    const s = ShowSongSchema.parse({
+      songId: "amazing-grace",
+      channelOverride: "stage",
+      introTemplateId: "intro-A",
+      introFieldMap: { title: "title" },
+      outroTemplateId: "outro-A",
+      outroFieldMap: { tagline: "writtenFor" },
+      lyricTemplateId: "lyric-A",
+      customFieldOverrides: { writtenFor: "Easter Service" },
+    });
+    expect(s).toEqual({
+      songId: "amazing-grace",
+      channelOverride: "stage",
+      introTemplateId: "intro-A",
+      introFieldMap: { title: "title" },
+      outroTemplateId: "outro-A",
+      outroFieldMap: { tagline: "writtenFor" },
+      lyricTemplateId: "lyric-A",
+      customFieldOverrides: { writtenFor: "Easter Service" },
+    });
+  });
 });
 
 describe("ShowSchema (legacy compat)", () => {
@@ -98,5 +151,56 @@ describe("ShowSchema (legacy compat)", () => {
       rows: [],
     });
     expect(show.projectId).toBe("christmas-eve");
+  });
+
+  it("backfills missing songs to an empty array (legacy compat)", () => {
+    const show = ShowSchema.parse({
+      id: "s1",
+      name: "Service",
+      rows: [],
+    });
+    expect(show.songs).toEqual([]);
+  });
+
+  it("backfills missing songs when projectId is present", () => {
+    const show = ShowSchema.parse({
+      id: "s-asym-1",
+      name: "Asymmetric A",
+      projectId: "x",
+      rows: [],
+    });
+    expect(show.projectId).toBe("x");
+    expect(show.songs).toEqual([]);
+  });
+
+  it("backfills missing projectId when songs is present", () => {
+    const show = ShowSchema.parse({
+      id: "s-asym-2",
+      name: "Asymmetric B",
+      rows: [],
+      songs: [{ songId: "s1" }],
+    });
+    expect(show.projectId).toBe("default");
+    expect(show.songs).toEqual([{ songId: "s1" }]);
+  });
+
+  it("preserves an explicit songs array on read", () => {
+    const show = ShowSchema.parse({
+      id: "s1",
+      name: "Service",
+      projectId: "default",
+      rows: [],
+      songs: [
+        {
+          songId: "amazing-grace",
+          channelOverride: "stage",
+          customFieldOverrides: { writtenFor: "Easter" },
+        },
+      ],
+    });
+    expect(show.songs).toHaveLength(1);
+    expect(show.songs[0]!.songId).toBe("amazing-grace");
+    expect(show.songs[0]!.channelOverride).toBe("stage");
+    expect(show.songs[0]!.customFieldOverrides).toEqual({ writtenFor: "Easter" });
   });
 });

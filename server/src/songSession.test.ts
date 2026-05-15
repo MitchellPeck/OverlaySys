@@ -26,6 +26,7 @@ const song: Song = {
     },
   ],
   defaultArrangement: ["v1", "c", "v1"],
+  customFields: {},
 };
 
 const CH = "program";

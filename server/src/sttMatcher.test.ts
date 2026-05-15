@@ -23,6 +23,7 @@ const song: Song = {
     },
   ],
   defaultArrangement: ["v1", "c"],
+  customFields: {},
 };
 
 describe("sttMatcher", () => {
@@ -159,6 +160,7 @@ describe("sttMatcher", () => {
         { id: "v5", kind: "verse", label: "V5", slides: [{ id: "v5s1", lines: ["amazing grace will guide my way"] }] },
       ],
       defaultArrangement: ["v1", "v2", "v3", "v4", "v5"],
+      customFields: {},
     };
 
     it("does NOT jump to a far verse on noisy/partial overlap", () => {
@@ -348,6 +350,7 @@ describe("sttMatcher", () => {
           },
         ],
         defaultArrangement: ["a"],
+        customFields: {},
       };
       matcher.bindSession("program", tinySong, tinySong.defaultArrangement);
       // Hypothesis covers 100% of "go now" — but slide is below
