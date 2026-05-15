@@ -5,7 +5,7 @@
 
 import type { ShowSong, SongRow } from "./show";
 import type { Song } from "./song";
-import type { Template, Field } from "./template";
+import type { Template } from "./template";
 
 /**
  * Built-in song fields that exist as named properties on `Song`. Anything not
@@ -63,7 +63,7 @@ export function resolveCustomFieldValue(
   return song.customFields[key];
 }
 
-interface ResolvedTake {
+export interface ResolvedTake {
   templateId: string;
   fieldValues: Record<string, string>;
 }
@@ -73,23 +73,42 @@ interface ResolvedTake {
  * row/show/song properties feed the cascade. Pulled into a helper so the two
  * public entry points stay one-liners and there's a single place to fix.
  */
-function resolveSubTake(
-  row: SongRow,
-  showSong: ShowSong | undefined,
-  song: Song,
-  templates: Template[],
-  rowTemplateId: string | undefined,
-  showTemplateId: string | undefined,
-  songTemplateId: string | undefined,
-  rowFieldMap: Record<string, string> | undefined,
-  showFieldMap: Record<string, string> | undefined,
-  songFieldMap: Record<string, string> | undefined,
-): ResolvedTake | null {
+function resolveSubTake(args: {
+  skip: boolean | undefined;
+  rowTemplateId: string | undefined;
+  showTemplateId: string | undefined;
+  songTemplateId: string | undefined;
+  rowFieldMap: Record<string, string> | undefined;
+  showFieldMap: Record<string, string> | undefined;
+  songFieldMap: Record<string, string> | undefined;
+  templates: Template[];
+  row: SongRow;
+  showSong: ShowSong | undefined;
+  song: Song;
+}): ResolvedTake | null {
+  const {
+    skip,
+    rowTemplateId,
+    showTemplateId,
+    songTemplateId,
+    rowFieldMap,
+    showFieldMap,
+    songFieldMap,
+    templates,
+    row,
+    showSong,
+    song,
+  } = args;
+  if (skip) return null;
   const templateId = rowTemplateId ?? showTemplateId ?? songTemplateId;
   if (!templateId) return null;
   const template = templates.find((t) => t.id === templateId);
   if (!template) return null;
 
+  // Template id and field map cascade independently. If a row overrides only the
+  // template id, it can still inherit the show or song field map even though those
+  // keys may not match the new template — callers (the editor UI) should re-confirm
+  // the map when changing the template.
   const fieldMap: Record<string, string> =
     rowFieldMap ?? showFieldMap ?? songFieldMap ?? {};
 
@@ -118,19 +137,19 @@ export function resolveIntroTake(
   song: Song,
   templates: Template[],
 ): ResolvedTake | null {
-  if (row.skipIntro) return null;
-  return resolveSubTake(
+  return resolveSubTake({
+    skip: row.skipIntro,
+    rowTemplateId: row.introTemplateId,
+    showTemplateId: showSong?.introTemplateId,
+    songTemplateId: song.defaultIntroTemplateId,
+    rowFieldMap: row.introFieldMap,
+    showFieldMap: showSong?.introFieldMap,
+    songFieldMap: song.defaultIntroFieldMap,
+    templates,
     row,
     showSong,
     song,
-    templates,
-    row.introTemplateId,
-    showSong?.introTemplateId,
-    song.defaultIntroTemplateId,
-    row.introFieldMap,
-    showSong?.introFieldMap,
-    song.defaultIntroFieldMap,
-  );
+  });
 }
 
 /** Same as {@link resolveIntroTake} for the outro sub-take. Honors row.skipOutro. */
@@ -140,30 +159,30 @@ export function resolveOutroTake(
   song: Song,
   templates: Template[],
 ): ResolvedTake | null {
-  if (row.skipOutro) return null;
-  return resolveSubTake(
+  return resolveSubTake({
+    skip: row.skipOutro,
+    rowTemplateId: row.outroTemplateId,
+    showTemplateId: showSong?.outroTemplateId,
+    songTemplateId: song.defaultOutroTemplateId,
+    rowFieldMap: row.outroFieldMap,
+    showFieldMap: showSong?.outroFieldMap,
+    songFieldMap: song.defaultOutroFieldMap,
+    templates,
     row,
     showSong,
     song,
-    templates,
-    row.outroTemplateId,
-    showSong?.outroTemplateId,
-    song.defaultOutroTemplateId,
-    row.outroFieldMap,
-    showSong?.outroFieldMap,
-    song.defaultOutroFieldMap,
-  );
+  });
 }
 
 // --- Field-map suggestion helpers ----------------------------------------
 
-interface FieldDescriptor {
+export interface FieldDescriptor {
   key: string;
   label: string;
   type: "text" | "number";
 }
 
-type TemplateFieldLike = { key: string; label: string; type: string };
+export type TemplateFieldLike = { key: string; label: string; type: string };
 
 export type SuggestedFieldMatch =
   | { kind: "exact"; songFieldKey: string }
@@ -190,18 +209,12 @@ function labelSimilarity(a: string, b: string): number {
   return 0;
 }
 
-function typesCompatible(templateType: string, songType: "text" | "number"): boolean {
-  if (templateType === "number") return songType === "number";
-  // text / image / color / video / time all accept text-ish input from a song field
-  return true;
-}
-
 /**
  * Compute a suggested map from template fields to song fields. Exact-key
  * matches (case-insensitive) win; otherwise we greedily assign the highest-
- * scoring label-similarity match per template field, with the tie-break on
- * type compatibility. A song field cannot be suggested for two template
- * fields — first claim wins under descending score order.
+ * scoring label-similarity match per template field. A song field cannot be
+ * suggested for two template fields — first claim wins under descending score
+ * order, with ties broken by template-field insertion order (stable sort).
  */
 export function suggestFieldMap(
   templateFields: Array<TemplateFieldLike>,
@@ -232,8 +245,7 @@ export function suggestFieldMap(
       if (claimed.has(sf.key)) continue;
       const score = labelSimilarity(tf.label, sf.label);
       if (score <= 0) continue;
-      const compatBonus = typesCompatible(tf.type, sf.type) ? 0.05 : 0;
-      candidates.push({ tfKey: tf.key, sfKey: sf.key, score: score + compatBonus });
+      candidates.push({ tfKey: tf.key, sfKey: sf.key, score });
     }
   }
   candidates.sort((a, b) => b.score - a.score);
@@ -284,6 +296,3 @@ export function listSongFieldDescriptors(
   });
   return [...BUILT_IN_DESCRIPTORS, ...customDescriptors];
 }
-
-// Re-export the field type for callers wanting a typed handle on the descriptor shape.
-export type { Field };

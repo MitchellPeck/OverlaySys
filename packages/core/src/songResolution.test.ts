@@ -167,22 +167,23 @@ describe("resolveIntroTake", () => {
     expect(result?.templateId).toBe("row-intro");
   });
 
-  it("cascades the field map: row > showSong > song > {}", () => {
+  it("uses song-level field map when row and showSong don't provide one", () => {
     const song = makeSong({
       title: "Song A",
       defaultIntroTemplateId: "intro-tpl",
       defaultIntroFieldMap: { songTitle: "title" },
     });
-    // No ShowSong / Row override → uses song-level map.
-    let result = resolveIntroTake(makeRow(), undefined, song, [introTpl]);
+    const result = resolveIntroTake(makeRow(), undefined, song, [introTpl]);
     expect(result?.fieldValues.songTitle).toBe("Song A");
+  });
 
+  it("ShowSong field map replaces song's default", () => {
     // ShowSong replaces the song map entirely (no per-key merge).
     const showSong: ShowSong = {
       songId: "song1",
       introFieldMap: { subtitle: "author" },
     };
-    result = resolveIntroTake(
+    const result = resolveIntroTake(
       makeRow(),
       showSong,
       makeSong({
@@ -195,10 +196,15 @@ describe("resolveIntroTake", () => {
     expect(result?.fieldValues.subtitle).toBe("Author B");
     // songTitle isn't mapped at the show level, so it falls back to the template default.
     expect(result?.fieldValues.songTitle).toBe("Untitled");
+  });
 
-    // Row map wins over showSong map.
+  it("row field map wins over ShowSong's", () => {
+    const showSong: ShowSong = {
+      songId: "song1",
+      introFieldMap: { subtitle: "author" },
+    };
     const row = makeRow({ introFieldMap: { songTitle: "title" } });
-    result = resolveIntroTake(
+    const result = resolveIntroTake(
       row,
       showSong,
       makeSong({ title: "Row Title", defaultIntroTemplateId: "intro-tpl" }),
@@ -301,6 +307,11 @@ describe("suggestFieldMap", () => {
   });
 
   it("does not suggest the same song field for two template fields", () => {
+    // Both headings tie on similarity (substring match → 0.8). The greedy pass
+    // uses a stable sort, so the first template field in iteration order wins
+    // and the second falls back to 'none'. Pinning the assignment here ensures
+    // the test would catch double-claim bugs *and* any regression that breaks
+    // the documented stable-order tiebreak.
     const result = suggestFieldMap(
       [
         { key: "headingA", label: "Song Title", type: "text" },
@@ -308,11 +319,8 @@ describe("suggestFieldMap", () => {
       ],
       [{ key: "title", label: "Title", type: "text" }],
     );
-    // Exactly one of the two template fields claims "title", the other is "none".
-    const matches = [result.headingA!, result.headingB!];
-    const claimed = matches.filter((m) => m.kind === "suggested");
-    expect(claimed.length).toBe(1);
-    expect(matches.filter((m) => m.kind === "none").length).toBe(1);
+    expect(result.headingA).toEqual({ kind: "suggested", songFieldKey: "title" });
+    expect(result.headingB).toEqual({ kind: "none" });
   });
 });
 
