@@ -49,9 +49,12 @@ export async function fetchAssetBase64(filename: string): Promise<RawAsset | nul
 /**
  * Cloud equivalent: fetch the asset's bytes from Supabase Storage (the
  * bucket is public, so a plain fetch works), then base64-encode for
- * inclusion in an export bundle.
+ * inclusion in an export bundle. Exported so the publish/pull sync code
+ * can call it directly regardless of operator mode — when pulling a
+ * cloud project down to an Electron host, the operator is in local
+ * mode but the bundle's assets still live in Supabase.
  */
-async function fetchAssetBase64Cloud(filename: string): Promise<RawAsset | null> {
+export async function fetchAssetBase64Cloud(filename: string): Promise<RawAsset | null> {
   const url = resolveAssetUrlCloud(`/assets/${filename}`);
   const res = await fetch(url);
   if (res.status === 404) return null;

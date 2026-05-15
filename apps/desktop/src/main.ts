@@ -303,6 +303,13 @@ function createOperatorWindow(): BrowserWindow {
     title: "OverlaySys",
     backgroundColor: "#0c0d10",
     autoHideMenuBar: false,
+    // macOS: prefer "simple" (pre-Lion) fullscreen — covers the whole
+    // screen incl. menu bar, no separate Space, no animated transition.
+    // For broadcast tooling this is what users actually want when they
+    // hit "fullscreen"; the native macOS fullscreen with its Space
+    // transition is hostile to live-show workflows. No-op on other
+    // platforms (which already do the right thing by default).
+    simpleFullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -336,6 +343,7 @@ function createOperatorWindow(): BrowserWindow {
 }
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
+  const isMac = process.platform === "darwin";
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
@@ -344,12 +352,46 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
     transparent: !!opts.transparent,
     frame: !opts.frameless,
     alwaysOnTop: !!opts.alwaysOnTop,
-    fullscreen: !!opts.fullscreen,
+    // See createOperatorWindow for why simpleFullscreen is set.
+    // Channel windows are broadcast outputs — they're the canonical
+    // place you DON'T want a macOS animated Space transition. On
+    // macOS we deliberately DON'T pass `fullscreen` in the ctor
+    // (even as `false`) — explicit values there seem to lock the
+    // green traffic-light button to native fullscreen mode and the
+    // simpleFullscreen flag stops affecting it.
+    simpleFullscreen: true,
+    ...(isMac ? {} : { fullscreen: !!opts.fullscreen }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // Safety net for macOS: if anything (green button, programmatic, etc.)
+  // tries to enter the native macOS fullscreen, immediately bail out
+  // and switch to simple fullscreen. Without this, certain channel
+  // window configurations (transparent, alwaysOnTop, etc.) ignore the
+  // simpleFullscreen flag and revert to native behavior.
+  if (isMac) {
+    win.on("enter-full-screen", () => {
+      if (!win.isSimpleFullScreen()) {
+        win.setFullScreen(false);
+        // Defer so the native exit completes before the simple enter.
+        setTimeout(() => {
+          if (!win.isDestroyed()) win.setSimpleFullScreen(true);
+        }, 50);
+      }
+    });
+  }
+
+  // macOS: enter simple fullscreen after the window has been built,
+  // since BrowserWindow constructor doesn't auto-enter simple-fullscreen
+  // even when `simpleFullscreen: true` is set. setSimpleFullScreen
+  // performs the actual mode change. On other platforms the
+  // `fullscreen` ctor option above handles it.
+  if (isMac && opts.fullscreen) {
+    win.setSimpleFullScreen(true);
+  }
 
   win.loadURL(rendererChannelUrl(channelId));
 
@@ -399,7 +441,22 @@ function buildMenu(): void {
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        // Custom toggle so the operator window uses simple fullscreen
+        // on macOS instead of the native Space-using fullscreen that
+        // `role: "togglefullscreen"` would trigger. Cmd-Ctrl-F matches
+        // the standard macOS shortcut for fullscreen.
+        {
+          label: isMac ? "Toggle Full Screen" : "Toggle Full Screen",
+          accelerator: isMac ? "Ctrl+Cmd+F" : "F11",
+          click: (_item, focusedWin) => {
+            if (!focusedWin) return;
+            if (process.platform === "darwin") {
+              focusedWin.setSimpleFullScreen(!focusedWin.isSimpleFullScreen());
+            } else {
+              focusedWin.setFullScreen(!focusedWin.isFullScreen());
+            }
+          },
+        },
       ],
     },
     {
@@ -450,7 +507,13 @@ function registerIpc(): void {
       const w = channelWindows.get(channelId);
       if (!w || w.isDestroyed()) return false;
       if (opts.alwaysOnTop !== undefined) w.setAlwaysOnTop(opts.alwaysOnTop);
-      if (opts.fullscreen !== undefined) w.setFullScreen(opts.fullscreen);
+      if (opts.fullscreen !== undefined) {
+        if (process.platform === "darwin") {
+          w.setSimpleFullScreen(opts.fullscreen);
+        } else {
+          w.setFullScreen(opts.fullscreen);
+        }
+      }
       if (opts.frameless !== undefined) {
         // Electron doesn't allow toggling frame on a live window; need recreate.
         return false;

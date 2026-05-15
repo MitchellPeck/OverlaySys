@@ -338,4 +338,33 @@ describe("songSession trust mode", () => {
     // No throw, no zombie cursor advance.
     expect(channels.getState(CH).songSession).toBeUndefined();
   });
+
+  it("auto-advance produces a new takenAt so the renderer replays IN/OUT", () => {
+    // Trust-mode auto-advance must re-mount the template just like manual
+    // advance — otherwise the operator sees text silently swap with no
+    // visible transition. The debounce in scheduleAutoAdvance already
+    // prevents cascade re-mounts from rapid partials.
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1000);
+
+    songSession.start(CH, {
+      song,
+      lyricTemplateId: "lyric-default",
+      arrangement: song.defaultArrangement,
+      trustMode: true,
+    });
+    const t1 = channels.getState(CH).active?.takenAt;
+    expect(t1).toBe(1000);
+
+    nowSpy.mockReturnValue(2000);
+    songSession.processSttHypothesis(CH, "line b1 line b2", Date.now());
+    vi.advanceTimersByTime(300);
+
+    const t2 = channels.getState(CH).active?.takenAt;
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 1 });
+    expect(t2).toBe(2000);
+    expect(t2).not.toBe(t1);
+
+    nowSpy.mockRestore();
+  });
 });
