@@ -27,6 +27,12 @@ export function ChannelPreview({ config, state }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef<MountedTemplate | null>(null);
+  // Tracks the templateId of the current mount so same-template swaps (lyric
+  // slide advance, same-template outro) reuse the mount and run only the
+  // template's outTl/inTl — keeps layers outside those timelines (e.g. the
+  // gradient shape behind a lyric template) visible across the swap. Mirrors
+  // the OBS renderer in apps/renderer/src/Renderer.tsx.
+  const lastTemplateIdRef = useRef<string | null>(null);
   const lastTakenAtRef = useRef<number>(0);
   // Tracks which mounts have already started their out animation, so a
   // phase=out delivery followed by a fresh take doesn't restart the same
@@ -66,6 +72,7 @@ export function ChannelPreview({ config, state }: Props) {
       if (mountedRef.current) {
         const m = mountedRef.current;
         mountedRef.current = null;
+        lastTemplateIdRef.current = null;
         triggerOut(m).catch(() => {}).finally(() => m.destroy());
       }
       lastTakenAtRef.current = 0;
@@ -81,7 +88,24 @@ export function ChannelPreview({ config, state }: Props) {
 
       const myTakenAt = active.takenAt;
       const previous = mountedRef.current;
+
+      // Same-template smooth swap: lyric slide advance, or an outro reusing
+      // the lyric template. Reuse the mount and run ONLY the template's
+      // outTl → data swap → inTl. Layers outside the template's in/out
+      // timelines (e.g. a gradient shape behind lyric text) stay visible.
+      // Mirrors the OBS renderer's same-template branch.
+      if (previous && lastTemplateIdRef.current === active.templateId) {
+        (async () => {
+          await previous.playOutTimeline().catch(() => {});
+          if (myTakenAt !== lastTakenAtRef.current) return;
+          previous.update(active.data);
+          await previous.playIn().catch(() => {});
+        })();
+        return;
+      }
+
       mountedRef.current = null;
+      lastTemplateIdRef.current = null;
 
       (async () => {
         if (previous) {
@@ -92,6 +116,7 @@ export function ChannelPreview({ config, state }: Props) {
         if (!stageRef.current) return;
         const m = mountTemplate(stageRef.current, tpl, active.data);
         mountedRef.current = m;
+        lastTemplateIdRef.current = active.templateId;
         if ((globalThis as { __overlaysys_log?: boolean }).__overlaysys_log) {
           console.log("[overlaysys:preview] mount + playIn", {
             channel: config.id,
@@ -112,6 +137,7 @@ export function ChannelPreview({ config, state }: Props) {
     if (active.phase === "out" && mountedRef.current) {
       const m = mountedRef.current;
       mountedRef.current = null;
+      lastTemplateIdRef.current = null;
       triggerOut(m).catch(() => {}).finally(() => m.destroy());
       return;
     }
