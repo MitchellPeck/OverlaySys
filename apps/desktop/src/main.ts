@@ -450,7 +450,12 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   win.loadURL(rendererChannelUrl(channelId));
 
   win.on("closed", () => {
-    channelWindows.delete(channelId);
+    // Guard: forceRecreate flow closes the old window AFTER inserting
+    // a fresh entry. Without this identity check, the old window's
+    // async "closed" event would evict the new window's entry.
+    if (channelWindows.get(channelId) === win) {
+      channelWindows.delete(channelId);
+    }
     operatorWindow?.webContents.send("overlaysys:channel-window-closed", channelId);
   });
 
