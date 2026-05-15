@@ -7,8 +7,59 @@ import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { isCloudMode } from "@/lib/mode";
+import { getDesktopApi, isElectron } from "@/lib/desktop";
+import {
+  deleteChannelConfigCloud,
+  refreshChannelConfigsCloud,
+  saveChannelConfigCloud,
+} from "@/lib/cloudData";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
+
+/**
+ * Resolve the renderer base URL for "open channel" links + the help text.
+ * Electron exposes the real renderer URL via the `getMode` IPC (packaged
+ * builds can run on ports other than the 3001 dev default). In the web
+ * operator and cloud builds there's no paired renderer; we still render a
+ * useful default so dev workflows match the docs.
+ */
+const FALLBACK_RENDERER_BASE = "http://localhost:3001";
+
+function useRendererBase(): string {
+  const [base, setBase] = useState<string>(FALLBACK_RENDERER_BASE);
+  useEffect(() => {
+    if (!isElectron()) return;
+    const api = getDesktopApi();
+    if (!api) return;
+    let cancelled = false;
+    api
+      .getMode()
+      .then((m) => {
+        if (cancelled) return;
+        if (m?.rendererUrl) setBase(trimTrailingSlash(m.rendererUrl));
+      })
+      .catch(() => {
+        /* leave fallback in place */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return base;
+}
+
+function trimTrailingSlash(url: string): string {
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+function rendererPathLabel(base: string): string {
+  try {
+    const u = new URL(base);
+    return u.port ? `:${u.port}/?channel=<id>` : `${u.host}/?channel=<id>`;
+  } catch {
+    return `${base}/?channel=<id>`;
+  }
+}
 
 const BG_PRESETS: { label: string; value: string }[] = [
   { label: "transparent", value: "transparent" },
@@ -21,6 +72,8 @@ export default function ChannelsPage() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const channels = useStore((s) => s.channelConfigs);
+  const cloud = isCloudMode();
+  const rendererBase = useRendererBase();
   const [creating, setCreating] = useState<{
     id: string;
     name: string;
@@ -29,11 +82,30 @@ export default function ChannelsPage() {
   }>({ id: "", name: "", mirrorOf: "", renderMode: "normal" });
   const { confirm, alert, dialog } = useDialog();
 
-  useEffect(() => {
-    if (conn === "open") send({ type: "list_channels" });
-  }, [conn, send]);
+  async function showError(action: string, err: unknown) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.warn(`[channels] ${action} failed`, err);
+    await alert({
+      title: `Channel ${action} failed`,
+      message: (
+        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
+          {message}
+        </pre>
+      ),
+    });
+  }
 
-  function create() {
+  useEffect(() => {
+    if (cloud) {
+      refreshChannelConfigsCloud().catch((err) =>
+        console.warn("[channels] cloud list failed", err),
+      );
+    } else if (conn === "open") {
+      send({ type: "list_channels" });
+    }
+  }, [cloud, conn, send]);
+
+  async function create() {
     const id = creating.id.trim();
     const name = creating.name.trim() || id;
     if (!id) return;
@@ -55,11 +127,30 @@ export default function ChannelsPage() {
       background: "transparent",
       ...(creating.mirrorOf ? { mirrorOf: creating.mirrorOf } : {}),
     };
-    send({ type: "save_channel", config });
+    if (cloud) {
+      try {
+        await saveChannelConfigCloud(config);
+        await refreshChannelConfigsCloud();
+      } catch (err) {
+        await showError("create", err);
+        return;
+      }
+    } else {
+      send({ type: "save_channel", config });
+    }
     setCreating({ id: "", name: "", mirrorOf: "", renderMode: "normal" });
   }
 
-  function save(config: ChannelConfig) {
+  async function save(config: ChannelConfig) {
+    if (cloud) {
+      try {
+        await saveChannelConfigCloud(config);
+        await refreshChannelConfigsCloud();
+      } catch (err) {
+        await showError("save", err);
+      }
+      return;
+    }
     send({ type: "save_channel", config });
   }
 
@@ -68,16 +159,27 @@ export default function ChannelsPage() {
       title: "Delete channel",
       message: (
         <>
-          Delete <strong>{name}</strong>? This removes the JSON file.
+          Delete <strong>{name}</strong>?
+          {cloud
+            ? " This soft-deletes the channel; paired devices will remove their local copy on next sync."
+            : " This removes the JSON file."}
         </>
       ),
       confirmLabel: "Delete",
       destructive: true,
     });
-    if (ok) send({ type: "delete_channel", channelId: id });
+    if (!ok) return;
+    if (cloud) {
+      try {
+        await deleteChannelConfigCloud(id);
+        await refreshChannelConfigsCloud();
+      } catch (err) {
+        await showError("delete", err);
+      }
+      return;
+    }
+    send({ type: "delete_channel", channelId: id });
   }
-
-  const cloud = isCloudMode();
 
   return (
     <PageShell>
@@ -96,13 +198,16 @@ export default function ChannelsPage() {
                 lineHeight: 1.5,
               }}
             >
-              Channel configuration is editable here, but <strong>live state and
-              per-device window placement</strong> are managed in the desktop app.
-              Channels created here will be available to any paired desktop.
+              Channels live here — this is the org's source of truth. Devices
+              pull this configuration on sync. Per-project overrides can adjust
+              individual channels for specific projects without forking the org
+              defaults. <strong>Live runtime state and per-device window
+              placement</strong> stay on each desktop.
             </div>
           )}
           <p style={{ color: colors.textDim, fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
-            Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
+            Each channel is a renderer endpoint at{" "}
+            <code>{rendererPathLabel(rendererBase)}</code>.{" "}
             <strong>Normal</strong> renders content as authored;{" "}
             <strong>matte</strong> renders content as a white silhouette on
             black for hardware fill+key. <strong>Mirrors</strong> reflects another
@@ -146,7 +251,7 @@ export default function ChannelsPage() {
               </Select>
               <Button
                 onClick={create}
-                disabled={!creating.id.trim() || conn !== "open"}
+                disabled={!creating.id.trim() || (!cloud && conn !== "open")}
                 variant="primary"
                 size="sm"
               >
@@ -176,6 +281,7 @@ export default function ChannelsPage() {
                 key={c.id}
                 config={c}
                 allChannels={channels}
+                rendererBase={rendererBase}
                 onSave={save}
                 onRemove={() => remove(c.id, c.name)}
               />
@@ -190,11 +296,13 @@ export default function ChannelsPage() {
 function ChannelRow({
   config,
   allChannels,
+  rendererBase,
   onSave,
   onRemove,
 }: {
   config: ChannelConfig;
   allChannels: ChannelConfig[];
+  rendererBase: string;
   onSave: (c: ChannelConfig) => void;
   onRemove: () => void;
 }) {
@@ -289,7 +397,7 @@ function ChannelRow({
 
         <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim, display: "flex", gap: 12, alignItems: "center" }}>
           <a
-            href={`http://localhost:3001/?channel=${encodeURIComponent(config.id)}&debug=1`}
+            href={`${rendererBase}/?channel=${encodeURIComponent(config.id)}&debug=1`}
             target="_blank"
             rel="noreferrer"
             style={{ color: colors.accent2, fontFamily: "ui-monospace, monospace" }}

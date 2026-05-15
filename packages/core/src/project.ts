@@ -27,6 +27,12 @@ export const ProjectSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Soft-delete tombstone. When set, the project is hidden from UIs but the
+   * record persists so the deletion can propagate via sync before a GC pass
+   * hard-deletes it. Optional for backwards compatibility.
+   */
+  deletedAt: z.string().optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

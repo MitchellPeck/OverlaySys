@@ -71,6 +71,17 @@ interface OverlaysysApi {
   cloudSignOut(): Promise<void>;
   onCloudSignedIn(fn: (tokens: ElectronCloudTokens) => void): () => void;
   onCloudSignedOut(fn: () => void): () => void;
+
+  /**
+   * Open a URL in the system browser via Electron's `shell.openExternal`.
+   * Used by the AccountMenu's "Manage account" item to surface the cloud
+   * account page outside the app rather than navigating in-renderer.
+   *
+   * Optional because older Electron main builds don't expose this IPC yet
+   * — callers should fall back to `window.open(url, "_blank")` when
+   * absent. See W6 follow-up: wire the IPC handler in apps/desktop/src.
+   */
+  openExternal?(url: string): Promise<void>;
 }
 
 declare global {

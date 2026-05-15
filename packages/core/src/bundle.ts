@@ -4,6 +4,12 @@ import { TemplateSchema, type Template } from "./template";
 import { ShowSchema, type Show } from "./show";
 import { HotcardSchema, type Hotcard } from "./hotcard";
 import { ProjectSchema, type Project } from "./project";
+import {
+  ChannelConfigSchema,
+  ProjectChannelOverrideSchema,
+  type ChannelConfig,
+  type ProjectChannelOverride,
+} from "./channelConfig";
 
 /**
  * A binary asset embedded in a bundle. `filename` is the content-addressed
@@ -36,6 +42,20 @@ export const BundleSchema = z.object({
   templates: z.array(TemplateSchema).default([]),
   shows: z.array(ShowSchema).default([]),
   hotcards: z.array(HotcardSchema).default([]),
+  /**
+   * Org channels referenced by the bundle. On project export, includes any
+   * channel mentioned by a row's channelHint, a song's defaultChannel, or
+   * a hotcard's channelHint plus all channels with an override in
+   * `channelOverrides`. Org-default cascades resolve at the importer using
+   * `resolveChannelConfig`.
+   */
+  channels: z.array(ChannelConfigSchema).default([]),
+  /**
+   * Per-project channel overrides scoped to the bundle's project. Empty
+   * when the bundle has no `project` field (library exports) or when the
+   * project has no overrides.
+   */
+  channelOverrides: z.array(ProjectChannelOverrideSchema).default([]),
   assets: z.array(BundleAssetSchema).default([]),
 });
 export type Bundle = z.infer<typeof BundleSchema>;
@@ -481,6 +501,10 @@ export function detectImport(json: unknown): Detected {
       templates: obj.templates as Template[],
       shows: obj.shows as Show[],
       hotcards: Array.isArray(obj.hotcards) ? (obj.hotcards as Hotcard[]) : [],
+      channels: Array.isArray(obj.channels) ? (obj.channels as ChannelConfig[]) : [],
+      channelOverrides: Array.isArray(obj.channelOverrides)
+        ? (obj.channelOverrides as ProjectChannelOverride[])
+        : [],
       assets: Array.isArray(obj.assets) ? (obj.assets as BundleAsset[]) : [],
       ...(typeof obj.name === "string" ? { name: obj.name } : {}),
     };

@@ -4,12 +4,11 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import type { Show } from "@overlaysys/core";
-import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
+import { Button, colors } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
-import { useStore } from "@/lib/store";
+import { useStore, type ShowMeta } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { ManagementList } from "@/app/components/ManagementList";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -28,10 +27,11 @@ export default function ShowsIndexPage() {
   const allShowMetas = useStore((s) => s.showMetas);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const projects = useStore((s) => s.projects);
-  const { alert, confirm, dialog } = useDialog();
+  const { alert, dialog } = useDialog();
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
+  const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -58,28 +58,23 @@ export default function ShowsIndexPage() {
     }
   }, [cloud, conn, send]);
 
-  async function newShow() {
+  async function createShow(name: string): Promise<string> {
     const id = `show-${uuid().slice(0, 8)}`;
     const show: Show = {
       id,
-      name: "New Show",
+      name,
       projectId: getCurrentProjectId(),
       rows: [],
       songs: [],
     };
     if (cloud) {
-      try {
-        await saveShowCloud(show);
-        await refreshShowMetasCloud();
-        router.push(`/shows/edit?id=${encodeURIComponent(id)}`);
-      } catch (err) {
-        await showError("create", err);
-      }
-      return;
+      await saveShowCloud(show);
+      await refreshShowMetasCloud();
+      return id;
     }
-    if (conn !== "open") return;
+    if (conn !== "open") throw new Error("WS not connected");
     send({ type: "save_show", show });
-    setTimeout(() => router.push(`/shows/edit?id=${encodeURIComponent(id)}`), 150);
+    return id;
   }
 
   async function duplicate(id: string) {
@@ -134,28 +129,13 @@ export default function ShowsIndexPage() {
     setTimeout(tick, 50);
   }
 
-  async function remove(id: string, name: string) {
-    const ok = await confirm({
-      title: "Delete show",
-      message: (
-        <>
-          Delete <strong>{name}</strong>? This removes the JSON file.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
+  async function deleteShow(meta: ShowMeta): Promise<void> {
     if (cloud) {
-      try {
-        await deleteShowCloud(id);
-        await refreshShowMetasCloud();
-      } catch (err) {
-        await showError("delete", err);
-      }
+      await deleteShowCloud(meta.id);
+      await refreshShowMetasCloud();
       return;
     }
-    send({ type: "delete_show", showId: id });
+    send({ type: "delete_show", showId: meta.id });
   }
 
   async function moveToProject(id: string, nextProjectId: string) {
@@ -197,9 +177,10 @@ export default function ShowsIndexPage() {
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <ManagementList<ShowMeta>
         title="Shows"
+        entityNoun="show"
         context={
           currentProject && (
             <span>
@@ -207,76 +188,55 @@ export default function ShowsIndexPage() {
             </span>
           )
         }
-        actions={
-          <Button
-            onClick={newShow}
-            disabled={!cloud && conn !== "open"}
-            variant="primary"
-            size="sm"
-          >
-            + New Show
-          </Button>
+        items={showMetas}
+        disabled={disabled}
+        createFn={createShow}
+        onCreated={(id) => router.push(`/shows/edit?id=${encodeURIComponent(id)}`)}
+        deleteFn={deleteShow}
+        rowKey={(s) => s.id}
+        rowHref={(s) => `/shows/edit?id=${encodeURIComponent(s.id)}`}
+        rowPrimary={(s) => s.name}
+        rowSecondary={(s) => `${s.id} · ${s.rowCount} ${s.rowCount === 1 ? "row" : "rows"}`}
+        rowActions={(s) => (
+          <>
+            {projects.length > 1 && (
+              <select
+                value={s.projectId}
+                onChange={(e) => moveToProject(s.id, e.target.value)}
+                title="Move to project"
+                style={{
+                  background: "var(--panel-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  padding: "3px 6px",
+                  fontSize: 12,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Button onClick={() => duplicate(s.id)} size="sm" style={{ width: 84 }}>
+              Duplicate
+            </Button>
+            <Button onClick={() => exportShow(s.id)} size="sm" style={{ width: 64 }}>
+              Export
+            </Button>
+          </>
+        )}
+        itemDisplayName={(s) => s.name || s.id}
+        emptyMessage={
+          <span style={{ color: colors.textDim, fontSize: 13 }}>
+            No shows in this project yet. Create one to get started.
+          </span>
         }
       />
-      <PageBody maxWidth={720}>
-          {showMetas.length === 0 ? (
-            <p style={{ color: colors.textDim, fontSize: 13 }}>
-              No shows in this project yet. Create one to get started.
-            </p>
-          ) : (
-            <EntityList>
-              {showMetas.map((s) => (
-                <EntityRow
-                  key={s.id}
-                  href={`/shows/edit?id=${encodeURIComponent(s.id)}`}
-                  primary={s.name}
-                  secondary={`${s.id} · ${s.rowCount} ${s.rowCount === 1 ? "row" : "rows"}`}
-                  actions={
-                    <>
-                      {projects.length > 1 && (
-                        <select
-                          value={s.projectId}
-                          onChange={(e) => moveToProject(s.id, e.target.value)}
-                          title="Move to project"
-                          style={{
-                            background: "var(--panel-2)",
-                            color: "var(--text)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 4,
-                            padding: "3px 6px",
-                            fontSize: 12,
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {projects.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <Button onClick={() => duplicate(s.id)} size="sm" style={{ width: 84 }}>
-                        Duplicate
-                      </Button>
-                      <Button onClick={() => exportShow(s.id)} size="sm" style={{ width: 64 }}>
-                        Export
-                      </Button>
-                      <IconButton
-                        onClick={() => remove(s.id, s.name)}
-                        title="Delete show"
-                        size={44}
-                        style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
-                      >
-                        ×
-                      </IconButton>
-                    </>
-                  }
-                />
-              ))}
-            </EntityList>
-          )}
-      </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }

@@ -155,26 +155,37 @@ async function statModel(modelPath: string): Promise<SttModelFile> {
 
 /**
  * Locate `whisper-stream` on the augmented PATH. Returns its absolute path
- * plus a best-effort version string parsed from the --help banner (the
- * help output prints the build's ggml backend lines but no explicit version
- * tag, so we settle for the first non-empty diagnostic line). The version
- * field is best-effort — the UI uses it only to disambiguate "installed"
- * from "installed but old".
+ * if found, otherwise null.
+ *
+ * Intentionally lightweight: we used to spawn `whisper-stream -h` to fish
+ * out a version string from the GGML banner, but that triggers a full Metal
+ * + audio-device init (~500MB RAM, ~3s on Apple Silicon) just to label
+ * "Installed" — and on Macs it would race the real spawner for the audio
+ * device. `which` plus a direct file-existence check on the common Homebrew
+ * paths is enough; the UI only needs "is it there?" not "what version?"
  */
 export async function checkBinary(): Promise<SttBinaryPresence> {
-  const which = await runOnce("which", ["whisper-stream"]);
+  // Fast path: probe a known set of canonical install locations directly.
+  // Saves the whole `which` subprocess on the common case (Homebrew).
+  const candidates = [
+    "/opt/homebrew/bin/whisper-stream",
+    "/usr/local/bin/whisper-stream",
+    "/usr/bin/whisper-stream",
+  ];
+  for (const candidate of candidates) {
+    try {
+      const stat = await fs.stat(candidate);
+      if (stat.isFile()) return { path: candidate, version: null };
+    } catch {
+      // skip missing
+    }
+  }
+  // Fallback: ask the system. Augmented PATH includes Homebrew dirs so this
+  // catches non-canonical installs (e.g. /opt/local on MacPorts).
+  const which = await runOnce("which", ["whisper-stream"], 2000);
   const raw = which.stdout.trim().split("\n")[0] ?? "";
   if (!raw) return { path: null, version: null };
-  // Probe the help banner to fish out a backend line as a stand-in for
-  // version (whisper-stream has no --version). Short timeout so a hung
-  // binary doesn't wedge the UI.
-  let version: string | null = null;
-  const help = await runOnce("whisper-stream", ["-h"], 3000);
-  // The first line that mentions "backend" or "ggml_metal" is a good
-  // proxy for "this is a working whisper.cpp binary".
-  const sig = help.stderr.split("\n").find((l) => /backend|ggml/i.test(l));
-  if (sig) version = sig.trim();
-  return { path: raw, version };
+  return { path: raw, version: null };
 }
 
 async function detectPackageManager(): Promise<SttPresence["packageManager"]> {
@@ -212,6 +223,15 @@ export async function checkPresence(modelPath: string): Promise<SttPresence> {
 
 // ── Capture device enumeration ──────────────────────────────────────────
 
+// Cached result of the last whisper-stream enumeration probe. The probe is
+// heavy (loads BLAS+Metal+ggml backends AND opens the default audio device),
+// so we run it at most once per server lifetime unless the caller explicitly
+// passes force=true to refresh. The in-flight promise short-circuits racing
+// callers — a page that fires three "enumerate" messages in quick succession
+// gets one spawn, not three.
+let cachedDevices: SttCaptureDevice[] | null = null;
+let inFlightEnumeration: Promise<SttCaptureDevice[]> | null = null;
+
 /**
  * List SDL2 capture devices as whisper-stream sees them.
  *
@@ -223,35 +243,142 @@ export async function checkPresence(modelPath: string): Promise<SttPresence> {
  *     init: ...
  *
  * to stderr before attempting to load the model. We feed it a guaranteed-
- * nonexistent model so it bails out cheaply right after enumeration. The
- * full call cost on an M-series Mac is ~100ms (mostly SDL/Metal init).
+ * nonexistent model so it bails out right after enumeration. Even so, the
+ * spawn loads ~500MB of backends and momentarily holds the default audio
+ * device — so this is gated behind:
  *
- * The `-1` sentinel is prepended to the result so the UI can show
- * "System default" as the first option without special-casing.
+ *   1. **Cache** — first successful result is reused for the server's lifetime
+ *      so subsequent UI clicks return instantly.
+ *
+ *   2. **Single-flight** — concurrent callers await the same in-flight probe
+ *      instead of spawning duplicates that contend for the audio device.
+ *
+ *   3. **Opt-in** — the UI no longer enumerates on page mount; it only runs
+ *      this when the user clicks "rescan" or opens the device dropdown.
+ *
+ * Pass `force: true` to bypass the cache.
  */
-export async function enumerateCaptureDevices(): Promise<SttCaptureDevice[]> {
-  if (!(await checkBinary()).path) {
-    // Binary missing — nothing we can enumerate. The caller falls back
-    // to showing only the "System default" entry.
-    return [{ id: -1, name: "System default" }];
-  }
-  const bogusModel = path.join(os.tmpdir(), `overlaysys-enumprobe-${Date.now()}.bin`);
-  const { stderr } = await runOnce(
-    "whisper-stream",
-    ["-c", "-1", "-m", bogusModel],
-    8000,
-  );
-  const devices: SttCaptureDevice[] = [{ id: -1, name: "System default" }];
-  // Regex matches lines like "init:    - Capture device #2: 'NDI Audio'".
-  // The label is single-quoted by whisper-stream; we strip the quotes.
-  const re = /Capture device #(\d+):\s*'([^']*)'/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(stderr)) !== null) {
-    const id = Number(m[1]);
-    const name = m[2] ?? "";
-    if (Number.isFinite(id) && name) devices.push({ id, name });
-  }
-  return devices;
+export async function enumerateCaptureDevices(
+  opts: { force?: boolean } = {},
+): Promise<SttCaptureDevice[]> {
+  if (!opts.force && cachedDevices) return cachedDevices;
+  if (inFlightEnumeration) return inFlightEnumeration;
+
+  inFlightEnumeration = (async (): Promise<SttCaptureDevice[]> => {
+    try {
+      if (!(await checkBinary()).path) {
+        const fallback: SttCaptureDevice[] = [
+          { id: -1, name: "System default" },
+        ];
+        cachedDevices = fallback;
+        return fallback;
+      }
+      const devices = await probeDevicesStreaming();
+      cachedDevices = devices;
+      return devices;
+    } finally {
+      inFlightEnumeration = null;
+    }
+  })();
+
+  return inFlightEnumeration;
+}
+
+/**
+ * Spawn whisper-stream and parse its stderr live, killing the process the
+ * moment we have the full device list — BEFORE it gets to
+ * `SDL_OpenAudioDevice`, which would briefly grab the user's mic and block
+ * a real spawner-start from succeeding.
+ *
+ * The order whisper-stream prints to stderr is:
+ *
+ *   1. backend loads (~2-3s on Apple Silicon, lots of lines)
+ *   2. `init: found N capture devices:`
+ *   3. N × `init:    - Capture device #X: 'name'`
+ *   4. `init: attempt to open default capture device ...`   ← we kill BEFORE this
+ *   5. SDL_OpenAudioDevice grabs the mic
+ *
+ * We watch for lines (2) and (3), kill once we have all N entries, and the
+ * real spawner can start cleanly afterward. If the binary's output format
+ * ever changes, we fall through to a hard 12s timeout and return whatever
+ * we managed to collect.
+ */
+function probeDevicesStreaming(): Promise<SttCaptureDevice[]> {
+  return new Promise((resolve) => {
+    const bogusModel = path.join(
+      os.tmpdir(),
+      `overlaysys-enumprobe-${Date.now()}.bin`,
+    );
+    const devices: SttCaptureDevice[] = [
+      { id: -1, name: "System default" },
+    ];
+    let expectedCount: number | null = null;
+    let buffer = "";
+    let settled = false;
+
+    const child = spawn(
+      "whisper-stream",
+      ["-c", "-1", "-m", bogusModel],
+      { env: augmentedEnv(), stdio: ["ignore", "pipe", "pipe"] },
+    );
+
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // already exited
+      }
+      clearTimeout(hardTimeout);
+      resolve(devices);
+    };
+
+    const hardTimeout = setTimeout(finish, 12_000);
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      // Process completed lines only — partial lines might be split across
+      // chunks. Leave the trailing fragment in the buffer.
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        // Header tells us how many entries to expect.
+        const hdr = /found\s+(\d+)\s+capture devices/i.exec(line);
+        if (hdr) {
+          expectedCount = Number(hdr[1]);
+          continue;
+        }
+        const m = /Capture device #(\d+):\s*'([^']*)'/.exec(line);
+        if (m) {
+          const id = Number(m[1]);
+          const name = m[2] ?? "";
+          if (Number.isFinite(id) && name) devices.push({ id, name });
+          // Once we've collected the expected number of entries, kill the
+          // probe before it tries to open audio.
+          if (
+            expectedCount !== null &&
+            devices.length - 1 >= expectedCount
+          ) {
+            finish();
+            return;
+          }
+        }
+        // Belt-and-suspenders: if for some reason we miss the count header
+        // (output format change), kill the moment whisper-stream announces
+        // it's about to open the device. SDL_OpenAudioDevice runs right
+        // after this fprintf, so there's a tiny race but it's the best we
+        // can do without parsing all output.
+        if (/attempt to open/i.test(line)) {
+          finish();
+          return;
+        }
+      }
+    });
+
+    child.on("exit", finish);
+    child.on("error", finish);
+  });
 }
 
 // ── Install jobs ────────────────────────────────────────────────────────
@@ -417,7 +544,150 @@ export function installBinary(): string {
   return jobId;
 }
 
-// ── Model download ──────────────────────────────────────────────────────
+// ── Binary uninstall ────────────────────────────────────────────────────
+
+/**
+ * Uninstall the whisper.cpp binary via the detected package manager. Uses
+ * the same job-tracking machinery as `installBinary` (jobId="binary") so
+ * the UI's existing progress card surfaces uninstall status too.
+ *
+ * Throws if no auto-uninstallable package manager is available — the UI
+ * should suppress the Uninstall button entirely in that case.
+ */
+export function uninstallBinary(): string {
+  const jobId = "binary";
+  if (activeJobs.has(jobId)) return jobId;
+  const plat = process.platform;
+  let cmd: string;
+  let args: string[];
+  if (plat === "darwin") {
+    cmd = "brew";
+    args = ["uninstall", "whisper-cpp"];
+  } else if (plat === "linux") {
+    cmd = "sh";
+    args = [
+      "-c",
+      "if command -v apt >/dev/null 2>&1; then sudo apt-get remove -y whisper.cpp; elif command -v pacman >/dev/null 2>&1; then sudo pacman -R --noconfirm whisper.cpp; else echo 'no supported package manager' >&2; exit 1; fi",
+    ];
+  } else if (plat === "win32") {
+    cmd = "winget";
+    args = ["uninstall", "--id", "ggerganov.whisper.cpp", "--silent"];
+  } else {
+    throw new Error(`Auto-uninstall not supported on ${plat}`);
+  }
+
+  const initial: SttInstallProgress = {
+    jobId,
+    state: "running",
+    progress: null,
+    bytesDownloaded: null,
+    bytesTotal: null,
+    message: `running: ${cmd} ${args.join(" ")}`,
+    error: null,
+  };
+  let cancelled = false;
+  let child: ChildProcess | null = null;
+  activeJobs.set(jobId, {
+    abort: () => {
+      cancelled = true;
+      try {
+        child?.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
+    },
+    last: initial,
+  });
+  emitProgress(initial);
+
+  try {
+    child = spawn(cmd, args, {
+      env: augmentedEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    activeJobs.delete(jobId);
+    emitProgress({ ...initial, state: "error", message: msg, error: msg });
+    return jobId;
+  }
+
+  let lastLine = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    for (const line of chunk.toString().split(/\r?\n/)) {
+      if (line.trim()) lastLine = line.trim();
+    }
+    emitProgress({ ...initial, message: lastLine });
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    for (const line of chunk.toString().split(/\r?\n/)) {
+      if (line.trim()) lastLine = line.trim();
+    }
+    emitProgress({ ...initial, message: lastLine });
+  });
+  child.on("error", (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    activeJobs.delete(jobId);
+    emitProgress({ ...initial, state: "error", message: msg, error: msg });
+  });
+  child.on("exit", (code, signal) => {
+    activeJobs.delete(jobId);
+    if (cancelled || signal === "SIGTERM") {
+      emitProgress({ ...initial, state: "cancelled", message: "cancelled" });
+      return;
+    }
+    if (code === 0) {
+      emitProgress({
+        ...initial,
+        state: "done",
+        progress: 1,
+        message: "uninstalled",
+      });
+    } else {
+      const err = `exit code ${code ?? "?"}: ${lastLine || "uninstall failed"}`;
+      emitProgress({ ...initial, state: "error", message: err, error: err });
+    }
+  });
+
+  return jobId;
+}
+
+// ── Model delete ────────────────────────────────────────────────────────
+
+/**
+ * Delete a downloaded model file from the managed models dir.
+ *
+ * Safety rails:
+ *   - filename must end in .bin (refuses arbitrary files)
+ *   - filename must not contain path separators or `..` (no traversal)
+ *   - resolved absolute path MUST be inside `getModelsDir()` (defence in
+ *     depth even if a future change weakens the filename validation)
+ *
+ * Returns the resolved path that was deleted. Throws if validation fails
+ * or the file isn't present. Caller is responsible for stopping the
+ * spawner first if the file is in active use; this function does NOT
+ * stop the spawner because that would race with concurrent UI actions.
+ */
+export async function deleteModel(filename: string): Promise<string> {
+  if (!filename.endsWith(".bin")) {
+    throw new Error("filename must end with .bin");
+  }
+  if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
+    throw new Error("filename must not contain path separators");
+  }
+  const dir = path.resolve(getModelsDir());
+  const target = path.resolve(path.join(dir, filename));
+  // Belt-and-suspenders: the filename sanitisation above already prevents
+  // traversal, but verify the resolved path is still under the models dir
+  // before unlinking. Trailing separator protects against the prefix-match
+  // pitfall ("/foo/models-evil" passing a check for "/foo/models").
+  const dirPrefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
+  if (target !== dir && !target.startsWith(dirPrefix)) {
+    throw new Error("refusing to delete outside the models directory");
+  }
+  await fs.unlink(target);
+  return target;
+}
 
 /**
  * Download a whisper.cpp ggml model file into the managed models dir.

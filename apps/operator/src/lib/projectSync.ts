@@ -151,6 +151,11 @@ async function buildLocalProjectBundle(
     templates: deps.templates,
     shows: deps.shows,
     hotcards: deps.hotcards,
+    // Channel bundling is wired in a follow-up when the channels page
+    // exposes the org library + project overrides. For now bundles carry
+    // empty arrays and the importer resolves channels at runtime.
+    channels: [],
+    channelOverrides: [],
     assets,
   };
 }
@@ -235,6 +240,8 @@ export async function buildCloudProjectBundle(
     templates,
     shows,
     hotcards,
+    channels: [],
+    channelOverrides: [],
     assets,
   };
 }

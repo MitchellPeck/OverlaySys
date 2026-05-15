@@ -123,6 +123,19 @@ export const ShowSchema = z.preprocess(
     projectId: z.string(),
     rows: z.array(RundownRowSchema),
     songs: z.array(ShowSongSchema),
+    /**
+     * ISO timestamp of the last write. Set by writers on every save; consumed
+     * by the sync engine for last-writer-wins. Optional for backwards
+     * compatibility with pre-sync JSON; new writes always set it.
+     *
+     * Note: a Show is synced as one document, so a single `updatedAt` bump
+     * covers every row + ShowSong override inside. The SyncEngine logs when
+     * it overwrites a show with newer-but-superset content so a future
+     * field-level merge has a paper trail (see plan §Workstream 1).
+     */
+    updatedAt: z.string().optional(),
+    /** Soft-delete tombstone; see hotcard.ts for the rationale. */
+    deletedAt: z.string().optional(),
   }),
 );
 export type Show = z.infer<typeof ShowSchema>;

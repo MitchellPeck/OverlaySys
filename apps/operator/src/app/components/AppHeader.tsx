@@ -7,7 +7,7 @@ import { getClient } from "@/lib/useWs";
 import { Pill, type PillTone } from "@overlaysys/ui";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
-import { CloudSignInButton } from "@/app/components/CloudSignInButton";
+import { AccountMenu } from "@/app/components/AccountMenu";
 import { isCloudMode } from "@/lib/mode";
 
 // `hideInCloud` marks routes that don't make sense in the web deploy. The
@@ -92,7 +92,7 @@ export function AppHeader({
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
           {!cloud && <SttStatusPill />}
           {!cloud && <ConnectionPill conn={conn} dot={dot} />}
-          <CloudSignInButton />
+          <AccountMenu />
         </div>
       </div>
       {/* Sub-header row: page title + context + project switcher (left) | page actions (right) */}

@@ -242,6 +242,8 @@ export function ImportPreview() {
           songs: body.songs,
           hotcards: body.hotcards,
           shows: body.shows,
+          channels: [],
+          channelOverrides: [],
           assets: body.assets,
         });
         // Refresh in-memory caches so the operator UI reflects what just

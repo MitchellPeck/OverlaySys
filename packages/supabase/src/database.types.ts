@@ -160,6 +160,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      channel_configs: {
+        Row: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      project_channel_overrides: {
+        Row: {
+          org_id: string;
+          project_id: string;
+          channel_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          org_id: string;
+          project_id: string;
+          channel_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

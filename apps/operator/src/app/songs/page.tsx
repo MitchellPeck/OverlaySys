@@ -10,7 +10,7 @@ import { useDialog } from "@/lib/dialog";
 import { ManagementList } from "@/app/components/ManagementList";
 import { ImportFromFileModal } from "./ImportFromFileModal";
 import { downloadJson } from "@/lib/download";
-import type { Song } from "@overlaysys/core";
+import type { Song, SongMeta } from "@overlaysys/core";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteSongCloud,
@@ -154,18 +154,18 @@ export default function SongsPage() {
     setTimeout(tick, 50);
   }
 
-  async function deleteSong(song: Song): Promise<void> {
+  async function deleteSong(meta: SongMeta): Promise<void> {
     if (cloud) {
-      await deleteSongCloud(song.id);
+      await deleteSongCloud(meta.id);
       await refreshSongMetasCloud();
       return;
     }
-    send({ type: "delete_song", songId: song.id });
+    send({ type: "delete_song", songId: meta.id });
   }
 
   return (
     <>
-      <ManagementList<Song>
+      <ManagementList<SongMeta>
         title="Songs"
         entityNoun="song"
         items={songs}

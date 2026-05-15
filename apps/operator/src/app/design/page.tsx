@@ -1,17 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { v4 as uuid } from "uuid";
 import { blankTemplate } from "@overlaysys/editor-kit";
-import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
+import { Button, colors } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { downloadJson } from "@/lib/download";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { ManagementList } from "@/app/components/ManagementList";
 import { isCloudMode } from "@/lib/mode";
+import type { TemplateMeta } from "@overlaysys/core";
 import {
   deleteTemplateCloud,
   getTemplateCloud,
@@ -24,9 +24,9 @@ export default function DesignIndexPage() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
-  const [busy, setBusy] = useState(false);
-  const { alert, confirm, dialog } = useDialog();
+  const { alert, dialog } = useDialog();
   const cloud = isCloudMode();
+  const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -51,26 +51,17 @@ export default function DesignIndexPage() {
     }
   }, [cloud, conn, send]);
 
-  async function createNew() {
-    if (busy) return;
-    setBusy(true);
+  async function createTemplate(name: string): Promise<string> {
     const id = `template-${uuid().slice(0, 8)}`;
-    const tpl = blankTemplate(id, "Untitled");
-    try {
-      if (cloud) {
-        await saveTemplateCloud(tpl);
-        await refreshTemplateMetasCloud();
-        router.push(`/design/edit?id=${encodeURIComponent(id)}`);
-      } else {
-        send({ type: "save_template", template: tpl });
-        setTimeout(() => {
-          router.push(`/design/edit?id=${encodeURIComponent(id)}`);
-        }, 150);
-      }
-    } catch (err) {
-      setBusy(false);
-      await showError("create", err);
+    const tpl = { ...blankTemplate(id, name), name };
+    if (cloud) {
+      await saveTemplateCloud(tpl);
+      await refreshTemplateMetasCloud();
+      return id;
     }
+    if (conn !== "open") throw new Error("WS not connected");
+    send({ type: "save_template", template: tpl });
+    return id;
   }
 
   async function duplicate(id: string) {
@@ -120,80 +111,45 @@ export default function DesignIndexPage() {
     setTimeout(tick, 50);
   }
 
-  async function remove(templateId: string) {
-    const ok = await confirm({
-      title: "Delete template",
-      message: (
-        <>
-          Delete <strong>{templateId}</strong>? This removes the JSON file.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
+  async function deleteTemplate(t: TemplateMeta): Promise<void> {
     if (cloud) {
-      try {
-        await deleteTemplateCloud(templateId);
-        await refreshTemplateMetasCloud();
-      } catch (err) {
-        await showError("delete", err);
-      }
+      await deleteTemplateCloud(t.id);
+      await refreshTemplateMetasCloud();
       return;
     }
-    send({ type: "delete_template", templateId });
+    send({ type: "delete_template", templateId: t.id });
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <ManagementList<TemplateMeta>
         title="Templates"
-        actions={
-          <Button
-            onClick={createNew}
-            disabled={(!cloud && conn !== "open") || busy}
-            variant="primary"
-            size="sm"
-          >
-            + New template
-          </Button>
+        entityNoun="template"
+        items={templates}
+        disabled={disabled}
+        createFn={createTemplate}
+        onCreated={(id) => router.push(`/design/edit?id=${encodeURIComponent(id)}`)}
+        deleteFn={deleteTemplate}
+        rowKey={(t) => t.id}
+        rowHref={(t) => `/design/edit?id=${encodeURIComponent(t.id)}`}
+        rowPrimary={(t) => t.name}
+        rowSecondary={(t) => `${t.id} · ${t.size.w}×${t.size.h}`}
+        rowActions={(t) => (
+          <>
+            <Button onClick={() => duplicate(t.id)} size="sm" style={{ width: 84 }}>
+              Duplicate
+            </Button>
+            <Button onClick={() => exportTemplate(t.id)} size="sm" style={{ width: 64 }}>
+              Export
+            </Button>
+          </>
+        )}
+        itemDisplayName={(t) => t.name || t.id}
+        emptyMessage={
+          <span style={{ color: colors.textDim, fontSize: 13 }}>(loading…)</span>
         }
       />
-      <PageBody maxWidth={720}>
-          {templates.length === 0 ? (
-            <p style={{ color: colors.textDim, fontSize: 13 }}>(loading…)</p>
-          ) : (
-            <EntityList>
-              {templates.map((t) => (
-                <EntityRow
-                  key={t.id}
-                  href={`/design/edit?id=${encodeURIComponent(t.id)}`}
-                  primary={t.name}
-                  secondary={`${t.id} · ${t.size.w}×${t.size.h}`}
-                  actions={
-                    <>
-                      <Button onClick={() => duplicate(t.id)} size="sm" style={{ width: 84 }}>
-                        Duplicate
-                      </Button>
-                      <Button onClick={() => exportTemplate(t.id)} size="sm" style={{ width: 64 }}>
-                        Export
-                      </Button>
-                      <IconButton
-                        onClick={() => remove(t.id)}
-                        title="Delete template"
-                        size={44}
-                        style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
-                      >
-                        ×
-                      </IconButton>
-                    </>
-                  }
-                />
-              ))}
-            </EntityList>
-          )}
-      </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }

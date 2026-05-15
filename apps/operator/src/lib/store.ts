@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type {
   ChannelState,
   ChannelConfig,
+  ProjectChannelOverride,
   Show,
   Template,
   TemplateMeta,
@@ -62,6 +63,13 @@ type StoreState = {
   selectedHotcardId: string | null;
   channelStates: Record<string, ChannelState>;
   channelConfigs: ChannelConfig[];
+  /**
+   * Per-project channel overrides, keyed by `${projectId}:${channelId}`.
+   * Flat dictionary so the UI can look up an override for the current
+   * project + channel without scanning a list. Empty when no overrides
+   * are loaded for the current project.
+   */
+  projectChannelOverrides: Record<string, ProjectChannelOverride>;
 
   songs: SongMeta[];
   songCache: Record<string, Song>;
@@ -87,6 +95,9 @@ type StoreState = {
   setSelectedHotcard: (id: string | null) => void;
   setChannelState: (s: ChannelState) => void;
   setChannelConfigs: (c: ChannelConfig[]) => void;
+  setProjectChannelOverrides: (overrides: ProjectChannelOverride[]) => void;
+  setProjectChannelOverride: (override: ProjectChannelOverride) => void;
+  removeProjectChannelOverride: (projectId: string, channelId: string) => void;
   setSongs: (songs: SongMeta[]) => void;
   setSong: (song: Song) => void;
   setShowFull: (show: Show) => void;
@@ -114,6 +125,11 @@ type StoreState = {
   setSttModels: (models: SttModelFile[], modelsDir: string) => void;
   setSttCaptureDevices: (d: SttCaptureDevice[]) => void;
   setSttInstallProgress: (p: SttInstallProgress) => void;
+  // Drop a job entry from the install-jobs map. The page schedules this on
+  // a short timer after a terminal state ("done"/"error"/"cancelled") so the
+  // success/failure message shows briefly and then the progress card
+  // disappears instead of lingering until next page reload.
+  clearSttInstallJob: (jobId: string) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -126,6 +142,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedHotcardId: null,
   channelStates: {},
   channelConfigs: [],
+  projectChannelOverrides: {},
   songs: [],
   songCache: {},
   showCache: {},
@@ -183,6 +200,29 @@ export const useStore = create<StoreState>((set) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
     })),
   setChannelConfigs: (c) => set({ channelConfigs: c }),
+  setProjectChannelOverrides: (overrides) =>
+    set(() => {
+      const dict: Record<string, ProjectChannelOverride> = {};
+      for (const o of overrides) {
+        dict[`${o.projectId}:${o.channelId}`] = o;
+      }
+      return { projectChannelOverrides: dict };
+    }),
+  setProjectChannelOverride: (override) =>
+    set((s) => ({
+      projectChannelOverrides: {
+        ...s.projectChannelOverrides,
+        [`${override.projectId}:${override.channelId}`]: override,
+      },
+    })),
+  removeProjectChannelOverride: (projectId, channelId) =>
+    set((s) => {
+      const key = `${projectId}:${channelId}`;
+      if (!(key in s.projectChannelOverrides)) return s;
+      const next = { ...s.projectChannelOverrides };
+      delete next[key];
+      return { projectChannelOverrides: next };
+    }),
   setSongs: (songs) => set({ songs }),
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),
   setShowFull: (show) =>
@@ -208,15 +248,14 @@ export const useStore = create<StoreState>((set) => ({
   setSttModels: (models, modelsDir) => set({ sttModels: models, sttModelsDir: modelsDir }),
   setSttCaptureDevices: (d) => set({ sttCaptureDevices: d }),
   setSttInstallProgress: (p) =>
+    set((cur) => ({
+      sttInstallJobs: { ...cur.sttInstallJobs, [p.jobId]: p },
+    })),
+  clearSttInstallJob: (jobId) =>
     set((cur) => {
-      // Drop terminal jobs from the active map after we've propagated the
-      // final state to subscribers — keeps the UI's "in-flight" set tight.
-      const next = { ...cur.sttInstallJobs, [p.jobId]: p };
-      if (p.state === "done" || p.state === "cancelled" || p.state === "error") {
-        // Hold the terminal state in the map for one render so the UI can
-        // show "✓ installed" / error messages, then prune on next update.
-        return { sttInstallJobs: next };
-      }
+      if (!(jobId in cur.sttInstallJobs)) return cur;
+      const next = { ...cur.sttInstallJobs };
+      delete next[jobId];
       return { sttInstallJobs: next };
     }),
 }));

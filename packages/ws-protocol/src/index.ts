@@ -163,7 +163,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("stt_spawner_save_config"),
     config: SttSpawnerConfigSchema,
   }),
-  z.object({ type: z.literal("stt_spawner_start") }),
+  // Optional `config` lets the operator save and start atomically in a
+  // single handler. Without it, save_config + start are two separate
+  // async handlers and the save's disk write can race the start's read,
+  // causing the spawner to launch with stale config.
+  z.object({
+    type: z.literal("stt_spawner_start"),
+    config: SttSpawnerConfigSchema.optional(),
+  }),
   z.object({ type: z.literal("stt_spawner_stop") }),
   // Presence / installer flows. The operator's /stt page sends these to
   // poll for whisper-stream binary availability, list installed models,
@@ -172,12 +179,25 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   // `stt_install_progress` for the duration of any active install job.
   z.object({ type: z.literal("stt_check_presence") }),
   z.object({ type: z.literal("stt_list_models") }),
-  z.object({ type: z.literal("stt_enumerate_capture_devices") }),
+  z.object({
+    type: z.literal("stt_enumerate_capture_devices"),
+    // Bypass the server's enumeration cache. Heavy — spawns whisper-stream
+    // which loads ~500MB of backends and momentarily holds the audio
+    // device, so it should only be set on explicit user "rescan".
+    force: z.boolean().default(false),
+  }),
   z.object({ type: z.literal("stt_install_binary") }),
+  z.object({ type: z.literal("stt_uninstall_binary") }),
   z.object({
     type: z.literal("stt_download_model"),
     url: z.string().min(1),
     // .bin filename. Must not contain path separators — installer enforces.
+    filename: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("stt_delete_model"),
+    // Filename only — installer resolves inside the managed models dir and
+    // refuses anything that escapes via `..` or path separators.
     filename: z.string().min(1),
   }),
   z.object({

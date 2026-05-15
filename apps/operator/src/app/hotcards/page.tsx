@@ -3,13 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import type { Hotcard } from "@overlaysys/core";
-import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
+import type { Hotcard, HotcardMeta } from "@overlaysys/core";
+import { Button, colors } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { ManagementList } from "@/app/components/ManagementList";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -30,10 +29,11 @@ export default function HotcardsIndexPage() {
   const templates = useStore((s) => s.templates);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const projects = useStore((s) => s.projects);
-  const { alert, confirm, dialog } = useDialog();
+  const { alert, dialog } = useDialog();
   const hotcards = allHotcards.filter((h) => h.projectId === currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
+  const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -61,37 +61,29 @@ export default function HotcardsIndexPage() {
     }
   }, [cloud, conn, send]);
 
-  async function newHotcard() {
+  async function createHotcard(name: string): Promise<string> {
     const firstTpl = templates[0]?.id;
     if (!firstTpl) {
       // No templates means an empty editor is useless — bail with a hint.
       router.push("/design");
-      return;
+      throw new Error("No templates exist yet — create one in Design first.");
     }
     const id = `hotcard-${uuid().slice(0, 8)}`;
     const hotcard: Hotcard = {
       id,
-      name: "New Hotcard",
+      name,
       projectId: getCurrentProjectId(),
       templateId: firstTpl,
       data: {},
     };
     if (cloud) {
-      try {
-        await saveHotcardCloud(hotcard);
-        await refreshHotcardMetasCloud();
-        router.push(`/hotcards/edit?id=${encodeURIComponent(id)}`);
-      } catch (err) {
-        await showError("create", err);
-      }
-      return;
+      await saveHotcardCloud(hotcard);
+      await refreshHotcardMetasCloud();
+      return id;
     }
-    if (conn !== "open") return;
+    if (conn !== "open") throw new Error("WS not connected");
     send({ type: "save_hotcard", hotcard });
-    setTimeout(
-      () => router.push(`/hotcards/edit?id=${encodeURIComponent(id)}`),
-      150,
-    );
+    return id;
   }
 
   async function duplicate(id: string) {
@@ -143,28 +135,13 @@ export default function HotcardsIndexPage() {
     setTimeout(tick, 50);
   }
 
-  async function remove(id: string, name: string) {
-    const ok = await confirm({
-      title: "Delete hotcard",
-      message: (
-        <>
-          Delete <strong>{name}</strong>? This removes the JSON file.
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
+  async function deleteHotcard(h: HotcardMeta): Promise<void> {
     if (cloud) {
-      try {
-        await deleteHotcardCloud(id);
-        await refreshHotcardMetasCloud();
-      } catch (err) {
-        await showError("delete", err);
-      }
+      await deleteHotcardCloud(h.id);
+      await refreshHotcardMetasCloud();
       return;
     }
-    send({ type: "delete_hotcard", hotcardId: id });
+    send({ type: "delete_hotcard", hotcardId: h.id });
   }
 
   async function moveToProject(id: string, nextProjectId: string) {
@@ -206,9 +183,10 @@ export default function HotcardsIndexPage() {
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <ManagementList<HotcardMeta>
         title="Hotcards"
+        entityNoun="hotcard"
         context={
           currentProject && (
             <span>
@@ -216,82 +194,60 @@ export default function HotcardsIndexPage() {
             </span>
           )
         }
-        actions={
-          <Button
-            onClick={newHotcard}
-            disabled={!cloud && conn !== "open"}
-            variant="primary"
-            size="sm"
-          >
-            + New Hotcard
-          </Button>
+        items={hotcards}
+        disabled={disabled}
+        createFn={createHotcard}
+        onCreated={(id) => router.push(`/hotcards/edit?id=${encodeURIComponent(id)}`)}
+        deleteFn={deleteHotcard}
+        rowKey={(h) => h.id}
+        rowHref={(h) => `/hotcards/edit?id=${encodeURIComponent(h.id)}`}
+        rowPrimary={(h) => h.name}
+        rowSecondary={(h) => {
+          const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
+          return `${h.id} · ${tplName}`;
+        }}
+        rowActions={(h) => (
+          <>
+            {projects.length > 1 && (
+              <select
+                value={h.projectId}
+                onChange={(e) => moveToProject(h.id, e.target.value)}
+                title="Move to project"
+                style={{
+                  background: "var(--panel-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 4,
+                  padding: "3px 6px",
+                  fontSize: 12,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Button onClick={() => duplicate(h.id)} size="sm" style={{ width: 84 }}>
+              Duplicate
+            </Button>
+            <Button onClick={() => exportHotcard(h.id)} size="sm" style={{ width: 64 }}>
+              Export
+            </Button>
+          </>
+        )}
+        itemDisplayName={(h) => h.name || h.id}
+        emptyMessage={
+          <span style={{ color: colors.textDim, fontSize: 13 }}>
+            No hotcards in this project yet. Hotcards are reusable graphics (titles,
+            lower-thirds, stings, etc.) you can fire from the main rundown page without
+            putting them in any specific show.
+          </span>
         }
       />
-      <PageBody maxWidth={720}>
-          {hotcards.length === 0 ? (
-            <p style={{ color: colors.textDim, fontSize: 13 }}>
-              No hotcards in this project yet. Hotcards are reusable graphics (titles,
-              lower-thirds, stings, etc.) you can fire from the main rundown page without
-              putting them in any specific show.
-            </p>
-          ) : (
-            <EntityList>
-              {hotcards.map((h) => {
-                const tplName =
-                  templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
-                return (
-                  <EntityRow
-                    key={h.id}
-                    href={`/hotcards/edit?id=${encodeURIComponent(h.id)}`}
-                    primary={h.name}
-                    secondary={`${h.id} · ${tplName}`}
-                    actions={
-                      <>
-                        {projects.length > 1 && (
-                          <select
-                            value={h.projectId}
-                            onChange={(e) => moveToProject(h.id, e.target.value)}
-                            title="Move to project"
-                            style={{
-                              background: "var(--panel-2)",
-                              color: "var(--text)",
-                              border: "1px solid var(--border)",
-                              borderRadius: 4,
-                              padding: "3px 6px",
-                              fontSize: 12,
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <Button onClick={() => duplicate(h.id)} size="sm" style={{ width: 84 }}>
-                          Duplicate
-                        </Button>
-                        <Button onClick={() => exportHotcard(h.id)} size="sm" style={{ width: 64 }}>
-                          Export
-                        </Button>
-                        <IconButton
-                          onClick={() => remove(h.id, h.name)}
-                          title="Delete hotcard"
-                          size={44}
-                          style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
-                        >
-                          ×
-                        </IconButton>
-                      </>
-                    }
-                  />
-                );
-              })}
-            </EntityList>
-          )}
-      </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }

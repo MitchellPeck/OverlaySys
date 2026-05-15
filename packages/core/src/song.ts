@@ -69,6 +69,14 @@ export const SongSchema = z.preprocess(
     /** Song-level default outro field literals. See defaultIntroFieldLiterals. */
     defaultOutroFieldLiterals: z.record(z.string(), z.string()).optional(),
     defaultChannel: z.string().optional(),
+    /**
+     * ISO timestamp of the last write. Set by writers on every save; consumed
+     * by the sync engine for last-writer-wins. Optional for backwards
+     * compatibility with pre-sync JSON; new writes always set it.
+     */
+    updatedAt: z.string().optional(),
+    /** Soft-delete tombstone; see hotcard.ts for the rationale. */
+    deletedAt: z.string().optional(),
   }),
 );
 export type Song = z.infer<typeof SongSchema>;

@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import path from "node:path";
 import type { WebSocket } from "ws";
 import type { FastifyBaseLogger } from "fastify";
 import {
@@ -56,8 +57,42 @@ sttSpawner.subscribe((status) => {
 
 // Fan install / download progress out to every connected client so multiple
 // operator windows watching the STT page all see the same progress bar.
+//
+// When a job hits a terminal state (done / error / cancelled) we ALSO
+// re-check presence and the model list and broadcast both. This is what
+// makes "the binary banner flips to green the moment brew install
+// finishes" work without the operator UI having to subscribe and round-
+// trip a presence_check itself — the server is authoritative here, and
+// every connected window picks up the update on the same tick.
 sttInstaller.subscribeInstall((progress) => {
   broadcast({ type: "stt_install_progress", progress });
+  if (
+    progress.state !== "done" &&
+    progress.state !== "error" &&
+    progress.state !== "cancelled"
+  ) {
+    return;
+  }
+  void (async () => {
+    try {
+      const cfg = await storage.loadSttConfig();
+      const [presence, models] = await Promise.all([
+        sttInstaller.checkPresence(cfg.modelPath),
+        sttInstaller.listModels(),
+      ]);
+      broadcast({ type: "stt_presence", presence });
+      broadcast({
+        type: "stt_models",
+        models,
+        modelsDir: sttInstaller.getModelsDir(),
+      });
+    } catch (err) {
+      // Best-effort. Clients can still recover by clicking elsewhere on the
+      // page (which triggers a stt_check_presence on most navigations) or
+      // by sending an explicit refresh.
+      void err;
+    }
+  })();
 });
 
 // Whenever the program channel's active song changes, push the song's text
@@ -508,10 +543,32 @@ export function handleConnection(
           await storage.saveSttConfig(parsed.config);
           send({ type: "ack", op: "stt_spawner_save_config" });
           broadcast({ type: "stt_spawner_config", config: parsed.config });
+          // Re-check presence inline so operator banners (Start button
+          // enable, "Installed/Missing" pill) reflect the new modelPath the
+          // moment the save lands. Without this the UI relies on a separate
+          // stt_check_presence message that runs as a concurrent async
+          // handler — and that handler's loadSttConfig can race this save's
+          // disk write, returning stale data.
+          const presence = await sttInstaller.checkPresence(
+            parsed.config.modelPath,
+          );
+          broadcast({ type: "stt_presence", presence });
           break;
         }
         case "stt_spawner_start": {
-          const cfg = await storage.loadSttConfig();
+          // When the operator passes its current draft config we save+start
+          // in one handler so there's no race against a separate save_config
+          // message — without this, the save's disk write and the start's
+          // disk read run as two concurrent async handlers and start can
+          // pick up stale config.
+          let cfg;
+          if (parsed.config) {
+            await storage.saveSttConfig(parsed.config);
+            broadcast({ type: "stt_spawner_config", config: parsed.config });
+            cfg = parsed.config;
+          } else {
+            cfg = await storage.loadSttConfig();
+          }
           sttSpawner.start(cfg);
           break;
         }
@@ -540,7 +597,9 @@ export function handleConnection(
           break;
         }
         case "stt_enumerate_capture_devices": {
-          const devices = await sttInstaller.enumerateCaptureDevices();
+          const devices = await sttInstaller.enumerateCaptureDevices({
+            force: parsed.force,
+          });
           send({ type: "stt_capture_devices", devices });
           break;
         }
@@ -554,6 +613,28 @@ export function handleConnection(
           }
           break;
         }
+        case "stt_uninstall_binary": {
+          // Refuse if the spawner is running — uninstalling whisper-cpp
+          // out from under a live child would crash it with a confusing
+          // error. User stops first.
+          const state = sttSpawner.getStatus().state;
+          if (state === "running" || state === "starting") {
+            send({
+              type: "error",
+              code: "stt_spawner_running",
+              message: "Stop the STT spawner before uninstalling whisper-cpp.",
+            });
+            break;
+          }
+          try {
+            sttInstaller.uninstallBinary();
+            send({ type: "ack", op: "stt_uninstall_binary" });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_uninstall_unsupported", message });
+          }
+          break;
+        }
         case "stt_download_model": {
           try {
             sttInstaller.downloadModel(parsed.url, parsed.filename);
@@ -561,6 +642,44 @@ export function handleConnection(
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             send({ type: "error", code: "stt_download_invalid", message });
+          }
+          break;
+        }
+        case "stt_delete_model": {
+          // Refuse if the spawner is running with this model — deleting an
+          // in-use file leaves the child in an undefined state on next
+          // model reload. Resolve the in-use model path the same way the
+          // spawner does so the comparison matches.
+          const state = sttSpawner.getStatus().state;
+          if (state === "running" || state === "starting") {
+            const active = sttSpawner.getActiveConfig();
+            if (active && path.basename(active.modelPath) === parsed.filename) {
+              send({
+                type: "error",
+                code: "stt_model_in_use",
+                message:
+                  "This model is currently in use. Stop the STT spawner before deleting.",
+              });
+              break;
+            }
+          }
+          try {
+            await sttInstaller.deleteModel(parsed.filename);
+            send({ type: "ack", op: "stt_delete_model", id: parsed.filename });
+            // Re-broadcast updated model list and presence so every connected
+            // operator window updates without a manual refresh.
+            const models = await sttInstaller.listModels();
+            broadcast({
+              type: "stt_models",
+              models,
+              modelsDir: sttInstaller.getModelsDir(),
+            });
+            const cfg = await storage.loadSttConfig();
+            const presence = await sttInstaller.checkPresence(cfg.modelPath);
+            broadcast({ type: "stt_presence", presence });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_delete_failed", message });
           }
           break;
         }

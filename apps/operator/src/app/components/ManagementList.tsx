@@ -15,6 +15,8 @@ export interface ManagementListProps<T> {
    * the button; pass it lowercase.
    */
   entityNoun: string;
+  /** Optional context shown next to the title in the sub-header (e.g. "in Sunday Service" for project-scoped lists). */
+  context?: ReactNode;
   items: T[];
 
   /**
@@ -73,6 +75,7 @@ function capitalize(s: string): string {
 export function ManagementList<T>({
   title,
   entityNoun,
+  context,
   items,
   secondaryActions,
   disabled,
@@ -138,6 +141,7 @@ export function ManagementList<T>({
     <PageShell>
       <AppHeader
         title={title}
+        context={context}
         actions={
           <>
             {secondaryActions}
