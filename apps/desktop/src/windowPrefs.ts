@@ -104,3 +104,29 @@ export function fingerprintDisplay(d: DisplayLike): CachedDisplay {
     internal: d.internal,
   };
 }
+
+export function updateDisplayCache(
+  previous: CachedDisplay[],
+  attached: DisplayLike[],
+  channels: Record<string, ChannelWindowPrefs>,
+): CachedDisplay[] {
+  const referenced = new Set<number>();
+  for (const prefs of Object.values(channels)) {
+    if (typeof prefs.displayId === "number") referenced.add(prefs.displayId);
+  }
+
+  const attachedById = new Map(attached.map((d) => [d.id, d]));
+  const out: CachedDisplay[] = [];
+
+  // Attached displays always win — fresh fingerprint.
+  for (const d of attached) out.push(fingerprintDisplay(d));
+
+  // Keep stale entries only if their id is referenced by a pref AND
+  // they are not already represented by an attached display.
+  for (const cached of previous) {
+    if (attachedById.has(cached.id)) continue;
+    if (referenced.has(cached.id)) out.push(cached);
+  }
+
+  return out;
+}

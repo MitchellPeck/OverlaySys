@@ -44,7 +44,7 @@ describe("loadPrefs / savePrefs", () => {
   });
 });
 
-import { resolveDisplay, type DisplayLike } from "./windowPrefs";
+import { resolveDisplay, type DisplayLike, updateDisplayCache, fingerprintDisplay } from "./windowPrefs";
 
 function display(over: Partial<DisplayLike>): DisplayLike {
   return {
@@ -157,5 +157,48 @@ describe("resolveDisplay", () => {
     );
     expect(result.display).toBe(twin);
     expect(result.matchedBy).toBe("bounds");
+  });
+});
+
+describe("updateDisplayCache", () => {
+  const builtIn = {
+    id: 1,
+    label: "Built-in",
+    bounds: { x: 0, y: 0, width: 1512, height: 982 },
+    internal: true,
+  };
+  const dell = {
+    id: 2,
+    label: "DELL U2718Q",
+    bounds: { x: 1512, y: 0, width: 3840, height: 2160 },
+    internal: false,
+  };
+
+  it("keeps only attached displays plus referenced display ids", () => {
+    const prev = [
+      fingerprintDisplay(builtIn),
+      fingerprintDisplay(dell),
+      fingerprintDisplay({
+        id: 99,
+        label: "Stale",
+        bounds: { x: 0, y: 0, width: 1, height: 1 },
+        internal: false,
+      }),
+    ];
+    const next = updateDisplayCache(prev, [builtIn], {
+      program: { autoOpen: true, displayId: 2, fullscreen: false, frameless: false, alwaysOnTop: false, transparent: false },
+    });
+    expect(next.map((d) => d.id).sort()).toEqual([1, 2]);
+  });
+
+  it("replaces a cached entry when an attached display has the same id", () => {
+    const stale = {
+      id: 1,
+      label: "Old Label",
+      bounds: { x: 0, y: 0, width: 1, height: 1 },
+      internal: false,
+    };
+    const next = updateDisplayCache([stale], [builtIn], {});
+    expect(next).toEqual([fingerprintDisplay(builtIn)]);
   });
 });
