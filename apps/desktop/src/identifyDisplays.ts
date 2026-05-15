@@ -14,11 +14,13 @@ export function identifyDisplays(durationMs = 2000): void {
   for (let i = 0; i < displays.length; i++) {
     const d = displays[i];
     if (!d) continue;
+    const winW = Math.min(480, d.bounds.width);
+    const winH = Math.min(360, d.bounds.height);
     const win = new BrowserWindow({
-      width: Math.min(480, d.bounds.width),
-      height: Math.min(360, d.bounds.height),
-      x: d.bounds.x + Math.floor((d.bounds.width - 480) / 2),
-      y: d.bounds.y + Math.floor((d.bounds.height - 360) / 2),
+      width: winW,
+      height: winH,
+      x: d.bounds.x + Math.floor((d.bounds.width - winW) / 2),
+      y: d.bounds.y + Math.floor((d.bounds.height - winH) / 2),
       frame: false,
       transparent: true,
       alwaysOnTop: true,
