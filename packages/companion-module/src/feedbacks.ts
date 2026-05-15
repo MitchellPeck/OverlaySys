@@ -1,4 +1,4 @@
-import type { ActiveGraphic, RundownRow } from "@overlaysys/core";
+import type { ActiveGraphic, Show, ShowSong, Song, RundownRow, SongRow } from "@overlaysys/core";
 import type {
   CompanionFeedbackDefinitions,
   CompanionInputFieldDropdown,
@@ -14,6 +14,8 @@ export type FeedbackId =
   | "song_active"
   | "song_trust_on"
   | "song_section_is"
+  | "song_sub_take_on_channel"
+  | "song_sub_take_on_channel_by_index"
   | "stt_running"
   | "connection_lost"
   | "show_loaded"
@@ -33,7 +35,7 @@ export interface FeedbackDefinition {
   description: string;
   options: {
     id: string;
-    type: "channel" | "hotcard" | "row" | "row_index" | "kind_ordinal";
+    type: "channel" | "hotcard" | "row" | "row_index" | "kind_ordinal" | "sub_take";
   }[];
 }
 
@@ -83,6 +85,33 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     ],
   },
   {
+    id: "song_sub_take_on_channel",
+    name: "Song sub-take is on channel (by row ID)",
+    description:
+      "True when the chosen channel is currently showing the chosen sub-take " +
+      "(intro / lyrics / outro) for the chosen song row. Sub-take template ids " +
+      "are resolved through the Song → ShowSong → Row cascade. Lyrics is true " +
+      "while a same-song session is live on the channel; intro/outro are true " +
+      "while the channel's active mount matches the resolved sub-take template.",
+    options: [
+      { id: "channel", type: "channel" },
+      { id: "rowId", type: "row" },
+      { id: "sub", type: "sub_take" },
+    ],
+  },
+  {
+    id: "song_sub_take_on_channel_by_index",
+    name: "Song sub-take is on channel (by row index)",
+    description:
+      "Same as 'Song sub-take is on channel' but selects the song row from the " +
+      "loaded show by 1-based index — survives show changes.",
+    options: [
+      { id: "channel", type: "channel" },
+      { id: "rowIndex", type: "row_index" },
+      { id: "sub", type: "sub_take" },
+    ],
+  },
+  {
     id: "stt_running",
     name: "STT spawner running",
     description: "True when the STT spawner reports running state.",
@@ -128,6 +157,76 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     options: [{ id: "rowIndex", type: "row_index" }],
   },
 ];
+
+/**
+ * Resolves which template id corresponds to a given sub-take for a song row,
+ * walking the Row → ShowSong → Song cascade. Returns null when no template is
+ * configured at any layer (no intro/outro defined for the song — feedback
+ * should be false).
+ */
+function resolveSubTakeTemplateId(
+  row: SongRow,
+  showSong: ShowSong | undefined,
+  song: Song,
+  sub: "intro" | "lyrics" | "outro",
+): string | null {
+  if (sub === "lyrics") {
+    return row.lyricTemplateId ?? showSong?.lyricTemplateId ?? song.defaultLyricTemplateId ?? null;
+  }
+  if (sub === "intro") {
+    return row.introTemplateId ?? showSong?.introTemplateId ?? song.defaultIntroTemplateId ?? null;
+  }
+  return row.outroTemplateId ?? showSong?.outroTemplateId ?? song.defaultOutroTemplateId ?? null;
+}
+
+function findSongRow(
+  show: Show | undefined,
+  rowId: string | undefined,
+  rowIndex: number | undefined,
+): SongRow | null {
+  if (!show) return null;
+  let row: RundownRow | undefined;
+  if (rowId !== undefined) {
+    row = show.rows.find((r) => r.id === rowId);
+  } else if (rowIndex !== undefined) {
+    row = show.rows[rowIndex - 1];
+  }
+  return row && row.kind === "song" ? row : null;
+}
+
+function resolveSubTakeOnChannelMatch(
+  state: CompanionState,
+  channel: string,
+  rowId: string | undefined,
+  rowIndex: number | undefined,
+  sub: "intro" | "lyrics" | "outro",
+): boolean {
+  if (sub !== "intro" && sub !== "lyrics" && sub !== "outro") return false;
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  const row = findSongRow(show, rowId, rowIndex);
+  if (!row || !show) return false;
+  const song = state.songCache.get(row.songId);
+  if (!song) return false;
+  const channelState = state.channelStates.get(channel);
+  if (sub === "lyrics") {
+    // Lyrics are "on" the channel iff a same-song session is currently live
+    // there. The active mount must also be present (a blanked session still
+    // has the session record but no active — operator's intent is "lyrics
+    // visible", so blank disqualifies).
+    return Boolean(
+      channelState?.songSession &&
+        channelState.songSession.songId === row.songId &&
+        channelState.active,
+    );
+  }
+  // intro / outro: match on the cascade-resolved template id.
+  const showSong = show.songs.find((e) => e.songId === row.songId);
+  const targetTplId = resolveSubTakeTemplateId(row, showSong, song, sub);
+  if (!targetTplId) return false;
+  return channelState?.active?.templateId === targetTplId;
+}
 
 function rowMatchesPgm(
   active: ActiveGraphic | null | undefined,
@@ -205,6 +304,18 @@ export function feedbackPredicate(
         if (s?.kind === kind) seen++;
       }
       return section.kind === kind && seen === ord;
+    }
+    case "song_sub_take_on_channel": {
+      const channel = String(options.channel ?? "");
+      const rowId = String(options.rowId ?? "");
+      const sub = String(options.sub ?? "") as "intro" | "lyrics" | "outro";
+      return resolveSubTakeOnChannelMatch(state, channel, rowId, undefined, sub);
+    }
+    case "song_sub_take_on_channel_by_index": {
+      const channel = String(options.channel ?? "");
+      const rowIndex = Number(options.rowIndex ?? 1);
+      const sub = String(options.sub ?? "") as "intro" | "lyrics" | "outro";
+      return resolveSubTakeOnChannelMatch(state, channel, undefined, rowIndex, sub);
     }
     case "stt_running":
       return state.sttSpawner?.state === "running";
@@ -317,6 +428,18 @@ const rowIndexInputF: CompanionInputFieldNumber = {
   step: 1,
 };
 
+const subTakeInputF: CompanionInputFieldDropdown = {
+  id: "sub",
+  type: "dropdown",
+  label: "Sub-take",
+  default: "lyrics",
+  choices: [
+    { id: "intro", label: "Intro" },
+    { id: "lyrics", label: "Lyrics" },
+    { id: "outro", label: "Outro" },
+  ],
+};
+
 export type FeedbackChecker = (
   id: FeedbackId,
   options: FeedbackOptions,
@@ -341,6 +464,8 @@ export function feedbackDefinitionsForSDK(
           return rowIndexInputF;
         case "kind_ordinal":
           return kindOrdinalInput;
+        case "sub_take":
+          return subTakeInputF;
       }
     });
     defs[d.id] = {
