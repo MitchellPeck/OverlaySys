@@ -720,12 +720,31 @@ function SongRowEditor({
 
   function pickSong(songId: string) {
     const cached = songCache[songId];
-    const defaultTpl = cached?.defaultLyricTemplateId;
     onUpdate((s) => {
       const r = s.rows.find((r) => r.id === row.id);
       if (!r || r.kind !== "song") return;
+      const changed = r.songId !== songId;
       r.songId = songId;
-      if (defaultTpl) r.lyricTemplateId = defaultTpl;
+      // Lyric template cascade mirrors addSongRow:
+      // ShowSong.lyricTemplateId → Song.defaultLyricTemplateId → first template.
+      const targetShowSong = s.songs.find((e) => e.songId === songId);
+      const nextLyricTpl =
+        targetShowSong?.lyricTemplateId ??
+        cached?.defaultLyricTemplateId ??
+        templates[0]?.id;
+      if (nextLyricTpl) r.lyricTemplateId = nextLyricTpl;
+      // When the songId actually changes, the per-row intro/outro overrides
+      // (template ids + field maps + skip flags) belonged to the old song and
+      // are almost certainly wrong for the new one (field maps are template-
+      // shape-specific). Clear them; the operator can reapply if desired.
+      if (changed) {
+        delete (r as Record<string, unknown>).introTemplateId;
+        delete (r as Record<string, unknown>).introFieldMap;
+        delete (r as Record<string, unknown>).outroTemplateId;
+        delete (r as Record<string, unknown>).outroFieldMap;
+        delete (r as Record<string, unknown>).skipIntro;
+        delete (r as Record<string, unknown>).skipOutro;
+      }
       // Mirror addSongRow's auto-add behavior — picking a different library
       // song from this row should also register it on the Songs panel so
       // show-level overrides have a place to live.

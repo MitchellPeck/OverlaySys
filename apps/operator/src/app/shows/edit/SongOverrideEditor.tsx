@@ -5,10 +5,12 @@ import {
   type ChannelConfig,
   type ShowSong,
   type Song,
+  type SongRow,
   type SuggestedFieldMatch,
   type Template,
   type TemplateMeta,
   listSongFieldDescriptors,
+  resolveCustomFieldValue,
   suggestFieldMap,
 } from "@overlaysys/core";
 import { Input, Select, colors } from "@overlaysys/ui";
@@ -48,12 +50,27 @@ export function SongOverrideEditor({
   const [introConfirmed, setIntroConfirmed] = useState<Set<string>>(() => new Set());
   const [outroConfirmed, setOutroConfirmed] = useState<Set<string>>(() => new Set());
 
-  const projectSchema =
-    projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [];
+  // Memoize so projectSchema is stable across renders that don't change the
+  // project schema; otherwise the downstream `useMemo`s that depend on it
+  // would invalidate every render (a fresh `[]` is a new reference).
+  const projectSchema = useMemo(
+    () => projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [],
+    [projects, currentProjectId],
+  );
   const songFieldDescriptors = useMemo(
     () => listSongFieldDescriptors(song, projectSchema),
-    [song, projects, currentProjectId],
+    [song, projectSchema],
   );
+
+  // `resolveCustomFieldValue` runs the canonical Row → ShowSong → Song cascade.
+  // The override editor lives outside any specific row context, so we pass a
+  // dummy empty SongRow — the helper's row parameter is currently reserved for
+  // a future row-level override layer and is intentionally unused. Casting via
+  // `unknown` keeps the placeholder explicit at the call site.
+  const dummyRow = useMemo(() => ({}) as unknown as SongRow, []);
+  function getCustomFieldValue(key: string): string | undefined {
+    return resolveCustomFieldValue(key, dummyRow, entry, song);
+  }
 
   // Effective template ids for the FieldMappingTable: explicit override wins,
   // else song default. We render the map against whichever is effective so the
@@ -207,9 +224,15 @@ export function SongOverrideEditor({
             : "(none — inherits)"
         }
         onRevert={() => onChange({ channelOverride: undefined })}
-        onOverride={() =>
-          onChange({ channelOverride: song.defaultChannel ?? channels[0]?.id ?? "" })
-        }
+        onOverride={() => {
+          // Need *some* channel id to seed the override with; "" is not a
+          // meaningful value and would persist as an empty-string override.
+          // If neither the song default nor the channel list yields one,
+          // bail out and leave the inherited state in place.
+          const seed = song.defaultChannel ?? channels[0]?.id;
+          if (!seed) return;
+          onChange({ channelOverride: seed });
+        }}
       >
         <Select
           value={entry.channelOverride ?? ""}
@@ -354,6 +377,10 @@ export function SongOverrideEditor({
             {customFieldKeys.map((key) => {
               const override = entry.customFieldOverrides?.[key];
               const isOverridden = override !== undefined;
+              // Route both display + the Override-link seed through the same
+              // cascade helper so a future row-layer override change shows up
+              // here without per-call-site edits.
+              const resolvedValue = getCustomFieldValue(key) ?? "";
               const songValue = song.customFields[key] ?? "";
               const projectField = projectSchema.find((f) => f.key === key);
               const label = projectField?.label ?? key;
@@ -374,14 +401,15 @@ export function SongOverrideEditor({
                     {label}
                   </span>
                   <Input
-                    value={isOverridden ? override : songValue}
-                    placeholder={isOverridden ? "" : songValue || "(empty)"}
+                    value={isOverridden ? override : resolvedValue}
+                    placeholder={isOverridden ? "" : resolvedValue || "(empty)"}
                     onChange={(e) => setCustomFieldOverride(key, e.target.value)}
                     style={{
                       flex: 1,
                       color: isOverridden ? colors.text : colors.textDim,
                     }}
                     type={projectField?.type === "number" ? "number" : "text"}
+                    title="Editing this field creates a per-show override. Use 'Use song default' to revert."
                   />
                   {isOverridden ? (
                     <button
