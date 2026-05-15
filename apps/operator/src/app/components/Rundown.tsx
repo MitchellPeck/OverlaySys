@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Field } from "@overlaysys/core";
+import type { Field, SongRow } from "@overlaysys/core";
+import { resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { HotcardsPanel } from "./HotcardsPanel";
+import { SongTakeStrip } from "./SongTakeStrip";
 
 type ImagePreview = { src: string; label: string };
 
@@ -21,6 +23,8 @@ export function Rundown() {
   const selectedHotcardId = useStore((s) => s.selectedHotcardId);
   const hotcardCache = useStore((s) => s.hotcardCache);
   const songs = useStore((s) => s.songs);
+  const songCache = useStore((s) => s.songCache);
+  const songSessions = useStore((s) => s.songSessions);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
   useEffect(() => {
@@ -120,12 +124,44 @@ export function Rundown() {
     }
   }
 
+  // When the selected row is a song row, render the three-segment
+  // SongTakeStrip in place of the generic Cue/Take buttons. The strip handles
+  // its own dispatch (intro/outro fire `take`, lyrics fires `song_take` or
+  // `song_advance`) using the resolved channel. Graphic rows and the
+  // no-selection / hotcard-only states keep the original Cue/Take buttons.
+  const selectedRow = selectedRowId
+    ? show.rows.find((r) => r.id === selectedRowId)
+    : null;
+  const selectedSongRow: SongRow | null =
+    selectedRow && selectedRow.kind === "song" ? selectedRow : null;
+  let songStripChannel: string | null = null;
+  if (selectedSongRow) {
+    const cachedSong = songCache[selectedSongRow.songId];
+    const showSong = show.songs.find((s) => s.songId === selectedSongRow.songId);
+    const lyricTemplate = templateCache[selectedSongRow.lyricTemplateId];
+    // resolveSongChannel needs the full Song body, so fall through to
+    // the safe `"program"` default until the song lands in the cache.
+    const resolved = cachedSong
+      ? resolveSongChannel(selectedSongRow, showSong, cachedSong, lyricTemplate)
+      : undefined;
+    songStripChannel = resolved ?? "program";
+  }
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
-        <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
-      </div>
+      {selectedSongRow && songStripChannel ? (
+        <SongTakeStrip
+          show={show}
+          row={selectedSongRow}
+          channel={songStripChannel}
+          liveSession={songSessions[songStripChannel] ?? null}
+        />
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
+          <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
+        </div>
+      )}
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
