@@ -17,7 +17,7 @@
 //
 // IPC channels are unchanged from the dev-only version — see preload.ts.
 
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
@@ -132,6 +132,9 @@ interface ChannelWindowOptions {
   alwaysOnTop?: boolean;
   fullscreen?: boolean;
   transparent?: boolean;
+  /** Electron `Display.id` of the target screen. If undefined or unknown,
+   *  the window opens on the primary display. */
+  displayId?: number;
 }
 
 function operatorUrl(): string {
@@ -344,9 +347,20 @@ function createOperatorWindow(): BrowserWindow {
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
   const isMac = process.platform === "darwin";
+
+  // Look up the target display so we can position the window on it
+  // BEFORE any fullscreen transition. Electron honors the screen the
+  // window is currently on at the moment fullscreen is engaged.
+  const targetDisplay =
+    (opts.displayId !== undefined
+      ? screen.getAllDisplays().find((d) => d.id === opts.displayId)
+      : undefined) ?? screen.getPrimaryDisplay();
+
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
+    x: targetDisplay.bounds.x + 40,
+    y: targetDisplay.bounds.y + 40,
     title: `Channel — ${channelId}`,
     backgroundColor: opts.transparent ? "#00000000" : "#000000",
     transparent: !!opts.transparent,
