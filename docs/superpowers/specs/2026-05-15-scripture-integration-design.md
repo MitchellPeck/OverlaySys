@@ -260,9 +260,10 @@ desktop never see them.
   the registry refuses to register the provider at boot. Its
   translations don't appear in `/translations`; existing shows that
   reference them still render from embedded slides.
-- **Verse out of range** (`John 99:1`): parser-stage error if chapter
-  doesn't exist for the book; provider-stage error if chapter exists
-  but verse doesn't. Both surface as 400 with hint.
+- **Verse out of range** (`John 99:1`): the parser only validates
+  syntax and book aliases (it's pure, no per-book chapter counts).
+  Chapter-exists and verse-exists checks happen in the provider.
+  Surfaces as 400 with a hint identifying which reference failed.
 
 ## Testing
 
