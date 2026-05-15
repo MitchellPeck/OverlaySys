@@ -18,7 +18,7 @@ import {
   listProjectsCloud,
   listShowMetasCloud,
 } from "./cloudData";
-import { fetchAssetBase64 } from "./assetTransfer";
+import { fetchAssetBase64, fetchAssetBase64Cloud } from "./assetTransfer";
 
 /**
  * Cross-side project sync helpers used by Phase 4 publish/pull. These
@@ -155,7 +155,7 @@ async function buildLocalProjectBundle(
   };
 }
 
-async function buildCloudProjectBundle(
+export async function buildCloudProjectBundle(
   projectId: string,
   onProgress?: (p: PublishProgress) => void,
 ): Promise<Bundle> {
@@ -214,7 +214,12 @@ async function buildCloudProjectBundle(
   }
 
   onProgress?.({ message: "loading asset bytes…" });
-  const assets = await collectAssetsBase64({
+  // Force the cloud fetcher here. We may be running in an Electron host
+  // (local operator mode) pulling a cloud project down — the bundle's
+  // assets still live in Supabase Storage, not on the local server.
+  // The default `fetchAssetBase64` branches on operator mode, which is
+  // the wrong signal during cross-mode operations.
+  const assets = await collectAssetsBase64FromCloud({
     templates,
     shows,
     hotcards,
@@ -239,6 +244,25 @@ async function collectAssetsBase64(payload: {
   hotcards: ReturnType<typeof collectDependencies>["hotcards"];
   shows: ReturnType<typeof collectDependencies>["shows"];
 }): Promise<Bundle["assets"]> {
+  return collectAssetsBase64With(payload, fetchAssetBase64);
+}
+
+async function collectAssetsBase64FromCloud(payload: {
+  templates: ReturnType<typeof collectDependencies>["templates"];
+  hotcards: ReturnType<typeof collectDependencies>["hotcards"];
+  shows: ReturnType<typeof collectDependencies>["shows"];
+}): Promise<Bundle["assets"]> {
+  return collectAssetsBase64With(payload, fetchAssetBase64Cloud);
+}
+
+async function collectAssetsBase64With(
+  payload: {
+    templates: ReturnType<typeof collectDependencies>["templates"];
+    hotcards: ReturnType<typeof collectDependencies>["hotcards"];
+    shows: ReturnType<typeof collectDependencies>["shows"];
+  },
+  fetcher: (filename: string) => Promise<{ filename: string; size: number; base64: string } | null>,
+): Promise<Bundle["assets"]> {
   const filenames = collectReferencedAssetFilenames({
     templates: payload.templates,
     hotcards: payload.hotcards,
@@ -246,7 +270,7 @@ async function collectAssetsBase64(payload: {
   });
   const assets: Bundle["assets"] = [];
   for (const filename of filenames) {
-    const raw = await fetchAssetBase64(filename);
+    const raw = await fetcher(filename);
     if (raw) {
       assets.push({
         filename: raw.filename,

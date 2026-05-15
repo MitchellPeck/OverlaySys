@@ -9,6 +9,7 @@ import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -196,7 +197,7 @@ export default function ShowsIndexPage() {
   }
 
   return (
-    <>
+    <PageShell>
       <AppHeader
         title="Shows"
         context={
@@ -217,8 +218,7 @@ export default function ShowsIndexPage() {
           </Button>
         }
       />
-      <main style={{ padding: 24 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <PageBody maxWidth={720}>
           {showMetas.length === 0 ? (
             <p style={{ color: colors.textDim, fontSize: 13 }}>
               No shows in this project yet. Create one to get started.
@@ -275,9 +275,8 @@ export default function ShowsIndexPage() {
               ))}
             </EntityList>
           )}
-        </div>
-      </main>
+      </PageBody>
       {dialog}
-    </>
+    </PageShell>
   );
 }

@@ -249,12 +249,18 @@ export function mountTemplate(
       return playFromStart(inTl);
     },
     playOut() {
-      // Author didn't define an OUT (or every track targets a missing layer
-      // and the built timeline collapsed to duration 0) — fall back to a
-      // root-opacity fade so the renderer's await actually waits for a
-      // visible transition instead of resolving instantly.
-      if (outTl.duration() === 0) return playDefaultOut(root);
-      return playFromStart(outTl);
+      // Always pair the template's OUT with a root-opacity fade so the
+      // mount visibly exits regardless of what the OUT timeline targets.
+      // Without this, templates whose OUT only animates a subset of
+      // layers (e.g. a lyric template that fades the background but
+      // leaves the text at full opacity) would snap their unfaded layers
+      // off-screen the instant `destroy()` ran. The root fade also
+      // covers the "no OUT defined" case the old fallback handled.
+      const fade = playDefaultOut(root);
+      if (outTl.duration() === 0) return fade;
+      // Run both in parallel; resolve when both have completed so the
+      // caller's destroy() doesn't fire mid-animation on either path.
+      return Promise.all([fade, playFromStart(outTl)]).then(() => undefined);
     },
     playBlink(opts) {
       // Disabled, or pathological config — render nothing rather than no-op

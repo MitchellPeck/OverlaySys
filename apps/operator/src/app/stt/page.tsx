@@ -6,6 +6,7 @@ import { Button, Panel, Pill, Textarea, colors, type PillTone } from "@overlaysy
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 
 const STATE_TONES: Record<string, PillTone> = {
   idle: "dim",
@@ -32,10 +33,10 @@ export default function SttControlPage() {
 
   if (!draft) {
     return (
-      <>
+      <PageShell>
         <AppHeader />
-        <div style={{ padding: 24 }}>Loading...</div>
-      </>
+        <PageBody>Loading...</PageBody>
+      </PageShell>
     );
   }
 
@@ -55,7 +56,7 @@ export default function SttControlPage() {
   const tone = STATE_TONES[state] ?? "dim";
 
   return (
-    <>
+    <PageShell>
       <AppHeader
         title="STT Spawner"
         actions={
@@ -75,7 +76,7 @@ export default function SttControlPage() {
           </>
         }
       />
-      <div style={{ padding: 24, maxWidth: 1000, margin: "0 auto" }}>
+      <PageBody maxWidth={1000}>
         <Panel title="Configuration" padding="md" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <input
@@ -184,7 +185,7 @@ export default function SttControlPage() {
             {(status?.recentLogs ?? []).join("\n") || "(no logs yet)"}
           </pre>
         </Panel>
-      </div>
-    </>
+      </PageBody>
+    </PageShell>
   );
 }

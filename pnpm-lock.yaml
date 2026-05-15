@@ -29,6 +29,9 @@ importers:
       '@overlaysys/core':
         specifier: workspace:*
         version: link:../../packages/core
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

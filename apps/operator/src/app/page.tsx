@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
+import { isCloudMode } from "@/lib/mode";
 import { ShowPicker } from "./components/ShowPicker";
 import { Rundown } from "./components/Rundown";
 import { TakePanel } from "./components/TakePanel";
@@ -15,6 +17,22 @@ import { AppHeader } from "./components/AppHeader";
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
 
 export default function ShowPage() {
+  const router = useRouter();
+  // The Show view drives a paired Electron renderer — pointless on the web
+  // deploy. Redirect to the Shows list so the user lands on something they
+  // can actually interact with. Done in an effect so the redirect happens
+  // after hydration; SSR-friendly even though Next.js exports static here.
+  useEffect(() => {
+    if (isCloudMode()) router.replace("/shows");
+  }, [router]);
+  if (isCloudMode()) {
+    return null;
+  }
+
+  return <ShowPageLocal />;
+}
+
+function ShowPageLocal() {
   const { send } = useWs();
 
   const showMetas = useStore((s) => s.showMetas);

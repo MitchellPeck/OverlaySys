@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { ImportFromFileModal } from "./ImportFromFileModal";
 import { downloadJson } from "@/lib/download";
 import type { Song } from "@overlaysys/core";
@@ -183,7 +184,7 @@ export default function SongsPage() {
   }
 
   return (
-    <>
+    <PageShell>
       <AppHeader
         title="Songs"
         actions={
@@ -206,8 +207,7 @@ export default function SongsPage() {
           </>
         }
       />
-      <main style={{ padding: 24 }}>
-        <div style={{ maxWidth: 720, margin: "0 auto" }}>
+      <PageBody maxWidth={720}>
           {songs.length === 0 ? (
             <p style={{ color: colors.textDim, fontSize: 13 }}>
               No songs yet. Create one to get started.
@@ -243,16 +243,15 @@ export default function SongsPage() {
               ))}
             </EntityList>
           )}
-        </div>
-        {importOpen && (
-          <ImportFromFileModal
-            existingIds={new Set(songs.map((s) => s.id))}
-            onCancel={() => setImportOpen(false)}
-            onSubmit={(song) => handleImportSubmit(song)}
-          />
-        )}
-      </main>
+      </PageBody>
+      {importOpen && (
+        <ImportFromFileModal
+          existingIds={new Set(songs.map((s) => s.id))}
+          onCancel={() => setImportOpen(false)}
+          onSubmit={(song) => handleImportSubmit(song)}
+        />
+      )}
       {dialog}
-    </>
+    </PageShell>
   );
 }

@@ -15,7 +15,8 @@
     "clean": "rm -rf dist build .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@overlaysys/core": "workspace:*"
+    "@overlaysys/core": "workspace:*",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

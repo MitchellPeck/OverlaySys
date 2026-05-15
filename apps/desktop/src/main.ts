@@ -17,7 +17,7 @@
 //
 // IPC channels are unchanged from the dev-only version — see preload.ts.
 
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
@@ -27,6 +27,19 @@ import {
   loadTokens as loadCloudTokens,
   startSignIn as startCloudSignIn,
 } from "./cloudAuth";
+import {
+  loadPrefs,
+  savePrefs,
+  resolveDisplay,
+  updateDisplayCache,
+  fingerprintDisplay,
+  type MatchedBy,
+} from "./windowPrefs";
+import { identifyDisplays } from "./identifyDisplays";
+import type {
+  ChannelWindowPrefs,
+  WindowPrefsFile,
+} from "@overlaysys/core";
 
 // ── .env loading ──────────────────────────────────────────────────────────
 //
@@ -118,6 +131,84 @@ function ensureUserDataEnv(): void {
   }
 }
 
+// ── Boot logging ─────────────────────────────────────────────────────────────
+//
+// Windows GUI Electron processes have no attached console — anything
+// written to stdout/stderr is discarded by the OS. Mirror every console
+// call and the server child's output into <userData>/boot.log so a
+// packaged install can be debugged post-mortem (look in
+// %APPDATA%\OverlaySys\boot.log on Windows,
+// ~/Library/Application Support/OverlaySys/boot.log on macOS).
+
+let bootLogStream: fs.WriteStream | null = null;
+const bootLogQueue: string[] = [];
+
+function appendBootLog(line: string): void {
+  const stamped = `[${new Date().toISOString()}] ${line}\n`;
+  if (bootLogStream) {
+    bootLogStream.write(stamped);
+    return;
+  }
+  bootLogQueue.push(stamped);
+  if (bootLogQueue.length > 1000) bootLogQueue.shift();
+}
+
+function initBootLog(): void {
+  if (bootLogStream) return;
+  let dir: string;
+  try {
+    dir = app.getPath("userData");
+  } catch {
+    return;
+  }
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "boot.log");
+    const stream = fs.createWriteStream(file, { flags: "a" });
+    stream.write(
+      `\n[${new Date().toISOString()}] ── boot log opened ─ pid=${process.pid} ──\n`,
+    );
+    while (bootLogQueue.length > 0) stream.write(bootLogQueue.shift()!);
+    bootLogStream = stream;
+  } catch {
+    // best-effort; if we can't open the log we still proceed
+  }
+}
+
+function fmtLogArg(a: unknown): string {
+  if (a instanceof Error) return `${a.message}\n${a.stack ?? ""}`;
+  if (typeof a === "string") return a;
+  try {
+    return JSON.stringify(a);
+  } catch {
+    return String(a);
+  }
+}
+
+for (const level of ["log", "info", "warn", "error"] as const) {
+  const orig = console[level].bind(console);
+  console[level] = (...args: unknown[]) => {
+    try {
+      const tag = level === "log" || level === "info" ? "" : `[${level}] `;
+      appendBootLog(tag + args.map(fmtLogArg).join(" "));
+    } catch {
+      // never let logging mask the original call
+    }
+    orig(...(args as []));
+  };
+}
+
+process.on("uncaughtException", (err) => {
+  appendBootLog(`[uncaughtException] ${err.message}\n${err.stack ?? ""}`);
+});
+process.on("unhandledRejection", (reason) => {
+  const msg =
+    reason instanceof Error
+      ? `${reason.message}\n${reason.stack ?? ""}`
+      : String(reason);
+  appendBootLog(`[unhandledRejection] ${msg}`);
+});
+
 const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 
 let serverChild: ChildProcess | null = null;
@@ -127,11 +218,41 @@ let serverHost = "127.0.0.1";
 let operatorWindow: BrowserWindow | null = null;
 const channelWindows = new Map<string, BrowserWindow>();
 
+interface ChannelResolution {
+  matchedBy: MatchedBy;
+  configuredLabel: string | null;
+  actualLabel: string;
+  actualDisplayId: number;
+}
+
+const channelResolutions = new Map<string, ChannelResolution>();
+
+function prefsFilePath(): string {
+  return path.join(app.getPath("userData"), "data", "channel-window-prefs.json");
+}
+
+function currentDisplaysSnapshot() {
+  return screen.getAllDisplays().map((d) => ({
+    id: d.id,
+    label: d.label,
+    bounds: {
+      x: d.bounds.x,
+      y: d.bounds.y,
+      width: d.bounds.width,
+      height: d.bounds.height,
+    },
+    internal: d.internal,
+  }));
+}
+
 interface ChannelWindowOptions {
   frameless?: boolean;
   alwaysOnTop?: boolean;
   fullscreen?: boolean;
   transparent?: boolean;
+  /** Electron `Display.id` of the target screen. If undefined or unknown,
+   *  the window opens on the primary display. */
+  displayId?: number;
 }
 
 function operatorUrl(): string {
@@ -232,6 +353,9 @@ function spawnServer(): Promise<{ port: number }> {
     child.stdout?.on("data", (chunk) => {
       const s = chunk.toString();
       process.stdout.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server] ${line}`);
+      }
       buffer += s;
       // Look for the magic OVERLAYSYS_PORT=<n> line emitted by the server
       // once it's fully bound.
@@ -243,7 +367,11 @@ function spawnServer(): Promise<{ port: number }> {
       }
     });
     child.stderr?.on("data", (chunk) => {
-      process.stderr.write(`[server] ${chunk.toString()}`);
+      const s = chunk.toString();
+      process.stderr.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server:err] ${line}`);
+      }
     });
 
     child.on("exit", (code, signal) => {
@@ -303,6 +431,13 @@ function createOperatorWindow(): BrowserWindow {
     title: "OverlaySys",
     backgroundColor: "#0c0d10",
     autoHideMenuBar: false,
+    // macOS: prefer "simple" (pre-Lion) fullscreen — covers the whole
+    // screen incl. menu bar, no separate Space, no animated transition.
+    // For broadcast tooling this is what users actually want when they
+    // hit "fullscreen"; the native macOS fullscreen with its Space
+    // transition is hostile to live-show workflows. No-op on other
+    // platforms (which already do the right thing by default).
+    simpleFullscreen: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -310,7 +445,23 @@ function createOperatorWindow(): BrowserWindow {
     },
   });
 
-  win.loadURL(operatorUrl());
+  const opUrl = operatorUrl();
+  console.log(`[desktop] operator window: loading ${opUrl}`);
+  win.loadURL(opUrl);
+
+  win.webContents.on(
+    "did-fail-load",
+    (_e, code, description, validatedURL) => {
+      console.error(
+        `[desktop] operator did-fail-load: code=${code} desc=${description} url=${validatedURL}`,
+      );
+    },
+  );
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(
+      `[desktop] operator render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     const sameOrigin =
@@ -336,31 +487,144 @@ function createOperatorWindow(): BrowserWindow {
 }
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
+  const isMac = process.platform === "darwin";
+
+  // Look up the target display so we can position the window on it
+  // BEFORE any fullscreen transition. Electron honors the screen the
+  // window is currently on at the moment fullscreen is engaged.
+  const targetDisplay =
+    (opts.displayId !== undefined
+      ? screen.getAllDisplays().find((d) => d.id === opts.displayId)
+      : undefined) ?? screen.getPrimaryDisplay();
+
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
+    x: targetDisplay.bounds.x + 40,
+    y: targetDisplay.bounds.y + 40,
     title: `Channel — ${channelId}`,
     backgroundColor: opts.transparent ? "#00000000" : "#000000",
     transparent: !!opts.transparent,
     frame: !opts.frameless,
     alwaysOnTop: !!opts.alwaysOnTop,
-    fullscreen: !!opts.fullscreen,
+    // See createOperatorWindow for why simpleFullscreen is set.
+    // Channel windows are broadcast outputs — they're the canonical
+    // place you DON'T want a macOS animated Space transition. On
+    // macOS we deliberately DON'T pass `fullscreen` in the ctor
+    // (even as `false`) — explicit values there seem to lock the
+    // green traffic-light button to native fullscreen mode and the
+    // simpleFullscreen flag stops affecting it.
+    simpleFullscreen: true,
+    ...(isMac ? {} : { fullscreen: !!opts.fullscreen }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
+  // Safety net for macOS: if anything (green button, programmatic, etc.)
+  // tries to enter the native macOS fullscreen, immediately bail out
+  // and switch to simple fullscreen. Without this, certain channel
+  // window configurations (transparent, alwaysOnTop, etc.) ignore the
+  // simpleFullscreen flag and revert to native behavior.
+  if (isMac) {
+    win.on("enter-full-screen", () => {
+      if (!win.isSimpleFullScreen()) {
+        win.setFullScreen(false);
+        // Defer so the native exit completes before the simple enter.
+        setTimeout(() => {
+          if (!win.isDestroyed()) win.setSimpleFullScreen(true);
+        }, 50);
+      }
+    });
+  }
+
+  // macOS: enter simple fullscreen after the window has been built,
+  // since BrowserWindow constructor doesn't auto-enter simple-fullscreen
+  // even when `simpleFullscreen: true` is set. setSimpleFullScreen
+  // performs the actual mode change. On other platforms the
+  // `fullscreen` ctor option above handles it.
+  if (isMac && opts.fullscreen) {
+    win.setSimpleFullScreen(true);
+  }
+
   win.loadURL(rendererChannelUrl(channelId));
 
   win.on("closed", () => {
-    channelWindows.delete(channelId);
+    // Guard: forceRecreate flow closes the old window AFTER inserting
+    // a fresh entry. Without this identity check, the old window's
+    // async "closed" event would evict the new window's entry.
+    if (channelWindows.get(channelId) === win) {
+      channelWindows.delete(channelId);
+    }
     operatorWindow?.webContents.send("overlaysys:channel-window-closed", channelId);
   });
 
   channelWindows.set(channelId, win);
   operatorWindow?.webContents.send("overlaysys:channel-window-opened", channelId);
   return win;
+}
+
+/**
+ * Resolve the target display for a channel and open its renderer
+ * window. Records the resolution result so the operator UI can
+ * surface fallbacks. Honors `forceRecreate` to support the "Reopen
+ * on configured display" action.
+ */
+function openConfiguredChannelWindow(
+  channelId: string,
+  prefs: ChannelWindowPrefs,
+  overrides: Partial<ChannelWindowOptions> = {},
+  forceRecreate = false,
+): { reused: boolean } {
+  const file = loadPrefs(prefsFilePath());
+  const displays = currentDisplaysSnapshot();
+  const primary = screen.getPrimaryDisplay();
+  const resolved = resolveDisplay(prefs, {
+    displays,
+    cached: file.displays,
+    primary: {
+      id: primary.id,
+      label: primary.label,
+      bounds: { ...primary.bounds },
+      internal: primary.internal,
+    },
+  });
+
+  const cachedFor = file.displays.find((c) => c.id === prefs.displayId);
+  channelResolutions.set(channelId, {
+    matchedBy: resolved.matchedBy,
+    configuredLabel: cachedFor?.label ?? null,
+    actualLabel: resolved.display.label,
+    actualDisplayId: resolved.display.id,
+  });
+
+  // Refresh the display cache with whatever we just resolved.
+  if (resolved.matchedBy !== "fallback") {
+    file.displays = updateDisplayCache(file.displays, displays, file.channels);
+    savePrefs(prefsFilePath(), file);
+  }
+
+  const existing = channelWindows.get(channelId);
+  if (existing && !existing.isDestroyed()) {
+    if (forceRecreate) {
+      existing.close();
+    } else {
+      existing.focus();
+      return { reused: true };
+    }
+  }
+
+  const opts: ChannelWindowOptions = {
+    fullscreen: prefs.fullscreen,
+    frameless: prefs.frameless,
+    alwaysOnTop: prefs.alwaysOnTop,
+    transparent: prefs.transparent,
+    displayId: resolved.display.id,
+    ...overrides,
+  };
+  createChannelWindow(channelId, opts);
+  return { reused: false };
 }
 
 // ── Native menu ──────────────────────────────────────────────────────────────
@@ -399,7 +663,22 @@ function buildMenu(): void {
         { role: "zoomIn" },
         { role: "zoomOut" },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        // Custom toggle so the operator window uses simple fullscreen
+        // on macOS instead of the native Space-using fullscreen that
+        // `role: "togglefullscreen"` would trigger. Cmd-Ctrl-F matches
+        // the standard macOS shortcut for fullscreen.
+        {
+          label: isMac ? "Toggle Full Screen" : "Toggle Full Screen",
+          accelerator: isMac ? "Ctrl+Cmd+F" : "F11",
+          click: (_item, focusedWin) => {
+            if (!focusedWin) return;
+            if (process.platform === "darwin") {
+              focusedWin.setSimpleFullScreen(!focusedWin.isSimpleFullScreen());
+            } else {
+              focusedWin.setFullScreen(!focusedWin.isFullScreen());
+            }
+          },
+        },
       ],
     },
     {
@@ -424,6 +703,14 @@ function registerIpc(): void {
     (_event, channelId: string, opts?: ChannelWindowOptions) => {
       if (typeof channelId !== "string" || !channelId) {
         throw new Error("channelId required");
+      }
+      // If we have stored prefs for this channel, layer the caller's
+      // explicit `opts` on top — but use prefs as the base (display,
+      // fullscreen, etc.).
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (prefs) {
+        return openConfiguredChannelWindow(channelId, prefs, opts ?? {}, false);
       }
       const existing = channelWindows.get(channelId);
       if (existing && !existing.isDestroyed()) {
@@ -450,7 +737,13 @@ function registerIpc(): void {
       const w = channelWindows.get(channelId);
       if (!w || w.isDestroyed()) return false;
       if (opts.alwaysOnTop !== undefined) w.setAlwaysOnTop(opts.alwaysOnTop);
-      if (opts.fullscreen !== undefined) w.setFullScreen(opts.fullscreen);
+      if (opts.fullscreen !== undefined) {
+        if (process.platform === "darwin") {
+          w.setSimpleFullScreen(opts.fullscreen);
+        } else {
+          w.setFullScreen(opts.fullscreen);
+        }
+      }
       if (opts.frameless !== undefined) {
         // Electron doesn't allow toggling frame on a live window; need recreate.
         return false;
@@ -467,6 +760,52 @@ function registerIpc(): void {
       : `http://${serverHost}:${serverPort}/renderer/`,
     serverPort,
   }));
+
+  ipcMain.handle("overlaysys:get-displays", () => currentDisplaysSnapshot());
+
+  ipcMain.handle("overlaysys:get-channel-window-prefs", (): WindowPrefsFile => {
+    return loadPrefs(prefsFilePath());
+  });
+
+  ipcMain.handle(
+    "overlaysys:set-channel-window-prefs",
+    (_event, channelId: string, prefs: ChannelWindowPrefs): WindowPrefsFile => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      file.channels[channelId] = prefs;
+      file.displays = updateDisplayCache(
+        file.displays,
+        currentDisplaysSnapshot(),
+        file.channels,
+      );
+      savePrefs(prefsFilePath(), file);
+      return file;
+    },
+  );
+
+  ipcMain.handle("overlaysys:get-channel-window-resolutions", () => {
+    return Object.fromEntries(channelResolutions);
+  });
+
+  ipcMain.handle(
+    "overlaysys:reopen-channel-on-configured-display",
+    (_event, channelId: string) => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (!prefs) return { reused: false, reason: "no-prefs" as const };
+      openConfiguredChannelWindow(channelId, prefs, {}, /* forceRecreate */ true);
+      return { reused: false };
+    },
+  );
+
+  ipcMain.handle("overlaysys:identify-displays", () => {
+    identifyDisplays();
+  });
 
   // ── Cloud auth ────────────────────────────────────────────────────────
   // Sign-in opens the system browser at apps.mitchellpeck.com's
@@ -498,6 +837,10 @@ function registerIpc(): void {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  initBootLog();
+  console.log(
+    `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
+  );
   if (!isDev) {
     try {
       const { port } = await spawnServer();
@@ -515,6 +858,20 @@ async function boot(): Promise<void> {
   buildMenu();
   registerIpc();
   operatorWindow = createOperatorWindow();
+
+  // Auto-open configured channel windows. Done after the operator
+  // window so closing the operator (which closes all channel windows)
+  // is the canonical lifecycle owner.
+  try {
+    const file = loadPrefs(prefsFilePath());
+    for (const [channelId, prefs] of Object.entries(file.channels)) {
+      if (prefs.autoOpen) {
+        openConfiguredChannelWindow(channelId, prefs, {}, false);
+      }
+    }
+  } catch (err) {
+    console.error("[desktop] auto-open failed:", err);
+  }
 }
 
 app.whenReady().then(boot);

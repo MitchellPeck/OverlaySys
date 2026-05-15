@@ -17,6 +17,7 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { uploadAsset } from "@/lib/uploadAsset";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
 import {
   getTemplateCloud,
@@ -241,14 +242,14 @@ function DesignPageInner() {
 
   if (!draft) {
     return (
-      <>
+      <PageShell>
         <AppHeader />
-        <main style={{ padding: 24 }}>
+        <PageBody>
           <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading template <code>{templateId}</code>…
           </p>
-        </main>
-      </>
+        </PageBody>
+      </PageShell>
     );
   }
 

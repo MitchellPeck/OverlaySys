@@ -10,6 +10,7 @@ import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteHotcardCloud,
@@ -219,14 +220,14 @@ function HotcardEditPageInner() {
 
   if (!draft) {
     return (
-      <>
+      <PageShell>
         <AppHeader />
-        <main style={{ padding: 24 }}>
+        <PageBody>
           <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading hotcard <code>{hotcardId}</code>…
           </p>
-        </main>
-      </>
+        </PageBody>
+      </PageShell>
     );
   }
 

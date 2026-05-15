@@ -364,7 +364,10 @@ function scheduleAutoAdvance(channel: string, target: MatchResult, isFinal: bool
       (target.sectionIdx === s.cursor.sectionIdx && target.slideIdx > s.cursor.slideIdx);
     if (!stillForward) return;
     s.cursor = { sectionIdx: target.sectionIdx, slideIdx: target.slideIdx };
-    render(s);
+    // Re-mount so the renderer plays OUT/IN, matching manual advance().
+    // The debounce above already coalesces rapid partials, so this fires
+    // at most once per settled hypothesis — no cascade of re-mounts.
+    render(s, /* forceMount */ true);
   }, delay);
   autoAdvanceTimers.set(channel, timer);
 }

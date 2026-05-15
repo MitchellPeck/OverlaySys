@@ -8,6 +8,8 @@ build/
 .next/
 out/
 .turbo/
+# companion-module's packaged release folder (build.mjs output)
+release/
 
 # env
 .env

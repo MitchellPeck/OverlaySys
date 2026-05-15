@@ -7,6 +7,7 @@ import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { AppHeader } from "@/app/components/AppHeader";
+import { PageShell, PageBody } from "@/app/components/PageShell";
 
 const BG_PRESETS: { label: string; value: string }[] = [
   { label: "transparent", value: "transparent" },
@@ -76,10 +77,9 @@ export default function ChannelsPage() {
   }
 
   return (
-    <>
+    <PageShell>
       <AppHeader title="Channels" />
-      <main style={{ padding: 24 }}>
-        <div style={{ maxWidth: 980, margin: "0 auto" }}>
+      <PageBody maxWidth={980}>
           <p style={{ color: colors.textDim, fontSize: 12, lineHeight: 1.5, marginBottom: 16 }}>
             Each channel is a renderer endpoint at <code>:3001/?channel=&lt;id&gt;</code>.{" "}
             <strong>Normal</strong> renders content as authored;{" "}
@@ -160,10 +160,9 @@ export default function ChannelsPage() {
               />
             ))}
           </ul>
-        </div>
-      </main>
+      </PageBody>
       {dialog}
-    </>
+    </PageShell>
   );
 }
 
