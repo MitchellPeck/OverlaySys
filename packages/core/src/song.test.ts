@@ -79,8 +79,22 @@ describe("SongSchema", () => {
   });
 
   it("backfills missing customFields to an empty object (legacy compat)", () => {
-    // `minimal` deliberately omits `customFields` to simulate legacy data.
-    const parsed = SongSchema.parse(minimal);
+    // Inline raw object (no shared fixture) so the omitted `customFields` key
+    // is visible at the test site and can't be silently negated later.
+    const legacy = {
+      id: "legacy-song",
+      title: "Legacy",
+      sections: [
+        {
+          id: "v1",
+          kind: "verse",
+          label: "Verse 1",
+          slides: [{ id: "v1s1", lines: ["line one"] }],
+        },
+      ],
+      defaultArrangement: ["v1"],
+    };
+    const parsed = SongSchema.parse(legacy);
     expect(parsed.customFields).toEqual({});
   });
 

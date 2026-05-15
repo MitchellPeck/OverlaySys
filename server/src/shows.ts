@@ -64,7 +64,7 @@ export async function duplicateShow(sourceId: string): Promise<Show | null> {
     name: `${src.name} (copy)`,
     projectId: src.projectId,
     rows: src.rows.map((row) => ({ ...row, id: randomUUID() })),
-    songs: src.songs,
+    songs: src.songs.map((s) => ({ ...s })),
   };
   await storage.saveShow(copy);
   REGISTRY.set(copy.id, copy);

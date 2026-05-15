@@ -53,8 +53,10 @@ export const SongSchema = z.preprocess(
     defaultArrangement: z.array(z.string()),
     customFields: z.record(z.string(), z.string()),
     defaultIntroTemplateId: z.string().optional(),
+    /** Song-level default intro field map (templateFieldKey -> songFieldKey). */
     defaultIntroFieldMap: z.record(z.string(), z.string()).optional(),
     defaultOutroTemplateId: z.string().optional(),
+    /** Song-level default outro field map (templateFieldKey -> songFieldKey). */
     defaultOutroFieldMap: z.record(z.string(), z.string()).optional(),
     defaultChannel: z.string().optional(),
   }),

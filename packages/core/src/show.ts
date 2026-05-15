@@ -93,6 +93,7 @@ export const ShowSchema = z.preprocess(
       const needsProjectId = !("projectId" in obj);
       const needsSongs = !("songs" in obj);
       if (!needsProjectId && !needsSongs) return raw;
+      // `...obj` must come last so any explicit values in raw input override the defaults above.
       return {
         ...(needsProjectId ? { projectId: DEFAULT_PROJECT_ID } : {}),
         ...(needsSongs ? { songs: [] } : {}),

@@ -162,6 +162,28 @@ describe("ShowSchema (legacy compat)", () => {
     expect(show.songs).toEqual([]);
   });
 
+  it("backfills missing songs when projectId is present", () => {
+    const show = ShowSchema.parse({
+      id: "s-asym-1",
+      name: "Asymmetric A",
+      projectId: "x",
+      rows: [],
+    });
+    expect(show.projectId).toBe("x");
+    expect(show.songs).toEqual([]);
+  });
+
+  it("backfills missing projectId when songs is present", () => {
+    const show = ShowSchema.parse({
+      id: "s-asym-2",
+      name: "Asymmetric B",
+      rows: [],
+      songs: [{ songId: "s1" }],
+    });
+    expect(show.projectId).toBe("default");
+    expect(show.songs).toEqual([{ songId: "s1" }]);
+  });
+
   it("preserves an explicit songs array on read", () => {
     const show = ShowSchema.parse({
       id: "s1",
