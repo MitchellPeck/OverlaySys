@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   parseReference,
   ScriptureRefError,
+  splitIntoSlides,
+  DEFAULT_SLIDE_BUDGET,
   type TranslationMeta,
 } from "@overlaysys/scripture";
 import {
@@ -12,6 +14,8 @@ import {
   type PassageResponse,
 } from "@/lib/scriptureClient";
 import { Button, Field, Input, Modal, Select, colors } from "@overlaysys/ui";
+import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
+import { useStore } from "@/lib/store";
 
 interface Props {
   open: boolean;
@@ -24,7 +28,8 @@ export interface SaveArgs {
   translation: string;
   attribution: string;
   passage: PassageResponse;
-  // Step 2 (Task E3) extends this with: slides, templateId.
+  slides: EditableSlide[];
+  templateId: string;
 }
 
 export function ScriptureRowModal({ open, onClose, onSave }: Props) {
@@ -158,11 +163,69 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
           )}
         </>
       ) : (
-        // Step 2 placeholder — Task E3 replaces this with a real slide editor + template picker.
-        <div data-testid="step-2-placeholder">
-          Loaded {passage.verses.length} verses (slide editor coming in E3)
-        </div>
+        <Step2
+          passage={passage}
+          onCancel={() => setPassage(null)}
+          onSave={(slides, templateId) => {
+            onSave({
+              reference: passage.reference,
+              translation: passage.translation,
+              attribution: passage.attribution,
+              passage,
+              slides,
+              templateId,
+            });
+            onClose();
+          }}
+        />
       )}
     </Modal>
+  );
+}
+
+function Step2({
+  passage,
+  onCancel,
+  onSave,
+}: {
+  passage: PassageResponse;
+  onCancel: () => void;
+  onSave: (slides: EditableSlide[], templateId: string) => void;
+}) {
+  const templates = useStore((s) => s.templates);
+  const [slides, setSlides] = useState<EditableSlide[]>(() =>
+    splitIntoSlides(passage.verses, DEFAULT_SLIDE_BUDGET).map((s) => ({
+      id: s.id,
+      verses: s.verses,
+    })),
+  );
+  const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
+
+  return (
+    <>
+      <Field label="Template">
+        <Select
+          value={templateId}
+          onChange={(e) => setTemplateId(e.target.value)}
+        >
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <div style={{ marginTop: 12 }}>
+        <ScriptureSlideEditor slides={slides} onChange={setSlides} />
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+        <Button variant="ghost" onClick={onCancel}>Back</Button>
+        <Button
+          variant="primary"
+          disabled={!templateId || slides.length === 0}
+          onClick={() => onSave(slides, templateId)}
+        >
+          Save
+        </Button>
+      </div>
+    </>
   );
 }
