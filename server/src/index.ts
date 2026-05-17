@@ -13,6 +13,13 @@ import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
 import { registerImportRoutes } from "./importRoute";
+import { initScripture, registerScriptureRoutes } from "./scripture";
+import {
+  clearCloudTokens,
+  getCloudSyncStatus,
+  runSyncNow,
+  setCloudTokens,
+} from "./cloudSync";
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
 // PORT=0 → OS-assigned ephemeral port (used by the Electron host so two
@@ -59,6 +66,7 @@ await reloadShows();
 await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();
+await initScripture();
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
@@ -74,6 +82,7 @@ app.get("/health", async () => ({ ok: true, time: Date.now() }));
 
 await registerAssetRoutes(app);
 await registerImportRoutes(app);
+await registerScriptureRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };
@@ -89,6 +98,41 @@ app.get("/api/songs", async () => {
 
 app.get("/api/projects", async () => {
   return { projects: await listProjects() };
+});
+
+// ── Cloud sync endpoints ──────────────────────────────────────────────
+//
+// The Electron host pushes refreshed tokens here; the server holds the
+// session in memory and runs the sync engine periodically against
+// apps-portal's Supabase. Status endpoint lets the operator UI surface
+// "last synced at" and any recent errors.
+
+interface SetTokensBody {
+  accessToken?: string;
+  refreshToken?: string;
+  orgId?: string;
+}
+app.post<{ Body: SetTokensBody }>("/api/cloud/tokens", async (req, reply) => {
+  const { accessToken, refreshToken, orgId } = req.body ?? {};
+  if (!accessToken || !refreshToken || !orgId) {
+    return reply
+      .status(400)
+      .send({ error: "accessToken, refreshToken, and orgId are required" });
+  }
+  const ok = await setCloudTokens({ accessToken, refreshToken, orgId });
+  return { ok };
+});
+
+app.delete("/api/cloud/tokens", async () => {
+  await clearCloudTokens();
+  return { ok: true };
+});
+
+app.get("/api/cloud/sync", async () => getCloudSyncStatus());
+
+app.post("/api/cloud/sync", async () => {
+  const result = await runSyncNow();
+  return result ?? { skipped: true };
 });
 
 await app.listen({ host: HOST, port: PORT });

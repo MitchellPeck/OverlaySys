@@ -222,6 +222,9 @@ importers:
 
   packages/supabase:
     dependencies:
+      '@overlaysys/core':
+        specifier: workspace:*
+        version: link:../core
       '@supabase/supabase-js':
         specifier: ^2.45.0
         version: 2.105.4
@@ -286,6 +289,12 @@ importers:
       '@overlaysys/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@overlaysys/scripture':
+        specifier: workspace:*
+        version: link:../packages/scripture
+      '@overlaysys/supabase':
+        specifier: workspace:*
+        version: link:../packages/supabase
       '@overlaysys/template-engine':
         specifier: workspace:*
         version: link:../packages/template-engine
