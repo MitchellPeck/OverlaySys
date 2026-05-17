@@ -98,16 +98,26 @@ export function collectDependencies(
   const hotcardIds = new Set<string>(selection.hotcardIds);
   const missing: MissingRef[] = [];
 
-  // Walk each selected show, expanding songs + templates.
+  // Walk each selected show, expanding songs + templates. Switch over
+  // the discriminator so TypeScript narrows cleanly across all three row
+  // kinds (graphic, song, scripture) — chained `else if` checks were
+  // failing to narrow on the z.preprocess-wrapped discriminated union.
   for (const showId of showIds) {
     const show = store.shows.get(showId);
     if (!show) continue;
     for (const row of show.rows) {
-      if (row.kind === "graphic") {
-        templateIds.add(row.templateId);
-      } else {
-        songIds.add(row.songId);
-        templateIds.add(row.lyricTemplateId);
+      switch (row.kind) {
+        case "graphic":
+          templateIds.add(row.templateId);
+          break;
+        case "song":
+          songIds.add(row.songId);
+          templateIds.add(row.lyricTemplateId);
+          break;
+        case "scripture":
+          // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+          templateIds.add(row.templateId);
+          break;
       }
     }
   }
@@ -236,6 +246,44 @@ export function rewriteAssetUrlToHost(value: string, originBase: string): string
   const filename = extractAssetFilename(value);
   if (!filename) return value;
   return `${originBase}/assets/${filename}`;
+}
+
+/**
+ * Walk a bundle payload and collect every channel id referenced from its
+ * shows, hotcards, songs, and templates. Used by the bundle exporter to
+ * pick which org channels to include — the importer resolves the
+ * effective config via `channelResolution.ts`, but it can only do that
+ * for channels actually present in the bundle.
+ *
+ * Sources walked:
+ *   - SongRow.channelHint / GraphicRow.channelHint on every show row
+ *   - Show.songs[].channelOverride (per-show ShowSong overrides)
+ *   - Hotcard.channelHint
+ *   - Song.defaultChannel
+ *   - Template.defaultChannel
+ */
+export function collectReferencedChannelIds(payload: {
+  shows: Show[];
+  hotcards: Hotcard[];
+  songs: Song[];
+  templates: Template[];
+}): Set<string> {
+  const out = new Set<string>();
+  const add = (id: string | undefined): void => {
+    if (id) out.add(id);
+  };
+  for (const sh of payload.shows) {
+    for (const row of sh.rows) {
+      add(row.channelHint);
+    }
+    for (const ss of sh.songs) {
+      add(ss.channelOverride);
+    }
+  }
+  for (const h of payload.hotcards) add(h.channelHint);
+  for (const s of payload.songs) add(s.defaultChannel);
+  for (const t of payload.templates) add(t.defaultChannel);
+  return out;
 }
 
 /**

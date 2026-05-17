@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RundownRowSchema, ShowSchema, ShowSongSchema } from "./show";
+import { RundownRowSchema, ScriptureRowSchema, ScriptureSlideSchema, ShowSchema, ShowSongSchema } from "./show";
 
 describe("RundownRowSchema", () => {
   it("parses a graphic row with explicit kind", () => {
@@ -202,5 +202,115 @@ describe("ShowSchema (legacy compat)", () => {
     expect(show.songs[0]!.songId).toBe("amazing-grace");
     expect(show.songs[0]!.channelOverride).toBe("stage");
     expect(show.songs[0]!.customFieldOverrides).toEqual({ writtenFor: "Easter" });
+  });
+});
+
+describe("ScriptureSlideSchema", () => {
+  const minimal = {
+    id: "s1",
+    verses: [
+      { book: "JHN", chapter: 3, verse: 16, text: "For God so loved..." },
+    ],
+  };
+
+  it("parses a minimal slide", () => {
+    expect(ScriptureSlideSchema.parse(minimal).id).toBe("s1");
+  });
+
+  it("rejects a slide with no verses", () => {
+    expect(() =>
+      ScriptureSlideSchema.parse({ id: "s1", verses: [] }),
+    ).toThrow();
+  });
+});
+
+describe("ScriptureRowSchema", () => {
+  const minimal = {
+    kind: "scripture" as const,
+    id: "row-1",
+    reference: "John 3:16",
+    translation: "KJV",
+    slides: [{
+      id: "s1",
+      verses: [{ book: "JHN", chapter: 3, verse: 16, text: "For God..." }],
+    }],
+    templateId: "scripture-template",
+  };
+
+  it("parses a minimal row", () => {
+    const parsed = ScriptureRowSchema.parse(minimal);
+    expect(parsed.kind).toBe("scripture");
+    expect(parsed.reference).toBe("John 3:16");
+  });
+
+  it("accepts optional fields", () => {
+    const parsed = ScriptureRowSchema.parse({
+      ...minimal,
+      attribution: "Public Domain",
+      channelHint: "program",
+      notes: "intro reading",
+    });
+    expect(parsed.attribution).toBe("Public Domain");
+    expect(parsed.channelHint).toBe("program");
+  });
+
+  it("rejects a row with no slides", () => {
+    expect(() =>
+      ScriptureRowSchema.parse({ ...minimal, slides: [] }),
+    ).toThrow();
+  });
+});
+
+describe("RundownRowSchema — scripture variant", () => {
+  it("parses a scripture row via the union", () => {
+    const row = RundownRowSchema.parse({
+      kind: "scripture",
+      id: "row-1",
+      reference: "John 3:16",
+      translation: "KJV",
+      slides: [{
+        id: "s1",
+        verses: [{ book: "JHN", chapter: 3, verse: 16, text: "..." }],
+      }],
+      templateId: "t1",
+    });
+    expect(row.kind).toBe("scripture");
+  });
+
+  it("still defaults missing kind to graphic (regression)", () => {
+    const row = RundownRowSchema.parse({
+      // no kind
+      id: "row-x",
+      templateId: "t1",
+      data: { text: "hello" },
+    });
+    expect(row.kind).toBe("graphic");
+  });
+});
+
+describe("ShowSchema with mixed rundown rows", () => {
+  it("accepts graphic + song + scripture in the same rundown", () => {
+    const show = ShowSchema.parse({
+      id: "show-1",
+      name: "Test",
+      rows: [
+        { kind: "graphic", id: "g", templateId: "t", data: {} },
+        {
+          kind: "song", id: "s", songId: "song-1", lyricTemplateId: "lt",
+        },
+        {
+          kind: "scripture",
+          id: "sc",
+          reference: "John 3:16",
+          translation: "KJV",
+          slides: [{
+            id: "sl",
+            verses: [{ book: "JHN", chapter: 3, verse: 16, text: "..." }],
+          }],
+          templateId: "scripture-template",
+        },
+      ],
+    });
+    expect(show.rows).toHaveLength(3);
   });
 });

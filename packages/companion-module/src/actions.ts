@@ -80,6 +80,10 @@ function rowMessages(
       },
     ];
   }
+  if (row.kind === "scripture") {
+    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+    return [];
+  }
   return [
     {
       type: "take",
@@ -106,6 +110,10 @@ function rowPvwPgmMessages(
         toChannel,
       },
     ];
+  }
+  if (row.kind === "scripture") {
+    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+    return [];
   }
   return [
     {

@@ -3,6 +3,7 @@
 import {
   collectDependencies,
   collectReferencedAssetFilenames,
+  collectReferencedChannelIds,
   type Bundle,
   type Project,
 } from "@overlaysys/core";
@@ -14,7 +15,9 @@ import {
   getShowCloud,
   getSongCloud,
   getTemplateCloud,
+  listChannelConfigsCloud,
   listHotcardMetasCloud,
+  listProjectChannelOverridesCloud,
   listProjectsCloud,
   listShowMetasCloud,
 } from "./cloudData";
@@ -141,6 +144,20 @@ async function buildLocalProjectBundle(
 
   const assets = await collectAssetsBase64(deps);
 
+  // Walk the dep graph for referenced channels, then pluck matching
+  // ChannelConfigs from the local store. Local mode doesn't track project
+  // overrides yet (overrides arrive via the cloud sync engine — W1), so
+  // channelOverrides ships empty from a local-only bundle.
+  const referencedChannelIds = collectReferencedChannelIds({
+    shows: deps.shows,
+    hotcards: deps.hotcards,
+    songs: deps.songs,
+    templates: deps.templates,
+  });
+  const channels = state.channelConfigs.filter(
+    (c) => !c.deletedAt && referencedChannelIds.has(c.id),
+  );
+
   return {
     format: "overlaysys-bundle",
     version: 1,
@@ -151,10 +168,7 @@ async function buildLocalProjectBundle(
     templates: deps.templates,
     shows: deps.shows,
     hotcards: deps.hotcards,
-    // Channel bundling is wired in a follow-up when the channels page
-    // exposes the org library + project overrides. For now bundles carry
-    // empty arrays and the importer resolves channels at runtime.
-    channels: [],
+    channels,
     channelOverrides: [],
     assets,
   };
@@ -191,10 +205,14 @@ export async function buildCloudProjectBundle(
   const templateIds = new Set<string>();
   for (const sh of shows) {
     for (const row of sh.rows) {
-      if (row.kind === "graphic") templateIds.add(row.templateId);
-      else {
+      if (row.kind === "graphic") {
+        templateIds.add(row.templateId);
+      } else if (row.kind === "song") {
         songIds.add(row.songId);
         templateIds.add(row.lyricTemplateId);
+      } else if (row.kind === "scripture") {
+        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+        templateIds.add(row.templateId);
       }
     }
   }
@@ -230,6 +248,26 @@ export async function buildCloudProjectBundle(
     hotcards,
   });
 
+  // Walk the dep graph for referenced channels + pull all overrides for
+  // this project. The cloud is canonical for both, so we pull from
+  // Supabase directly rather than from any in-memory cache.
+  onProgress?.({ message: "loading channels…" });
+  const [allChannels, projectOverrides] = await Promise.all([
+    listChannelConfigsCloud(),
+    listProjectChannelOverridesCloud(projectId),
+  ]);
+  const referencedChannelIds = collectReferencedChannelIds({
+    shows,
+    hotcards,
+    songs,
+    templates,
+  });
+  // Include every referenced org channel plus any channel that has an
+  // override in this project — the override is only meaningful when the
+  // base config travels with it.
+  for (const o of projectOverrides) referencedChannelIds.add(o.channelId);
+  const channels = allChannels.filter((c) => referencedChannelIds.has(c.id));
+
   return {
     format: "overlaysys-bundle",
     version: 1,
@@ -240,8 +278,8 @@ export async function buildCloudProjectBundle(
     templates,
     shows,
     hotcards,
-    channels: [],
-    channelOverrides: [],
+    channels,
+    channelOverrides: projectOverrides,
     assets,
   };
 }

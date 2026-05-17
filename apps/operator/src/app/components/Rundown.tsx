@@ -31,6 +31,10 @@ export function Rundown() {
     if (!show || conn !== "open") return;
     const seen = new Set<string>();
     for (const r of show.rows) {
+      if (r.kind === "scripture") {
+        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+        continue;
+      }
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -62,6 +66,10 @@ export function Rundown() {
           showId: show.id,
           songRowId: row.id,
         });
+        return;
+      }
+      if (row.kind === "scripture") {
+        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
         return;
       }
       send({
@@ -99,6 +107,10 @@ export function Rundown() {
           fromChannel: "preview",
           toChannel: row.channelHint ?? "program",
         });
+        return;
+      }
+      if (row.kind === "scripture") {
+        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
         return;
       }
       send({
@@ -212,6 +224,33 @@ export function Rundown() {
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
                       arrangement: {(row.arrangement ?? []).join(" → ") || "(default)"}
                     </span>
+                  </td>
+                </tr>
+              );
+            }
+            if (row.kind === "scripture") {
+              // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => setSelectedRow(row.id)}
+                  style={{
+                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
+                    borderLeft: selected
+                      ? `3px solid ${colors.accent}`
+                      : "3px solid transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <td style={td()}>{i + 1}</td>
+                  <td style={td()} colSpan={2}>
+                    <div style={{ fontWeight: 600 }}>
+                      <span aria-hidden style={{ marginRight: 6 }}>📖</span>
+                      {row.reference}
+                    </div>
+                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
+                      scripture · {row.translation}
+                    </div>
                   </td>
                 </tr>
               );

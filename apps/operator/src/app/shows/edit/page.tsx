@@ -518,6 +518,16 @@ function RundownTable({
               />
             );
           }
+          if (row.kind === "scripture") {
+            // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+            return (
+              <tr key={row.id}>
+                <td colSpan={10} style={{ padding: "6px 8px", opacity: 0.6 }}>
+                  📖 {row.reference} ({row.translation}) — scripture row (editor coming in Task E3)
+                </td>
+              </tr>
+            );
+          }
           return (
             <RundownRowEditor
               key={row.id}

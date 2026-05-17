@@ -69,6 +69,43 @@ export const ShowSongSchema = z.object({
 });
 export type ShowSong = z.infer<typeof ShowSongSchema>;
 
+export const ScriptureSlideSchema = z.object({
+  id: z.string(),
+  /**
+   * Verses on this slide, in display order. Stored as structured data
+   * (not pre-joined strings) so the renderer can format verse numbers and
+   * per-verse styling without re-fetching the passage.
+   */
+  verses: z
+    .array(
+      z.object({
+        book: z.string(),
+        chapter: z.number().int().positive(),
+        verse: z.number().int().positive(),
+        text: z.string(),
+      }),
+    )
+    .min(1),
+});
+export type ScriptureSlide = z.infer<typeof ScriptureSlideSchema>;
+
+export const ScriptureRowSchema = z.object({
+  kind: z.literal("scripture"),
+  id: z.string(),
+  /** Normalized reference string, e.g. "John 3:16-18". */
+  reference: z.string(),
+  /** TranslationMeta.id from @overlaysys/scripture. */
+  translation: z.string(),
+  /** Attribution captured at fetch time so the on-air state is reproducible. */
+  attribution: z.string().optional(),
+  /** Embedded slides — auto-split on import, operator-editable. */
+  slides: z.array(ScriptureSlideSchema).min(1),
+  templateId: z.string(),
+  channelHint: z.string().optional(),
+  notes: z.string().optional(),
+});
+export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
+
 /**
  * Show JSON files predating the row union have rows without a `kind` field.
  * Default missing `kind` to `"graphic"` on read; writes always include `kind`.
@@ -85,7 +122,7 @@ export const RundownRowSchema = z.preprocess(
     }
     return raw;
   },
-  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema]),
+  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema]),
 );
 export type RundownRow = z.infer<typeof RundownRowSchema>;
 
