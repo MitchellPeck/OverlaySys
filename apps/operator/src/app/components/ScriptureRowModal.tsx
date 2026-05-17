@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  BOOKS,
   parseReference,
   ScriptureRefError,
   splitIntoSlides,
@@ -41,6 +42,13 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
   const [passage, setPassage] = useState<PassageResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Structured picker state
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerBook, setPickerBook] = useState<string>("GEN");
+  const [pickerChapter, setPickerChapter] = useState<number>(1);
+  const [pickerVerseStart, setPickerVerseStart] = useState<number>(1);
+  const [pickerVerseEnd, setPickerVerseEnd] = useState<number | "">("");
 
   // Load translations when modal opens.
   useEffect(() => {
@@ -86,6 +94,17 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
     !parseError &&
     translation.length > 0 &&
     !busy;
+
+  function insertFromPicker() {
+    const book = BOOKS.find((b) => b.id === pickerBook);
+    if (!book) return;
+    const v =
+      pickerVerseEnd && pickerVerseEnd > pickerVerseStart
+        ? `${pickerVerseStart}-${pickerVerseEnd}`
+        : `${pickerVerseStart}`;
+    setRefInput(`${book.name} ${pickerChapter}:${v}`);
+    setPickerOpen(false);
+  }
 
   async function onContinue() {
     setBusy(true);
@@ -136,13 +155,102 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
               placeholder='e.g. "John 3:16-18" or "Rom 8:28; 1 Cor 13:4-7"'
               autoFocus
               invalid={!!parseError}
+              list="scripture-books"
             />
+            <datalist id="scripture-books">
+              {BOOKS.map((b) => (
+                <option key={b.id} value={b.name} />
+              ))}
+            </datalist>
           </Field>
 
           {parseError && (
             <p role="alert" style={{ color: colors.errorText, fontSize: 12, marginTop: 4 }}>
               {parseError}
             </p>
+          )}
+
+          <div style={{ marginTop: 8 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPickerOpen((o) => !o)}
+            >
+              {pickerOpen ? "− Hide structured picker" : "+ Use structured picker"}
+            </Button>
+          </div>
+
+          {pickerOpen && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: "10px 12px",
+                background: colors.panel2,
+                borderRadius: 6,
+                border: `1px solid ${colors.border}`,
+                display: "grid",
+                gridTemplateColumns: "1fr 80px 80px 80px",
+                gap: 8,
+                alignItems: "end",
+              }}
+            >
+              <Field label="Book">
+                <Select
+                  value={pickerBook}
+                  onChange={(e) => {
+                    setPickerBook(e.target.value);
+                    const bookEntry = BOOKS.find((b) => b.id === e.target.value);
+                    if (bookEntry && pickerChapter > bookEntry.chapters) {
+                      setPickerChapter(bookEntry.chapters);
+                    }
+                  }}
+                >
+                  {BOOKS.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Chapter">
+                <Input
+                  type="number"
+                  min={1}
+                  max={BOOKS.find((b) => b.id === pickerBook)?.chapters ?? 1}
+                  value={pickerChapter}
+                  onChange={(e) =>
+                    setPickerChapter(Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                />
+              </Field>
+              <Field label="Verse">
+                <Input
+                  type="number"
+                  min={1}
+                  value={pickerVerseStart}
+                  onChange={(e) =>
+                    setPickerVerseStart(Math.max(1, parseInt(e.target.value, 10) || 1))
+                  }
+                />
+              </Field>
+              <Field label="End verse">
+                <Input
+                  type="number"
+                  min={1}
+                  value={pickerVerseEnd}
+                  placeholder="—"
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setPickerVerseEnd(v === "" ? "" : Math.max(1, parseInt(v, 10) || 1));
+                  }}
+                />
+              </Field>
+              <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+                <Button variant="primary" size="sm" onClick={insertFromPicker}>
+                  Insert into reference
+                </Button>
+              </div>
+            </div>
           )}
 
           <Field label="Translation" style={{ marginTop: 12 }}>
