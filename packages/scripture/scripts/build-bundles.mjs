@@ -41,15 +41,17 @@ const TRANSLATIONS = [
 ];
 
 // Mirrors packages/scripture/src/books.ts. Keep in sync.
+// Slugs match the wldeh/bible-api directory names — lowercase, no separators
+// (e.g. "1samuel" not "1-samuel", "songofsolomon" not "song-of-solomon").
 const BOOKS = [
   ["GEN", "genesis", 50], ["EXO", "exodus", 40], ["LEV", "leviticus", 27],
   ["NUM", "numbers", 36], ["DEU", "deuteronomy", 34], ["JOS", "joshua", 24],
-  ["JDG", "judges", 21], ["RUT", "ruth", 4], ["1SA", "1-samuel", 31],
-  ["2SA", "2-samuel", 24], ["1KI", "1-kings", 22], ["2KI", "2-kings", 25],
-  ["1CH", "1-chronicles", 29], ["2CH", "2-chronicles", 36], ["EZR", "ezra", 10],
+  ["JDG", "judges", 21], ["RUT", "ruth", 4], ["1SA", "1samuel", 31],
+  ["2SA", "2samuel", 24], ["1KI", "1kings", 22], ["2KI", "2kings", 25],
+  ["1CH", "1chronicles", 29], ["2CH", "2chronicles", 36], ["EZR", "ezra", 10],
   ["NEH", "nehemiah", 13], ["EST", "esther", 10], ["JOB", "job", 42],
   ["PSA", "psalms", 150], ["PRO", "proverbs", 31], ["ECC", "ecclesiastes", 12],
-  ["SNG", "song-of-solomon", 8], ["ISA", "isaiah", 66], ["JER", "jeremiah", 52],
+  ["SNG", "songofsolomon", 8], ["ISA", "isaiah", 66], ["JER", "jeremiah", 52],
   ["LAM", "lamentations", 5], ["EZK", "ezekiel", 48], ["DAN", "daniel", 12],
   ["HOS", "hosea", 14], ["JOL", "joel", 3], ["AMO", "amos", 9],
   ["OBA", "obadiah", 1], ["JON", "jonah", 4], ["MIC", "micah", 7],
@@ -57,13 +59,13 @@ const BOOKS = [
   ["HAG", "haggai", 2], ["ZEC", "zechariah", 14], ["MAL", "malachi", 4],
   ["MAT", "matthew", 28], ["MRK", "mark", 16], ["LUK", "luke", 24],
   ["JHN", "john", 21], ["ACT", "acts", 28], ["ROM", "romans", 16],
-  ["1CO", "1-corinthians", 16], ["2CO", "2-corinthians", 13], ["GAL", "galatians", 6],
+  ["1CO", "1corinthians", 16], ["2CO", "2corinthians", 13], ["GAL", "galatians", 6],
   ["EPH", "ephesians", 6], ["PHP", "philippians", 4], ["COL", "colossians", 4],
-  ["1TH", "1-thessalonians", 5], ["2TH", "2-thessalonians", 3], ["1TI", "1-timothy", 6],
-  ["2TI", "2-timothy", 4], ["TIT", "titus", 3], ["PHM", "philemon", 1],
-  ["HEB", "hebrews", 13], ["JAS", "james", 5], ["1PE", "1-peter", 5],
-  ["2PE", "2-peter", 3], ["1JN", "1-john", 5], ["2JN", "2-john", 1],
-  ["3JN", "3-john", 1], ["JUD", "jude", 1], ["REV", "revelation", 22],
+  ["1TH", "1thessalonians", 5], ["2TH", "2thessalonians", 3], ["1TI", "1timothy", 6],
+  ["2TI", "2timothy", 4], ["TIT", "titus", 3], ["PHM", "philemon", 1],
+  ["HEB", "hebrews", 13], ["JAS", "james", 5], ["1PE", "1peter", 5],
+  ["2PE", "2peter", 3], ["1JN", "1john", 5], ["2JN", "2john", 1],
+  ["3JN", "3john", 1], ["JUD", "jude", 1], ["REV", "revelation", 22],
 ];
 
 async function fetchChapter(sourceId, bookSlug, ch) {
