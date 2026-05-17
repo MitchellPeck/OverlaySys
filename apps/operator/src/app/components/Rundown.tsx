@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Field, SongRow } from "@overlaysys/core";
+import type { Field, ScriptureRow, SongRow } from "@overlaysys/core";
 import { resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
@@ -9,6 +9,7 @@ import { useWs } from "@/lib/useWs";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { HotcardsPanel } from "./HotcardsPanel";
 import { SongTakeStrip } from "./SongTakeStrip";
+import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
 
 type ImagePreview = { src: string; label: string };
 
@@ -32,7 +33,8 @@ export function Rundown() {
     const seen = new Set<string>();
     for (const r of show.rows) {
       if (r.kind === "scripture") {
-        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+        // Scripture rows don't use a single templateId for lookup here;
+        // they dispatch per-slide via ScriptureTakeStrip.
         continue;
       }
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
@@ -69,7 +71,7 @@ export function Rundown() {
         return;
       }
       if (row.kind === "scripture") {
-        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+        // No cue semantics for scripture rows; see takeSelected.
         return;
       }
       send({
@@ -110,7 +112,9 @@ export function Rundown() {
         return;
       }
       if (row.kind === "scripture") {
-        // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+        // Scripture rows are taken per-slide via ScriptureTakeStrip — there's
+        // no "take whole row" semantics. Selecting the row swaps the Cue/Take
+        // bar out for the slide strip below.
         return;
       }
       send({
@@ -159,6 +163,10 @@ export function Rundown() {
     songStripChannel = resolved ?? "program";
   }
 
+  const selectedScriptureRow: ScriptureRow | null =
+    selectedRow && selectedRow.kind === "scripture" ? selectedRow : null;
+  const scriptureChannel = selectedScriptureRow?.channelHint ?? "program";
+
   return (
     <div>
       {selectedSongRow && songStripChannel ? (
@@ -168,6 +176,8 @@ export function Rundown() {
           channel={songStripChannel}
           liveSession={songSessions[songStripChannel] ?? null}
         />
+      ) : selectedScriptureRow ? (
+        <ScriptureTakeStrip row={selectedScriptureRow} channel={scriptureChannel} />
       ) : (
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>

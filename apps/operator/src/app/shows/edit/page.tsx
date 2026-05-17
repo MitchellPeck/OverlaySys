@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { ChannelConfig, Show, RundownRow, GraphicRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -14,6 +14,7 @@ import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
+import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import {
   deleteShowCloud,
   getShowCloud,
@@ -59,6 +60,7 @@ function ShowEditPageInner() {
   const [draft, setDraft] = useState<Show | null>(null);
   const [dirty, setDirty] = useState(false);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
+  const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   // Cloud `updated_at` value at the moment the editor loaded the draft.
   // Used by save() in cloud mode to detect concurrent writes — a newer
   // value in Supabase means another tab/user saved while we were editing.
@@ -311,6 +313,22 @@ function ShowEditPageInner() {
     });
   }
 
+  function addScriptureRow(args: ScriptureSaveArgs) {
+    const row: ScriptureRow = {
+      kind: "scripture",
+      id: uuid(),
+      reference: args.reference,
+      translation: args.translation,
+      attribution: args.attribution,
+      slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
+      templateId: args.templateId,
+    };
+    update((s) => {
+      s.rows.push(row);
+    });
+    setScriptureModalOpen(false);
+  }
+
   function deleteRow(rowId: string) {
     update((s) => {
       s.rows = s.rows.filter((r) => r.id !== rowId);
@@ -431,9 +449,15 @@ function ShowEditPageInner() {
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addRow} style={addRowBtn}>+ Add row</button>
             <button onClick={addSongRow} style={addRowBtn}>+ Add song</button>
+            <button onClick={() => setScriptureModalOpen(true)} style={addRowBtn}>+ Scripture</button>
           </div>
         </div>
       </div>
+      <ScriptureRowModal
+        open={scriptureModalOpen}
+        onClose={() => setScriptureModalOpen(false)}
+        onSave={addScriptureRow}
+      />
       {dialog}
     </main>
   );
