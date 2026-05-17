@@ -13,7 +13,11 @@ import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
 
 type ImagePreview = { src: string; label: string };
 
-export function Rundown() {
+interface RundownProps {
+  onEditScriptureRow?: (row: ScriptureRow) => void;
+}
+
+export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const templates = useStore((s) => s.templates);
@@ -177,7 +181,18 @@ export function Rundown() {
           liveSession={songSessions[songStripChannel] ?? null}
         />
       ) : selectedScriptureRow ? (
-        <ScriptureTakeStrip row={selectedScriptureRow} channel={scriptureChannel} />
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onEditScriptureRow?.(selectedScriptureRow)}
+            >
+              Edit slides…
+            </Button>
+          </div>
+          <ScriptureTakeStrip row={selectedScriptureRow} channel={scriptureChannel} />
+        </div>
       ) : (
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
           <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>

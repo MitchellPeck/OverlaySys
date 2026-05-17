@@ -17,11 +17,14 @@ import {
 import { Button, Field, Input, Modal, Select, colors } from "@overlaysys/ui";
 import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
 import { useStore } from "@/lib/store";
+import type { ScriptureRow } from "@overlaysys/core";
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onSave: (args: SaveArgs) => void;
+  /** When set, modal opens at step 2 pre-loaded with this row's slides + template. */
+  editingRow?: ScriptureRow;
 }
 
 export interface SaveArgs {
@@ -35,7 +38,7 @@ export interface SaveArgs {
   templateId: string;
 }
 
-export function ScriptureRowModal({ open, onClose, onSave }: Props) {
+export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) {
   const [translations, setTranslations] = useState<TranslationMeta[]>([]);
   const [refInput, setRefInput] = useState("");
   const [translation, setTranslation] = useState<string>("");
@@ -58,7 +61,19 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
       .then((t) => {
         if (cancelled) return;
         setTranslations(t);
-        setTranslation((cur) => cur || t[0]?.id || "");
+        if (editingRow) {
+          setTranslation(editingRow.translation);
+          // Synthesize a PassageResponse so Step2 renders with the saved slides.
+          const synthesized: PassageResponse = {
+            reference: editingRow.reference,
+            translation: editingRow.translation,
+            attribution: editingRow.attribution ?? "",
+            verses: editingRow.slides.flatMap((s) => s.verses),
+          };
+          setPassage(synthesized);
+        } else {
+          setTranslation((cur) => cur || t[0]?.id || "");
+        }
       })
       .catch((e) => {
         if (!cancelled)
@@ -67,7 +82,7 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, editingRow]);
 
   // Reset when modal closes so the next open starts fresh.
   useEffect(() => {
@@ -275,7 +290,20 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
       ) : (
         <Step2
           passage={passage}
-          onCancel={() => setPassage(null)}
+          seedSlides={
+            editingRow
+              ? editingRow.slides.map((s) => ({ id: s.id, verses: s.verses }))
+              : undefined
+          }
+          seedTemplateId={editingRow?.templateId}
+          backLabel={editingRow ? "Cancel" : "Back"}
+          onCancel={() => {
+            if (editingRow) {
+              onClose();
+            } else {
+              setPassage(null);
+            }
+          }}
           onSave={(slides, templateId) => {
             const meta = translations.find((t) => t.id === passage.translation);
             onSave({
@@ -297,21 +325,31 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
 
 function Step2({
   passage,
+  seedSlides,
+  seedTemplateId,
+  backLabel = "Back",
   onCancel,
   onSave,
 }: {
   passage: PassageResponse;
+  seedSlides?: EditableSlide[];
+  seedTemplateId?: string;
+  backLabel?: string;
   onCancel: () => void;
   onSave: (slides: EditableSlide[], templateId: string) => void;
 }) {
   const templates = useStore((s) => s.templates);
   const [slides, setSlides] = useState<EditableSlide[]>(() =>
-    splitIntoSlides(passage.verses, DEFAULT_SLIDE_BUDGET).map((s) => ({
-      id: s.id,
-      verses: s.verses,
-    })),
+    seedSlides && seedSlides.length > 0
+      ? seedSlides
+      : splitIntoSlides(passage.verses, DEFAULT_SLIDE_BUDGET).map((s) => ({
+          id: s.id,
+          verses: s.verses,
+        })),
   );
-  const [templateId, setTemplateId] = useState<string>(templates[0]?.id ?? "");
+  const [templateId, setTemplateId] = useState<string>(
+    seedTemplateId || templates[0]?.id || "",
+  );
 
   return (
     <>
@@ -329,7 +367,7 @@ function Step2({
         <ScriptureSlideEditor slides={slides} onChange={setSlides} />
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-        <Button variant="ghost" onClick={onCancel}>Back</Button>
+        <Button variant="ghost" onClick={onCancel}>{backLabel}</Button>
         <Button
           variant="primary"
           disabled={!templateId || slides.length === 0}

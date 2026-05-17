@@ -61,6 +61,7 @@ function ShowEditPageInner() {
   const [dirty, setDirty] = useState(false);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
+  const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
   // Cloud `updated_at` value at the moment the editor loaded the draft.
   // Used by save() in cloud mode to detect concurrent writes — a newer
   // value in Supabase means another tab/user saved while we were editing.
@@ -314,6 +315,27 @@ function ShowEditPageInner() {
   }
 
   function addScriptureRow(args: ScriptureSaveArgs) {
+    if (editingScriptureRow) {
+      update((s) => {
+        const idx = s.rows.findIndex((r) => r.id === editingScriptureRow.id);
+        if (idx >= 0) {
+          s.rows[idx] = {
+            ...editingScriptureRow,
+            reference: args.reference,
+            translation: args.translation,
+            ...(args.translationAbbreviation !== undefined
+              ? { translationAbbreviation: args.translationAbbreviation }
+              : {}),
+            attribution: args.attribution,
+            slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
+            templateId: args.templateId,
+          };
+        }
+      });
+      setScriptureModalOpen(false);
+      setEditingScriptureRow(null);
+      return;
+    }
     const row: ScriptureRow = {
       kind: "scripture",
       id: uuid(),
@@ -448,6 +470,10 @@ function ShowEditPageInner() {
             onMoveRow={moveRow}
             onUpdate={update}
             onDeleteRow={deleteRow}
+            onEditScriptureRow={(row) => {
+              setEditingScriptureRow(row);
+              setScriptureModalOpen(true);
+            }}
           />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addRow} style={addRowBtn}>+ Add row</button>
@@ -458,7 +484,11 @@ function ShowEditPageInner() {
       </div>
       <ScriptureRowModal
         open={scriptureModalOpen}
-        onClose={() => setScriptureModalOpen(false)}
+        editingRow={editingScriptureRow ?? undefined}
+        onClose={() => {
+          setScriptureModalOpen(false);
+          setEditingScriptureRow(null);
+        }}
         onSave={addScriptureRow}
       />
       {dialog}
@@ -478,6 +508,7 @@ function RundownTable({
   onMoveRow,
   onUpdate,
   onDeleteRow,
+  onEditScriptureRow,
 }: {
   draft: Show;
   templates: TemplateMeta[];
@@ -490,6 +521,7 @@ function RundownTable({
   onMoveRow: (sourceId: string, targetId: string, where: "before" | "after") => void;
   onUpdate: (recipe: (s: Show) => void) => void;
   onDeleteRow: (id: string) => void;
+  onEditScriptureRow?: (row: ScriptureRow) => void;
 }) {
   if (draft.rows.length === 0) {
     return (
@@ -546,11 +578,39 @@ function RundownTable({
             );
           }
           if (row.kind === "scripture") {
-            // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
             return (
               <tr key={row.id}>
-                <td colSpan={10} style={{ padding: "6px 8px", opacity: 0.6 }}>
-                  📖 {row.reference} ({row.translation}) — scripture row (editor coming in Task E3)
+                <td colSpan={10} style={{ padding: "6px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>📖 {row.reference} ({row.translation})</span>
+                    <span style={{ color: colors.textDim, fontSize: 11 }}>
+                      {row.slides.length} slide{row.slides.length !== 1 ? "s" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onEditScriptureRow?.(row)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: colors.accent,
+                        cursor: "pointer",
+                        fontSize: 11,
+                        padding: 0,
+                        textDecoration: "underline",
+                        marginLeft: "auto",
+                      }}
+                    >
+                      Edit slides…
+                    </button>
+                    <IconButton
+                      onClick={() => onDeleteRow(row.id)}
+                      title="Delete row"
+                      size={24}
+                      style={{ color: colors.red, fontSize: 14 }}
+                    >
+                      ×
+                    </IconButton>
+                  </div>
                 </td>
               </tr>
             );
