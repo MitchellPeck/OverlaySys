@@ -319,6 +319,9 @@ function ShowEditPageInner() {
       id: uuid(),
       reference: args.reference,
       translation: args.translation,
+      ...(args.translationAbbreviation !== undefined
+        ? { translationAbbreviation: args.translationAbbreviation }
+        : {}),
       attribution: args.attribution,
       slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
       templateId: args.templateId,

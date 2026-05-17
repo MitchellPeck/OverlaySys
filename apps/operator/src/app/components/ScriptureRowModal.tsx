@@ -26,6 +26,8 @@ interface Props {
 export interface SaveArgs {
   reference: string;
   translation: string;
+  /** Abbreviation of the selected translation (e.g. "KJV"), cached at save time. */
+  translationAbbreviation: string | undefined;
   attribution: string;
   passage: PassageResponse;
   slides: EditableSlide[];
@@ -167,9 +169,11 @@ export function ScriptureRowModal({ open, onClose, onSave }: Props) {
           passage={passage}
           onCancel={() => setPassage(null)}
           onSave={(slides, templateId) => {
+            const meta = translations.find((t) => t.id === passage.translation);
             onSave({
               reference: passage.reference,
               translation: passage.translation,
+              translationAbbreviation: meta?.abbreviation,
               attribution: passage.attribution,
               passage,
               slides,

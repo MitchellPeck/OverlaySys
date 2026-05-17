@@ -96,6 +96,14 @@ export const ScriptureRowSchema = z.object({
   reference: z.string(),
   /** TranslationMeta.id from @overlaysys/scripture. */
   translation: z.string(),
+  /**
+   * TranslationMeta.abbreviation cached at save time (e.g. "KJV", "ESV").
+   * Used by ScriptureTakeStrip so templates receive the human-readable
+   * abbreviation rather than the provider-internal id. Optional for
+   * backwards compatibility with rows saved before this field was added;
+   * the strip falls back to `translation` when absent.
+   */
+  translationAbbreviation: z.string().optional(),
   /** Attribution captured at fetch time so the on-air state is reproducible. */
   attribution: z.string().optional(),
   /** Embedded slides — auto-split on import, operator-editable. */

@@ -254,6 +254,16 @@ describe("ScriptureRowSchema", () => {
     expect(parsed.channelHint).toBe("program");
   });
 
+  it("round-trips translationAbbreviation when provided", () => {
+    const parsed = ScriptureRowSchema.parse({ ...minimal, translationAbbreviation: "KJV" });
+    expect(parsed.translationAbbreviation).toBe("KJV");
+  });
+
+  it("translationAbbreviation is optional (backwards compat)", () => {
+    const parsed = ScriptureRowSchema.parse(minimal);
+    expect(parsed.translationAbbreviation).toBeUndefined();
+  });
+
   it("rejects a row with no slides", () => {
     expect(() =>
       ScriptureRowSchema.parse({ ...minimal, slides: [] }),
