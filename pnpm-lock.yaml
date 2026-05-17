@@ -60,6 +60,9 @@ importers:
       '@overlaysys/editor-kit':
         specifier: workspace:*
         version: link:../../packages/editor-kit
+      '@overlaysys/scripture':
+        specifier: workspace:*
+        version: link:../../packages/scripture
       '@overlaysys/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
