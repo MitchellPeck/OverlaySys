@@ -1,6 +1,6 @@
 # Scripture rundown rows
 
-Status: design approved — pending implementation plan
+Status: implemented (v1)
 Date: 2026-05-15
 
 ## Problem

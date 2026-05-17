@@ -45,3 +45,9 @@ See `/Users/mitchellpeck/.claude/plans/build-a-custom-html-compiled-sundae.md` f
 ## Companion integration
 
 A Bitfocus Companion module lives at `packages/companion-module/`. See [its HELP.md](packages/companion-module/companion/HELP.md) for install and usage, and the design spec at `docs/superpowers/specs/2026-05-12-companion-integration-design.md`.
+
+## Scripture
+
+Scripture rundown rows pull verse text from translations registered in the server's `ScriptureProvider` registry. Public-domain KJV and WEB ship bundled in `@overlaysys/scripture` (always available, fully offline). To add a licensed translation (NIV, ESV, NLT, …) implement the `ScriptureProvider` interface and register it in `server/src/scripture.ts:initScripture()`.
+
+See the design spec at `docs/superpowers/specs/2026-05-15-scripture-integration-design.md`.
