@@ -31,6 +31,7 @@ export function ScriptureSlideEditor({ slides, onChange }: Props) {
           </header>
           {slide.verses.map((v, verseIdx) => {
             const isFirstVerseOfFirstSlide = slideIdx === 0 && verseIdx === 0;
+            const isLastVerseOfLastSlide = slideIdx === slides.length - 1 && verseIdx === slide.verses.length - 1;
             return (
               <div
                 key={`${v.book}-${v.chapter}-${v.verse}`}
@@ -54,6 +55,7 @@ export function ScriptureSlideEditor({ slides, onChange }: Props) {
                   size="sm"
                   variant="ghost"
                   aria-label={`Move ${v.chapter}:${v.verse} to next slide`}
+                  disabled={isLastVerseOfLastSlide}
                   onClick={() => onChange(moveVerse(slides, slideIdx, verseIdx, +1))}
                 >
                   ▶
