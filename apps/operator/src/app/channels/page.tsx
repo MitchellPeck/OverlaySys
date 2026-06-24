@@ -3,15 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelRenderMode } from "@overlaysys/core";
 import { Button, IconButton, Input, Panel, Select, colors, radius } from "@overlaysys/ui";
+import type { ProjectChannelOverride } from "@overlaysys/core";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { isCloudMode } from "@/lib/mode";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
+import { useAuthStore } from "@/lib/useAuth";
 import {
   deleteChannelConfigCloud,
+  deleteProjectChannelOverrideCloud,
+  listProjectChannelOverridesCloud,
   refreshChannelConfigsCloud,
   saveChannelConfigCloud,
+  saveProjectChannelOverrideCloud,
 } from "@/lib/cloudData";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
@@ -72,7 +77,22 @@ export default function ChannelsPage() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
   const channels = useStore((s) => s.channelConfigs);
+  const projects = useStore((s) => s.projects);
+  const currentProjectId = useStore((s) => s.currentProjectId);
+  const currentProject = projects.find((p) => p.id === currentProjectId);
+  const projectOverridesMap = useStore((s) => s.projectChannelOverrides);
+  const setProjectOverrides = useStore((s) => s.setProjectChannelOverrides);
   const cloud = isCloudMode();
+  // Whenever there's a live cloud session we treat the cloud as the
+  // source of truth for both channel configs AND project overrides —
+  // that matches the user-facing model ("channels live in cloud, devices
+  // sync from there"). Without a session we fall back to the local WS
+  // backend so an offline Electron operator still has a working channels
+  // page. The eventual SyncEngine (W1) bridges those two replicas; this
+  // is the interim wiring.
+  const cloudSession = useAuthStore((s) => s.status === "signed_in");
+  const useCloudBackend = cloud || cloudSession;
+  const overridesAvailable = useCloudBackend;
   const rendererBase = useRendererBase();
   const [creating, setCreating] = useState<{
     id: string;
@@ -96,14 +116,53 @@ export default function ChannelsPage() {
   }
 
   useEffect(() => {
-    if (cloud) {
+    if (useCloudBackend) {
       refreshChannelConfigsCloud().catch((err) =>
         console.warn("[channels] cloud list failed", err),
       );
     } else if (conn === "open") {
       send({ type: "list_channels" });
     }
-  }, [cloud, conn, send]);
+  }, [useCloudBackend, conn, send]);
+
+  // Project-channel overrides come from a separate table; re-fetch when
+  // the currentProjectId changes so the override editors track the active
+  // project. Runs whenever a cloud session is available — both pure cloud
+  // builds and Electron paired to apps-portal.
+  useEffect(() => {
+    if (!overridesAvailable) return;
+    listProjectChannelOverridesCloud(currentProjectId)
+      .then((overrides) => setProjectOverrides(overrides))
+      .catch((err) =>
+        console.warn("[channels] project overrides fetch failed", err),
+      );
+  }, [overridesAvailable, currentProjectId, setProjectOverrides]);
+
+  async function saveOverride(override: ProjectChannelOverride): Promise<void> {
+    if (!overridesAvailable) return;
+    try {
+      await saveProjectChannelOverrideCloud(override);
+      const refreshed = await listProjectChannelOverridesCloud(currentProjectId);
+      setProjectOverrides(refreshed);
+    } catch (err) {
+      await showError("save override", err);
+    }
+  }
+
+  async function clearOverride(channelId: string): Promise<void> {
+    if (!overridesAvailable) return;
+    try {
+      await deleteProjectChannelOverrideCloud(currentProjectId, channelId);
+      const refreshed = await listProjectChannelOverridesCloud(currentProjectId);
+      setProjectOverrides(refreshed);
+    } catch (err) {
+      await showError("clear override", err);
+    }
+  }
+
+  function overrideFor(channelId: string): ProjectChannelOverride | undefined {
+    return projectOverridesMap[`${currentProjectId}:${channelId}`];
+  }
 
   async function create() {
     const id = creating.id.trim();
@@ -127,7 +186,7 @@ export default function ChannelsPage() {
       background: "transparent",
       ...(creating.mirrorOf ? { mirrorOf: creating.mirrorOf } : {}),
     };
-    if (cloud) {
+    if (useCloudBackend) {
       try {
         await saveChannelConfigCloud(config);
         await refreshChannelConfigsCloud();
@@ -142,7 +201,7 @@ export default function ChannelsPage() {
   }
 
   async function save(config: ChannelConfig) {
-    if (cloud) {
+    if (useCloudBackend) {
       try {
         await saveChannelConfigCloud(config);
         await refreshChannelConfigsCloud();
@@ -160,7 +219,7 @@ export default function ChannelsPage() {
       message: (
         <>
           Delete <strong>{name}</strong>?
-          {cloud
+          {useCloudBackend
             ? " This soft-deletes the channel; paired devices will remove their local copy on next sync."
             : " This removes the JSON file."}
         </>
@@ -169,7 +228,7 @@ export default function ChannelsPage() {
       destructive: true,
     });
     if (!ok) return;
-    if (cloud) {
+    if (useCloudBackend) {
       try {
         await deleteChannelConfigCloud(id);
         await refreshChannelConfigsCloud();
@@ -251,7 +310,7 @@ export default function ChannelsPage() {
               </Select>
               <Button
                 onClick={create}
-                disabled={!creating.id.trim() || (!cloud && conn !== "open")}
+                disabled={!creating.id.trim() || (!useCloudBackend && conn !== "open")}
                 variant="primary"
                 size="sm"
               >
@@ -284,6 +343,12 @@ export default function ChannelsPage() {
                 rendererBase={rendererBase}
                 onSave={save}
                 onRemove={() => remove(c.id, c.name)}
+                showOverride={overridesAvailable}
+                currentProjectId={currentProjectId}
+                currentProjectName={currentProject?.name ?? currentProjectId}
+                override={overrideFor(c.id)}
+                onSaveOverride={saveOverride}
+                onClearOverride={() => clearOverride(c.id)}
               />
             ))}
           </ul>
@@ -299,12 +364,24 @@ function ChannelRow({
   rendererBase,
   onSave,
   onRemove,
+  showOverride,
+  currentProjectId,
+  currentProjectName,
+  override,
+  onSaveOverride,
+  onClearOverride,
 }: {
   config: ChannelConfig;
   allChannels: ChannelConfig[];
   rendererBase: string;
   onSave: (c: ChannelConfig) => void;
   onRemove: () => void;
+  showOverride: boolean;
+  currentProjectId: string;
+  currentProjectName: string;
+  override: ProjectChannelOverride | undefined;
+  onSaveOverride: (o: ProjectChannelOverride) => Promise<void>;
+  onClearOverride: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ChannelConfig>(config);
   const lastSyncedRef = useRef<ChannelConfig>(config);
@@ -409,8 +486,24 @@ function ChannelRow({
               (matte mode forces black bg)
             </span>
           )}
+          {override && (
+            <span style={{ color: colors.accent2 }}>
+              ● overridden in {currentProjectName}
+            </span>
+          )}
           {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}>● unsaved</span>}
         </div>
+        {showOverride && (
+          <ProjectOverrideEditor
+            config={config}
+            allChannels={allChannels}
+            currentProjectId={currentProjectId}
+            currentProjectName={currentProjectName}
+            override={override}
+            onSaveOverride={onSaveOverride}
+            onClearOverride={onClearOverride}
+          />
+        )}
       </Panel>
     </li>
   );
@@ -477,6 +570,221 @@ function BackgroundEditor({
           onChange={(e) => onChange(e.target.value)}
           style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, flex: 1 }}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Per-channel override editor scoped to the current project. Lets the
+ * operator patch renderMode, mirrorOf, and background for one channel
+ * without forking the org default. Fields default to the override's
+ * current value (when an override exists) or to "inherit from default"
+ * (when not). Save persists; "Reset to default" soft-deletes the override
+ * row so the channel falls back to the org config.
+ *
+ * Name is intentionally not overridable here — channel names are
+ * display-friendly identifiers that should be consistent across projects.
+ * If naming-per-project becomes a real need, this is the place to add it.
+ */
+function ProjectOverrideEditor({
+  config,
+  allChannels,
+  currentProjectId,
+  currentProjectName,
+  override,
+  onSaveOverride,
+  onClearOverride,
+}: {
+  config: ChannelConfig;
+  allChannels: ChannelConfig[];
+  currentProjectId: string;
+  currentProjectName: string;
+  override: ProjectChannelOverride | undefined;
+  onSaveOverride: (o: ProjectChannelOverride) => Promise<void>;
+  onClearOverride: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState<boolean>(!!override);
+  const [draft, setDraft] = useState<ProjectChannelOverride>(() =>
+    override ?? {
+      projectId: currentProjectId,
+      channelId: config.id,
+    },
+  );
+
+  // When the project switches or an override is fetched/cleared, reset the
+  // draft to the new source of truth so the editor doesn't show stale
+  // values from the previous project.
+  useEffect(() => {
+    setDraft(
+      override ?? { projectId: currentProjectId, channelId: config.id },
+    );
+    setOpen(!!override);
+  }, [override, currentProjectId, config.id]);
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(override ?? {
+    projectId: currentProjectId,
+    channelId: config.id,
+  });
+
+  const mirrorOptions = allChannels.filter((o) => o.id !== config.id);
+
+  function patch(p: Partial<ProjectChannelOverride>) {
+    setDraft((cur) => ({ ...cur, ...p }));
+  }
+
+  if (!open) {
+    return (
+      <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim }}>
+        <Button
+          onClick={() => setOpen(true)}
+          variant="ghost"
+          size="sm"
+          title={`Customize this channel for ${currentProjectName}`}
+        >
+          + Customize for {currentProjectName}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: 10,
+        background: "var(--bg)",
+        border: `1px dashed ${colors.border}`,
+        borderRadius: 6,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          color: colors.textDim,
+          textTransform: "uppercase",
+          letterSpacing: 1,
+          marginBottom: 8,
+        }}
+      >
+        Override for {currentProjectName}
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "160px 200px 1fr auto",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <Select
+          value={draft.renderMode ?? "__inherit__"}
+          onChange={(e) =>
+            patch({
+              renderMode:
+                e.target.value === "__inherit__"
+                  ? undefined
+                  : (e.target.value as ChannelRenderMode),
+            })
+          }
+          title="Render mode (override)"
+        >
+          <option value="__inherit__">inherit ({config.renderMode})</option>
+          <option value="normal">normal</option>
+          <option value="matte">matte (white on black)</option>
+        </Select>
+        <Select
+          value={draft.mirrorOf ?? "__inherit__"}
+          onChange={(e) =>
+            patch({
+              mirrorOf:
+                e.target.value === "__inherit__"
+                  ? undefined
+                  : e.target.value || undefined,
+            })
+          }
+          title="Mirror target (override)"
+        >
+          <option value="__inherit__">
+            inherit ({config.mirrorOf ? `mirrors ${config.mirrorOf}` : "no mirror"})
+          </option>
+          <option value="">— no mirror —</option>
+          {mirrorOptions.map((o) => (
+            <option key={o.id} value={o.id}>
+              mirrors {o.name}
+            </option>
+          ))}
+        </Select>
+        <OverrideBackground
+          value={draft.background}
+          base={config.background}
+          onChange={(v) => patch({ background: v })}
+        />
+        <div style={{ display: "flex", gap: 4 }}>
+          {override && (
+            <Button
+              onClick={() => void onClearOverride()}
+              variant="ghost"
+              size="sm"
+              title="Remove override; channel falls back to the org default"
+            >
+              Reset
+            </Button>
+          )}
+          <Button
+            onClick={() => void onSaveOverride(draft)}
+            disabled={!dirty}
+            variant={dirty ? "primary" : "ghost"}
+            size="sm"
+          >
+            {override ? "Save" : "Apply"}
+          </Button>
+          {!override && (
+            <Button
+              onClick={() => setOpen(false)}
+              variant="ghost"
+              size="sm"
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Background field for the override editor. Adds an "inherit" sentinel to
+ * the regular `BackgroundEditor` so the user can explicitly opt back into
+ * the org default without flipping the override off entirely.
+ */
+function OverrideBackground({
+  value,
+  base,
+  onChange,
+}: {
+  value: string | undefined;
+  base: string;
+  onChange: (v: string | undefined) => void;
+}) {
+  const inheriting = value === undefined;
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: colors.textDim }}>
+        <input
+          type="checkbox"
+          checked={!inheriting}
+          onChange={(e) => onChange(e.target.checked ? base : undefined)}
+        />
+        bg
+      </label>
+      {!inheriting ? (
+        <BackgroundEditor value={value} onChange={(v) => onChange(v)} />
+      ) : (
+        <span style={{ fontSize: 11, color: colors.textDim }}>
+          inherit ({base})
+        </span>
       )}
     </div>
   );

@@ -26,6 +26,7 @@ import {
   clearTokens as clearCloudTokens,
   loadTokens as loadCloudTokens,
   startSignIn as startCloudSignIn,
+  updateTokens as updateCloudTokens,
 } from "./cloudAuth";
 import {
   loadPrefs,
@@ -214,6 +215,37 @@ const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 let serverChild: ChildProcess | null = null;
 let serverPort = 4000;
 let serverHost = "127.0.0.1";
+
+/**
+ * Forward the user's cloud session to the embedded server. The server
+ * holds the tokens in memory, materializes a Supabase client + sync
+ * engine wiring, and runs reconciliation periodically. Best-effort:
+ * server may be unreachable during boot races; callers wrap the call in
+ * a `.catch` so we don't crash the desktop on a sync-side hiccup.
+ */
+async function pushTokensToServer(tokens: {
+  accessToken: string;
+  refreshToken: string;
+  registryOrgId: string | null;
+}): Promise<void> {
+  if (!tokens.registryOrgId) return; // no org → nothing to scope sync to
+  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      orgId: tokens.registryOrgId,
+    }),
+  });
+}
+
+/** Clear the server's cloud session — companion to `pushTokensToServer`. */
+async function clearServerCloudTokens(): Promise<void> {
+  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
+    method: "DELETE",
+  });
+}
 
 let operatorWindow: BrowserWindow | null = null;
 const channelWindows = new Map<string, BrowserWindow>();
@@ -815,6 +847,11 @@ function registerIpc(): void {
     ensureUserDataEnv();
     try {
       const tokens = await startCloudSignIn();
+      // Newly-signed-in tokens land in the server so its sync engine has
+      // a session immediately, not on the next renderer refresh.
+      void pushTokensToServer(tokens).catch((err) =>
+        console.warn("[desktop] forwarding sign-in tokens to server failed", err),
+      );
       return { ok: true, tokens };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -828,9 +865,54 @@ function registerIpc(): void {
 
   ipcMain.handle("overlaysys:cloud-sign-out", async () => {
     await clearCloudTokens();
+    // Clear the server's session in the same pass — leaving stale tokens
+    // would mean the next periodic sync hits Supabase as the just-out
+    // user, which RLS would deny anyway, but logging the noise serves
+    // no one.
+    void clearServerCloudTokens().catch((err) =>
+      console.warn("[desktop] clearing server tokens failed", err),
+    );
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("overlaysys:cloud-signed-out");
     }
+  });
+
+  // Renderer pushes refreshed tokens up after Supabase JS auto-refreshes
+  // its in-memory session. Without this, a quit + relaunch after the
+  // access-token TTL loses the session even though the refresh token is
+  // still valid — defeats the point of "stay signed in" for desktop.
+  ipcMain.handle(
+    "overlaysys:cloud-update-tokens",
+    async (
+      _event,
+      input: {
+        accessToken: string;
+        refreshToken: string;
+        registryOrgId?: string | null;
+      },
+    ) => {
+      ensureUserDataEnv();
+      const persisted = await updateCloudTokens(input);
+      // Forward the fresh tokens to the embedded server so its
+      // CloudStorageAdapter keeps a valid session for periodic sync.
+      // Best-effort: server may not be reachable yet during boot races,
+      // and the next periodic refresh will retry.
+      void pushTokensToServer(persisted).catch((err) =>
+        console.warn("[desktop] forwarding refreshed tokens to server failed", err),
+      );
+      return persisted;
+    },
+  );
+
+  // Open an arbitrary URL in the system browser. Used by AccountMenu so
+  // "Manage account" from the desktop app surfaces the cloud account
+  // page externally rather than navigating in the renderer.
+  ipcMain.handle("overlaysys:open-external", async (_event, url: string) => {
+    if (typeof url !== "string" || !url) return;
+    // Restrict to http(s) so a malicious renderer-side bug can't shell out
+    // to file:// or custom URI handlers.
+    if (!/^https?:\/\//i.test(url)) return;
+    await shell.openExternal(url);
   });
 }
 
@@ -858,6 +940,20 @@ async function boot(): Promise<void> {
   buildMenu();
   registerIpc();
   operatorWindow = createOperatorWindow();
+
+  // Sync wake-up: if cloud tokens were persisted from a prior session,
+  // forward them to the server so its sync loop kicks in immediately
+  // rather than waiting for the user to interact with the renderer.
+  try {
+    const existing = await loadCloudTokens();
+    if (existing) {
+      void pushTokensToServer(existing).catch((err) =>
+        console.warn("[desktop] startup sync wake-up failed", err),
+      );
+    }
+  } catch (err) {
+    console.warn("[desktop] startup token load failed", err);
+  }
 
   // Auto-open configured channel windows. Done after the operator
   // window so closing the operator (which closes all channel windows)

@@ -1,4 +1,4 @@
-import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
+import type { ChannelState, SongSessionSummary, SubTakeContext } from "@overlaysys/core";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
 
@@ -94,7 +94,12 @@ export function subscribe(channel: string, listener: Listener): () => void {
   };
 }
 
-export function take(channel: string, templateId: string, data: Record<string, string>): void {
+export function take(
+  channel: string,
+  templateId: string,
+  data: Record<string, string>,
+  subTakeContext?: SubTakeContext,
+): void {
   // Cancel any prior auto-out before we install the new active mount —
   // even if the new take is for the same template, the timer should
   // restart from this take's takenAt.
@@ -113,7 +118,13 @@ export function take(channel: string, templateId: string, data: Record<string, s
       delete s.songSession;
     }
   }
-  s.active = { templateId, data, phase: "in", takenAt: Date.now() };
+  s.active = {
+    templateId,
+    data,
+    phase: "in",
+    takenAt: Date.now(),
+    ...(subTakeContext ? { subTakeContext } : {}),
+  };
   states.set(channel, s);
   emit(channel);
   // Internal takes (song slide advances) bypass auto-out — songs control
@@ -223,13 +234,16 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // Cancel any prior auto-out on the destination so the new active mount's
   // timer starts fresh from this promotion.
   cancelAutoOut(toChannel);
-  // Put it on PGM — fresh takenAt so renderers re-mount.
+  // Put it on PGM — fresh takenAt so renderers re-mount. Carry the queued
+  // subTakeContext forward so identity-aware feedback (Companion) sees the
+  // promoted intro/outro as belonging to its originating song row.
   const pgm = getOrInit(toChannel);
   pgm.active = {
     templateId: queued.templateId,
     data: queued.data,
     phase: "in",
     takenAt: Date.now(),
+    ...(queued.subTakeContext ? { subTakeContext: queued.subTakeContext } : {}),
   };
   states.set(toChannel, pgm);
   emit(toChannel);

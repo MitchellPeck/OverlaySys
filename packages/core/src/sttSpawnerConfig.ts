@@ -99,24 +99,10 @@ export const SttSpawnerConfigSchema = z.object({
   // whisper-stream once and parsing its "found N capture devices" output.
   captureDevice: z.number().int().min(-1).default(-1),
 
-  // Whisper's bias prompt: the active program-channel song's lyrics are
-  // exposed to the spawned process as the OVERLAYSYS_BIAS_PROMPT env var,
-  // and the child is transparently restarted each time a song is taken.
-  //
-  // NOTE: whisper-stream from whisper.cpp does NOT accept a `--prompt`
-  // flag (verified — it errors with "unknown argument"). To actually
-  // benefit from the bias, the user must point `customCommand` at a
-  // wrapper that reads $OVERLAYSYS_BIAS_PROMPT (e.g. a script around
-  // whisper-cli, which DOES support --prompt). With the default
-  // structured fields (whisper-stream), the env var is still set but is
-  // inert — the UI surfaces this so the user isn't surprised.
-  biasOnSongStart: z.boolean().default(true),
-
   // Escape hatch. When set to a non-empty string, the structured fields
   // (modelPath/stepMs/lengthMs/captureDevice) are ignored and this raw
   // shell command is used verbatim instead. Lets advanced users wire in
-  // whisper-cli wrappers, cloud STT, or any other pipeline that emits
-  // transcribed text on stdout.
+  // cloud STT or any other pipeline that emits transcribed text on stdout.
   customCommand: z.string().default(""),
 });
 export type SttSpawnerConfig = z.infer<typeof SttSpawnerConfigSchema>;
@@ -127,7 +113,6 @@ export const DEFAULT_STT_SPAWNER_CONFIG: SttSpawnerConfig = {
   stepMs: 500,
   lengthMs: 5000,
   captureDevice: -1,
-  biasOnSongStart: true,
   customCommand: "",
 };
 
@@ -163,16 +148,6 @@ export function buildSttCommand(cfg: SttSpawnerConfig): string {
   if (cfg.customCommand.trim().length > 0) return cfg.customCommand;
   const modelArg = shellQuote(expandHome(cfg.modelPath));
   return `whisper-stream -m ${modelArg} --step ${cfg.stepMs} --length ${cfg.lengthMs} -c ${cfg.captureDevice}`;
-}
-
-/**
- * Whether the resolved command will actually use the bias env var. Used
- * by the UI to show "bias is inert" warnings when the default
- * whisper-stream command is in play (whisper-stream doesn't read it).
- */
-export function commandUsesBias(cfg: SttSpawnerConfig): boolean {
-  const cmd = buildSttCommand(cfg);
-  return cmd.includes("$OVERLAYSYS_BIAS_PROMPT") || cmd.includes("${OVERLAYSYS_BIAS_PROMPT");
 }
 
 export const SttSpawnerStateSchema = z.enum([

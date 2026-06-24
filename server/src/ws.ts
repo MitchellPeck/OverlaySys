@@ -95,14 +95,6 @@ sttInstaller.subscribeInstall((progress) => {
   })();
 });
 
-// Whenever the program channel's active song changes, push the song's text
-// to the spawner as a Whisper prompt bias. The spawner restarts the child
-// in-place (only when running) so subsequent recognition is biased toward
-// the song's vocabulary.
-songSession.onProgramBiasChange((bias) => {
-  sttSpawner.setBias(bias);
-});
-
 export function handleConnection(
   ws: WebSocket,
   _req: IncomingMessage,
@@ -464,7 +456,10 @@ export function handleConnection(
               });
               break;
             }
-            channels.take(resolvedChannel, take.templateId, take.fieldValues);
+            channels.take(resolvedChannel, take.templateId, take.fieldValues, {
+              songRowId: row.id,
+              sub: parsed.sub,
+            });
             break;
           }
           // sub === "lyrics": advance an existing same-song session, else start.

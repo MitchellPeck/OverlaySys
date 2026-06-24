@@ -9,6 +9,7 @@ import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
@@ -39,7 +40,7 @@ function HotcardEditPageInner() {
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
   const setTemplate = useStore((s) => s.setTemplate);
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   const takeableChannels = useMemo(
     () => channelConfigs.filter((c) => !c.mirrorOf),
     [channelConfigs],

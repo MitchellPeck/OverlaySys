@@ -88,6 +88,36 @@ export async function clearTokens(): Promise<void> {
 }
 
 /**
+ * Persist a refreshed token pair pushed up from the renderer. The Supabase
+ * JS client auto-refreshes access tokens in-memory; without this hand-off
+ * a quit + relaunch after the access-token TTL would lose the session
+ * even though the refresh token is still valid.
+ *
+ * Preserves the existing `registryOrgId` when the caller doesn't supply
+ * one — token refreshes don't carry that field, only initial sign-in via
+ * apps-portal does. Returns the persisted record so the renderer can
+ * confirm the write landed.
+ */
+export async function updateTokens(input: {
+  accessToken: string;
+  refreshToken: string;
+  registryOrgId?: string | null;
+}): Promise<CloudTokens> {
+  const existing = await loadTokens();
+  const tokens: CloudTokens = {
+    accessToken: input.accessToken,
+    refreshToken: input.refreshToken,
+    registryOrgId:
+      input.registryOrgId !== undefined
+        ? input.registryOrgId
+        : existing?.registryOrgId ?? null,
+    storedAt: Date.now(),
+  };
+  await saveTokens(tokens);
+  return tokens;
+}
+
+/**
  * Begin a sign-in flow. Returns a promise that resolves with the captured
  * tokens. The user has 5 minutes to complete the flow; after that the
  * loopback closes and the promise rejects.

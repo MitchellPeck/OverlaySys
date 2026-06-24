@@ -3,5 +3,5 @@
   "name": "Alpha (Program)",
   "renderMode": "matte",
   "mirrorOf": "program",
-  "background": "transparent"
+  "background": "#000000"
 }

@@ -3,39 +3,6 @@ import * as channels from "./channels";
 import * as sttMatcher from "./sttMatcher";
 import type { MatchResult } from "./sttMatcher";
 
-// Channel that drives Whisper prompt biasing. Bias only follows the program
-// session — preview cues shouldn't restart the recognizer.
-const PROGRAM_CHANNEL = "program";
-
-type ProgramBiasListener = (biasText: string | null) => void;
-const programBiasListeners = new Set<ProgramBiasListener>();
-let lastProgramBias: string | null = null;
-
-export function onProgramBiasChange(fn: ProgramBiasListener): () => void {
-  programBiasListeners.add(fn);
-  return () => {
-    programBiasListeners.delete(fn);
-  };
-}
-
-function songBiasText(song: Song): string {
-  const parts: string[] = [];
-  for (const sec of song.sections) {
-    for (const slide of sec.slides) {
-      for (const line of slide.lines) parts.push(line);
-    }
-  }
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function refreshProgramBias(): void {
-  const s = sessions.get(PROGRAM_CHANNEL);
-  const next = s ? songBiasText(s.song) : null;
-  if (next === lastProgramBias) return;
-  lastProgramBias = next;
-  for (const fn of programBiasListeners) fn(next);
-}
-
 interface StartArgs {
   song: Song;
   lyricTemplateId: string;
@@ -127,7 +94,6 @@ export function start(channel: string, args: StartArgs): void {
   sessions.set(channel, internal);
   render(internal, /* forceMount */ true);
   sttMatcher.bindSession(channel, args.song, args.arrangement);
-  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
 }
 
 /**
@@ -165,9 +131,6 @@ export function promoteTo(
   // End the source AFTER the destination is rendered, so there's never a
   // gap with neither channel showing the song.
   if (src) end(fromChannel);
-  if (toChannel === PROGRAM_CHANNEL || fromChannel === PROGRAM_CHANNEL) {
-    refreshProgramBias();
-  }
 }
 
 export function getSession(channel: string): SongSessionSummary | null {
@@ -301,7 +264,6 @@ export function tearDownSession(channel: string): boolean {
   }
   sttMatcher.unbindSession(channel);
   sessions.delete(channel);
-  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
   return true;
 }
 

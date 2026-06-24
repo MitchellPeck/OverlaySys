@@ -6,7 +6,7 @@ import type { Subscription, User } from "@supabase/supabase-js";
 import { create } from "zustand";
 import { getCloudClient, getStoredRegistryOrgId } from "./cloudAuth";
 import { isCloudMode } from "./mode";
-import { isElectron } from "./desktop";
+import { isElectron, getDesktopApi } from "./desktop";
 
 export type AuthStatus = "signed_out" | "signed_in" | "expired";
 
@@ -149,6 +149,27 @@ export function useAuth(): void {
     }
     refreshRef.current = refreshFromClient;
 
+    // Cross-window sign-out propagation in Electron. When the user signs
+    // out from another window, the main process broadcasts a sign-out
+    // event to every renderer. Without this listener, this window's
+    // Supabase JS client would keep its in-memory session valid until the
+    // next periodic getUser() check picked up the revoked refresh token
+    // — could be up to LIVENESS_INTERVAL_MS of stale UI.
+    let offSignedOut: (() => void) | null = null;
+    if (isElectron()) {
+      const api = getDesktopApi();
+      if (api?.onCloudSignedOut) {
+        offSignedOut = api.onCloudSignedOut(() => {
+          // Calling signOut() here fires onAuthStateChange SIGNED_OUT in
+          // this window's Supabase client, which the handler below picks
+          // up and reflects into the store. Catch + ignore the error if
+          // there's no session to sign out of — happens when this window
+          // initiated the sign-out and the broadcast loops back.
+          void client.auth.signOut().catch(() => undefined);
+        });
+      }
+    }
+
     const subResult = client.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       const orgId = getStoredRegistryOrgId();
@@ -158,6 +179,31 @@ export function useAuth(): void {
         case "TOKEN_REFRESHED":
           if (session?.user) {
             useAuthStore.getState().setSignedIn(session.user, orgId);
+          }
+          // Persist refreshed tokens to safeStorage in Electron — Supabase
+          // JS auto-refreshes in-memory but the file-backed copy stays
+          // stale, so without this a quit + relaunch after the access-
+          // token TTL loses the session. Best-effort: if the IPC isn't
+          // available (older desktop build), the in-memory session still
+          // works for the current run.
+          if (
+            event === "TOKEN_REFRESHED" &&
+            isElectron() &&
+            session?.access_token &&
+            session.refresh_token
+          ) {
+            const api = getDesktopApi();
+            if (api?.cloudUpdateTokens) {
+              void api
+                .cloudUpdateTokens({
+                  accessToken: session.access_token,
+                  refreshToken: session.refresh_token,
+                  registryOrgId: orgId ?? undefined,
+                })
+                .catch((err) =>
+                  console.warn("[useAuth] cloudUpdateTokens failed", err),
+                );
+            }
           }
           break;
         case "SIGNED_OUT":
@@ -187,6 +233,7 @@ export function useAuth(): void {
       refreshRef.current = null;
       if (subscription) subscription.unsubscribe();
       if (intervalId) clearInterval(intervalId);
+      if (offSignedOut) offSignedOut();
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", onFocus);
       }

@@ -107,6 +107,26 @@ interface OverlaysysApi {
   onCloudSignedIn(fn: (tokens: CloudTokens) => void): () => void;
   /** Subscribe to sign-out events. */
   onCloudSignedOut(fn: () => void): () => void;
+
+  /**
+   * Persist a refreshed token pair pushed up from the renderer. Called by
+   * useAuth's onAuthStateChange when Supabase JS emits TOKEN_REFRESHED;
+   * without this, desktop quit + relaunch after the access-token TTL
+   * loses the session even though the refresh token is still valid.
+   */
+  cloudUpdateTokens(input: {
+    accessToken: string;
+    refreshToken: string;
+    registryOrgId?: string | null;
+  }): Promise<CloudTokens>;
+
+  /**
+   * Open a URL in the system browser via shell.openExternal. Used by
+   * AccountMenu's "Manage account" so the cloud account page opens
+   * outside the app rather than navigating in-renderer. Restricted to
+   * http(s) URLs by the main-process handler.
+   */
+  openExternal(url: string): Promise<void>;
 }
 
 const api: OverlaysysApi = {
@@ -153,6 +173,10 @@ const api: OverlaysysApi = {
     ipcRenderer.on("overlaysys:cloud-signed-out", handler);
     return () => ipcRenderer.removeListener("overlaysys:cloud-signed-out", handler);
   },
+  cloudUpdateTokens: (input) =>
+    ipcRenderer.invoke("overlaysys:cloud-update-tokens", input),
+  openExternal: (url) =>
+    ipcRenderer.invoke("overlaysys:open-external", url),
 };
 
 contextBridge.exposeInMainWorld("overlaysys", api);

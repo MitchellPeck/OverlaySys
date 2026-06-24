@@ -1,9 +1,8 @@
 {
   "autoStart": false,
-  "modelPath": "/Users/mitchellpeck/whisper-models/ggml-medium.en-q5_0.bin",
-  "stepMs": 200,
-  "lengthMs": 3000,
+  "modelPath": "~/whisper-models/ggml-base.en.bin",
+  "stepMs": 500,
+  "lengthMs": 5000,
   "captureDevice": -1,
-  "biasOnSongStart": true,
   "customCommand": ""
 }

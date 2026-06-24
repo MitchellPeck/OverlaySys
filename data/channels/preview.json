@@ -1,5 +1,6 @@
 {
   "id": "preview",
   "name": "Preview",
-  "renderMode": "normal"
+  "renderMode": "normal",
+  "background": "#000000"
 }

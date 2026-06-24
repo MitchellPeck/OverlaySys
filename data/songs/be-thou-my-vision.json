@@ -90,7 +90,7 @@
     "x1"
   ],
   "customFields": {
-    "hymn_num": "#451"
+    "hymn_num": "$451"
   },
   "defaultIntroTemplateId": "template-d2afea00",
   "defaultIntroFieldMap": {

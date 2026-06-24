@@ -8,6 +8,7 @@ import { Pill, type PillTone } from "@overlaysys/ui";
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
 import { AccountMenu } from "@/app/components/AccountMenu";
+import { SyncStatusPill } from "@/app/components/SyncStatusPill";
 import { isCloudMode } from "@/lib/mode";
 
 // `hideInCloud` marks routes that don't make sense in the web deploy. The
@@ -90,6 +91,7 @@ export function AppHeader({
           ))}
         </nav>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+          {!cloud && <SyncStatusPill />}
           {!cloud && <SttStatusPill />}
           {!cloud && <ConnectionPill conn={conn} dot={dot} />}
           <AccountMenu />

@@ -7,7 +7,6 @@ import {
   STEP_OPTIONS_MS,
   LENGTH_OPTIONS_MS,
   buildSttCommand,
-  commandUsesBias,
   type SttSpawnerConfig,
 } from "@overlaysys/core";
 import {
@@ -68,6 +67,21 @@ function SttControlPageLocal() {
   const [draft, setDraft] = useState<SttSpawnerConfig | null>(null);
   const [customModalOpen, setCustomModalOpen] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // Tracks a just-clicked Start/Stop so the button can flip to a disabled
+  // "Starting…" / "Stopping…" state instantly, before the server's
+  // stt_spawner_status broadcast arrives. Cleared by the effect below as
+  // soon as the spawner reports a state consistent with the action having
+  // landed (server moved through "starting"/"running" for a start, through
+  // "stopped"/"idle" for a stop, or hit "error" either way).
+  const [pendingAction, setPendingAction] = useState<"start" | "stop" | null>(
+    null,
+  );
+  // Wall-clock time we entered the current pendingAction. Used to enforce a
+  // minimum visible duration for the optimistic feedback — without this,
+  // fast servers race through starting→running (or running→stopped) faster
+  // than React can paint, the effect clears pendingAction immediately, and
+  // the user never sees "Starting…" / "Stopping…" at all.
+  const [pendingStartedAt, setPendingStartedAt] = useState<number>(0);
 
   // Boot-time fetch + presence refresh when the model selection changes
   // (so the "model installed?" banner reflects the dropdown choice live).
@@ -88,6 +102,47 @@ function SttControlPageLocal() {
   useEffect(() => {
     if (config && !draft) setDraft(config);
   }, [config, draft]);
+
+  // Clear the pending Start/Stop indicator once the server's status moves
+  // into the FINAL state for the user's action. Intermediate "starting" is
+  // intentionally NOT a clear condition for start — otherwise a fast server
+  // that flips starting→running between React paints would skip the
+  // "Starting…" indicator entirely. The minimum-visible-duration guard
+  // below also ensures the optimistic feedback shows even when the server
+  // is faster than a single render commit. "error" is accepted as terminal
+  // for both: if the spawn failed the user should see the error pill, not
+  // a stuck "Starting…" button.
+  useEffect(() => {
+    if (!pendingAction || !status) return;
+    const s = status.state;
+    const matches =
+      pendingAction === "start"
+        ? s === "running" || s === "error"
+        : s === "stopped" || s === "idle" || s === "error";
+    if (!matches) return;
+    // Minimum visible duration. Below this the optimistic state can look
+    // like a flicker; above this the user has time to register the action
+    // before the UI settles.
+    const MIN_VISIBLE_MS = 400;
+    const elapsed = Date.now() - pendingStartedAt;
+    if (elapsed >= MIN_VISIBLE_MS) {
+      setPendingAction(null);
+    } else {
+      const remaining = MIN_VISIBLE_MS - elapsed;
+      const timer = setTimeout(() => setPendingAction(null), remaining);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingAction, pendingStartedAt, status]);
+
+  // Fail-safe: if the spawner_status broadcast that would clear pendingAction
+  // never arrives (server hang, WS hiccup, message ordering oddity), clear it
+  // on a timer so the button doesn't get permanently stuck on "Stopping…".
+  // 6 seconds is generous — start/stop normally round-trips in <100ms.
+  useEffect(() => {
+    if (!pendingAction) return;
+    const t = setTimeout(() => setPendingAction(null), 6000);
+    return () => clearTimeout(t);
+  }, [pendingAction]);
 
   // Auto-clear terminal install/uninstall/download job entries after a short
   // delay. The server has already broadcast the refreshed `stt_presence` and
@@ -137,6 +192,8 @@ function SttControlPageLocal() {
     send({ type: "stt_spawner_save_config", config: next });
   }
   function start() {
+    setPendingAction("start");
+    setPendingStartedAt(Date.now());
     // Pass the current draft so the server saves and starts atomically in
     // one handler — without this, save_config and start are two concurrent
     // async handlers and start can launch with stale on-disk config. The
@@ -146,11 +203,19 @@ function SttControlPageLocal() {
     send({ type: "stt_spawner_start", config: draft! });
   }
   function stop() {
+    setPendingAction("stop");
+    setPendingStartedAt(Date.now());
     send({ type: "stt_spawner_stop" });
   }
 
   const state = status?.state ?? "idle";
-  const tone = STATE_TONES[state] ?? "dim";
+  // While Start/Stop is pending the pill needs to look "in-flight" too —
+  // not green/red for the about-to-change state, but warn-yellow until the
+  // server confirms. Without this, the text says "stopping" but the
+  // background stays running-green which reads as broken to the user.
+  const tone: PillTone = pendingAction
+    ? "warn"
+    : STATE_TONES[state] ?? "dim";
 
   const binaryPresent = presence?.binary.path != null;
   const modelPresent = presence?.selectedModel.present ?? false;
@@ -159,7 +224,6 @@ function SttControlPageLocal() {
   const modelJob = selectedModelFilename ? installJobs[selectedModelFilename] : undefined;
 
   const usingCustom = draft.customCommand.trim().length > 0;
-  const biasEffective = draft.biasOnSongStart && commandUsesBias(draft);
 
   return (
     <PageShell>
@@ -168,9 +232,21 @@ function SttControlPageLocal() {
         actions={
           <>
             <Pill tone={tone} uppercase>
-              {state}
+              {pendingAction === "start"
+                ? "starting"
+                : pendingAction === "stop"
+                ? "stopping"
+                : state}
             </Pill>
-            {state === "running" || state === "starting" ? (
+            {pendingAction === "start" ? (
+              <Button disabled variant="primary" size="sm">
+                Starting…
+              </Button>
+            ) : pendingAction === "stop" ? (
+              <Button disabled variant="destructive" size="sm">
+                Stopping…
+              </Button>
+            ) : state === "running" || state === "starting" ? (
               <Button onClick={stop} variant="destructive" size="sm">
                 Stop
               </Button>
@@ -207,7 +283,22 @@ function SttControlPageLocal() {
           modelJob={modelJob}
           binaryJob={binaryJob}
           spawnerRunning={state === "running" || state === "starting"}
-          onInstallBinary={() => send({ type: "stt_install_binary" })}
+          onInstallBinary={() => {
+            // Optimistic: post a pending entry locally so the button flips
+            // to Cancel + indeterminate progress instantly. The server's
+            // first "running" tick (and every subsequent progress tick)
+            // overwrites this entry, so it's a transient placeholder.
+            useStore.getState().setSttInstallProgress({
+              jobId: "binary",
+              state: "pending",
+              progress: null,
+              bytesDownloaded: null,
+              bytesTotal: null,
+              message: `Requesting ${presence?.packageManager ?? "package manager"} install…`,
+              error: null,
+            });
+            send({ type: "stt_install_binary" });
+          }}
           onUninstallBinary={async () => {
             const ok = await confirm({
               title: "Uninstall whisper-cpp?",
@@ -216,7 +307,17 @@ function SttControlPageLocal() {
               confirmLabel: "Uninstall",
               destructive: true,
             });
-            if (ok) send({ type: "stt_uninstall_binary" });
+            if (!ok) return;
+            useStore.getState().setSttInstallProgress({
+              jobId: "binary",
+              state: "pending",
+              progress: null,
+              bytesDownloaded: null,
+              bytesTotal: null,
+              message: `Requesting ${presence?.packageManager ?? "package manager"} uninstall…`,
+              error: null,
+            });
+            send({ type: "stt_uninstall_binary" });
           }}
           onCancel={(jobId) => send({ type: "stt_cancel_install", jobId })}
         />
@@ -253,13 +354,26 @@ function SttControlPageLocal() {
             modelPath={draft.modelPath}
             installedModels={models}
             installJobs={installJobs}
-            onInstall={(preset) =>
+            onInstall={(preset) => {
+              // Optimistic placeholder so the Install button switches to
+              // Cancel + indeterminate progress on click, without waiting
+              // for the server's first running broadcast. Server progress
+              // events overwrite this entry as soon as they arrive.
+              useStore.getState().setSttInstallProgress({
+                jobId: preset.filename,
+                state: "pending",
+                progress: null,
+                bytesDownloaded: 0,
+                bytesTotal: preset.sizeBytes,
+                message: `Requesting download of ${preset.name}…`,
+                error: null,
+              });
               send({
                 type: "stt_download_model",
                 url: preset.url,
                 filename: preset.filename,
-              })
-            }
+              });
+            }}
             onCancel={(jobId) => send({ type: "stt_cancel_install", jobId })}
           />
 
@@ -379,15 +493,6 @@ function SttControlPageLocal() {
             </Select>
           </Field>
 
-          <BiasControl
-            biasOnSongStart={draft.biasOnSongStart}
-            effective={biasEffective}
-            usingCustom={usingCustom}
-            onChange={(biasOnSongStart) =>
-              setDraft({ ...draft, biasOnSongStart })
-            }
-          />
-
           <details
             open={showAdvanced || usingCustom}
             onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}
@@ -413,16 +518,8 @@ function SttControlPageLocal() {
               }}
             >
               Use this to bypass the structured fields and run any shell pipeline
-              that writes transcribed text to stdout. To benefit from the bias
-              prompt, interpolate{" "}
-              <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
-                $OVERLAYSYS_BIAS_PROMPT
-              </code>{" "}
-              somewhere — e.g. a wrapper around{" "}
-              <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
-                whisper-cli --prompt &quot;$OVERLAYSYS_BIAS_PROMPT&quot;
-              </code>
-              .
+              that writes transcribed text to stdout — e.g. a cloud STT bridge
+              or your own wrapper.
             </p>
             <Textarea
               value={draft.customCommand}
@@ -1049,54 +1146,6 @@ function ModelDropdown(props: {
           </div>
         ))}
     </Field>
-  );
-}
-
-function BiasControl(props: {
-  biasOnSongStart: boolean;
-  effective: boolean;
-  usingCustom: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  const tone: PillTone = !props.biasOnSongStart
-    ? "dim"
-    : props.effective
-    ? "good"
-    : "warn";
-  const label = !props.biasOnSongStart
-    ? "Disabled"
-    : props.effective
-    ? "Active — command references $OVERLAYSYS_BIAS_PROMPT"
-    : "Inert — whisper-stream doesn't accept --prompt";
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <input
-          type="checkbox"
-          id="biasOnSongStart"
-          checked={props.biasOnSongStart}
-          onChange={(e) => props.onChange(e.target.checked)}
-        />
-        <label htmlFor="biasOnSongStart" style={{ fontSize: 13 }}>
-          Bias STT on program song change
-        </label>
-        <Pill tone={tone} uppercase>
-          {label}
-        </Pill>
-      </div>
-      <p style={{ fontSize: 11, color: colors.textDim, marginTop: 0, marginBottom: 0, lineHeight: 1.5 }}>
-        When enabled, the active program-channel song&apos;s lyrics are exposed
-        as the env var{" "}
-        <code style={{ background: colors.panel2, padding: "1px 4px", borderRadius: 2 }}>
-          $OVERLAYSYS_BIAS_PROMPT
-        </code>
-        . The spawner only restarts on song change when the running command
-        actually references it — so leaving this on with the default
-        whisper-stream command is harmless (no model-reload pauses), but no
-        biasing happens either. To get real biasing, switch to a custom
-        whisper-cli wrapper in the advanced section.
-      </p>
-    </div>
   );
 }
 

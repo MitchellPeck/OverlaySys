@@ -6,6 +6,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { FieldInput } from "@/lib/FieldInput";
 import { isCloudMode } from "@/lib/mode";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
 /**
  * Manual take panel — fires arbitrary template + data on the selected program
@@ -22,7 +23,7 @@ export function TakePanel() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   const [templateId, setTemplateId] = useState<string>("");
   const [dataByTemplate, setDataByTemplate] = useState<Record<string, Record<string, string>>>({});
 

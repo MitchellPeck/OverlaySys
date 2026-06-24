@@ -852,6 +852,45 @@ export async function applyBundleCloud(
     }
   }
 
+  // 6. Channels (org library). Save before overrides so the override's
+  //    referenced channel is guaranteed present. Saves are idempotent —
+  //    re-applying a bundle with the same channels just bumps updatedAt.
+  for (const c of bundle.channels ?? []) {
+    try {
+      onProgress?.(`channel: ${c.name}`);
+      await saveChannelConfigCloud(c);
+      // counts intentionally omits channels — keep the public count shape
+      // stable for existing UI consumers; the message stream is enough
+      // signal during import.
+    } catch (err) {
+      errors.push({
+        kind: "channel",
+        id: c.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 7. Project channel overrides. Re-target to the bundle's project id
+  //    when the importer remapped projects (currently they always land at
+  //    the same id, but the indirection matches the show/hotcard pattern
+  //    above and shields against future project remapping).
+  for (const o of bundle.channelOverrides ?? []) {
+    try {
+      onProgress?.(`channel override: ${o.channelId}`);
+      const scoped = targetProjectId
+        ? { ...o, projectId: targetProjectId }
+        : o;
+      await saveProjectChannelOverrideCloud(scoped);
+    } catch (err) {
+      errors.push({
+        kind: "channelOverride",
+        id: `${o.projectId}:${o.channelId}`,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return { counts, errors };
 }
 

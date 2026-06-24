@@ -10,6 +10,7 @@ import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
@@ -46,7 +47,7 @@ function ShowEditPageInner() {
   const templates = useStore((s) => s.templates);
   const songs = useStore((s) => s.songs);
   const songCache = useStore((s) => s.songCache);
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   // Mirror channels reflect another channel's state; targeting one would be
   // a no-op, so they're hidden from row-level channel hints.
   const takeableChannels = useMemo(
@@ -59,6 +60,18 @@ function ShowEditPageInner() {
   const setSong = useStore((s) => s.setSong);
   const [draft, setDraft] = useState<Show | null>(null);
   const [dirty, setDirty] = useState(false);
+  // Mirror `dirty` into a ref so the WS `show` listener below — which
+  // captures its closure at subscribe time, before the user has edited
+  // anything — reads the live value when deciding whether to clobber
+  // the draft. Without this, a `show` broadcast arriving after the user
+  // started editing would overwrite their in-flight changes because the
+  // closure still sees the original `dirty=false`. The most common
+  // trigger in practice is the user saving and then editing again
+  // before the save's echo broadcast lands.
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
@@ -90,11 +103,12 @@ function ShowEditPageInner() {
     if (cloud) return; // no WS subscription in cloud mode — see effect below
     const off = getClient().on((msg) => {
       if (msg.type === "show" && msg.show.id === showId) {
-        if (!dirty) setDraft(msg.show);
+        // Read live dirty via the ref so post-mount edits aren't
+        // clobbered by an echo broadcast — see dirtyRef declaration.
+        if (!dirtyRef.current) setDraft(msg.show);
       }
     });
     return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showId, cloud]);
 
   useEffect(() => {

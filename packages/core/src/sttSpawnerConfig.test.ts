@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSttCommand,
-  commandUsesBias,
   DEFAULT_STT_SPAWNER_CONFIG,
   expandHome,
   shellQuote,
@@ -79,30 +78,6 @@ describe("buildSttCommand", () => {
     // The single quote inside the path must be escaped via the standard
     // close-quote / escape / reopen-quote trick.
     expect(cmd).toContain("'/path with spaces/model'\\''s.bin'");
-  });
-});
-
-describe("commandUsesBias", () => {
-  it("returns true when customCommand references $OVERLAYSYS_BIAS_PROMPT", () => {
-    expect(
-      commandUsesBias({
-        ...DEFAULT_STT_SPAWNER_CONFIG,
-        customCommand: `whisper-cli --prompt "$OVERLAYSYS_BIAS_PROMPT" -m foo.bin`,
-      }),
-    ).toBe(true);
-  });
-
-  it("returns true for ${OVERLAYSYS_BIAS_PROMPT...} bash braces", () => {
-    expect(
-      commandUsesBias({
-        ...DEFAULT_STT_SPAWNER_CONFIG,
-        customCommand: `wrap "${"${OVERLAYSYS_BIAS_PROMPT:-fallback}"}"`,
-      }),
-    ).toBe(true);
-  });
-
-  it("returns false for default whisper-stream command (no --prompt support)", () => {
-    expect(commandUsesBias(DEFAULT_STT_SPAWNER_CONFIG)).toBe(false);
   });
 });
 

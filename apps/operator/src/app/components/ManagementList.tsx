@@ -58,6 +58,34 @@ export interface ManagementListProps<T> {
 
   /** Body container max width (matches existing per-page pattern). Default 720. */
   maxWidth?: number;
+
+  /**
+   * Optional content rendered inside PageBody but above the list — used by
+   * pages that need a sticky banner or sync UI that the wrapper itself
+   * doesn't model (e.g. Projects' cloud publish/pull row).
+   */
+  bodyHeader?: ReactNode;
+
+  /**
+   * Predicate gating whether the standardized delete (×) button shows for a
+   * given item. Returns true for everything by default. Used by Projects to
+   * suppress delete on the seeded default project.
+   */
+  canDelete?: (item: T) => boolean;
+
+  /**
+   * Title for the disabled delete button when `canDelete` returns false —
+   * surfaced as the `title` attribute so the user sees a tooltip explaining
+   * why deletion is blocked.
+   */
+  cannotDeleteReason?: (item: T) => string;
+
+  /**
+   * Optional extra content appended to the standard delete-confirm message
+   * (after "Delete <name>? This cannot be undone."). Used by Projects to
+   * warn about orphaned shows/hotcards before destructive confirm.
+   */
+  deleteConfirmDetails?: (item: T) => ReactNode;
 }
 
 function capitalize(s: string): string {
@@ -90,6 +118,10 @@ export function ManagementList<T>({
   itemDisplayName,
   emptyMessage,
   maxWidth = 720,
+  bodyHeader,
+  canDelete,
+  cannotDeleteReason,
+  deleteConfirmDetails,
 }: ManagementListProps<T>) {
   const { prompt, confirm, alert, dialog } = useDialog();
 
@@ -116,11 +148,18 @@ export function ManagementList<T>({
 
   async function handleDelete(item: T) {
     const name = itemDisplayName ? itemDisplayName(item) : rowKey(item);
+    const details = deleteConfirmDetails?.(item);
     const ok = await confirm({
       title: `Delete ${entityNoun}`,
       message: (
         <>
           Delete <strong>{name}</strong>? This cannot be undone.
+          {details && (
+            <>
+              <br />
+              {details}
+            </>
+          )}
         </>
       ),
       confirmLabel: "Delete",
@@ -157,34 +196,45 @@ export function ManagementList<T>({
         }
       />
       <PageBody maxWidth={maxWidth}>
+        {bodyHeader}
         {items.length === 0 ? (
           <p style={{ color: colors.textDim, fontSize: 13 }}>
             {emptyMessage ?? `No ${entityNoun}s yet. Create one to get started.`}
           </p>
         ) : (
           <EntityList>
-            {items.map((item) => (
-              <EntityRow
-                key={rowKey(item)}
-                href={rowHref?.(item)}
-                primary={rowPrimary(item)}
-                secondary={rowSecondary?.(item)}
-                actions={
-                  <>
-                    {rowActions?.(item)}
-                    <IconButton
-                      onClick={() => handleDelete(item)}
-                      title={`Delete ${entityNoun}`}
-                      size={44}
-                      style={{ color: colors.red, fontSize: 16, borderRadius: 6 }}
-                      disabled={disabled}
-                    >
-                      ×
-                    </IconButton>
-                  </>
-                }
-              />
-            ))}
+            {items.map((item) => {
+              const deletable = canDelete ? canDelete(item) : true;
+              const blockedReason = !deletable
+                ? cannotDeleteReason?.(item) ?? `This ${entityNoun} can't be deleted`
+                : null;
+              return (
+                <EntityRow
+                  key={rowKey(item)}
+                  href={rowHref?.(item)}
+                  primary={rowPrimary(item)}
+                  secondary={rowSecondary?.(item)}
+                  actions={
+                    <>
+                      {rowActions?.(item)}
+                      <IconButton
+                        onClick={() => handleDelete(item)}
+                        title={blockedReason ?? `Delete ${entityNoun}`}
+                        size={44}
+                        style={{
+                          color: deletable ? colors.red : colors.textDim,
+                          fontSize: 16,
+                          borderRadius: 6,
+                        }}
+                        disabled={disabled || !deletable}
+                      >
+                        ×
+                      </IconButton>
+                    </>
+                  }
+                />
+              );
+            })}
           </EntityList>
         )}
       </PageBody>

@@ -6,6 +6,7 @@ import { bootstrapFromHash } from "@/lib/cloudAuth";
 import { isElectron as isInElectron } from "@/lib/desktop";
 import { bootstrapFromElectron } from "@/lib/cloudSession";
 import { useAuth, useAuthStore } from "@/lib/useAuth";
+import { useCloudBootstrap } from "@/lib/useCloudBootstrap";
 
 /**
  * Top-level boot effect that runs once per browser tab in cloud mode.
@@ -37,12 +38,16 @@ export function CloudBoot({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Side-effect-only mount point for the auth-state hook. Renders nothing —
- * its only job is to keep the auth store in sync with Supabase's
- * onAuthStateChange events + periodic liveness checks. See useAuth.ts.
+ * Side-effect-only mount point for the auth-state hook + cloud
+ * bootstrap. Renders nothing — its only job is to keep the auth store
+ * in sync with Supabase's onAuthStateChange events + periodic liveness
+ * checks, and to load every entity type's cloud data into the main
+ * store whenever a cloud session is active. See useAuth.ts and
+ * useCloudBootstrap.ts.
  */
 function AuthMount() {
   useAuth();
+  useCloudBootstrap();
   return null;
 }
 

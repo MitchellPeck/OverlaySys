@@ -13,6 +13,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { FieldInput } from "@/lib/FieldInput";
 import { isCloudMode } from "@/lib/mode";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
 /**
  * Dedicated panel for time-based takes (countdowns / count-ups / clocks).
@@ -34,7 +35,7 @@ export function TimerPanel() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
 
   const [templateId, setTemplateId] = useState<string>("");
   // Per-template intent state — countdown duration text is the source of

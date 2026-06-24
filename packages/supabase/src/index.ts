@@ -3,6 +3,7 @@ import type { Database } from "./database.types";
 
 export type { Database } from "./database.types";
 export type OverlaySysSupabaseClient = SupabaseClient<Database, "overlaysys">;
+export { CloudStorageAdapter } from "./cloudStorageAdapter";
 
 export const OVERLAYSYS_SCHEMA = "overlaysys" as const;
 export const ASSETS_BUCKET = "overlaysys-assets" as const;
@@ -34,6 +35,26 @@ export function createBrowserClient(env: SupabaseEnv): OverlaySysSupabaseClient 
       // Don't auto-detect tokens in the hash — we handle that explicitly in
       // lib/cloudAuth.ts so we can also read registry_org_id and call
       // /api/auth/bootstrap before the user does anything.
+      detectSessionInUrl: false,
+    },
+    db: { schema: OVERLAYSYS_SCHEMA },
+  });
+}
+
+/**
+ * Anon client scoped for use from a Node host that doesn't own the
+ * canonical token store — e.g. the desktop's embedded server, which
+ * receives tokens pushed down from the Electron main process and must
+ * not refresh them independently. Auto-refresh is disabled so the only
+ * way new tokens land is via an explicit `setSession()` call from the
+ * caller. persistSession is also off because localStorage isn't real
+ * here.
+ */
+export function createNodeAnonClient(env: SupabaseEnv): OverlaySysSupabaseClient {
+  return createClient<Database, "overlaysys">(env.url, env.anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
       detectSessionInUrl: false,
     },
     db: { schema: OVERLAYSYS_SCHEMA },

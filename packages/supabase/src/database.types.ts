@@ -31,6 +31,7 @@ export interface Database {
           notes: string | null;
           created_at: string;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
@@ -39,10 +40,12 @@ export interface Database {
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           name?: string;
           notes?: string | null;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -54,6 +57,7 @@ export interface Database {
           name: string;
           rows: Json;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
@@ -62,11 +66,13 @@ export interface Database {
           name: string;
           rows?: Json;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           project_id?: string;
           name?: string;
           rows?: Json;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -81,6 +87,7 @@ export interface Database {
           channel_hint: string | null;
           notes: string | null;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
@@ -92,6 +99,7 @@ export interface Database {
           channel_hint?: string | null;
           notes?: string | null;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           project_id?: string;
@@ -100,6 +108,7 @@ export interface Database {
           data?: Json;
           channel_hint?: string | null;
           notes?: string | null;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -109,15 +118,18 @@ export interface Database {
           org_id: string;
           payload: Json;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
           org_id: string;
           payload: Json;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           payload?: Json;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -127,15 +139,18 @@ export interface Database {
           org_id: string;
           payload: Json;
           updated_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id: string;
           org_id: string;
           payload: Json;
           updated_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           payload?: Json;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };

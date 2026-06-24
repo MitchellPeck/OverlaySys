@@ -12,6 +12,7 @@ import { Button, Field, Input, Panel, Select, Textarea, colors } from "@overlays
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
 import { PasteLyricsModal } from "../PasteLyricsModal";
@@ -48,7 +49,7 @@ function SongEditorPageInner() {
   const setTemplate = useStore((s) => s.setTemplate);
   const projects = useStore((s) => s.projects);
   const currentProjectId = useStore((s) => s.currentProjectId);
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   const channelChoices = useMemo(
     () => channelConfigs.filter((c) => !c.mirrorOf),
     [channelConfigs],

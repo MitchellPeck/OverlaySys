@@ -79,9 +79,23 @@ interface OverlaysysApi {
    *
    * Optional because older Electron main builds don't expose this IPC yet
    * — callers should fall back to `window.open(url, "_blank")` when
-   * absent. See W6 follow-up: wire the IPC handler in apps/desktop/src.
+   * absent.
    */
   openExternal?(url: string): Promise<void>;
+
+  /**
+   * Persist a refreshed token pair to safeStorage. Called by useAuth's
+   * onAuthStateChange when Supabase JS auto-refreshes the access token in-
+   * memory; without this, desktop quit + relaunch after the access-token
+   * TTL loses the session despite a valid refresh token. Optional because
+   * older builds don't expose the IPC handler — the absence is logged but
+   * doesn't break the running session.
+   */
+  cloudUpdateTokens?(input: {
+    accessToken: string;
+    refreshToken: string;
+    registryOrgId?: string | null;
+  }): Promise<ElectronCloudTokens>;
 }
 
 declare global {
