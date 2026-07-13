@@ -40,3 +40,5 @@ data/assets/**
 
 # tsbuild
 *.tsbuildinfo
+# Superpowers brainstorming mockups
+.superpowers/
