@@ -2,7 +2,8 @@
 // 0:0  1:4  2:8  3:12  4:16  5:24  6:32
 export const space = { 0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const;
 
-export const radius = { sm: 3, md: 4, lg: 6, pill: 999 } as const;
+// 10px base radius family, matching Ovation OS (--radius: 0.625rem).
+export const radius = { sm: 6, md: 8, lg: 10, xl: 14, pill: 999 } as const;
 
 export const fontSize = { xs: 11, sm: 12, md: 13, base: 14, lg: 16 } as const;
 
@@ -10,33 +11,54 @@ export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 
 export const lineHeight = { tight: 1.2, normal: 1.5 } as const;
 
-// Colors are passthroughs to the CSS custom props in apps/operator/src/app/globals.css.
-// `warn` and `errorText` were previously hardcoded in three different files;
-// promoting them here so call sites can stop sprinkling raw hex.
+// Colors are passthroughs to the CSS custom props in
+// apps/operator/src/app/globals.css. New semantic names first, then the
+// pre-overhaul aliases (kept so existing inline styles inherit the new look).
 export const colors = {
+  // surfaces
   bg: "var(--bg)",
-  panel: "var(--panel)",
-  panel2: "var(--panel-2)",
+  surface: "var(--surface)",
+  surface2: "var(--surface-2)",
+  surface3: "var(--surface-3)",
+  // borders
   border: "var(--border)",
+  borderStrong: "var(--border-strong)",
+  // text
   text: "var(--text)",
   textDim: "var(--text-dim)",
-  accent: "var(--accent)",
-  accent2: "var(--accent-2)",
-  green: "var(--green)",
-  red: "var(--red)",
-  warn: "#fbbf24",
-  errorText: "#ef4444",
+  textMuted: "var(--text-muted)",
+  // brand & state
+  brand: "var(--brand)",
+  brandHover: "var(--brand-hover)",
+  brandSubtle: "var(--brand-subtle)",
+  ok: "var(--ok)",
+  okSubtle: "var(--ok-subtle)",
+  warn: "var(--warn)",
+  danger: "var(--danger)",
+  onair: "var(--onair)",
+  gradBrand: "var(--grad-brand)",
+
+  // ── Backward-compat aliases — DO NOT REMOVE.
+  //    Consumed across apps/operator inline styles. ──
+  panel: "var(--surface)",
+  panel2: "var(--surface-2)",
+  accent: "var(--brand)", // was red #ff3a3a → now indigo brand (intentional)
+  accent2: "var(--warn)", // was amber #ffb13a → warn
+  green: "var(--ok)",
+  red: "var(--danger)",
+  errorText: "var(--danger)",
 } as const;
 
 export const shadow = {
-  modal: "0 12px 40px rgba(0, 0, 0, 0.5)",
+  modal: "var(--shadow-modal)",
 } as const;
 
-// Control sizes — picked to match the most-common existing usage so the
-// visual delta of migrating to <Button>/<Input> stays within a few pixels.
-//   sm: songs/page.tsx btn() default (6px 10px, fontSize 12)
-//   md: Rundown btn() (8px 10px → 8px 12px, fontSize 12 → 13)
-//   lg: TakePanel Button (10px 12px, fontSize 12 → 13)
+export const fontFamily = {
+  sans: "var(--font-sans), Geist, sans-serif",
+  mono: "var(--font-mono), Geist Mono, monospace",
+} as const;
+
+// Control sizes — unchanged shape from the pre-overhaul tokens.
 export const control = {
   sm: { padX: 10, padY: 6, fontSize: fontSize.sm, radius: radius.md },
   md: { padX: 12, padY: 8, fontSize: fontSize.md, radius: radius.md },
