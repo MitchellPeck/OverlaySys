@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
 import { useDialog } from "@/lib/dialog";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 
 export interface ManagementListProps<T> {
   /** Plural page title rendered in AppHeader, e.g. "Songs". */
@@ -94,8 +94,8 @@ function capitalize(s: string): string {
 
 /**
  * Standardized wrapper for the four management list pages (Shows, Projects,
- * Songs, Templates). Owns the page chrome (PageShell + AppHeader title +
- * "+ New" button + PageBody) and the create / delete flows so every list
+ * Songs, Templates). Owns the page chrome (PageChrome title + "+ New"
+ * button + PageBody) and the create / delete flows so every list
  * uses the same name-first prompt and confirm dialog. Per-entity quirks
  * (different secondary actions, custom row content, navigation targets) are
  * supplied via props.
@@ -177,8 +177,8 @@ export function ManagementList<T>({
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <PageChrome
         title={title}
         context={context}
         actions={
@@ -195,7 +195,7 @@ export function ManagementList<T>({
           </>
         }
       />
-      <PageBody maxWidth={maxWidth}>
+      <PageBody maxWidth={maxWidth} style={{ height: "100%" }}>
         {bodyHeader}
         {items.length === 0 ? (
           <p style={{ color: colors.textDim, fontSize: 13 }}>
@@ -239,6 +239,6 @@ export function ManagementList<T>({
         )}
       </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }
