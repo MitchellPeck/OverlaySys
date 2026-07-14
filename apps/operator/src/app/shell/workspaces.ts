@@ -30,7 +30,7 @@ export const WORKSPACES: Record<WorkspaceId, Workspace> = {
     destinations: [
       { route: "/", label: "Show", icon: "▦", desktopOnly: true },
       { route: "/timer", label: "Timer", icon: "⏱", desktopOnly: true },
-      { route: "/stt", label: "Scripture", icon: "✝", desktopOnly: true },
+      { route: "/stt", label: "STT", icon: "🎤", desktopOnly: true },
       { route: "/channels", label: "Channels", icon: "◫", desktopOnly: true },
     ],
   },
@@ -45,6 +45,7 @@ export const WORKSPACES: Record<WorkspaceId, Workspace> = {
       { route: "/design", label: "Design", icon: "❖" },
       { route: "/hotcards", label: "Hotcards", icon: "⚡" },
       { route: "/data", label: "Data", icon: "⇅" },
+      { route: "/pco", label: "Planning Center", icon: "☁", desktopOnly: true },
     ],
   },
 };
