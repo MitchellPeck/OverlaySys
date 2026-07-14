@@ -13,6 +13,8 @@ import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
 import { registerImportRoutes } from "./importRoute";
+import { registerPcoRoutes } from "./pco/routes";
+import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
 import {
   clearCloudTokens,
@@ -71,17 +73,18 @@ app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
 
-// Boot STT spawner: load persisted config; auto-start if configured.
+// Load persisted STT config now; the spawner is booted after the port is
+// bound (below) so the listener daemon can be pointed at the real WS URL.
 const sttConfig = await loadSttConfig();
-if (sttConfig.autoStart) {
-  app.log.info("[stt] autoStart enabled — starting STT spawner");
-  sttSpawner.start(sttConfig);
-}
 
 app.get("/health", async () => ({ ok: true, time: Date.now() }));
 
 await registerAssetRoutes(app);
 await registerImportRoutes(app);
+await registerPcoRoutes(app);
+// Seed a Planning Center credential from env (PCO_ACCESS_TOKEN, or
+// PCO_APP_ID + PCO_SECRET) so a PAT connects without any UI or OAuth flow.
+initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
 
 app.get("/api/templates", async () => {
@@ -141,6 +144,49 @@ await app.listen({ host: HOST, port: PORT });
 // host reads this from a magic stdout line so it can construct window URLs.
 const addr = app.server.address();
 const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
+
+// Point the STT listener daemon at THIS server's real port over loopback.
+// Must happen before any spawner start — otherwise the daemon dials its
+// hardcoded ws://localhost:4000 default and delivers zero hypotheses on any
+// non-4000 port. Loopback is correct: the daemon always runs on this host.
+sttSpawner.setListenerWsUrl(`ws://127.0.0.1:${actualPort}/ws`);
+
+// Sweep any orphaned STT pipelines left by a previous server that exited
+// ungracefully (SIGKILL/crash) — an orphan still holding the mic makes the
+// next start fail to open audio and revert. The graceful-exit handlers below
+// cover clean restarts; this covers the rest.
+sttSpawner.reapOrphans();
+
+// Tear down the STT child on server exit so it never orphans and holds the
+// capture device. Critical in dev, where `tsx watch` restarts the server on
+// every code change — a detached, orphaned whisper-stream would keep the mic
+// and make the next start fail to open audio (loads ~4s, then dies). Handle
+// the common restart/quit signals plus the synchronous 'exit' backstop.
+let shuttingDown = false;
+const shutdownStt = (): void => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    sttSpawner.shutdown();
+  } catch {
+    /* best effort */
+  }
+};
+process.once("SIGTERM", () => {
+  shutdownStt();
+  process.exit(0);
+});
+process.once("SIGINT", () => {
+  shutdownStt();
+  process.exit(0);
+});
+process.on("exit", shutdownStt);
+
+// Boot STT spawner: auto-start if configured (now that the listener URL is set).
+if (sttConfig.autoStart) {
+  app.log.info("[stt] autoStart enabled — starting STT spawner");
+  sttSpawner.start(sttConfig);
+}
 
 // 1 GB cap. Videos and (eventually large) fonts are embedded as data URLs
 // today, which can push template-save messages well past ws's 100 MB

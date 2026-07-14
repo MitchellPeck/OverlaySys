@@ -121,6 +121,20 @@ interface OverlaysysApi {
   }): Promise<CloudTokens>;
 
   /**
+   * Start the Planning Center sign-in flow (OAuth authorization-code via a
+   * loopback callback). Resolves once the user authorizes; the desktop pushes
+   * the resulting access token to the embedded server.
+   */
+  pcoSignIn(): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Whether a persisted PCO session exists. */
+  pcoGetStatus(): Promise<{ connected: boolean }>;
+  /** Clear the stored PCO session + the server's in-memory token. */
+  pcoSignOut(): Promise<void>;
+  /** Subscribe to PCO connect/disconnect events. */
+  onPcoSignedIn(fn: () => void): () => void;
+  onPcoSignedOut(fn: () => void): () => void;
+
+  /**
    * Open a URL in the system browser via shell.openExternal. Used by
    * AccountMenu's "Manage account" so the cloud account page opens
    * outside the app rather than navigating in-renderer. Restricted to
@@ -175,6 +189,21 @@ const api: OverlaysysApi = {
   },
   cloudUpdateTokens: (input) =>
     ipcRenderer.invoke("overlaysys:cloud-update-tokens", input),
+
+  pcoSignIn: () => ipcRenderer.invoke("overlaysys:pco-sign-in"),
+  pcoGetStatus: () => ipcRenderer.invoke("overlaysys:pco-get-status"),
+  pcoSignOut: () => ipcRenderer.invoke("overlaysys:pco-sign-out"),
+  onPcoSignedIn: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("overlaysys:pco-signed-in", handler);
+    return () => ipcRenderer.removeListener("overlaysys:pco-signed-in", handler);
+  },
+  onPcoSignedOut: (fn) => {
+    const handler = () => fn();
+    ipcRenderer.on("overlaysys:pco-signed-out", handler);
+    return () => ipcRenderer.removeListener("overlaysys:pco-signed-out", handler);
+  },
+
   openExternal: (url) =>
     ipcRenderer.invoke("overlaysys:open-external", url),
 };

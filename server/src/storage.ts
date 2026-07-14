@@ -10,8 +10,10 @@ import {
   HotcardSchema,
   ProjectSchema,
   SttSpawnerConfigSchema,
+  PcoConfigSchema,
   DEFAULT_PROJECT_ID,
   DEFAULT_STT_SPAWNER_CONFIG,
+  DEFAULT_PCO_CONFIG,
   type Template,
   type Show,
   type ChannelConfig,
@@ -19,6 +21,7 @@ import {
   type Hotcard,
   type Project,
   type SttSpawnerConfig,
+  type PcoConfig,
 } from "@overlaysys/core";
 
 // Resolve repo root (../../ from server/src). Templates and shows live at <root>/data.
@@ -53,6 +56,8 @@ const HOTCARDS_DIR = (): string => path.join(dataRoot(), "hotcards");
 const PROJECTS_DIR = (): string => path.join(dataRoot(), "projects");
 const STT_DIR = (): string => path.join(dataRoot(), "stt");
 const STT_CONFIG_FILE = (): string => path.join(STT_DIR(), "config.json");
+const PCO_DIR = (): string => path.join(dataRoot(), "pco");
+const PCO_CONFIG_FILE = (): string => path.join(PCO_DIR(), "config.json");
 
 // Fixture directories used to seed empty live folders. In dev they sit
 // alongside the live data ({DATA_ROOT}/<kind>/fixtures). In packaged
@@ -390,4 +395,22 @@ export async function saveSttConfig(config: SttSpawnerConfig): Promise<void> {
   await ensureDir(STT_DIR());
   const parsed = SttSpawnerConfigSchema.parse(config);
   await writeAtomic(STT_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
+}
+
+// Planning Center config ─────────────────────────────────────────────────────
+
+export async function loadPcoConfig(): Promise<PcoConfig> {
+  await ensureDir(PCO_DIR());
+  try {
+    const raw = await fs.readFile(PCO_CONFIG_FILE(), "utf8");
+    return PcoConfigSchema.parse(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_PCO_CONFIG };
+  }
+}
+
+export async function savePcoConfig(config: PcoConfig): Promise<void> {
+  await ensureDir(PCO_DIR());
+  const parsed = PcoConfigSchema.parse(config);
+  await writeAtomic(PCO_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
 }

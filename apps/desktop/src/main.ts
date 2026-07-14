@@ -29,6 +29,13 @@ import {
   updateTokens as updateCloudTokens,
 } from "./cloudAuth";
 import {
+  clearTokens as clearPcoTokens,
+  loadTokens as loadPcoTokens,
+  refreshTokens as refreshPcoTokens,
+  startSignIn as startPcoSignIn,
+  type PcoTokens,
+} from "./pcoAuth";
+import {
   loadPrefs,
   savePrefs,
   resolveDisplay,
@@ -245,6 +252,50 @@ async function clearServerCloudTokens(): Promise<void> {
   await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
     method: "DELETE",
   });
+}
+
+// ── Planning Center token hand-off ─────────────────────────────────────────
+//
+// The desktop owns the PCO OAuth flow + refresh (like the cloud session) and
+// pushes the current *access* token to the embedded server, which holds it in
+// memory for its REST proxy + import routes. Refresh tokens never leave the
+// keychain.
+
+let pcoRefreshTimer: NodeJS.Timeout | null = null;
+
+async function pushPcoTokenToServer(tokens: PcoTokens): Promise<void> {
+  await fetch(`http://${serverHost}:${serverPort}/api/pco/tokens`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ accessToken: tokens.accessToken }),
+  });
+}
+
+async function clearServerPcoTokens(): Promise<void> {
+  await fetch(`http://${serverHost}:${serverPort}/api/pco/tokens`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Schedule an access-token refresh shortly before expiry, re-push, and
+ * reschedule. Best-effort — a failed refresh just means the next server call
+ * 401s and the user re-connects.
+ */
+function schedulePcoRefresh(tokens: PcoTokens): void {
+  if (pcoRefreshTimer) clearTimeout(pcoRefreshTimer);
+  const lead = 60_000; // refresh 1 min before expiry
+  const delay = Math.max(10_000, tokens.expiresAt - Date.now() - lead);
+  pcoRefreshTimer = setTimeout(() => {
+    void refreshPcoTokens()
+      .then((next) => {
+        if (next) {
+          void pushPcoTokenToServer(next).catch(() => undefined);
+          schedulePcoRefresh(next);
+        }
+      })
+      .catch((err) => console.warn("[desktop] PCO token refresh failed", err));
+  }, delay);
 }
 
 let operatorWindow: BrowserWindow | null = null;
@@ -904,6 +955,42 @@ function registerIpc(): void {
     },
   );
 
+  // ── Planning Center sign-in ────────────────────────────────────────────
+  // OAuth authorization-code flow via a loopback callback; see src/pcoAuth.ts.
+  ipcMain.handle("overlaysys:pco-sign-in", async () => {
+    ensureUserDataEnv();
+    try {
+      const tokens = await startPcoSignIn();
+      void pushPcoTokenToServer(tokens).catch((err) =>
+        console.warn("[desktop] forwarding PCO token to server failed", err),
+      );
+      schedulePcoRefresh(tokens);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle("overlaysys:pco-get-status", async () => {
+    ensureUserDataEnv();
+    const tokens = await loadPcoTokens();
+    return { connected: tokens !== null };
+  });
+
+  ipcMain.handle("overlaysys:pco-sign-out", async () => {
+    if (pcoRefreshTimer) {
+      clearTimeout(pcoRefreshTimer);
+      pcoRefreshTimer = null;
+    }
+    await clearPcoTokens();
+    void clearServerPcoTokens().catch((err) =>
+      console.warn("[desktop] clearing server PCO token failed", err),
+    );
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("overlaysys:pco-signed-out");
+    }
+  });
+
   // Open an arbitrary URL in the system browser. Used by AccountMenu so
   // "Manage account" from the desktop app surfaces the cloud account
   // page externally rather than navigating in the renderer.
@@ -953,6 +1040,24 @@ async function boot(): Promise<void> {
     }
   } catch (err) {
     console.warn("[desktop] startup token load failed", err);
+  }
+
+  // Same wake-up for Planning Center: forward a persisted access token to the
+  // server (refreshing first if it's already expired) so the operator's PCO
+  // browse/import works without a fresh sign-in each launch.
+  try {
+    let pco = await loadPcoTokens();
+    if (pco && pco.expiresAt <= Date.now()) {
+      pco = (await refreshPcoTokens()) ?? pco;
+    }
+    if (pco) {
+      void pushPcoTokenToServer(pco).catch((err) =>
+        console.warn("[desktop] startup PCO token push failed", err),
+      );
+      schedulePcoRefresh(pco);
+    }
+  } catch (err) {
+    console.warn("[desktop] startup PCO token load failed", err);
   }
 
   // Auto-open configured channel windows. Done after the operator

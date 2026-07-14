@@ -140,6 +140,39 @@ export function shellQuote(s: string): string {
 }
 
 /**
+ * Directories to prepend to PATH when spawning STT subprocesses. macOS GUI
+ * apps launched from Finder inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:
+ * /sbin) — Homebrew's whisper-stream lives at /opt/homebrew/bin or
+ * /usr/local/bin and is invisible without an augment. Same on Linux for some
+ * XDG-launched apps. Shared by both the spawner and the installer/presence
+ * checker so the binary is found identically in every code path.
+ */
+export const STT_PATH_AUGMENTS: readonly string[] = [
+  "/opt/homebrew/bin",
+  "/opt/homebrew/sbin",
+  "/usr/local/bin",
+  "/usr/local/sbin",
+];
+
+/**
+ * Prepend {@link STT_PATH_AUGMENTS} to an existing PATH string, de-duplicating
+ * entries while preserving order (augments first, then the caller's existing
+ * PATH). Pure — the caller supplies the current PATH and the platform's path
+ * delimiter, so this stays free of any node-only imports.
+ */
+export function buildAugmentedPath(currentPath: string, delimiter: string): string {
+  const existing = (currentPath ?? "").split(delimiter);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const dir of [...STT_PATH_AUGMENTS, ...existing]) {
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    out.push(dir);
+  }
+  return out.join(delimiter);
+}
+
+/**
  * Build the shell command for the STT spawner from the config. If a
  * customCommand is set it wins; otherwise we compose a whisper-stream
  * invocation from the structured fields.

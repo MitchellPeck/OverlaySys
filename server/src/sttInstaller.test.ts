@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getModelsDir } from "./sttInstaller";
+import {
+  enumerateCaptureDevices,
+  enumerationInFlight,
+  getModelsDir,
+} from "./sttInstaller";
 
 describe("sttInstaller", () => {
   it("getModelsDir honours OVERLAYSYS_MODELS_DIR override", () => {
@@ -58,5 +62,16 @@ init: attempt to open default capture device ...
       ids.push(Number(m[1]));
     }
     expect(ids).toEqual([5, 6]);
+  });
+
+  // With probe:false the enumerator must NEVER spawn whisper-stream (which
+  // would contend for the mic against a live spawner). With no warm cache it
+  // returns just the "System default" entry synchronously, and leaves no
+  // in-flight probe behind.
+  it("enumerateCaptureDevices({ probe: false }) never spawns a probe", async () => {
+    const devices = await enumerateCaptureDevices({ force: true, probe: false });
+    expect(devices).toEqual([{ id: -1, name: "System default" }]);
+    // Crucially, no probe promise was created.
+    expect(enumerationInFlight()).toBeNull();
   });
 });

@@ -1,6 +1,20 @@
 import { z } from "zod";
 import { DEFAULT_PROJECT_ID } from "./project";
 
+/**
+ * Provenance for a row imported from an external source (currently Planning
+ * Center Services). Carried on the row so a re-import of the same plan can
+ * match and update the row in place instead of appending a duplicate. Optional
+ * everywhere — rows created by hand simply omit it.
+ */
+export const RowSourceRefSchema = z.object({
+  provider: z.literal("pco"),
+  serviceTypeId: z.string(),
+  planId: z.string(),
+  itemId: z.string(),
+});
+export type RowSourceRef = z.infer<typeof RowSourceRefSchema>;
+
 export const GraphicRowSchema = z.object({
   kind: z.literal("graphic"),
   id: z.string(),
@@ -8,6 +22,7 @@ export const GraphicRowSchema = z.object({
   data: z.record(z.string(), z.string()),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
 });
 export type GraphicRow = z.infer<typeof GraphicRowSchema>;
 
@@ -40,6 +55,7 @@ export const SongRowSchema = z.object({
   skipIntro: z.boolean().optional(),
   /** When true, the operator has explicitly opted out of an outro sub-take for this row. */
   skipOutro: z.boolean().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
 });
 export type SongRow = z.infer<typeof SongRowSchema>;
 
@@ -111,6 +127,7 @@ export const ScriptureRowSchema = z.object({
   templateId: z.string(),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
 });
 export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
 
