@@ -11,8 +11,8 @@ import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
@@ -402,28 +402,27 @@ function ShowEditPageInner() {
 
   if (!draft) {
     return (
-      <PageShell>
-        <AppHeader />
-        <PageBody>
+      <>
+        <PageChrome />
+        <PageBody style={{ height: "100%" }}>
           <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading show <code>{showId}</code>…
           </p>
         </PageBody>
-      </PageShell>
+      </>
     );
   }
 
   return (
-    <main
+    <div
       style={{
-        position: "fixed",
-        inset: 0,
+        height: "100%",
         display: "grid",
         gridTemplateRows: "auto minmax(0, 1fr)",
         overflow: "hidden",
       }}
     >
-      <AppHeader
+      <PageChrome
         context={
           <>
             <input
@@ -506,7 +505,7 @@ function ShowEditPageInner() {
         onSave={addScriptureRow}
       />
       {dialog}
-    </main>
+    </div>
   );
 }
 

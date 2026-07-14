@@ -10,8 +10,8 @@ import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteHotcardCloud,
@@ -221,30 +221,29 @@ function HotcardEditPageInner() {
 
   if (!draft) {
     return (
-      <PageShell>
-        <AppHeader />
-        <PageBody>
+      <>
+        <PageChrome />
+        <PageBody style={{ height: "100%" }}>
           <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading hotcard <code>{hotcardId}</code>…
           </p>
         </PageBody>
-      </PageShell>
+      </>
     );
   }
 
   const template = templateCache[draft.templateId] ?? null;
 
   return (
-    <main
+    <div
       style={{
-        position: "fixed",
-        inset: 0,
+        height: "100%",
         display: "grid",
         gridTemplateRows: "auto minmax(0, 1fr)",
         overflow: "hidden",
       }}
     >
-      <AppHeader
+      <PageChrome
         context={
           <>
             <input
@@ -351,7 +350,7 @@ function HotcardEditPageInner() {
         </div>
       </div>
       {dialog}
-    </main>
+    </div>
   );
 }
 

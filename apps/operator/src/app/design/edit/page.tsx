@@ -17,8 +17,8 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { uploadAsset } from "@/lib/uploadAsset";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import {
   getTemplateCloud,
@@ -243,28 +243,27 @@ function DesignPageInner() {
 
   if (!draft) {
     return (
-      <PageShell>
-        <AppHeader />
-        <PageBody>
+      <>
+        <PageChrome />
+        <PageBody style={{ height: "100%" }}>
           <p style={{ color: colors.textDim, marginTop: 12 }}>
             Loading template <code>{templateId}</code>…
           </p>
         </PageBody>
-      </PageShell>
+      </>
     );
   }
 
   return (
-    <main
+    <div
       style={{
-        position: "fixed",
-        inset: 0,
+        height: "100%",
         display: "grid",
         gridTemplateRows: "auto minmax(0, 1fr) 280px",
         overflow: "hidden",
       }}
     >
-      <AppHeader
+      <PageChrome
         context={
           <>
             <input
@@ -382,7 +381,7 @@ function DesignPageInner() {
         />
       </div>
       {dialog}
-    </main>
+    </div>
   );
 }
 

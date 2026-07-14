@@ -25,8 +25,8 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { isCloudMode } from "@/lib/mode";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 
 const STATE_TONES: Record<string, PillTone> = {
   idle: "dim",
@@ -178,10 +178,10 @@ function SttControlPageLocal() {
 
   if (!draft) {
     return (
-      <PageShell>
-        <AppHeader />
-        <PageBody>Loading…</PageBody>
-      </PageShell>
+      <>
+        <PageChrome />
+        <PageBody style={{ height: "100%" }}>Loading…</PageBody>
+      </>
     );
   }
 
@@ -226,8 +226,8 @@ function SttControlPageLocal() {
   const usingCustom = draft.customCommand.trim().length > 0;
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <PageChrome
         title="STT Spawner"
         actions={
           <>
@@ -270,7 +270,7 @@ function SttControlPageLocal() {
           </>
         }
       />
-      <PageBody maxWidth={1000}>
+      <PageBody maxWidth={1000} style={{ height: "100%" }}>
         <PresencePanel
           binaryPresent={binaryPresent}
           binaryPath={presence?.binary.path ?? null}
@@ -605,7 +605,7 @@ function SttControlPageLocal() {
         installPlaceholder={INSTALL_INSTRUCTIONS[presence?.platform ?? "other"]}
       />
       {dialog}
-    </PageShell>
+    </>
   );
 }
 
