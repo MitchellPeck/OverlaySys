@@ -27,6 +27,9 @@ export function CommandPalette() {
         setOpen((v) => !v);
       } else if (meta && e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
+        // Cloud is Prep-only — no Live workspace to toggle into.
+        if (isCloudMode()) return;
+        setOpen(false);
         enterWorkspace(router, otherWorkspace(routeToWorkspace(pathname)));
       }
     }
