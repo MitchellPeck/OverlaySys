@@ -13,7 +13,66 @@ export interface VariableDefinition {
   name: string;
 }
 
-export function variableDefinitions(channels: string[]): VariableDefinition[] {
+function sanitizeKey(key: string): string {
+  return key
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export interface RundownFieldEntry {
+  id: string;
+  name: string;
+  value: string;
+}
+
+/**
+ * Per-row content-field variables for the loaded show: graphic rows expose each
+ * `data[key]` as `rundown_<n>_field_<key>` (key sanitized) plus
+ * `rundown_<n>_template_name`; scripture rows expose `rundown_<n>_field_reference`.
+ * Definitions and values both derive from this list so they never drift.
+ */
+export function rundownFieldEntries(state: CompanionState): RundownFieldEntry[] {
+  const entries: RundownFieldEntry[] = [];
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  if (!show) return entries;
+  const count = Math.min(show.rows.length, RUNDOWN_LIMIT);
+  for (let i = 0; i < count; i++) {
+    const row = show.rows[i]!;
+    const n = i + 1;
+    if (row.kind === "graphic") {
+      const tpl = state.templates.find((t) => t.id === row.templateId);
+      entries.push({
+        id: `rundown_${n}_template_name`,
+        name: `Rundown row ${n} template name`,
+        value: tpl?.name ?? row.templateId,
+      });
+      for (const [rawKey, value] of Object.entries(row.data)) {
+        const key = sanitizeKey(rawKey);
+        if (!key) continue;
+        entries.push({
+          id: `rundown_${n}_field_${key}`,
+          name: `Rundown row ${n} field ${rawKey}`,
+          value,
+        });
+      }
+    } else if (row.kind === "scripture") {
+      entries.push({
+        id: `rundown_${n}_field_reference`,
+        name: `Rundown row ${n} reference`,
+        value: row.reference,
+      });
+    }
+  }
+  return entries;
+}
+
+export function variableDefinitions(
+  channels: string[],
+  state?: CompanionState,
+): VariableDefinition[] {
   const defs: VariableDefinition[] = [];
 
   for (const c of channels) {
@@ -60,6 +119,12 @@ export function variableDefinitions(channels: string[]): VariableDefinition[] {
       { variableId: `rundown_${n}_kind`, name: `Rundown row ${n} kind` },
       { variableId: `rundown_${n}_is_active`, name: `Rundown row ${n} matches PGM` },
     );
+  }
+
+  if (state) {
+    for (const e of rundownFieldEntries(state)) {
+      defs.push({ variableId: e.id, name: e.name });
+    }
   }
 
   return defs;
@@ -167,6 +232,10 @@ export function projectVariables(
     out[`rundown_${n}_kind`] = row?.kind ?? "";
     out[`rundown_${n}_is_active`] =
       row && rowMatchesPgm(pgmActive, pgmSongId, row) ? "yes" : "no";
+  }
+
+  for (const e of rundownFieldEntries(state)) {
+    out[e.id] = e.value;
   }
 
   return out;

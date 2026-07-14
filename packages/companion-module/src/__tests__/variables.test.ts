@@ -5,6 +5,7 @@ import {
   projectVariables,
   variableDefinitions,
   RUNDOWN_LIMIT,
+  rundownFieldEntries,
 } from "../variables";
 
 const CHANNELS = ["program", "preview"];
@@ -246,5 +247,65 @@ describe("projectVariables — rundown rows", () => {
     s = apply(s, { type: "local_load_show", showId: "show-1" });
     const v = projectVariables(s, CHANNELS);
     expect(v.loaded_show_name).toBe("Sunday");
+  });
+});
+
+describe("rundown field variables", () => {
+  function stateWithLoadedShow() {
+    const s = initialState();
+    s.templates = [{ id: "tpl1", name: "Section Intro", size: { w: 1920, h: 1080 } }];
+    const show = {
+      id: "show1",
+      name: "Demo",
+      projectId: "p1",
+      songs: [],
+      rows: [
+        {
+          kind: "graphic" as const,
+          id: "r1",
+          templateId: "tpl1",
+          data: { title: "Welcome", "Sub Title": "Good morning" },
+        },
+        {
+          kind: "scripture" as const,
+          id: "r2",
+          reference: "John 3:16",
+          translation: "kjv",
+          slides: [{ id: "sl1", verses: [{ book: "John", chapter: 3, verse: 16, text: "x" }] }],
+          templateId: "tpl1",
+        },
+      ],
+    };
+    s.showCache.set("show1", show);
+    s.loadedShowId = "show1";
+    return s;
+  }
+
+  it("exposes graphic row data fields by sanitized key", () => {
+    const entries = rundownFieldEntries(stateWithLoadedShow());
+    const byId = Object.fromEntries(entries.map((e) => [e.id, e.value]));
+    expect(byId["rundown_1_field_title"]).toBe("Welcome");
+    expect(byId["rundown_1_field_sub_title"]).toBe("Good morning");
+    expect(byId["rundown_1_template_name"]).toBe("Section Intro");
+  });
+
+  it("exposes scripture reference and no data fields for it", () => {
+    const entries = rundownFieldEntries(stateWithLoadedShow());
+    const byId = Object.fromEntries(entries.map((e) => [e.id, e.value]));
+    expect(byId["rundown_2_field_reference"]).toBe("John 3:16");
+  });
+
+  it("emits nothing when no show is loaded", () => {
+    expect(rundownFieldEntries(initialState())).toEqual([]);
+  });
+
+  it("projectVariables includes the dynamic field values", () => {
+    const vars = projectVariables(stateWithLoadedShow(), ["program"]);
+    expect(vars["rundown_1_field_title"]).toBe("Welcome");
+  });
+
+  it("variableDefinitions includes the dynamic field ids when state is given", () => {
+    const defs = variableDefinitions(["program"], stateWithLoadedShow());
+    expect(defs.some((d) => d.variableId === "rundown_1_field_title")).toBe(true);
   });
 });

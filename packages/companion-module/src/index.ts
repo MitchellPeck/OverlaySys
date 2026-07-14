@@ -131,6 +131,11 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
     if (mutatesDropdownSources(evt)) {
       this.refreshDefinitions();
     }
+    if (mutatesRundownVariables(evt, this.state)) {
+      this.setVariableDefinitions(
+        variableDefinitions(this.channels, this.state),
+      );
+    }
     this.refreshDynamic();
   }
 
@@ -149,7 +154,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
 
   private refreshAll(): void {
     this.refreshDefinitions();
-    this.setVariableDefinitions(variableDefinitions(this.channels));
+    this.setVariableDefinitions(variableDefinitions(this.channels, this.state));
     this.setPresetDefinitions(presetDefinitions());
     this.refreshDynamic();
   }
@@ -224,6 +229,26 @@ function mutatesDropdownSources(evt: ReducerEvent): boolean {
     case "local_cursor_set":
     case "local_cursor_advance":
       return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * True when an event changes the loaded show's rows, so the dynamic
+ * `rundown_<n>_field_*` variable *definitions* must be regenerated. `state` is
+ * post-apply, so a `show` upsert is only relevant when it is the loaded show.
+ */
+function mutatesRundownVariables(
+  evt: ReducerEvent,
+  state: CompanionState,
+): boolean {
+  switch (evt.type) {
+    case "local_load_show":
+    case "local_clear_loaded_show":
+      return true;
+    case "show":
+      return evt.show.id === state.loadedShowId;
     default:
       return false;
   }
