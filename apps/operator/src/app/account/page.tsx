@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Panel, colors } from "@overlaysys/ui";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { useAuthStore } from "@/lib/useAuth";
 import { isCloudMode } from "@/lib/mode";
 import { isElectron } from "@/lib/desktop";
@@ -51,9 +51,9 @@ export default function AccountPage() {
   }
 
   return (
-    <PageShell>
-      <AppHeader title="Account" />
-      <PageBody maxWidth={640}>
+    <>
+      <PageChrome title="Account" />
+      <PageBody maxWidth={640} style={{ height: "100%" }}>
         {status === "expired" && (
           <div
             style={{
@@ -115,7 +115,7 @@ export default function AccountPage() {
           </Button>
         </Panel>
       </PageBody>
-    </PageShell>
+    </>
   );
 }
 
