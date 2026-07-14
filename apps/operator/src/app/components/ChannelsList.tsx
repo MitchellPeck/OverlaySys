@@ -149,7 +149,7 @@ function accentFor(c: { id: string; renderMode: string }): string {
   // Hot-path accent picks — must stay in sync with the dot color in
   // ChannelStatus's left badge. Program red, preview amber, matte dim,
   // everything else green.
-  if (c.id === "program") return colors.accent;
+  if (c.id === "program") return colors.onair;
   if (c.id === "preview") return colors.accent2;
   if (c.renderMode === "matte") return colors.textDim;
   return colors.green;
