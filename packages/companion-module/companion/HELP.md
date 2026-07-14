@@ -50,6 +50,17 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 
 Data input fields parse `key=value` lines into a record. Empty values are allowed; lines without `=` are ignored.
 
+## Select next show
+
+The **Select next show (soonest today or later)** action loads the show whose
+service date is the soonest on or after today, then resets the row cursor — the
+same as picking it via **Load show**, but with no dropdown. A show's date comes
+from its `scheduledFor` field (set in the operator's show editor); if that is
+empty, the date is parsed from the show name (`M/D/YY` or `M/D/YYYY`, e.g.
+"5/17/26 Service"). If nothing is scheduled today or later, the button does
+nothing and logs a warning. A ready-to-use **Select Next Show** preset button is
+included.
+
 ## Variables
 
 Per configured channel `<c>` (e.g. `program`, `preview`):
@@ -66,6 +77,20 @@ Global:
 - `loaded_show_id`, `loaded_show_name`, `loaded_show_row_count`
 - `cursor_row_idx`, `cursor_row_name`, `cursor_row_kind`
 - `rundown_<n>_name` / `rundown_<n>_kind` / `rundown_<n>_is_active` for n=1..40
+
+## Rundown row content fields
+
+For the loaded show, each row exposes its content as variables:
+
+- `rundown_<n>_field_<key>` — a graphic row's `data` value, addressable by field
+  key. The key is lowercased with non-alphanumeric runs collapsed to `_` (e.g. a
+  `Sub Title` field becomes `rundown_3_field_sub_title`). Use these to put the
+  actual title/subtitle on a button instead of the template name.
+- `rundown_<n>_template_name` — the row's template name (e.g. "Section Intro").
+- `rundown_<n>_field_reference` — a scripture row's reference (e.g. "John 3:16").
+
+`<n>` is the 1-based row number, up to 40. These update whenever the loaded show
+changes. If two field keys sanitize to the same id, the later one wins.
 
 ## Feedbacks
 
