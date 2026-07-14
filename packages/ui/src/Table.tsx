@@ -48,8 +48,8 @@ type TrProps = HTMLAttributes<HTMLTableRowElement> & { selected?: boolean };
 export function Tr({ selected, style, ...rest }: TrProps) {
   const base: CSSProperties = selected
     ? {
-        background: "rgba(255, 58, 58, 0.12)",
-        borderLeft: `3px solid ${colors.accent}`,
+        background: colors.brandSubtle,
+        borderLeft: `3px solid ${colors.brand}`,
         cursor: "pointer",
       }
     : { borderLeft: "3px solid transparent", cursor: "pointer" };
