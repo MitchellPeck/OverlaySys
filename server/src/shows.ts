@@ -27,7 +27,7 @@ async function ensureLoaded(): Promise<void> {
 }
 
 export async function listShowMetas(): Promise<
-  { id: string; name: string; projectId: string; rowCount: number }[]
+  { id: string; name: string; projectId: string; rowCount: number; scheduledFor?: string }[]
 > {
   await ensureLoaded();
   return Array.from(REGISTRY.values()).map((s) => ({
@@ -35,6 +35,7 @@ export async function listShowMetas(): Promise<
     name: s.name,
     projectId: s.projectId,
     rowCount: s.rows.length,
+    scheduledFor: s.scheduledFor,
   }));
 }
 

@@ -243,6 +243,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
         name: z.string(),
         projectId: z.string(),
         rowCount: z.number(),
+        scheduledFor: z.string().optional(),
       }),
     ),
   }),
