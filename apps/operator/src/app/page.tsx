@@ -12,7 +12,7 @@ import { TakePanel } from "./components/TakePanel";
 import { ChannelsList } from "./components/ChannelsList";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { SongModePanel } from "./components/SongModePanel";
-import { AppHeader } from "./components/AppHeader";
+import { PageChrome } from "./shell/PageChrome";
 
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
 
@@ -70,18 +70,15 @@ function ShowPageLocal() {
 
   const songModeActive = activeSongSession !== null;
   return (
-    <main
+    <div
       style={{
-        position: "fixed",
-        inset: 0,
+        height: "100%",
         display: "grid",
-        gridTemplateRows: songModeActive
-          ? "auto minmax(0, 1fr) auto"
-          : "auto minmax(0, 1fr)",
+        gridTemplateRows: songModeActive ? "minmax(0,1fr) auto" : "minmax(0,1fr)",
         overflow: "hidden",
       }}
     >
-      <AppHeader />
+      <PageChrome title="Show" />
       <div
         style={{
           display: "grid",
@@ -156,7 +153,7 @@ function ShowPageLocal() {
           </div>
         </section>
       )}
-    </main>
+    </div>
   );
 }
 
