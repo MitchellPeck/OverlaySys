@@ -1,5 +1,6 @@
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import type { RundownRow } from "@overlaysys/core";
+import { pickNextShow } from "@overlaysys/core";
 import type {
   CompanionActionDefinitions,
   CompanionInputFieldDropdown,
@@ -18,6 +19,7 @@ export type ActionId =
   | "fire_hotcard"
   | "load_show"
   | "clear_loaded_show"
+  | "select_next_show"
   | "take_row"
   | "take_row_by_index"
   | "take_row_pvw_pgm"
@@ -124,6 +126,24 @@ function rowPvwPgmMessages(
     },
     { type: "take_pvw_to_pgm", fromChannel, toChannel },
   ];
+}
+
+/**
+ * Resolves the soonest show scheduled today or later and returns the load-show
+ * dispatch for it. `todayISO` is injected by the caller so this stays pure and
+ * testable; the wall-clock lives at the module edge (index.ts). No qualifying
+ * show → empty result (caller logs a warning).
+ */
+export function selectNextShowResult(
+  state: CompanionState,
+  todayISO: string,
+): DispatchResult {
+  const showId = pickNextShow(state.shows, todayISO);
+  if (!showId) return { messages: [], localEvents: [] };
+  return {
+    messages: [{ type: "get_show", showId }],
+    localEvents: [{ type: "local_load_show", showId }],
+  };
 }
 
 export function dispatchAction(
@@ -629,6 +649,11 @@ export function actionDefinitions(
       name: "Clear loaded show",
       options: [],
       callback: wrap("clear_loaded_show"),
+    },
+    select_next_show: {
+      name: "Select next show (soonest today or later)",
+      options: [],
+      callback: wrap("select_next_show"),
     },
     take_row: {
       name: "Take row from loaded show (by row ID)",

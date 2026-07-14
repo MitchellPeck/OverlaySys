@@ -210,6 +210,17 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     };
   }
 
+  presets["select_next_show"] = {
+    type: "button",
+    category: "Master",
+    name: "Select Next Show",
+    style: { text: "NEXT\\nSHOW", size: "14", color: white, bgcolor: dark },
+    steps: [
+      { down: [{ actionId: "select_next_show", options: {} }], up: [] },
+    ],
+    feedbacks: [],
+  };
+
   return presets;
 }
 

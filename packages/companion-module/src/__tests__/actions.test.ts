@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { apply } from "../state";
 import { initialState } from "../types";
-import { dispatchAction } from "../actions";
+import { dispatchAction, selectNextShowResult } from "../actions";
 
 describe("dispatchAction — basic channel ops", () => {
   it("clear sends clear", () => {
@@ -363,5 +363,35 @@ describe("dispatchAction — load_show and row actions", () => {
       rowIndex: 2,
     });
     expect(r.localEvents).toEqual([{ type: "local_cursor_set", rowId: "r2" }]);
+  });
+});
+
+describe("selectNextShowResult", () => {
+  function stateWithShows() {
+    const s = initialState();
+    s.shows = [
+      { id: "past", name: "1/1/20 Old", rowCount: 0 },
+      { id: "soon", name: "Soonest", rowCount: 2, scheduledFor: "2026-07-20" },
+      { id: "later", name: "7/27/26 Later", rowCount: 1 },
+    ];
+    return s;
+  }
+
+  it("loads the soonest upcoming show", () => {
+    const { messages, localEvents } = selectNextShowResult(
+      stateWithShows(),
+      "2026-07-14",
+    );
+    expect(localEvents).toEqual([{ type: "local_load_show", showId: "soon" }]);
+    expect(messages).toEqual([{ type: "get_show", showId: "soon" }]);
+  });
+
+  it("is a no-op when nothing is scheduled today or later", () => {
+    const { messages, localEvents } = selectNextShowResult(
+      stateWithShows(),
+      "2027-01-01",
+    );
+    expect(messages).toEqual([]);
+    expect(localEvents).toEqual([]);
   });
 });

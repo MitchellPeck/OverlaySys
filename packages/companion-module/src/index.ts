@@ -8,10 +8,12 @@ import { apply, type ReducerEvent } from "./state.js";
 import { initialState, type CompanionState } from "./types.js";
 import {
   dispatchAction,
+  selectNextShowResult,
   actionDefinitions,
   type ActionId,
   type ActionOptions,
 } from "./actions.js";
+import { toISODate } from "@overlaysys/core";
 import {
   feedbackPredicate,
   feedbackDefinitionsForSDK,
@@ -158,6 +160,27 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   }
 
   private runAction(id: ActionId, options: ActionOptions): void {
+    if (id === "select_next_show") {
+      const todayISO = toISODate(new Date());
+      const { messages, localEvents } = selectNextShowResult(
+        this.state,
+        todayISO,
+      );
+      for (const e of localEvents) this.applyEvent(e);
+      for (const m of messages) this.connection?.send(m);
+      const loaded = localEvents.find((e) => e.type === "local_load_show");
+      if (loaded && loaded.type === "local_load_show") {
+        this.currentConfig = {
+          ...this.currentConfig,
+          loadedShowId: loaded.showId,
+        };
+        this.saveConfig(this.currentConfig);
+      } else {
+        this.log("warn", "select_next_show: no show scheduled today or later");
+      }
+      return;
+    }
+
     const { messages, localEvents } = dispatchAction(this.state, id, options);
     for (const e of localEvents) this.applyEvent(e);
     for (const m of messages) this.connection?.send(m);

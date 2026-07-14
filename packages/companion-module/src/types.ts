@@ -14,6 +14,7 @@ export interface ShowMeta {
   id: string;
   name: string;
   rowCount: number;
+  scheduledFor?: string;
 }
 
 export interface SttListener {
