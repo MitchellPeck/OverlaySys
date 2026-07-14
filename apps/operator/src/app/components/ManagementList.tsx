@@ -7,7 +7,7 @@ import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 
 export interface ManagementListProps<T> {
-  /** Plural page title rendered in AppHeader, e.g. "Songs". */
+  /** Plural page title rendered in the shell top bar, e.g. "Songs". */
   title: string;
   /**
    * Singular noun used for the create button ("+ New {Noun}") and dialog

@@ -3,52 +3,14 @@
 import type { CSSProperties, ReactNode } from "react";
 
 /**
- * Standard page chrome that fits inside the viewport without spilling.
+ * Scrollable body region rendered inside the AppShell's content slot. Optional
+ * `padding` (defaults to `24`) and `maxWidth` so the common "centered list"
+ * pattern is one prop instead of a nested div per page. Pass `style={{ height:
+ * "100%" }}` when the body should scroll inside the shell's `overflow: hidden`
+ * slot rather than being clipped.
  *
- * The pattern: a fixed-position grid filling the viewport, with an `auto`
- * row for the header and a `minmax(0, 1fr)` row for the body. The body has
- * its own `overflow: auto` so scrolling happens *inside* the page instead
- * of the browser window itself. Keeps the AppHeader pinned at the top no
- * matter how tall the content is.
- *
- * Pages render their AppHeader as the first child and put their main
- * content as the second child:
- *
- *   <PageShell>
- *     <AppHeader title="…" actions={…} />
- *     <PageBody>…content…</PageBody>
- *   </PageShell>
- *
- * Modals / dialog overlays can sit as a third sibling — they use their own
- * `position: fixed` so DOM order doesn't affect their layering.
- */
-export function PageShell({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style?: CSSProperties;
-}) {
-  return (
-    <main
-      style={{
-        position: "fixed",
-        inset: 0,
-        display: "grid",
-        gridTemplateRows: "auto minmax(0, 1fr)",
-        overflow: "hidden",
-        ...style,
-      }}
-    >
-      {children}
-    </main>
-  );
-}
-
-/**
- * Scrollable body region inside a PageShell. Optional `padding` (defaults to
- * `24`) and `maxWidth` so the common "centered list" pattern is one prop
- * instead of a nested div per page.
+ * (The former `PageShell` wrapper was removed once the two-tier AppShell took
+ * over global page chrome; only this body helper remains.)
  */
 export function PageBody({
   children,
