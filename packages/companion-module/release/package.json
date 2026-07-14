@@ -1,0 +1,25 @@
+{
+  "name": "@overlaysys/companion-module",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run packages/companion-module",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@companion-module/base": "~1.14.1",
+    "@overlaysys/core": "workspace:*",
+    "@overlaysys/ws-protocol": "workspace:*",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.12",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}
