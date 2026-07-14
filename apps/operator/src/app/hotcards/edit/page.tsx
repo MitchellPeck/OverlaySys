@@ -239,7 +239,7 @@ function HotcardEditPageInner() {
       style={{
         height: "100%",
         display: "grid",
-        gridTemplateRows: "auto minmax(0, 1fr)",
+        gridTemplateRows: "minmax(0, 1fr)",
         overflow: "hidden",
       }}
     >

@@ -259,7 +259,7 @@ function DesignPageInner() {
       style={{
         height: "100%",
         display: "grid",
-        gridTemplateRows: "auto minmax(0, 1fr) 280px",
+        gridTemplateRows: "minmax(0, 1fr) 280px",
         overflow: "hidden",
       }}
     >
