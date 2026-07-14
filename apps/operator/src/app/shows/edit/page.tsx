@@ -439,6 +439,26 @@ function ShowEditPageInner() {
                 minWidth: 200,
               }}
             />
+            <input
+              type="date"
+              value={draft.scheduledFor ?? ""}
+              onChange={(e) =>
+                update((s) => {
+                  const v = e.target.value;
+                  if (v) s.scheduledFor = v;
+                  else delete s.scheduledFor;
+                })
+              }
+              title="Service date (used by Companion 'select next show')"
+              style={{
+                background: "transparent",
+                border: "1px solid transparent",
+                color: colors.text,
+                fontSize: 12,
+                padding: "2px 6px",
+                borderRadius: 4,
+              }}
+            />
             <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
             <span style={{ color: colors.textDim, fontSize: 11 }}>· {draft.rows.length} rows</span>
             {dirty && <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>● unsaved</span>}
