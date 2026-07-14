@@ -512,6 +512,15 @@ export function handleConnection(
           sttListener.register(parsed.audioSourceId, parsed.label);
           // Track so we can disconnect this source when the WS closes.
           registeredAudioSourceId = parsed.audioSourceId;
+          // The listener daemon only PRODUCES hypotheses; it consumes nothing
+          // from the broadcast stream. Unsubscribe it so server broadcasts
+          // (stt_match, stt_spawner_status, big template/song saves…) never
+          // fan out to it. This kills the old feedback amplifier where the
+          // listener echoed stt_match to stderr → spawner captured that as a
+          // log line → re-broadcast a full status to every client, per
+          // hypothesis. It also removes the need for the listener's oversized
+          // receive cap.
+          offBroadcast();
           break;
         }
         case "stt_hypothesis": {
@@ -564,6 +573,18 @@ export function handleConnection(
           } else {
             cfg = await storage.loadSttConfig();
           }
+          // If a device-enumeration probe is mid-flight it's loading (or
+          // already holds) the capture device via a throwaway whisper-stream.
+          // Launching the real one now would fight it for the mic and often
+          // fail to open audio. Wait for the probe to finish first.
+          const pendingProbe = sttInstaller.enumerationInFlight();
+          if (pendingProbe) {
+            try {
+              await pendingProbe;
+            } catch {
+              /* probe failure shouldn't block a start */
+            }
+          }
           sttSpawner.start(cfg);
           break;
         }
@@ -592,8 +613,15 @@ export function handleConnection(
           break;
         }
         case "stt_enumerate_capture_devices": {
+          // Never spawn a probe while the real spawner is up (or coming up) —
+          // the probe momentarily grabs the capture device and would knock the
+          // live whisper-stream off the mic. Serve the cache instead.
+          const spawnerState = sttSpawner.getStatus().state;
+          const spawnerLive =
+            spawnerState === "running" || spawnerState === "starting";
           const devices = await sttInstaller.enumerateCaptureDevices({
             force: parsed.force,
+            probe: spawnerLive ? false : undefined,
           });
           send({ type: "stt_capture_devices", devices });
           break;

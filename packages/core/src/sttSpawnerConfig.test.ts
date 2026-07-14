@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildAugmentedPath,
   buildSttCommand,
   DEFAULT_STT_SPAWNER_CONFIG,
   expandHome,
   shellQuote,
+  STT_PATH_AUGMENTS,
   SttSpawnerConfigSchema,
 } from "./sttSpawnerConfig";
 
@@ -106,5 +108,38 @@ describe("expandHome", () => {
       if (prev === undefined) delete process.env["HOME"];
       else process.env["HOME"] = prev;
     }
+  });
+});
+
+describe("buildAugmentedPath", () => {
+  it("prepends the Homebrew/STT augments ahead of the existing PATH", () => {
+    const result = buildAugmentedPath("/usr/bin:/bin", ":");
+    const parts = result.split(":");
+    // Every augment appears, and before the original entries.
+    for (const dir of STT_PATH_AUGMENTS) {
+      expect(parts).toContain(dir);
+      expect(parts.indexOf(dir)).toBeLessThan(parts.indexOf("/usr/bin"));
+    }
+    expect(parts).toContain("/bin");
+  });
+
+  it("de-duplicates entries while preserving first-seen order", () => {
+    // /opt/homebrew/bin is already an augment; supplying it again in the
+    // existing PATH must not produce a duplicate.
+    const result = buildAugmentedPath("/opt/homebrew/bin:/usr/bin", ":");
+    const parts = result.split(":");
+    const count = parts.filter((p) => p === "/opt/homebrew/bin").length;
+    expect(count).toBe(1);
+  });
+
+  it("tolerates an empty existing PATH", () => {
+    const result = buildAugmentedPath("", ":");
+    expect(result.split(":")).toEqual([...STT_PATH_AUGMENTS]);
+  });
+
+  it("honours the supplied delimiter (Windows ;)", () => {
+    const result = buildAugmentedPath("C:\\Windows", ";");
+    expect(result.split(";")).toContain("C:\\Windows");
+    expect(result.startsWith(STT_PATH_AUGMENTS[0]!)).toBe(true);
   });
 });

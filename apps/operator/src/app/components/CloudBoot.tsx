@@ -193,7 +193,7 @@ function CloudBootInner({ children }: { children: React.ReactNode }) {
           minHeight: "100vh",
           display: "grid",
           placeItems: "center",
-          color: "var(--red, #f87171)",
+          color: "var(--red, var(--danger))",
           fontSize: 13,
         }}
       >

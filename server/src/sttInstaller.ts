@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import {
   PRESET_MODELS,
+  buildAugmentedPath,
   expandHome,
   type SttBinaryPresence,
   type SttCaptureDevice,
@@ -35,26 +36,11 @@ import {
   type SttPresence,
 } from "@overlaysys/core";
 
-// Same augmented PATH set the spawner uses — Homebrew on macOS lives at
-// /opt/homebrew/bin which a Finder-launched Electron app doesn't see by
-// default. Keep these in sync with sttSpawner.PATH_AUGMENTS.
-const PATH_AUGMENTS = [
-  "/opt/homebrew/bin",
-  "/opt/homebrew/sbin",
-  "/usr/local/bin",
-  "/usr/local/sbin",
-];
-
+// Same augmented PATH set the spawner uses (STT_PATH_AUGMENTS in core) —
+// Homebrew on macOS lives at /opt/homebrew/bin which a Finder-launched
+// Electron app doesn't see by default.
 function augmentedPath(): string {
-  const existing = (process.env["PATH"] ?? "").split(path.delimiter);
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const dir of [...PATH_AUGMENTS, ...existing]) {
-    if (!dir || seen.has(dir)) continue;
-    seen.add(dir);
-    out.push(dir);
-  }
-  return out.join(path.delimiter);
+  return buildAugmentedPath(process.env["PATH"] ?? "", path.delimiter);
 }
 
 function augmentedEnv(): NodeJS.ProcessEnv {
@@ -256,12 +242,20 @@ let inFlightEnumeration: Promise<SttCaptureDevice[]> | null = null;
  *   3. **Opt-in** — the UI no longer enumerates on page mount; it only runs
  *      this when the user clicks "rescan" or opens the device dropdown.
  *
- * Pass `force: true` to bypass the cache.
+ * Pass `force: true` to bypass the cache. Pass `probe: false` to forbid
+ * spawning whisper-stream entirely (return the cache or a bare "System
+ * default") — used when the real spawner is running so we never contend for
+ * the capture device.
  */
 export async function enumerateCaptureDevices(
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; probe?: boolean } = {},
 ): Promise<SttCaptureDevice[]> {
   if (!opts.force && cachedDevices) return cachedDevices;
+  // Caller forbade spawning a probe (spawner is live). Return whatever we
+  // already know without touching the audio device.
+  if (opts.probe === false) {
+    return cachedDevices ?? [{ id: -1, name: "System default" }];
+  }
   if (inFlightEnumeration) return inFlightEnumeration;
 
   inFlightEnumeration = (async (): Promise<SttCaptureDevice[]> => {
@@ -281,6 +275,15 @@ export async function enumerateCaptureDevices(
     }
   })();
 
+  return inFlightEnumeration;
+}
+
+/**
+ * The in-flight device-enumeration probe, if one is running, else null. The
+ * spawner-start path awaits this so it never launches whisper-stream while
+ * the probe still holds (or is loading toward) the capture device.
+ */
+export function enumerationInFlight(): Promise<SttCaptureDevice[]> | null {
   return inFlightEnumeration;
 }
 

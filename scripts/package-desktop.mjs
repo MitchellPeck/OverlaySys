@@ -60,6 +60,55 @@ async function exists(p) {
   }
 }
 
+/**
+ * Remove symlinks under a pnpm-deployed tree that point OUTSIDE that tree.
+ *
+ * `pnpm deploy --legacy` leaves a self-referential link for the deployed
+ * workspace package itself, e.g.
+ *   server/node_modules/.pnpm/node_modules/@overlaysys/server
+ *     -> ../../../../../../../../../server   (back to the repo source)
+ * Inside the staged tree that path still resolves, so it looks fine — but once
+ * electron-builder copies the tree into OverlaySys.app the relative target
+ * escapes the bundle and dangles, and macOS code-signing stats every file and
+ * dies with ENOENT. These self-links are never imported at runtime (nothing
+ * requires the server/listener by their own package name), so pruning any link
+ * whose resolved target lies outside the deploy root is safe and leaves a
+ * genuinely self-contained tree. Does not follow symlinked dirs, so it can't
+ * loop.
+ */
+async function pruneEscapingSymlinks(deployRoot) {
+  const abs = path.resolve(deployRoot);
+  let removed = 0;
+  async function walk(dir) {
+    let ents;
+    try {
+      ents = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of ents) {
+      const p = path.join(dir, e.name);
+      if (e.isSymbolicLink()) {
+        const target = path.resolve(path.dirname(p), await fs.readlink(p));
+        const inside = target === abs || target.startsWith(abs + path.sep);
+        if (!inside) {
+          await fs.rm(p, { force: true });
+          removed += 1;
+          process.stdout.write(
+            `   pruned escaping symlink ${path.relative(deployRoot, p)}\n`,
+          );
+        }
+      } else if (e.isDirectory()) {
+        await walk(p);
+      }
+    }
+  }
+  await walk(abs);
+  process.stdout.write(
+    `   ${removed} escaping symlink(s) pruned from ${path.relative(REPO_ROOT, deployRoot)}\n`,
+  );
+}
+
 async function main() {
   // 1. Operator static export.
   //
@@ -165,6 +214,9 @@ async function main() {
         path.relative(REPO_ROOT, serverTarget),
       ],
     );
+    // Drop the self-referential @overlaysys/server link that would dangle
+    // (and break macOS signing) once copied into the app bundle.
+    await pruneEscapingSymlinks(serverTarget);
   });
 
   await step("pnpm deploy lyric-listener", async () => {
@@ -180,6 +232,7 @@ async function main() {
         path.relative(REPO_ROOT, listenerTarget),
       ],
     );
+    await pruneEscapingSymlinks(listenerTarget);
   });
 
   // 6. Stage non-deployed assets (static frontends, fixtures).

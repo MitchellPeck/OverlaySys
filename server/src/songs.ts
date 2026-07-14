@@ -31,6 +31,12 @@ export async function getSong(id: string): Promise<Song | null> {
   return REGISTRY.get(id) ?? null;
 }
 
+/** Full song objects — used by importers that match on ccli / customFields. */
+export async function listSongs(): Promise<Song[]> {
+  await ensureLoaded();
+  return Array.from(REGISTRY.values());
+}
+
 export async function saveSong(song: Song): Promise<void> {
   await storage.saveSong(song);
   REGISTRY.set(song.id, song);

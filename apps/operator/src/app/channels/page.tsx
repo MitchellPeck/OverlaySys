@@ -18,8 +18,8 @@ import {
   saveChannelConfigCloud,
   saveProjectChannelOverrideCloud,
 } from "@/lib/cloudData";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 
 /**
  * Resolve the renderer base URL for "open channel" links + the help text.
@@ -241,9 +241,9 @@ export default function ChannelsPage() {
   }
 
   return (
-    <PageShell>
-      <AppHeader title="Channels" />
-      <PageBody maxWidth={980}>
+    <>
+      <PageChrome title="Channels" />
+      <PageBody maxWidth={980} style={{ height: "100%" }}>
           {cloud && (
             <div
               style={{
@@ -354,7 +354,7 @@ export default function ChannelsPage() {
           </ul>
       </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }
 
@@ -532,7 +532,7 @@ function BackgroundEditor({
           border: `1px solid ${colors.border}`,
           background:
             v === "transparent"
-              ? "linear-gradient(45deg, #1a1c20 25%, transparent 25%, transparent 75%, #1a1c20 75%) 0 0 / 8px 8px, #0c0d10"
+              ? "linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%) 0 0 / 8px 8px, var(--bg)"
               : v,
         }}
         title={v}

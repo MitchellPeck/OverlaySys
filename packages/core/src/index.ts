@@ -1,6 +1,7 @@
 export * from "./template";
 export * from "./timeField";
 export * from "./show";
+export * from "./showSchedule";
 export * from "./hotcard";
 export * from "./project";
 export * from "./storageAdapter";
@@ -13,7 +14,9 @@ export * from "./song";
 export * from "./songResolution";
 export * from "./songParser";
 export * from "./songSelectParser";
+export * from "./parsePlainLyrics";
 export * from "./sectionEmit";
+export * from "./pco";
 export * from "./sttSpawnerConfig";
 export * from "./lyricTokens";
 export * from "./bundle";

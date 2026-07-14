@@ -96,6 +96,17 @@ interface OverlaysysApi {
     refreshToken: string;
     registryOrgId?: string | null;
   }): Promise<ElectronCloudTokens>;
+
+  /**
+   * Planning Center sign-in (OAuth). Optional — only present in desktop
+   * builds that ship the PCO integration. The operator falls back to a
+   * "desktop required" message when absent.
+   */
+  pcoSignIn?(): Promise<{ ok: true } | { ok: false; error: string }>;
+  pcoGetStatus?(): Promise<{ connected: boolean }>;
+  pcoSignOut?(): Promise<void>;
+  onPcoSignedIn?(fn: () => void): () => void;
+  onPcoSignedOut?(fn: () => void): () => void;
 }
 
 declare global {

@@ -11,6 +11,19 @@
 //      escapes, and dedupe consecutive identical segments — so the matcher
 //      only sees finalized transcripts, not partial overdraws.
 //
+// The WS connection is resilient: a dropped/refused socket schedules a
+// reconnect with backoff rather than killing the process, so a transient
+// server hiccup no longer tears the whole STT pipeline down (which would
+// SIGPIPE whisper-stream and require a manual restart). The daemon only exits
+// when stdin closes — i.e. whisper-stream itself has ended.
+//
+// This daemon is write-only over the socket: it PRODUCES hypotheses and
+// consumes nothing. The server unsubscribes it from broadcasts the moment it
+// registers, so in steady state it receives nothing. The generous maxPayload
+// below only covers the tiny window between socket-open and that unsubscribe,
+// where a large template/song broadcast could still land and otherwise blow
+// the default 100 MB `ws` cap (killing the socket and forcing a reconnect).
+//
 // Real-world usage (whisper.cpp's stream example):
 //   whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000 \
 //     | node apps/lyric-listener/src/stdin.mjs
@@ -30,50 +43,74 @@ const URL = process.env.WS_URL ?? "ws://localhost:4000/ws";
 const AUDIO_SOURCE_ID = process.env.AUDIO_SOURCE_ID ?? `stdin-${os.hostname()}`;
 const LABEL = process.env.LABEL ?? "stdin";
 
-// Match the server's maxPayload (1 GB). The default in `ws` is 100 MB,
-// which a single template/song save with embedded image data can exceed —
-// every connected client (including this listener) receives those
-// broadcasts, so a too-small client limit kills the listener with
-// "max payload size exceeded". Listener never originates large messages
-// itself; this only loosens the receive cap.
-const ws = new WebSocket(URL, { maxPayload: 1024 * 1024 * 1024 });
+// Reconnect backoff bounds.
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 5000;
 
-ws.on("open", () => {
-  ws.send(JSON.stringify({
-    type: "stt_listener_register",
-    audioSourceId: AUDIO_SOURCE_ID,
-    label: LABEL,
-  }));
-  console.error(`[lyric-listener] connected; registered as ${AUDIO_SOURCE_ID}`);
-});
+let ws = null;
+let reconnectDelay = RECONNECT_MIN_MS;
+let reconnectTimer = null;
+let shuttingDown = false;
 
-ws.on("message", (raw) => {
-  try {
-    const msg = JSON.parse(raw.toString());
-    if (msg.type === "stt_match") {
-      const s = msg.suggestedSlide;
-      const where = s ? `section ${s.sectionIdx + 1}, slide ${s.slideIdx + 1}` : "(no match)";
-      const pct = (msg.confidence * 100).toFixed(0);
-      console.error(`[stt_match] ${pct}% → ${where}  | "${msg.hypothesis}"`);
+function scheduleReconnect() {
+  if (shuttingDown || reconnectTimer) return;
+  const delay = reconnectDelay;
+  reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
+function connect() {
+  if (shuttingDown) return;
+  const sock = new WebSocket(URL, { maxPayload: 1024 * 1024 * 1024 });
+  ws = sock;
+
+  sock.on("open", () => {
+    reconnectDelay = RECONNECT_MIN_MS; // reset backoff on a good connection
+    sock.send(
+      JSON.stringify({
+        type: "stt_listener_register",
+        audioSourceId: AUDIO_SOURCE_ID,
+        label: LABEL,
+      }),
+    );
+    console.error(`[lyric-listener] connected; registered as ${AUDIO_SOURCE_ID}`);
+  });
+
+  sock.on("close", () => {
+    if (ws === sock) ws = null;
+    if (shuttingDown) {
+      process.exit(0);
+      return;
     }
-  } catch {
-    // Ignore non-JSON or parse errors.
-  }
-});
+    console.error("[lyric-listener] disconnected — reconnecting…");
+    scheduleReconnect();
+  });
 
-ws.on("close", () => {
-  console.error("[lyric-listener] disconnected");
-  process.exit(0);
-});
+  sock.on("error", (err) => {
+    const msg = err?.message || err?.code || "unknown";
+    if (err?.code === "ECONNREFUSED" || !err?.message) {
+      console.error(
+        `[lyric-listener] couldn't connect to ${URL} — is the OverlaySys server running? (try 'pnpm dev' in another terminal)`,
+      );
+    } else {
+      console.error(`[lyric-listener] ws error: ${msg}`);
+    }
+    // Don't exit — the 'close' that follows an error schedules the retry.
+    // Some error conditions don't emit 'close', so nudge a reconnect here too.
+    try {
+      sock.terminate();
+    } catch {
+      // already closing
+    }
+    if (ws === sock) ws = null;
+    if (!shuttingDown) scheduleReconnect();
+  });
+}
 
-ws.on("error", (err) => {
-  const msg = err?.message || err?.code || "unknown";
-  console.error(`[lyric-listener] ws error: ${msg}`);
-  if (err?.code === "ECONNREFUSED" || !err?.message) {
-    console.error(`[lyric-listener] couldn't connect to ${URL} — is the OverlaySys server running? (try 'pnpm dev' in another terminal)`);
-  }
-  process.exit(1);
-});
+connect();
 
 // ANSI/CSI escape sequences (color, cursor moves, line erases).
 const ANSI_RE = /\x1b\[[0-9;?]*[A-Za-z]/g;
@@ -90,14 +127,18 @@ function emit(segment, isFinal) {
   const key = `${isFinal ? "F" : "P"}:${cleaned}`;
   if (key === lastSent) return;
   lastSent = key;
-  if (ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({
-    type: "stt_hypothesis",
-    audioSourceId: AUDIO_SOURCE_ID,
-    text: cleaned,
-    t: Date.now(),
-    isFinal,
-  }));
+  // Drop the hypothesis if we're not connected — transcripts are realtime,
+  // a stale one delivered seconds later after a reconnect is worse than none.
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(
+    JSON.stringify({
+      type: "stt_hypothesis",
+      audioSourceId: AUDIO_SOURCE_ID,
+      text: cleaned,
+      t: Date.now(),
+      isFinal,
+    }),
+  );
 }
 
 // Split buffer into (text, terminator) segments. CR-only termination means
@@ -123,7 +164,18 @@ process.stdin.on("data", (chunk) => {
 
 process.stdin.on("end", () => {
   // Anything left in the buffer at EOF is implicitly final — no more
-  // refinements coming.
+  // refinements coming. whisper-stream has ended, so the daemon is done.
   if (buffer) emit(buffer, true);
-  ws.close();
+  shuttingDown = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.close();
+    // Give the close frame a moment, then exit regardless.
+    setTimeout(() => process.exit(0), 200);
+  } else {
+    process.exit(0);
+  }
 });

@@ -177,7 +177,7 @@ export function ChannelPreview({ config, state }: Props) {
         overflow: "hidden",
         border: `1px solid ${colors.border}`,
         background: isTransparent
-          ? "linear-gradient(45deg, #1a1c20 25%, #0c0d10 25%, #0c0d10 50%, #1a1c20 50%, #1a1c20 75%, #0c0d10 75%, #0c0d10) 0 0 / 12px 12px"
+          ? "linear-gradient(45deg, var(--surface-2) 25%, var(--bg) 25%, var(--bg) 50%, var(--surface-2) 50%, var(--surface-2) 75%, var(--bg) 75%, var(--bg)) 0 0 / 12px 12px"
           : bg,
       }}
     >

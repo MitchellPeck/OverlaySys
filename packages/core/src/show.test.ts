@@ -324,3 +324,28 @@ describe("ShowSchema with mixed rundown rows", () => {
     expect(show.rows).toHaveLength(3);
   });
 });
+
+describe("Show scheduledFor", () => {
+  it("round-trips an ISO scheduledFor date", () => {
+    const show = ShowSchema.parse({
+      id: "s1",
+      name: "5/17/26 Service",
+      projectId: "p1",
+      rows: [],
+      songs: [],
+      scheduledFor: "2026-05-17",
+    });
+    expect(show.scheduledFor).toBe("2026-05-17");
+  });
+
+  it("leaves scheduledFor undefined when absent", () => {
+    const show = ShowSchema.parse({
+      id: "s2",
+      name: "Untitled",
+      projectId: "p1",
+      rows: [],
+      songs: [],
+    });
+    expect(show.scheduledFor).toBeUndefined();
+  });
+});

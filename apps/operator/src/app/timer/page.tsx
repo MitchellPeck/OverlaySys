@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { AppHeader } from "@/app/components/AppHeader";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { TimerPanel } from "@/app/components/TimerPanel";
 import { ActiveTimersPanel } from "@/app/components/ActiveTimersPanel";
 import { ChannelsList } from "@/app/components/ChannelsList";
@@ -26,23 +26,17 @@ export default function TimerPage() {
   if (isCloudMode()) return null;
 
   return (
-    <main
-      style={{
-        position: "fixed",
-        inset: 0,
-        display: "grid",
-        gridTemplateRows: "auto minmax(0, 1fr)",
-        overflow: "hidden",
-      }}
-    >
-      <AppHeader title="Timer" />
+    <>
+      <PageChrome title="Timer" />
       <div
         style={{
+          height: "100%",
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) 320px",
           gap: 1,
           background: colors.border,
           minHeight: 0,
+          overflow: "hidden",
         }}
       >
         <section style={{ background: colors.panel, padding: 16, overflow: "auto" }}>
@@ -62,7 +56,7 @@ export default function TimerPage() {
           <ChannelsList />
         </section>
       </div>
-    </main>
+    </>
   );
 }
 

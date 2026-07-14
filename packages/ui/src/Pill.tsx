@@ -1,7 +1,9 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import { colors, fontSize, fontWeight, radius } from "./tokens";
 
-export type PillTone = "neutral" | "good" | "warn" | "bad" | "accent" | "dim";
+export type PillTone =
+  | "neutral" | "good" | "warn" | "bad" | "accent" | "dim"
+  | "live" | "ready" | "cued" | "off";
 
 type Props = HTMLAttributes<HTMLSpanElement> & {
   tone?: PillTone;
@@ -12,10 +14,14 @@ type Props = HTMLAttributes<HTMLSpanElement> & {
 const TONE: Record<PillTone, string> = {
   neutral: colors.text,
   dim: colors.textDim,
-  good: colors.green,
+  good: colors.ok,
   warn: colors.warn,
-  bad: colors.errorText,
-  accent: colors.accent,
+  bad: colors.danger,
+  accent: colors.brand,
+  live: colors.onair,
+  ready: colors.ok,
+  cued: colors.brand,
+  off: colors.textDim,
 };
 
 /**
@@ -24,12 +30,23 @@ const TONE: Record<PillTone, string> = {
  */
 export function Pill({ tone = "neutral", uppercase = false, style, children, ...rest }: Props) {
   const color = TONE[tone];
+  const filled = tone === "live";
+  const fill =
+    tone === "live"
+      ? colors.onair
+      : tone === "ready"
+      ? colors.okSubtle
+      : tone === "cued"
+      ? colors.brandSubtle
+      : "transparent";
   const base: CSSProperties = {
     fontSize: fontSize.xs,
     padding: "3px 10px",
     borderRadius: radius.pill,
     border: `1px solid ${color}`,
-    color,
+    color: filled ? "#fff" : color,
+    background: fill,
+    boxShadow: filled ? "0 0 12px rgba(255, 51, 65, 0.5)" : undefined,
     fontWeight: fontWeight.semibold,
     textTransform: uppercase ? "uppercase" : undefined,
     letterSpacing: uppercase ? 1 : undefined,

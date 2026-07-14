@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, CSSProperties } from "react";
 import { colors, control, fontWeight, lineHeight, type ControlSize } from "./tokens";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "destructive";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "destructive" | "success";
 
 type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> & {
   variant?: ButtonVariant;
@@ -49,5 +49,7 @@ function variantStyle(v: ButtonVariant): CSSProperties {
       return { background: "transparent", color: colors.red, borderColor: colors.red };
     case "destructive":
       return { background: colors.red, color: "#fff", borderColor: colors.red };
+    case "success":
+      return { background: colors.ok, color: "#04231a", borderColor: colors.ok };
   }
 }

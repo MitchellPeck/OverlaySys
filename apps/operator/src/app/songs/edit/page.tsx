@@ -13,8 +13,8 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { AppHeader } from "@/app/components/AppHeader";
-import { PageShell, PageBody } from "@/app/components/PageShell";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { PasteLyricsModal } from "../PasteLyricsModal";
 import { FieldMappingTable } from "./FieldMappingTable";
 import { isCloudMode } from "@/lib/mode";
@@ -456,8 +456,8 @@ function SongEditorPageInner() {
   }
 
   return (
-    <PageShell>
-      <AppHeader
+    <>
+      <PageChrome
         context={
           <h1 style={{ margin: 0, fontSize: 16 }}>
             ♪ {draft.title || <span style={{ color: colors.textDim, fontStyle: "italic" }}>(untitled)</span>}
@@ -470,7 +470,7 @@ function SongEditorPageInner() {
           </>
         }
       />
-      <PageBody maxWidth={1100}>
+      <PageBody maxWidth={1100} style={{ height: "100%" }}>
 
       {pasteOpen && draft && (
         <PasteLyricsModal
@@ -894,7 +894,7 @@ function SongEditorPageInner() {
       </Panel>
       </PageBody>
       {dialog}
-    </PageShell>
+    </>
   );
 }
 
