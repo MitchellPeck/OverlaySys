@@ -22,19 +22,4 @@ describe("sttSpawner", () => {
     off(); // should not throw
   });
 
-  it("getCurrentBias is null when no song is active", () => {
-    expect(spawner.getCurrentBias()).toBeNull();
-  });
-
-  it("setBias is a no-op for the same value", () => {
-    spawner.setBias(null);
-    expect(spawner.getCurrentBias()).toBeNull();
-  });
-
-  it("setBias updates the stored bias", () => {
-    spawner.setBias("amazing grace");
-    expect(spawner.getCurrentBias()).toBe("amazing grace");
-    spawner.setBias(null);
-    expect(spawner.getCurrentBias()).toBeNull();
-  });
 });

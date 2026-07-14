@@ -4,6 +4,7 @@
   "ccliNumber": "7056332",
   "author": "Eleanor Henrietta Hull, Mary Elizabeth Byrne, Russell Mauldin",
   "copyright": "© Words: Public Domain; Music: 2010 Belden Street Music Publishing",
+  "defaultLyricTemplateId": "lyric-default",
   "sections": [
     {
       "id": "v1",
@@ -87,5 +88,18 @@
     "v2",
     "v3",
     "x1"
-  ]
+  ],
+  "customFields": {
+    "hymn_num": "$451"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "defaultOutroTemplateId": "lyric-default",
+  "defaultOutroFieldMap": {
+    "text": "copyright"
+  },
+  "defaultChannel": "program"
 }

@@ -29,6 +29,9 @@ importers:
       '@overlaysys/core':
         specifier: workspace:*
         version: link:../../packages/core
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -57,6 +60,9 @@ importers:
       '@overlaysys/editor-kit':
         specifier: workspace:*
         version: link:../../packages/editor-kit
+      '@overlaysys/scripture':
+        specifier: workspace:*
+        version: link:../../packages/scripture
       '@overlaysys/supabase':
         specifier: workspace:*
         version: link:../../packages/supabase
@@ -207,8 +213,21 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
+  packages/scripture:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/supabase:
     dependencies:
+      '@overlaysys/core':
+        specifier: workspace:*
+        version: link:../core
       '@supabase/supabase-js':
         specifier: ^2.45.0
         version: 2.105.4
@@ -273,6 +292,12 @@ importers:
       '@overlaysys/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@overlaysys/scripture':
+        specifier: workspace:*
+        version: link:../packages/scripture
+      '@overlaysys/supabase':
+        specifier: workspace:*
+        version: link:../packages/supabase
       '@overlaysys/template-engine':
         specifier: workspace:*
         version: link:../packages/template-engine

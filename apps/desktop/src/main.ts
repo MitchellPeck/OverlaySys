@@ -17,7 +17,7 @@
 //
 // IPC channels are unchanged from the dev-only version — see preload.ts.
 
-import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
@@ -26,7 +26,21 @@ import {
   clearTokens as clearCloudTokens,
   loadTokens as loadCloudTokens,
   startSignIn as startCloudSignIn,
+  updateTokens as updateCloudTokens,
 } from "./cloudAuth";
+import {
+  loadPrefs,
+  savePrefs,
+  resolveDisplay,
+  updateDisplayCache,
+  fingerprintDisplay,
+  type MatchedBy,
+} from "./windowPrefs";
+import { identifyDisplays } from "./identifyDisplays";
+import type {
+  ChannelWindowPrefs,
+  WindowPrefsFile,
+} from "@overlaysys/core";
 
 // ── .env loading ──────────────────────────────────────────────────────────
 //
@@ -118,20 +132,159 @@ function ensureUserDataEnv(): void {
   }
 }
 
+// ── Boot logging ─────────────────────────────────────────────────────────────
+//
+// Windows GUI Electron processes have no attached console — anything
+// written to stdout/stderr is discarded by the OS. Mirror every console
+// call and the server child's output into <userData>/boot.log so a
+// packaged install can be debugged post-mortem (look in
+// %APPDATA%\OverlaySys\boot.log on Windows,
+// ~/Library/Application Support/OverlaySys/boot.log on macOS).
+
+let bootLogStream: fs.WriteStream | null = null;
+const bootLogQueue: string[] = [];
+
+function appendBootLog(line: string): void {
+  const stamped = `[${new Date().toISOString()}] ${line}\n`;
+  if (bootLogStream) {
+    bootLogStream.write(stamped);
+    return;
+  }
+  bootLogQueue.push(stamped);
+  if (bootLogQueue.length > 1000) bootLogQueue.shift();
+}
+
+function initBootLog(): void {
+  if (bootLogStream) return;
+  let dir: string;
+  try {
+    dir = app.getPath("userData");
+  } catch {
+    return;
+  }
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, "boot.log");
+    const stream = fs.createWriteStream(file, { flags: "a" });
+    stream.write(
+      `\n[${new Date().toISOString()}] ── boot log opened ─ pid=${process.pid} ──\n`,
+    );
+    while (bootLogQueue.length > 0) stream.write(bootLogQueue.shift()!);
+    bootLogStream = stream;
+  } catch {
+    // best-effort; if we can't open the log we still proceed
+  }
+}
+
+function fmtLogArg(a: unknown): string {
+  if (a instanceof Error) return `${a.message}\n${a.stack ?? ""}`;
+  if (typeof a === "string") return a;
+  try {
+    return JSON.stringify(a);
+  } catch {
+    return String(a);
+  }
+}
+
+for (const level of ["log", "info", "warn", "error"] as const) {
+  const orig = console[level].bind(console);
+  console[level] = (...args: unknown[]) => {
+    try {
+      const tag = level === "log" || level === "info" ? "" : `[${level}] `;
+      appendBootLog(tag + args.map(fmtLogArg).join(" "));
+    } catch {
+      // never let logging mask the original call
+    }
+    orig(...(args as []));
+  };
+}
+
+process.on("uncaughtException", (err) => {
+  appendBootLog(`[uncaughtException] ${err.message}\n${err.stack ?? ""}`);
+});
+process.on("unhandledRejection", (reason) => {
+  const msg =
+    reason instanceof Error
+      ? `${reason.message}\n${reason.stack ?? ""}`
+      : String(reason);
+  appendBootLog(`[unhandledRejection] ${msg}`);
+});
+
 const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 
 let serverChild: ChildProcess | null = null;
 let serverPort = 4000;
 let serverHost = "127.0.0.1";
 
+/**
+ * Forward the user's cloud session to the embedded server. The server
+ * holds the tokens in memory, materializes a Supabase client + sync
+ * engine wiring, and runs reconciliation periodically. Best-effort:
+ * server may be unreachable during boot races; callers wrap the call in
+ * a `.catch` so we don't crash the desktop on a sync-side hiccup.
+ */
+async function pushTokensToServer(tokens: {
+  accessToken: string;
+  refreshToken: string;
+  registryOrgId: string | null;
+}): Promise<void> {
+  if (!tokens.registryOrgId) return; // no org → nothing to scope sync to
+  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      orgId: tokens.registryOrgId,
+    }),
+  });
+}
+
+/** Clear the server's cloud session — companion to `pushTokensToServer`. */
+async function clearServerCloudTokens(): Promise<void> {
+  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
+    method: "DELETE",
+  });
+}
+
 let operatorWindow: BrowserWindow | null = null;
 const channelWindows = new Map<string, BrowserWindow>();
+
+interface ChannelResolution {
+  matchedBy: MatchedBy;
+  configuredLabel: string | null;
+  actualLabel: string;
+  actualDisplayId: number;
+}
+
+const channelResolutions = new Map<string, ChannelResolution>();
+
+function prefsFilePath(): string {
+  return path.join(app.getPath("userData"), "data", "channel-window-prefs.json");
+}
+
+function currentDisplaysSnapshot() {
+  return screen.getAllDisplays().map((d) => ({
+    id: d.id,
+    label: d.label,
+    bounds: {
+      x: d.bounds.x,
+      y: d.bounds.y,
+      width: d.bounds.width,
+      height: d.bounds.height,
+    },
+    internal: d.internal,
+  }));
+}
 
 interface ChannelWindowOptions {
   frameless?: boolean;
   alwaysOnTop?: boolean;
   fullscreen?: boolean;
   transparent?: boolean;
+  /** Electron `Display.id` of the target screen. If undefined or unknown,
+   *  the window opens on the primary display. */
+  displayId?: number;
 }
 
 function operatorUrl(): string {
@@ -232,6 +385,9 @@ function spawnServer(): Promise<{ port: number }> {
     child.stdout?.on("data", (chunk) => {
       const s = chunk.toString();
       process.stdout.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server] ${line}`);
+      }
       buffer += s;
       // Look for the magic OVERLAYSYS_PORT=<n> line emitted by the server
       // once it's fully bound.
@@ -243,7 +399,11 @@ function spawnServer(): Promise<{ port: number }> {
       }
     });
     child.stderr?.on("data", (chunk) => {
-      process.stderr.write(`[server] ${chunk.toString()}`);
+      const s = chunk.toString();
+      process.stderr.write(`[server] ${s}`);
+      for (const line of s.split(/\r?\n/)) {
+        if (line.trim()) appendBootLog(`[server:err] ${line}`);
+      }
     });
 
     child.on("exit", (code, signal) => {
@@ -317,7 +477,23 @@ function createOperatorWindow(): BrowserWindow {
     },
   });
 
-  win.loadURL(operatorUrl());
+  const opUrl = operatorUrl();
+  console.log(`[desktop] operator window: loading ${opUrl}`);
+  win.loadURL(opUrl);
+
+  win.webContents.on(
+    "did-fail-load",
+    (_e, code, description, validatedURL) => {
+      console.error(
+        `[desktop] operator did-fail-load: code=${code} desc=${description} url=${validatedURL}`,
+      );
+    },
+  );
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(
+      `[desktop] operator render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     const sameOrigin =
@@ -344,9 +520,20 @@ function createOperatorWindow(): BrowserWindow {
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
   const isMac = process.platform === "darwin";
+
+  // Look up the target display so we can position the window on it
+  // BEFORE any fullscreen transition. Electron honors the screen the
+  // window is currently on at the moment fullscreen is engaged.
+  const targetDisplay =
+    (opts.displayId !== undefined
+      ? screen.getAllDisplays().find((d) => d.id === opts.displayId)
+      : undefined) ?? screen.getPrimaryDisplay();
+
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
+    x: targetDisplay.bounds.x + 40,
+    y: targetDisplay.bounds.y + 40,
     title: `Channel — ${channelId}`,
     backgroundColor: opts.transparent ? "#00000000" : "#000000",
     transparent: !!opts.transparent,
@@ -396,13 +583,80 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   win.loadURL(rendererChannelUrl(channelId));
 
   win.on("closed", () => {
-    channelWindows.delete(channelId);
+    // Guard: forceRecreate flow closes the old window AFTER inserting
+    // a fresh entry. Without this identity check, the old window's
+    // async "closed" event would evict the new window's entry.
+    if (channelWindows.get(channelId) === win) {
+      channelWindows.delete(channelId);
+    }
     operatorWindow?.webContents.send("overlaysys:channel-window-closed", channelId);
   });
 
   channelWindows.set(channelId, win);
   operatorWindow?.webContents.send("overlaysys:channel-window-opened", channelId);
   return win;
+}
+
+/**
+ * Resolve the target display for a channel and open its renderer
+ * window. Records the resolution result so the operator UI can
+ * surface fallbacks. Honors `forceRecreate` to support the "Reopen
+ * on configured display" action.
+ */
+function openConfiguredChannelWindow(
+  channelId: string,
+  prefs: ChannelWindowPrefs,
+  overrides: Partial<ChannelWindowOptions> = {},
+  forceRecreate = false,
+): { reused: boolean } {
+  const file = loadPrefs(prefsFilePath());
+  const displays = currentDisplaysSnapshot();
+  const primary = screen.getPrimaryDisplay();
+  const resolved = resolveDisplay(prefs, {
+    displays,
+    cached: file.displays,
+    primary: {
+      id: primary.id,
+      label: primary.label,
+      bounds: { ...primary.bounds },
+      internal: primary.internal,
+    },
+  });
+
+  const cachedFor = file.displays.find((c) => c.id === prefs.displayId);
+  channelResolutions.set(channelId, {
+    matchedBy: resolved.matchedBy,
+    configuredLabel: cachedFor?.label ?? null,
+    actualLabel: resolved.display.label,
+    actualDisplayId: resolved.display.id,
+  });
+
+  // Refresh the display cache with whatever we just resolved.
+  if (resolved.matchedBy !== "fallback") {
+    file.displays = updateDisplayCache(file.displays, displays, file.channels);
+    savePrefs(prefsFilePath(), file);
+  }
+
+  const existing = channelWindows.get(channelId);
+  if (existing && !existing.isDestroyed()) {
+    if (forceRecreate) {
+      existing.close();
+    } else {
+      existing.focus();
+      return { reused: true };
+    }
+  }
+
+  const opts: ChannelWindowOptions = {
+    fullscreen: prefs.fullscreen,
+    frameless: prefs.frameless,
+    alwaysOnTop: prefs.alwaysOnTop,
+    transparent: prefs.transparent,
+    displayId: resolved.display.id,
+    ...overrides,
+  };
+  createChannelWindow(channelId, opts);
+  return { reused: false };
 }
 
 // ── Native menu ──────────────────────────────────────────────────────────────
@@ -482,6 +736,14 @@ function registerIpc(): void {
       if (typeof channelId !== "string" || !channelId) {
         throw new Error("channelId required");
       }
+      // If we have stored prefs for this channel, layer the caller's
+      // explicit `opts` on top — but use prefs as the base (display,
+      // fullscreen, etc.).
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (prefs) {
+        return openConfiguredChannelWindow(channelId, prefs, opts ?? {}, false);
+      }
       const existing = channelWindows.get(channelId);
       if (existing && !existing.isDestroyed()) {
         existing.focus();
@@ -531,6 +793,52 @@ function registerIpc(): void {
     serverPort,
   }));
 
+  ipcMain.handle("overlaysys:get-displays", () => currentDisplaysSnapshot());
+
+  ipcMain.handle("overlaysys:get-channel-window-prefs", (): WindowPrefsFile => {
+    return loadPrefs(prefsFilePath());
+  });
+
+  ipcMain.handle(
+    "overlaysys:set-channel-window-prefs",
+    (_event, channelId: string, prefs: ChannelWindowPrefs): WindowPrefsFile => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      file.channels[channelId] = prefs;
+      file.displays = updateDisplayCache(
+        file.displays,
+        currentDisplaysSnapshot(),
+        file.channels,
+      );
+      savePrefs(prefsFilePath(), file);
+      return file;
+    },
+  );
+
+  ipcMain.handle("overlaysys:get-channel-window-resolutions", () => {
+    return Object.fromEntries(channelResolutions);
+  });
+
+  ipcMain.handle(
+    "overlaysys:reopen-channel-on-configured-display",
+    (_event, channelId: string) => {
+      if (typeof channelId !== "string" || !channelId) {
+        throw new Error("channelId required");
+      }
+      const file = loadPrefs(prefsFilePath());
+      const prefs = file.channels[channelId];
+      if (!prefs) return { reused: false, reason: "no-prefs" as const };
+      openConfiguredChannelWindow(channelId, prefs, {}, /* forceRecreate */ true);
+      return { reused: false };
+    },
+  );
+
+  ipcMain.handle("overlaysys:identify-displays", () => {
+    identifyDisplays();
+  });
+
   // ── Cloud auth ────────────────────────────────────────────────────────
   // Sign-in opens the system browser at apps.mitchellpeck.com's
   // /api/apps/<id>/open endpoint with a localhost loopback `return`
@@ -539,6 +847,11 @@ function registerIpc(): void {
     ensureUserDataEnv();
     try {
       const tokens = await startCloudSignIn();
+      // Newly-signed-in tokens land in the server so its sync engine has
+      // a session immediately, not on the next renderer refresh.
+      void pushTokensToServer(tokens).catch((err) =>
+        console.warn("[desktop] forwarding sign-in tokens to server failed", err),
+      );
       return { ok: true, tokens };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -552,15 +865,64 @@ function registerIpc(): void {
 
   ipcMain.handle("overlaysys:cloud-sign-out", async () => {
     await clearCloudTokens();
+    // Clear the server's session in the same pass — leaving stale tokens
+    // would mean the next periodic sync hits Supabase as the just-out
+    // user, which RLS would deny anyway, but logging the noise serves
+    // no one.
+    void clearServerCloudTokens().catch((err) =>
+      console.warn("[desktop] clearing server tokens failed", err),
+    );
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send("overlaysys:cloud-signed-out");
     }
+  });
+
+  // Renderer pushes refreshed tokens up after Supabase JS auto-refreshes
+  // its in-memory session. Without this, a quit + relaunch after the
+  // access-token TTL loses the session even though the refresh token is
+  // still valid — defeats the point of "stay signed in" for desktop.
+  ipcMain.handle(
+    "overlaysys:cloud-update-tokens",
+    async (
+      _event,
+      input: {
+        accessToken: string;
+        refreshToken: string;
+        registryOrgId?: string | null;
+      },
+    ) => {
+      ensureUserDataEnv();
+      const persisted = await updateCloudTokens(input);
+      // Forward the fresh tokens to the embedded server so its
+      // CloudStorageAdapter keeps a valid session for periodic sync.
+      // Best-effort: server may not be reachable yet during boot races,
+      // and the next periodic refresh will retry.
+      void pushTokensToServer(persisted).catch((err) =>
+        console.warn("[desktop] forwarding refreshed tokens to server failed", err),
+      );
+      return persisted;
+    },
+  );
+
+  // Open an arbitrary URL in the system browser. Used by AccountMenu so
+  // "Manage account" from the desktop app surfaces the cloud account
+  // page externally rather than navigating in the renderer.
+  ipcMain.handle("overlaysys:open-external", async (_event, url: string) => {
+    if (typeof url !== "string" || !url) return;
+    // Restrict to http(s) so a malicious renderer-side bug can't shell out
+    // to file:// or custom URI handlers.
+    if (!/^https?:\/\//i.test(url)) return;
+    await shell.openExternal(url);
   });
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function boot(): Promise<void> {
+  initBootLog();
+  console.log(
+    `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
+  );
   if (!isDev) {
     try {
       const { port } = await spawnServer();
@@ -578,6 +940,34 @@ async function boot(): Promise<void> {
   buildMenu();
   registerIpc();
   operatorWindow = createOperatorWindow();
+
+  // Sync wake-up: if cloud tokens were persisted from a prior session,
+  // forward them to the server so its sync loop kicks in immediately
+  // rather than waiting for the user to interact with the renderer.
+  try {
+    const existing = await loadCloudTokens();
+    if (existing) {
+      void pushTokensToServer(existing).catch((err) =>
+        console.warn("[desktop] startup sync wake-up failed", err),
+      );
+    }
+  } catch (err) {
+    console.warn("[desktop] startup token load failed", err);
+  }
+
+  // Auto-open configured channel windows. Done after the operator
+  // window so closing the operator (which closes all channel windows)
+  // is the canonical lifecycle owner.
+  try {
+    const file = loadPrefs(prefsFilePath());
+    for (const [channelId, prefs] of Object.entries(file.channels)) {
+      if (prefs.autoOpen) {
+        openConfiguredChannelWindow(channelId, prefs, {}, false);
+      }
+    }
+  } catch (err) {
+    console.error("[desktop] auto-open failed:", err);
+  }
 }
 
 app.whenReady().then(boot);

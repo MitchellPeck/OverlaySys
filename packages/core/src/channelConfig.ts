@@ -34,5 +34,42 @@ export const ChannelConfigSchema = z.object({
    * regardless of this value.
    */
   background: z.string().default("transparent"),
+  /**
+   * ISO timestamp of the last write. Set by the cloud (or by callers in
+   * local mode) on every save. Used by the sync engine for last-writer-wins
+   * conflict resolution. Optional for backwards compatibility with pre-sync
+   * local JSON files; new writes always set it.
+   */
+  updatedAt: z.string().optional(),
+  /**
+   * Soft-delete tombstone. When set, the channel is hidden from operator
+   * UIs but the record persists so the deletion can propagate via sync
+   * before the row is hard-deleted. Optional for backwards compatibility.
+   */
+  deletedAt: z.string().optional(),
 });
 export type ChannelConfig = z.infer<typeof ChannelConfigSchema>;
+
+/**
+ * Per-project patch over an org-default {@link ChannelConfig}. Lets one
+ * project tweak channel attributes (render mode, mirror target, background)
+ * without forking the canonical org channel. Resolution cascades
+ * `ProjectChannelOverride → ChannelConfig → defaults` — see
+ * `channelResolution.ts`. Mirrors the song sub-take override pattern in
+ * `show.ts` (`ShowSong`) and `songResolution.ts`.
+ *
+ * The `channelId` field references the org channel being overridden. All
+ * other fields are optional patches; absent fields fall through to the
+ * underlying channel.
+ */
+export const ProjectChannelOverrideSchema = z.object({
+  projectId: z.string(),
+  channelId: z.string(),
+  name: z.string().optional(),
+  renderMode: ChannelRenderModeSchema.optional(),
+  mirrorOf: z.string().optional(),
+  background: z.string().optional(),
+  updatedAt: z.string().optional(),
+  deletedAt: z.string().optional(),
+});
+export type ProjectChannelOverride = z.infer<typeof ProjectChannelOverrideSchema>;

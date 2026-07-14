@@ -103,8 +103,20 @@ export type MountedTemplate = {
   };
   /** Play the `in` timeline. Resolves when the in-animation completes. */
   playIn(): Promise<void>;
-  /** Play the `out` timeline. Resolves when the out-animation completes. */
+  /**
+   * Play the `out` timeline AND a root-opacity fade in parallel. Resolves
+   * when both have completed. Use for transitions where the entire mount
+   * should disappear (different-template take, blank, end-of-song).
+   */
   playOut(): Promise<void>;
+  /**
+   * Play ONLY the template's `out` timeline — no root-opacity fade. Use for
+   * transitions where layers outside the template's out timeline (e.g. a
+   * gradient shape on a lyric template that intentionally has no IN/OUT
+   * animation defined) should stay put across the swap. Resolves when the
+   * `out` timeline finishes; returns immediately if `out` has zero duration.
+   */
+  playOutTimeline(): Promise<void>;
   /**
    * Flash a color overlay above the template `count` times. Each cycle takes
    * `durationMs` (split evenly between opacity 0→1 and 1→0). The overlay is
@@ -261,6 +273,14 @@ export function mountTemplate(
       // Run both in parallel; resolve when both have completed so the
       // caller's destroy() doesn't fire mid-animation on either path.
       return Promise.all([fade, playFromStart(outTl)]).then(() => undefined);
+    },
+    playOutTimeline() {
+      // Mirror of playIn's empty-timeline guard: a zero-duration outTl
+      // would never resolve via playFromStart, so short-circuit. Caller
+      // owns deciding whether layers outside outTl should also animate
+      // (see playOut for the full-mount-fade variant).
+      if (outTl.duration() === 0) return Promise.resolve();
+      return playFromStart(outTl);
     },
     playBlink(opts) {
       // Disabled, or pathological config — render nothing rather than no-op

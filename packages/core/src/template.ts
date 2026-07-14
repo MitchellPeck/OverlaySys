@@ -337,6 +337,14 @@ export const TemplateSchema = z.object({
    * template in the take panel. Empty / unset means "no preference."
    */
   defaultChannel: z.string().optional(),
+  /**
+   * ISO timestamp of the last write. Set by writers on every save; consumed
+   * by the sync engine for last-writer-wins. Optional for backwards
+   * compatibility with pre-sync JSON; new writes always set it.
+   */
+  updatedAt: z.string().optional(),
+  /** Soft-delete tombstone; see hotcard.ts for the rationale. */
+  deletedAt: z.string().optional(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
 export type BlinkOnTake = NonNullable<z.infer<typeof TemplateSchema>["blinkOnTake"]>;

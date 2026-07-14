@@ -1,5 +1,8 @@
 {
   "autoStart": false,
-  "command": "whisper-stream -m ~/whisper-models/ggml-base.en.bin --step 500 --length 5000",
-  "biasOnSongStart": true
+  "modelPath": "~/whisper-models/ggml-base.en.bin",
+  "stepMs": 500,
+  "lengthMs": 5000,
+  "captureDevice": -1,
+  "customCommand": ""
 }

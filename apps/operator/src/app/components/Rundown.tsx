@@ -1,16 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Field } from "@overlaysys/core";
+import type { Field, ScriptureRow, SongRow } from "@overlaysys/core";
+import { resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { HotcardsPanel } from "./HotcardsPanel";
+import { SongTakeStrip } from "./SongTakeStrip";
+import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
 
 type ImagePreview = { src: string; label: string };
 
-export function Rundown() {
+interface RundownProps {
+  onEditScriptureRow?: (row: ScriptureRow) => void;
+}
+
+export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const templates = useStore((s) => s.templates);
@@ -21,12 +28,19 @@ export function Rundown() {
   const selectedHotcardId = useStore((s) => s.selectedHotcardId);
   const hotcardCache = useStore((s) => s.hotcardCache);
   const songs = useStore((s) => s.songs);
+  const songCache = useStore((s) => s.songCache);
+  const songSessions = useStore((s) => s.songSessions);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
   useEffect(() => {
     if (!show || conn !== "open") return;
     const seen = new Set<string>();
     for (const r of show.rows) {
+      if (r.kind === "scripture") {
+        // Scripture rows don't use a single templateId for lookup here;
+        // they dispatch per-slide via ScriptureTakeStrip.
+        continue;
+      }
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -58,6 +72,10 @@ export function Rundown() {
           showId: show.id,
           songRowId: row.id,
         });
+        return;
+      }
+      if (row.kind === "scripture") {
+        // No cue semantics for scripture rows; see takeSelected.
         return;
       }
       send({
@@ -97,6 +115,12 @@ export function Rundown() {
         });
         return;
       }
+      if (row.kind === "scripture") {
+        // Scripture rows are taken per-slide via ScriptureTakeStrip — there's
+        // no "take whole row" semantics. Selecting the row swaps the Cue/Take
+        // bar out for the slide strip below.
+        return;
+      }
       send({
         type: "take",
         channel: row.channelHint ?? "program",
@@ -120,12 +144,61 @@ export function Rundown() {
     }
   }
 
+  // When the selected row is a song row, render the three-segment
+  // SongTakeStrip in place of the generic Cue/Take buttons. The strip handles
+  // its own dispatch (intro/outro fire `take`, lyrics fires `song_take` or
+  // `song_advance`) using the resolved channel. Graphic rows and the
+  // no-selection / hotcard-only states keep the original Cue/Take buttons.
+  const selectedRow = selectedRowId
+    ? show.rows.find((r) => r.id === selectedRowId)
+    : null;
+  const selectedSongRow: SongRow | null =
+    selectedRow && selectedRow.kind === "song" ? selectedRow : null;
+  let songStripChannel: string | null = null;
+  if (selectedSongRow) {
+    const cachedSong = songCache[selectedSongRow.songId];
+    const showSong = show.songs.find((s) => s.songId === selectedSongRow.songId);
+    const lyricTemplate = templateCache[selectedSongRow.lyricTemplateId];
+    // resolveSongChannel needs the full Song body, so fall through to
+    // the safe `"program"` default until the song lands in the cache.
+    const resolved = cachedSong
+      ? resolveSongChannel(selectedSongRow, showSong, cachedSong, lyricTemplate)
+      : undefined;
+    songStripChannel = resolved ?? "program";
+  }
+
+  const selectedScriptureRow: ScriptureRow | null =
+    selectedRow && selectedRow.kind === "scripture" ? selectedRow : null;
+  const scriptureChannel = selectedScriptureRow?.channelHint ?? "program";
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
-        <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
-      </div>
+      {selectedSongRow && songStripChannel ? (
+        <SongTakeStrip
+          show={show}
+          row={selectedSongRow}
+          channel={songStripChannel}
+          liveSession={songSessions[songStripChannel] ?? null}
+        />
+      ) : selectedScriptureRow ? (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onEditScriptureRow?.(selectedScriptureRow)}
+            >
+              Edit slides…
+            </Button>
+          </div>
+          <ScriptureTakeStrip row={selectedScriptureRow} channel={scriptureChannel} />
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
+          <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
+        </div>
+      )}
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
@@ -176,6 +249,33 @@ export function Rundown() {
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
                       arrangement: {(row.arrangement ?? []).join(" → ") || "(default)"}
                     </span>
+                  </td>
+                </tr>
+              );
+            }
+            if (row.kind === "scripture") {
+              // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => setSelectedRow(row.id)}
+                  style={{
+                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
+                    borderLeft: selected
+                      ? `3px solid ${colors.accent}`
+                      : "3px solid transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <td style={td()}>{i + 1}</td>
+                  <td style={td()} colSpan={2}>
+                    <div style={{ fontWeight: 600 }}>
+                      <span aria-hidden style={{ marginRight: 6 }}>📖</span>
+                      {row.reference}
+                    </div>
+                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
+                      scripture · {row.translation}
+                    </div>
                   </td>
                 </tr>
               );

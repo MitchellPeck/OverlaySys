@@ -11,6 +11,7 @@ import {
 } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
 /**
  * Manage timers that are currently on air. Reads from the existing
@@ -29,7 +30,7 @@ import { useWs } from "@/lib/useWs";
  * a wall clock.
  */
 export function ActiveTimersPanel() {
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   const channelStates = useStore((s) => s.channelStates);
   const templateCache = useStore((s) => s.templateCache);
 

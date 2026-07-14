@@ -12,6 +12,27 @@ export const ProjectSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   notes: z.string().optional(),
+  /**
+   * Optional schema describing the custom fields that songs in this project
+   * are expected to provide. Used by the song editor to render labelled inputs
+   * and by template field maps to suggest source keys. Missing or empty means
+   * no project-wide custom-field expectations.
+   */
+  songCustomFieldSchema: z
+    .array(
+      z.object({
+        key: z.string(),
+        label: z.string(),
+        type: z.enum(["text", "number"]).optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * Soft-delete tombstone. When set, the project is hidden from UIs but the
+   * record persists so the deletion can propagate via sync before a GC pass
+   * hard-deletes it. Optional for backwards compatibility.
+   */
+  deletedAt: z.string().optional(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

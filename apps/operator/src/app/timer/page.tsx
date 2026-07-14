@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { AppHeader } from "@/app/components/AppHeader";
 import { TimerPanel } from "@/app/components/TimerPanel";
 import { ActiveTimersPanel } from "@/app/components/ActiveTimersPanel";
 import { ChannelsList } from "@/app/components/ChannelsList";
+import { isCloudMode } from "@/lib/mode";
 import { colors } from "@overlaysys/ui";
 
 /**
@@ -11,8 +14,17 @@ import { colors } from "@overlaysys/ui";
  * panel is wider than TakePanel since it surfaces a live preview for every
  * time field; the right rail mirrors the show page's Channels panel so
  * operators can see which channels are live while they configure a timer.
+ *
+ * Cloud build redirects to /shows — firing live takes requires a paired
+ * Electron renderer. Same pattern as the Show page in `/`.
  */
 export default function TimerPage() {
+  const router = useRouter();
+  useEffect(() => {
+    if (isCloudMode()) router.replace("/shows");
+  }, [router]);
+  if (isCloudMode()) return null;
+
   return (
     <main
       style={{

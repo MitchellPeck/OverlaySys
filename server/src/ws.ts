@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import path from "node:path";
 import type { WebSocket } from "ws";
 import type { FastifyBaseLogger } from "fastify";
 import {
@@ -7,6 +8,11 @@ import {
   encode,
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
+import {
+  resolveIntroTake,
+  resolveOutroTake,
+  resolveSongChannel,
+} from "@overlaysys/core";
 import * as channels from "./channels";
 import * as templates from "./templates";
 import * as shows from "./shows";
@@ -17,6 +23,7 @@ import * as songSession from "./songSession";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
+import * as sttInstaller from "./sttInstaller";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 
@@ -48,12 +55,44 @@ sttSpawner.subscribe((status) => {
   broadcast({ type: "stt_spawner_status", status });
 });
 
-// Whenever the program channel's active song changes, push the song's text
-// to the spawner as a Whisper prompt bias. The spawner restarts the child
-// in-place (only when running) so subsequent recognition is biased toward
-// the song's vocabulary.
-songSession.onProgramBiasChange((bias) => {
-  sttSpawner.setBias(bias);
+// Fan install / download progress out to every connected client so multiple
+// operator windows watching the STT page all see the same progress bar.
+//
+// When a job hits a terminal state (done / error / cancelled) we ALSO
+// re-check presence and the model list and broadcast both. This is what
+// makes "the binary banner flips to green the moment brew install
+// finishes" work without the operator UI having to subscribe and round-
+// trip a presence_check itself — the server is authoritative here, and
+// every connected window picks up the update on the same tick.
+sttInstaller.subscribeInstall((progress) => {
+  broadcast({ type: "stt_install_progress", progress });
+  if (
+    progress.state !== "done" &&
+    progress.state !== "error" &&
+    progress.state !== "cancelled"
+  ) {
+    return;
+  }
+  void (async () => {
+    try {
+      const cfg = await storage.loadSttConfig();
+      const [presence, models] = await Promise.all([
+        sttInstaller.checkPresence(cfg.modelPath),
+        sttInstaller.listModels(),
+      ]);
+      broadcast({ type: "stt_presence", presence });
+      broadcast({
+        type: "stt_models",
+        models,
+        modelsDir: sttInstaller.getModelsDir(),
+      });
+    } catch (err) {
+      // Best-effort. Clients can still recover by clicking elsewhere on the
+      // page (which triggers a stt_check_presence on most navigations) or
+      // by sending an explicit refresh.
+      void err;
+    }
+  })();
 });
 
 export function handleConnection(
@@ -353,6 +392,90 @@ export function handleConnection(
           songSession.end(parsed.channel);
           break;
         }
+        case "take_song_sub": {
+          // Resolve the Song → ShowSong → Row cascade for the chosen sub-take
+          // and dispatch the right underlying flow. Intro/outro fire a graphic
+          // `take` with resolved field values; lyrics either advances an
+          // already-live same-song session or starts a fresh one.
+          const show = await shows.getShow(parsed.showId);
+          if (!show) {
+            send({ type: "error", code: "not_found", message: parsed.showId });
+            break;
+          }
+          const row = show.rows.find((r) => r.id === parsed.songRowId);
+          if (!row || row.kind !== "song") {
+            send({ type: "error", code: "not_found", message: parsed.songRowId });
+            break;
+          }
+          const song = await songs.getSong(row.songId);
+          if (!song) {
+            send({ type: "error", code: "not_found", message: row.songId });
+            break;
+          }
+          const showSong = show.songs.find((e) => e.songId === row.songId);
+          const lyricTpl = await templates.getTemplate(row.lyricTemplateId);
+          const resolvedChannel =
+            parsed.channel ??
+            resolveSongChannel(row, showSong, song, lyricTpl ?? undefined) ??
+            "program";
+          if (parsed.sub === "intro" || parsed.sub === "outro") {
+            // Pull the specific intro/outro template (resolveIntroTake takes a
+            // list and looks up by id — we hand it the single relevant body to
+            // avoid a registry-wide load).
+            const subTplId =
+              parsed.sub === "intro"
+                ? row.introTemplateId ??
+                  showSong?.introTemplateId ??
+                  song.defaultIntroTemplateId
+                : row.outroTemplateId ??
+                  showSong?.outroTemplateId ??
+                  song.defaultOutroTemplateId;
+            if (!subTplId) {
+              send({
+                type: "error",
+                code: "not_configured",
+                message: `no ${parsed.sub} template`,
+              });
+              break;
+            }
+            const subTpl = await templates.getTemplate(subTplId);
+            if (!subTpl) {
+              send({ type: "error", code: "not_found", message: subTplId });
+              break;
+            }
+            const tpls = [subTpl];
+            const take =
+              parsed.sub === "intro"
+                ? resolveIntroTake(row, showSong, song, tpls)
+                : resolveOutroTake(row, showSong, song, tpls);
+            if (!take) {
+              send({
+                type: "error",
+                code: "not_configured",
+                message: `${parsed.sub} resolved to null`,
+              });
+              break;
+            }
+            channels.take(resolvedChannel, take.templateId, take.fieldValues, {
+              songRowId: row.id,
+              sub: parsed.sub,
+            });
+            break;
+          }
+          // sub === "lyrics": advance an existing same-song session, else start.
+          const liveSession = songSession.getSession(resolvedChannel);
+          if (liveSession && liveSession.songId === row.songId) {
+            songSession.advance(resolvedChannel, 1);
+          } else {
+            songSession.start(resolvedChannel, {
+              song,
+              lyricTemplateId: row.lyricTemplateId,
+              arrangement: row.arrangement ?? song.defaultArrangement,
+              trustMode: row.trustMode ?? false,
+            });
+          }
+          break;
+        }
         case "list_channels": {
           const list = await channelConfigs.listChannelConfigs();
           send({ type: "channel_list", configs: list });
@@ -415,15 +538,149 @@ export function handleConnection(
           await storage.saveSttConfig(parsed.config);
           send({ type: "ack", op: "stt_spawner_save_config" });
           broadcast({ type: "stt_spawner_config", config: parsed.config });
+          // Re-check presence inline so operator banners (Start button
+          // enable, "Installed/Missing" pill) reflect the new modelPath the
+          // moment the save lands. Without this the UI relies on a separate
+          // stt_check_presence message that runs as a concurrent async
+          // handler — and that handler's loadSttConfig can race this save's
+          // disk write, returning stale data.
+          const presence = await sttInstaller.checkPresence(
+            parsed.config.modelPath,
+          );
+          broadcast({ type: "stt_presence", presence });
           break;
         }
         case "stt_spawner_start": {
-          const cfg = await storage.loadSttConfig();
+          // When the operator passes its current draft config we save+start
+          // in one handler so there's no race against a separate save_config
+          // message — without this, the save's disk write and the start's
+          // disk read run as two concurrent async handlers and start can
+          // pick up stale config.
+          let cfg;
+          if (parsed.config) {
+            await storage.saveSttConfig(parsed.config);
+            broadcast({ type: "stt_spawner_config", config: parsed.config });
+            cfg = parsed.config;
+          } else {
+            cfg = await storage.loadSttConfig();
+          }
           sttSpawner.start(cfg);
           break;
         }
         case "stt_spawner_stop": {
           sttSpawner.stop();
+          break;
+        }
+        case "stt_check_presence": {
+          const cfg = await storage.loadSttConfig();
+          const presence = await sttInstaller.checkPresence(cfg.modelPath);
+          send({ type: "stt_presence", presence });
+          // Replay any in-flight install jobs so the requesting client
+          // catches up to ongoing downloads without waiting for the next tick.
+          for (const job of sttInstaller.listActiveJobs()) {
+            send({ type: "stt_install_progress", progress: job });
+          }
+          break;
+        }
+        case "stt_list_models": {
+          const models = await sttInstaller.listModels();
+          send({
+            type: "stt_models",
+            models,
+            modelsDir: sttInstaller.getModelsDir(),
+          });
+          break;
+        }
+        case "stt_enumerate_capture_devices": {
+          const devices = await sttInstaller.enumerateCaptureDevices({
+            force: parsed.force,
+          });
+          send({ type: "stt_capture_devices", devices });
+          break;
+        }
+        case "stt_install_binary": {
+          try {
+            sttInstaller.installBinary();
+            send({ type: "ack", op: "stt_install_binary" });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_install_unsupported", message });
+          }
+          break;
+        }
+        case "stt_uninstall_binary": {
+          // Refuse if the spawner is running — uninstalling whisper-cpp
+          // out from under a live child would crash it with a confusing
+          // error. User stops first.
+          const state = sttSpawner.getStatus().state;
+          if (state === "running" || state === "starting") {
+            send({
+              type: "error",
+              code: "stt_spawner_running",
+              message: "Stop the STT spawner before uninstalling whisper-cpp.",
+            });
+            break;
+          }
+          try {
+            sttInstaller.uninstallBinary();
+            send({ type: "ack", op: "stt_uninstall_binary" });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_uninstall_unsupported", message });
+          }
+          break;
+        }
+        case "stt_download_model": {
+          try {
+            sttInstaller.downloadModel(parsed.url, parsed.filename);
+            send({ type: "ack", op: "stt_download_model", id: parsed.filename });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_download_invalid", message });
+          }
+          break;
+        }
+        case "stt_delete_model": {
+          // Refuse if the spawner is running with this model — deleting an
+          // in-use file leaves the child in an undefined state on next
+          // model reload. Resolve the in-use model path the same way the
+          // spawner does so the comparison matches.
+          const state = sttSpawner.getStatus().state;
+          if (state === "running" || state === "starting") {
+            const active = sttSpawner.getActiveConfig();
+            if (active && path.basename(active.modelPath) === parsed.filename) {
+              send({
+                type: "error",
+                code: "stt_model_in_use",
+                message:
+                  "This model is currently in use. Stop the STT spawner before deleting.",
+              });
+              break;
+            }
+          }
+          try {
+            await sttInstaller.deleteModel(parsed.filename);
+            send({ type: "ack", op: "stt_delete_model", id: parsed.filename });
+            // Re-broadcast updated model list and presence so every connected
+            // operator window updates without a manual refresh.
+            const models = await sttInstaller.listModels();
+            broadcast({
+              type: "stt_models",
+              models,
+              modelsDir: sttInstaller.getModelsDir(),
+            });
+            const cfg = await storage.loadSttConfig();
+            const presence = await sttInstaller.checkPresence(cfg.modelPath);
+            broadcast({ type: "stt_presence", presence });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            send({ type: "error", code: "stt_delete_failed", message });
+          }
+          break;
+        }
+        case "stt_cancel_install": {
+          sttInstaller.cancelInstall(parsed.jobId);
+          send({ type: "ack", op: "stt_cancel_install", id: parsed.jobId });
           break;
         }
       }

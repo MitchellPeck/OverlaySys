@@ -1,7 +1,11 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type SttSpawnerConfig, type SttSpawnerStatus } from "@overlaysys/core";
+import {
+  buildSttCommand,
+  type SttSpawnerConfig,
+  type SttSpawnerStatus,
+} from "@overlaysys/core";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
@@ -43,14 +47,6 @@ function buildAugmentedPath(): string {
 const NODE_BIN = process.execPath;
 
 const RECENT_LOG_LIMIT = 100;
-// Whisper.cpp's --prompt (where supported) takes ~224 tokens. Bash env vars
-// have no such limit but the LM bias hint loses signal past a few hundred
-// chars — cap to keep the env value tidy.
-const MAX_BIAS_CHARS = 600;
-// Name of the env var the user's command can interpolate to receive the
-// active program-channel song's lyrics. e.g. a user-edited command:
-//   whisper-cli -m ggml-base.en.bin --prompt "$OVERLAYSYS_BIAS_PROMPT" ...
-const BIAS_ENV_VAR = "OVERLAYSYS_BIAS_PROMPT";
 
 let child: ChildProcess | null = null;
 let status: SttSpawnerStatus = {
@@ -61,15 +57,7 @@ let status: SttSpawnerStatus = {
   recentLogs: [],
 };
 let activeConfig: SttSpawnerConfig | null = null;
-let currentBias: string | null = null;
 const listeners = new Set<(s: SttSpawnerStatus) => void>();
-
-function biasEnvValue(): string {
-  if (!currentBias) return "";
-  return currentBias.length > MAX_BIAS_CHARS
-    ? currentBias.slice(0, MAX_BIAS_CHARS)
-    : currentBias;
-}
 
 function emit(): void {
   // Snapshot the status so subscribers don't share a mutable reference.
@@ -110,16 +98,8 @@ export function start(config: SttSpawnerConfig): void {
   // The listener side uses NODE_BIN (the calling process's binary) instead
   // of relying on `node` being on PATH — important for packaged Electron
   // where there's no system node, only Electron-as-node.
-  //
-  // Bias prompt is exposed as the OVERLAYSYS_BIAS_PROMPT env var rather
-  // than auto-injected as a flag — `whisper-stream` from whisper.cpp does
-  // NOT support --prompt, so a generic injection pattern would error. The
-  // user opts in by interpolating $OVERLAYSYS_BIAS_PROMPT in their command
-  // (e.g. with whisper-cli, whisper-server, or a custom wrapper).
-  const fullCommand = `${config.command} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
-  if (currentBias && config.biasOnSongStart) {
-    appendLog(`bias: ${BIAS_ENV_VAR} set (${biasEnvValue().length} chars)`);
-  }
+  const userCommand = buildSttCommand(config);
+  const fullCommand = `${userCommand} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
   appendLog(`spawn: ${fullCommand}`);
 
   const augmentedPath = buildAugmentedPath();
@@ -137,10 +117,6 @@ export function start(config: SttSpawnerConfig): void {
         // launched from the bash pipeline runs as JS, not as a new
         // Electron app instance.
         ELECTRON_RUN_AS_NODE: "1",
-        // Active song lyrics for STT engines that support biasing. Empty
-        // string when no program-channel song is active or the feature
-        // is disabled, so the user's command can safely reference it.
-        [BIAS_ENV_VAR]: config.biasOnSongStart ? biasEnvValue() : "",
       },
       detached: true,
     });
@@ -212,11 +188,15 @@ export function start(config: SttSpawnerConfig): void {
 }
 
 export function stop(): void {
+  // ALWAYS emit, even when there's no child and the recorded state was
+  // already "stopped"/"idle". The operator UI uses the spawner_status
+  // broadcast to clear its optimistic "Stopping…" pending state — if we
+  // skip the emit on a no-op stop, the UI sits on "Stopping…" forever
+  // because no confirmation broadcast ever arrives.
   if (!child) {
-    if (status.state !== "idle" && status.state !== "stopped") {
-      status = { ...status, state: "stopped", pid: null };
-      emit();
-    }
+    appendLog("stop requested (no active child)");
+    status = { ...status, state: "stopped", pid: null };
+    emit();
     return;
   }
   appendLog("stop requested");
@@ -237,42 +217,4 @@ export function stop(): void {
 
 export function getActiveConfig(): SttSpawnerConfig | null {
   return activeConfig;
-}
-
-export function getCurrentBias(): string | null {
-  return currentBias;
-}
-
-/**
- * Update the bias prompt exposed to the spawned STT process via the
- * OVERLAYSYS_BIAS_PROMPT env var. If the spawner is currently running and
- * the active config has biasOnSongStart enabled, the child is transparently
- * restarted so the new env var value is picked up. Idempotent: calling with
- * the same value (including null → null) is a no-op.
- *
- * Restart cost: STT engines typically reload their model on start
- * (whisper.cpp base.en is 1–3s). The operator screen falls back to manual
- * control during that gap. Disable `biasOnSongStart` in the config to skip
- * the restart entirely.
- */
-export function setBias(bias: string | null): void {
-  if (bias === currentBias) return;
-  currentBias = bias;
-  if (!activeConfig) return;
-  if (!activeConfig.biasOnSongStart) return;
-  if (status.state !== "running" && status.state !== "starting") return;
-  // Restart in-place. The exit handler will set state="stopped"; we then
-  // re-invoke start() with the same config and the new bias picked up via
-  // module-scope currentBias / env var.
-  const cfg = activeConfig;
-  const c = child;
-  if (!c) {
-    start(cfg);
-    return;
-  }
-  appendLog("restart: bias changed");
-  c.once("exit", () => {
-    start(cfg);
-  });
-  stop();
 }

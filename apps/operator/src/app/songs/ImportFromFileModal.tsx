@@ -56,6 +56,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
       title,
       sections,
       defaultArrangement: arrangement,
+      customFields: {},
     };
     if (author) song.author = author;
     if (ccli) song.ccliNumber = ccli;

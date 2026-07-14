@@ -15,6 +15,7 @@ import { Button, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { uploadAsset } from "@/lib/uploadAsset";
 import { AppHeader } from "@/app/components/AppHeader";
 import { PageShell, PageBody } from "@/app/components/PageShell";
@@ -394,7 +395,7 @@ function TemplateSettings({
 }) {
   const seconds =
     template.autoOutMs && template.autoOutMs > 0 ? template.autoOutMs / 1000 : 0;
-  const channelConfigs = useStore((s) => s.channelConfigs);
+  const channelConfigs = useResolvedChannelConfigs();
   const channelChoices = useMemo(
     () => channelConfigs.filter((c) => !c.mirrorOf),
     [channelConfigs],

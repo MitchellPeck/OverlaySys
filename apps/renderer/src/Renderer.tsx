@@ -35,6 +35,13 @@ const SONG_FADE_DIP_MIN = 0.25;
 export function Renderer({ channel, debug = false }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef<MountedTemplate | null>(null);
+  // Tracks the templateId of the current mount so the takenAt-change handler
+  // can distinguish same-template swaps (lyric slide advance, same-template
+  // outro) from different-template transitions. Same-template swaps reuse the
+  // mount and run its OUT → update → IN animation, so layers outside the
+  // template's in/out timelines (e.g. the shadow band on a lyric template)
+  // stay in place.
+  const lastTemplateIdRef = useRef<string | null>(null);
   const lastTakenAtRef = useRef<number>(0);
   const templateCacheRef = useRef<Map<string, Template>>(new Map());
   const pendingTemplateLoads = useRef<Map<string, ((t: Template) => void)[]>>(
@@ -126,6 +133,7 @@ export function Renderer({ channel, debug = false }: Props) {
         if (mountedRef.current) {
           const m = mountedRef.current;
           mountedRef.current = null;
+          lastTemplateIdRef.current = null;
           await triggerOut(m).catch(() => {});
           m.destroy();
         }
@@ -139,15 +147,41 @@ export function Renderer({ channel, debug = false }: Props) {
 
         if (phase === "out") return;
 
-        // Sequential transition: play the previous mount's out animation
-        // to completion, destroy it, then mount the new template and play
-        // its in animation. Total transition time is out-duration +
-        // in-duration. If a newer take arrives during the out (operator
-        // pressing space rapidly), the takenAt guard below abandons this
-        // flow so the newer take's flow can take over.
         const myTakenAt = takenAt;
         const previous = mountedRef.current;
+
+        // Same-template swap: lyric slide advance, or an outro/intro that
+        // happens to reuse the same template. Reuse the mount, run its OUT
+        // → data swap → IN. Only layers the template's in/out timelines
+        // target will animate (e.g. on a lyric template the text element
+        // fades while the shadow band stays put). Pre-condition: a session
+        // start is NOT pending (those want the full mount cycle so the
+        // session-boundary fade lands correctly).
+        if (
+          previous &&
+          lastTemplateIdRef.current === templateId &&
+          !pendingSessionStartRef.current
+        ) {
+          // playOutTimeline (not playOut, not triggerOut): we want ONLY the
+          // template's own outTl to run — no root-opacity fade. Layers the
+          // template chose not to animate (e.g. a gradient shape behind a
+          // lyric template's text) stay put across the swap. The WeakSet
+          // guard in triggerOut would also suppress this on subsequent
+          // slides, which is wrong for slide-to-slide continuation.
+          await previous.playOutTimeline().catch(() => {});
+          if (myTakenAt !== lastTakenAtRef.current) return;
+          previous.update(data);
+          await previous.playIn().catch(() => {});
+          return;
+        }
+
+        // Different-template (or fresh) transition: play the previous mount's
+        // out animation to completion, destroy it, then mount the new template
+        // and play its in animation. Total transition time is out-duration +
+        // in-duration. If a newer take arrives during the out, the takenAt
+        // guard below abandons this flow so the newer take's flow can take over.
         mountedRef.current = null;
+        lastTemplateIdRef.current = null;
 
         const tpl = await ensureTemplate(templateId);
 
@@ -176,6 +210,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
         const m = mountTemplate(stageRef.current, tpl, data);
         mountedRef.current = m;
+        lastTemplateIdRef.current = templateId;
         m.playIn().catch(() => {});
         // Blink overlay fires in parallel with playIn so the IN animation
         // continues underneath. Catch to keep the takenAt flow alive if the
@@ -198,6 +233,7 @@ export function Renderer({ channel, debug = false }: Props) {
       if (phase === "out" && mountedRef.current) {
         const m = mountedRef.current;
         mountedRef.current = null;
+        lastTemplateIdRef.current = null;
         triggerOut(m).finally(() => m.destroy());
         return;
       }
@@ -239,17 +275,29 @@ export function Renderer({ channel, debug = false }: Props) {
           pendingSessionStartRef.current = true;
         }
         if (!hasSession && hadSession) {
-          // Fade out: transition opacity to 0, then once it lands snap
-          // back to 1 (no transition) so the next non-song take starts
-          // at full opacity instantly.
-          setSongFadeTransitionMs(SONG_FADE_MS);
-          setSongFadeOpacity(0);
-          if (songFadeOutTimerRef.current) clearTimeout(songFadeOutTimerRef.current);
-          songFadeOutTimerRef.current = setTimeout(() => {
-            setSongFadeTransitionMs(0);
-            setSongFadeOpacity(1);
-            songFadeOutTimerRef.current = null;
-          }, SONG_FADE_MS + 50);
+          // The session went away. Two cases:
+          //   - channel is going dark (clear / song_end): state.active is
+          //     null or its phase is "out". Apply the stage fade — gradient
+          //     and all template layers should disappear together.
+          //   - a take replaced the session (operator hit outro or any
+          //     graphic over the song): state.active is a new mount in
+          //     phase "in". Skip the stage fade — that new mount carries
+          //     the visuals. If it's the same template (same-template
+          //     outro), the smooth-swap branch above handles continuity;
+          //     if it's a different template, the destroy+remount branch
+          //     handles the cross-fade.
+          const isEnd =
+            !msg.state.active || msg.state.active.phase === "out";
+          if (isEnd) {
+            setSongFadeTransitionMs(SONG_FADE_MS);
+            setSongFadeOpacity(0);
+            if (songFadeOutTimerRef.current) clearTimeout(songFadeOutTimerRef.current);
+            songFadeOutTimerRef.current = setTimeout(() => {
+              setSongFadeTransitionMs(0);
+              setSongFadeOpacity(1);
+              songFadeOutTimerRef.current = null;
+            }, SONG_FADE_MS + 50);
+          }
         }
         lastHadSongSessionRef.current = hasSession;
         setLatestState(msg.state);

@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type {
   ChannelState,
   ChannelConfig,
+  ProjectChannelOverride,
   Show,
   Template,
   TemplateMeta,
@@ -15,6 +16,10 @@ import type {
   Project,
   SttSpawnerConfig,
   SttSpawnerStatus,
+  SttPresence,
+  SttModelFile,
+  SttCaptureDevice,
+  SttInstallProgress,
 } from "@overlaysys/core";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
@@ -58,6 +63,13 @@ type StoreState = {
   selectedHotcardId: string | null;
   channelStates: Record<string, ChannelState>;
   channelConfigs: ChannelConfig[];
+  /**
+   * Per-project channel overrides, keyed by `${projectId}:${channelId}`.
+   * Flat dictionary so the UI can look up an override for the current
+   * project + channel without scanning a list. Empty when no overrides
+   * are loaded for the current project.
+   */
+  projectChannelOverrides: Record<string, ProjectChannelOverride>;
 
   songs: SongMeta[];
   songCache: Record<string, Song>;
@@ -83,6 +95,9 @@ type StoreState = {
   setSelectedHotcard: (id: string | null) => void;
   setChannelState: (s: ChannelState) => void;
   setChannelConfigs: (c: ChannelConfig[]) => void;
+  setProjectChannelOverrides: (overrides: ProjectChannelOverride[]) => void;
+  setProjectChannelOverride: (override: ProjectChannelOverride) => void;
+  removeProjectChannelOverride: (projectId: string, channelId: string) => void;
   setSongs: (songs: SongMeta[]) => void;
   setSong: (song: Song) => void;
   setShowFull: (show: Show) => void;
@@ -96,6 +111,25 @@ type StoreState = {
   sttSpawnerConfig: SttSpawnerConfig | null;
   setSttSpawnerStatus: (s: SttSpawnerStatus) => void;
   setSttSpawnerConfig: (c: SttSpawnerConfig) => void;
+
+  sttPresence: SttPresence | null;
+  sttModels: SttModelFile[];
+  sttModelsDir: string | null;
+  sttCaptureDevices: SttCaptureDevice[];
+  // Progress entries keyed by jobId. "binary" for the whisper-cpp install,
+  // filename (e.g. "ggml-base.en.bin") for model downloads. Updated in
+  // place by the install_progress handler; cleared when the job ends so
+  // the UI's progress card disappears on completion.
+  sttInstallJobs: Record<string, SttInstallProgress>;
+  setSttPresence: (p: SttPresence) => void;
+  setSttModels: (models: SttModelFile[], modelsDir: string) => void;
+  setSttCaptureDevices: (d: SttCaptureDevice[]) => void;
+  setSttInstallProgress: (p: SttInstallProgress) => void;
+  // Drop a job entry from the install-jobs map. The page schedules this on
+  // a short timer after a terminal state ("done"/"error"/"cancelled") so the
+  // success/failure message shows briefly and then the progress card
+  // disappears instead of lingering until next page reload.
+  clearSttInstallJob: (jobId: string) => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -108,6 +142,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedHotcardId: null,
   channelStates: {},
   channelConfigs: [],
+  projectChannelOverrides: {},
   songs: [],
   songCache: {},
   showCache: {},
@@ -123,6 +158,11 @@ export const useStore = create<StoreState>((set) => ({
     typeof window === "undefined" ? DEFAULT_PROJECT_ID : getCurrentProjectId(),
   sttSpawnerStatus: null,
   sttSpawnerConfig: null,
+  sttPresence: null,
+  sttModels: [],
+  sttModelsDir: null,
+  sttCaptureDevices: [],
+  sttInstallJobs: {},
 
   setConn: (c) => set({ conn: c }),
   setTemplates: (t) => set({ templates: t }),
@@ -160,6 +200,29 @@ export const useStore = create<StoreState>((set) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
     })),
   setChannelConfigs: (c) => set({ channelConfigs: c }),
+  setProjectChannelOverrides: (overrides) =>
+    set(() => {
+      const dict: Record<string, ProjectChannelOverride> = {};
+      for (const o of overrides) {
+        dict[`${o.projectId}:${o.channelId}`] = o;
+      }
+      return { projectChannelOverrides: dict };
+    }),
+  setProjectChannelOverride: (override) =>
+    set((s) => ({
+      projectChannelOverrides: {
+        ...s.projectChannelOverrides,
+        [`${override.projectId}:${override.channelId}`]: override,
+      },
+    })),
+  removeProjectChannelOverride: (projectId, channelId) =>
+    set((s) => {
+      const key = `${projectId}:${channelId}`;
+      if (!(key in s.projectChannelOverrides)) return s;
+      const next = { ...s.projectChannelOverrides };
+      delete next[key];
+      return { projectChannelOverrides: next };
+    }),
   setSongs: (songs) => set({ songs }),
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),
   setShowFull: (show) =>
@@ -181,4 +244,18 @@ export const useStore = create<StoreState>((set) => ({
   },
   setSttSpawnerStatus: (s) => set({ sttSpawnerStatus: s }),
   setSttSpawnerConfig: (c) => set({ sttSpawnerConfig: c }),
+  setSttPresence: (p) => set({ sttPresence: p }),
+  setSttModels: (models, modelsDir) => set({ sttModels: models, sttModelsDir: modelsDir }),
+  setSttCaptureDevices: (d) => set({ sttCaptureDevices: d }),
+  setSttInstallProgress: (p) =>
+    set((cur) => ({
+      sttInstallJobs: { ...cur.sttInstallJobs, [p.jobId]: p },
+    })),
+  clearSttInstallJob: (jobId) =>
+    set((cur) => {
+      if (!(jobId in cur.sttInstallJobs)) return cur;
+      const next = { ...cur.sttInstallJobs };
+      delete next[jobId];
+      return { sttInstallJobs: next };
+    }),
 }));

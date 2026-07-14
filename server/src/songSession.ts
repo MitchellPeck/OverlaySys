@@ -3,39 +3,6 @@ import * as channels from "./channels";
 import * as sttMatcher from "./sttMatcher";
 import type { MatchResult } from "./sttMatcher";
 
-// Channel that drives Whisper prompt biasing. Bias only follows the program
-// session — preview cues shouldn't restart the recognizer.
-const PROGRAM_CHANNEL = "program";
-
-type ProgramBiasListener = (biasText: string | null) => void;
-const programBiasListeners = new Set<ProgramBiasListener>();
-let lastProgramBias: string | null = null;
-
-export function onProgramBiasChange(fn: ProgramBiasListener): () => void {
-  programBiasListeners.add(fn);
-  return () => {
-    programBiasListeners.delete(fn);
-  };
-}
-
-function songBiasText(song: Song): string {
-  const parts: string[] = [];
-  for (const sec of song.sections) {
-    for (const slide of sec.slides) {
-      for (const line of slide.lines) parts.push(line);
-    }
-  }
-  return parts.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function refreshProgramBias(): void {
-  const s = sessions.get(PROGRAM_CHANNEL);
-  const next = s ? songBiasText(s.song) : null;
-  if (next === lastProgramBias) return;
-  lastProgramBias = next;
-  for (const fn of programBiasListeners) fn(next);
-}
-
 interface StartArgs {
   song: Song;
   lyricTemplateId: string;
@@ -127,7 +94,6 @@ export function start(channel: string, args: StartArgs): void {
   sessions.set(channel, internal);
   render(internal, /* forceMount */ true);
   sttMatcher.bindSession(channel, args.song, args.arrangement);
-  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
 }
 
 /**
@@ -165,9 +131,6 @@ export function promoteTo(
   // End the source AFTER the destination is rendered, so there's never a
   // gap with neither channel showing the song.
   if (src) end(fromChannel);
-  if (toChannel === PROGRAM_CHANNEL || fromChannel === PROGRAM_CHANNEL) {
-    refreshProgramBias();
-  }
 }
 
 export function getSession(channel: string): SongSessionSummary | null {
@@ -178,7 +141,10 @@ export function getSession(channel: string): SongSessionSummary | null {
 export function advance(channel: string, delta: number): void {
   const s = sessions.get(channel);
   if (!s) return;
-  let { sectionIdx, slideIdx } = s.cursor;
+  const startSection = s.cursor.sectionIdx;
+  const startSlide = s.cursor.slideIdx;
+  let sectionIdx = startSection;
+  let slideIdx = startSlide;
   let remaining = delta;
 
   const step = remaining > 0 ? 1 : -1;
@@ -198,6 +164,10 @@ export function advance(channel: string, delta: number): void {
     }
     remaining -= step;
   }
+  // If the cursor didn't move (operator hit advance at the last slide, or
+  // back at the first), do nothing — including no re-render. Re-rendering
+  // would replay the IN animation in place, which reads as a glitch.
+  if (sectionIdx === startSection && slideIdx === startSlide) return;
   s.cursor = { sectionIdx, slideIdx };
   render(s, /* forceMount */ true);
 }
@@ -261,8 +231,32 @@ export function setTrust(channel: string, trustMode: boolean): void {
 }
 
 export function end(channel: string): void {
+  if (!tearDownSession(channel)) return;
+  // Defer the songSession-cleared emit so it coalesces with the phase=out
+  // emit from channels.clear. That single combined state event lets the
+  // renderer distinguish "session ended" (active.phase=out) from "session
+  // ended because a take replaced it" (active.phase=in, emitted by
+  // channels.take's coalesced path).
+  channels.setSongSessionSummary(channel, null, { deferEmit: true });
+  channels.clear(channel);
+}
+
+/**
+ * Tear down internal session state (timers, STT binding, session map, bias).
+ * Does NOT touch channel state — the caller is responsible for clearing
+ * songSession + emitting. Returns true if a session was actually torn down.
+ *
+ * Used by channels.take when a song session is live and the operator is
+ * taking a graphic over it: the take needs the "session went away" delta and
+ * the "new active mount" delta to land in a single state event so the
+ * renderer's session-end stage fade doesn't hide the new template's IN
+ * animation (which manifests as the new template "snapping in").
+ *
+ * Safe to call when no session is active (returns false).
+ */
+export function tearDownSession(channel: string): boolean {
   const s = sessions.get(channel);
-  if (!s) return;
+  if (!s) return false;
   const timer = autoAdvanceTimers.get(channel);
   if (timer) {
     clearTimeout(timer);
@@ -270,9 +264,19 @@ export function end(channel: string): void {
   }
   sttMatcher.unbindSession(channel);
   sessions.delete(channel);
+  return true;
+}
+
+/**
+ * Tear down the session AND publish the cleared songSession on the channel
+ * state (emits). Use for end-of-song operator actions where no follow-up
+ * take is coming; for the take-replaces-song flow use {@link tearDownSession}
+ * so the caller can coalesce the channel update with its new active mount.
+ */
+export function endSessionOnly(channel: string): boolean {
+  if (!tearDownSession(channel)) return false;
   channels.setSongSessionSummary(channel, null);
-  channels.clear(channel);
-  if (channel === PROGRAM_CHANNEL) refreshProgramBias();
+  return true;
 }
 
 /**

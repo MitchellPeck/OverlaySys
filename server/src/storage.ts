@@ -344,11 +344,43 @@ export async function deleteProject(id: string): Promise<boolean> {
 
 // STT spawner config ───────────────────────────────────────────────────────────
 
+// Matches the shape of the legacy default command — `whisper-stream` with
+// `-m <path> --step <n> --length <n>` and nothing more. When migration
+// finds this exact shape we throw the legacy `command` away rather than
+// promoting it to `customCommand`, because doing the promotion would
+// permanently shadow the new structured dropdowns (buildSttCommand prefers
+// customCommand when non-empty). The structured defaults reproduce the
+// same command on disk, so users lose nothing.
+const LEGACY_DEFAULT_COMMAND_PATTERN =
+  /^whisper-stream\s+-m\s+\S+\s+--step\s+\d+\s+--length\s+\d+\s*$/;
+
 export async function loadSttConfig(): Promise<SttSpawnerConfig> {
   await ensureDir(STT_DIR());
   try {
     const raw = await fs.readFile(STT_CONFIG_FILE(), "utf8");
-    return SttSpawnerConfigSchema.parse(JSON.parse(raw));
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    // Migrate pre-dropdown configs that stored a single `command` string.
+    // We have two cases:
+    //   1. Legacy command matches the default-shaped whisper-stream pattern
+    //      → drop it. The new structured fields produce an equivalent command
+    //      and giving the user back active dropdowns is more valuable than
+    //      preserving a redundant string.
+    //   2. Legacy command is genuinely customised (pipes, env vars, cloud
+    //      STT, etc.) → preserve it by promoting to customCommand so the
+    //      user's existing pipeline keeps working.
+    if (
+      obj &&
+      typeof obj === "object" &&
+      typeof obj["command"] === "string" &&
+      typeof obj["customCommand"] !== "string"
+    ) {
+      const cmd = (obj["command"] as string).trim();
+      if (!LEGACY_DEFAULT_COMMAND_PATTERN.test(cmd)) {
+        obj["customCommand"] = cmd;
+      }
+    }
+    if (obj && typeof obj === "object") delete obj["command"];
+    return SttSpawnerConfigSchema.parse(obj);
   } catch {
     return { ...DEFAULT_STT_SPAWNER_CONFIG };
   }

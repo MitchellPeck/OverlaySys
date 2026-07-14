@@ -1,14 +1,18 @@
 "use client";
 
 import {
+  ChannelConfigSchema,
   HotcardSchema,
+  ProjectChannelOverrideSchema,
   ShowSchema,
   SongSchema,
   TemplateSchema,
   type Bundle,
+  type ChannelConfig,
   type Hotcard,
   type HotcardMeta,
   type Project,
+  type ProjectChannelOverride,
   type Show,
   type Song,
   type SongMeta,
@@ -848,6 +852,45 @@ export async function applyBundleCloud(
     }
   }
 
+  // 6. Channels (org library). Save before overrides so the override's
+  //    referenced channel is guaranteed present. Saves are idempotent —
+  //    re-applying a bundle with the same channels just bumps updatedAt.
+  for (const c of bundle.channels ?? []) {
+    try {
+      onProgress?.(`channel: ${c.name}`);
+      await saveChannelConfigCloud(c);
+      // counts intentionally omits channels — keep the public count shape
+      // stable for existing UI consumers; the message stream is enough
+      // signal during import.
+    } catch (err) {
+      errors.push({
+        kind: "channel",
+        id: c.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 7. Project channel overrides. Re-target to the bundle's project id
+  //    when the importer remapped projects (currently they always land at
+  //    the same id, but the indirection matches the show/hotcard pattern
+  //    above and shields against future project remapping).
+  for (const o of bundle.channelOverrides ?? []) {
+    try {
+      onProgress?.(`channel override: ${o.channelId}`);
+      const scoped = targetProjectId
+        ? { ...o, projectId: targetProjectId }
+        : o;
+      await saveProjectChannelOverrideCloud(scoped);
+    } catch (err) {
+      errors.push({
+        kind: "channelOverride",
+        id: `${o.projectId}:${o.channelId}`,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return { counts, errors };
 }
 
@@ -897,4 +940,176 @@ function rowToProject(row: {
     updatedAt: row.updated_at,
     ...(row.notes ? { notes: row.notes } : {}),
   };
+}
+
+// ─── Channels (org library + per-project overrides) ───────────────────────
+//
+// Channels are now first-class org data. The cloud is the source of truth;
+// devices receive this configuration via the sync engine (Workstream 1).
+// Per-project overrides patch individual channels for specific projects —
+// see packages/core/src/channelResolution.ts for cascade semantics.
+
+export async function listChannelConfigsCloud(): Promise<ChannelConfig[]> {
+  const client = getCloudClient();
+  const { data, error } = await client
+    .from("channel_configs")
+    .select("id, payload, updated_at, deleted_at")
+    .is("deleted_at", null);
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => rowToChannelConfig(row))
+    .filter((c): c is ChannelConfig => c !== null);
+}
+
+export async function saveChannelConfigCloud(channel: ChannelConfig): Promise<void> {
+  const client = getCloudClient();
+  const orgId = getOrgId();
+  // Stamp updatedAt for sync. The Postgres trigger also sets updated_at on
+  // the row; we keep it in the payload too so consumers reading the JSON
+  // directly (bundle exports, sync engine) don't have to join the column.
+  const stamped: ChannelConfig = {
+    ...channel,
+    updatedAt: new Date().toISOString(),
+  };
+  const { data, error } = await client
+    .from("channel_configs")
+    .upsert(
+      [
+        {
+          id: stamped.id,
+          org_id: orgId,
+          payload: stamped as unknown as import("@overlaysys/supabase").Database["overlaysys"]["Tables"]["channel_configs"]["Row"]["payload"],
+        },
+      ],
+      { onConflict: "org_id,id" },
+    )
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Insert returned 0 rows — likely RLS denied. Check org membership for " +
+        `org ${orgId}.`,
+    );
+  }
+}
+
+/**
+ * Soft-delete: stamp `deleted_at` rather than removing the row, so the
+ * tombstone can propagate via sync before the row is hard-deleted by a
+ * future GC pass.
+ */
+export async function deleteChannelConfigCloud(id: string): Promise<void> {
+  const client = getCloudClient();
+  const orgId = getOrgId();
+  const { error } = await client
+    .from("channel_configs")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("org_id", orgId)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function refreshChannelConfigsCloud(): Promise<void> {
+  const channels = await listChannelConfigsCloud();
+  useStore.getState().setChannelConfigs(channels);
+}
+
+export async function listProjectChannelOverridesCloud(
+  projectId: string,
+): Promise<ProjectChannelOverride[]> {
+  const client = getCloudClient();
+  const { data, error } = await client
+    .from("project_channel_overrides")
+    .select("project_id, channel_id, payload, updated_at, deleted_at")
+    .eq("project_id", projectId)
+    .is("deleted_at", null);
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => rowToProjectChannelOverride(row))
+    .filter((o): o is ProjectChannelOverride => o !== null);
+}
+
+export async function saveProjectChannelOverrideCloud(
+  override: ProjectChannelOverride,
+): Promise<void> {
+  const client = getCloudClient();
+  const orgId = getOrgId();
+  const stamped: ProjectChannelOverride = {
+    ...override,
+    updatedAt: new Date().toISOString(),
+  };
+  const { data, error } = await client
+    .from("project_channel_overrides")
+    .upsert(
+      [
+        {
+          org_id: orgId,
+          project_id: stamped.projectId,
+          channel_id: stamped.channelId,
+          payload: stamped as unknown as import("@overlaysys/supabase").Database["overlaysys"]["Tables"]["project_channel_overrides"]["Row"]["payload"],
+        },
+      ],
+      { onConflict: "org_id,project_id,channel_id" },
+    )
+    .select();
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "Override upsert returned 0 rows — likely RLS denied. Check org " +
+        `membership for org ${orgId}.`,
+    );
+  }
+}
+
+export async function deleteProjectChannelOverrideCloud(
+  projectId: string,
+  channelId: string,
+): Promise<void> {
+  const client = getCloudClient();
+  const orgId = getOrgId();
+  const { error } = await client
+    .from("project_channel_overrides")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("org_id", orgId)
+    .eq("project_id", projectId)
+    .eq("channel_id", channelId);
+  if (error) throw error;
+}
+
+function rowToChannelConfig(row: {
+  id: string;
+  payload: unknown;
+  updated_at: string;
+  deleted_at: string | null;
+}): ChannelConfig | null {
+  if (row.deleted_at) return null;
+  const parsed = ChannelConfigSchema.safeParse(row.payload);
+  if (!parsed.success) {
+    console.warn("[cloudData] channel_configs row failed parse", row.id, parsed.error);
+    return null;
+  }
+  // The Postgres trigger is the source of truth for updated_at; the
+  // payload's updatedAt may lag by milliseconds. Prefer the row column.
+  return { ...parsed.data, updatedAt: row.updated_at };
+}
+
+function rowToProjectChannelOverride(row: {
+  project_id: string;
+  channel_id: string;
+  payload: unknown;
+  updated_at: string;
+  deleted_at: string | null;
+}): ProjectChannelOverride | null {
+  if (row.deleted_at) return null;
+  const parsed = ProjectChannelOverrideSchema.safeParse(row.payload);
+  if (!parsed.success) {
+    console.warn(
+      "[cloudData] project_channel_overrides row failed parse",
+      row.project_id,
+      row.channel_id,
+      parsed.error,
+    );
+    return null;
+  }
+  return { ...parsed.data, updatedAt: row.updated_at };
 }

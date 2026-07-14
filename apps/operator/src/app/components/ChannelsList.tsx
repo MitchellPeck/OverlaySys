@@ -5,6 +5,7 @@ import Link from "next/link";
 import { colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { ChannelStatus } from "./ChannelStatus";
 
 const PREVIEW_ENABLED_KEY = "overlaysys:channelPreviewEnabled";
@@ -40,7 +41,7 @@ function saveEnabled(m: EnabledMap): void {
  */
 export function ChannelsList({ orientation = "vertical" }: { orientation?: "vertical" | "horizontal" } = {}) {
   const { send } = useWs();
-  const channels = useStore((s) => s.channelConfigs);
+  const channels = useResolvedChannelConfigs();
   const channelStates = useStore((s) => s.channelStates);
   const [enabledMap, setEnabledMap] = useState<EnabledMap>(() => loadEnabled());
 

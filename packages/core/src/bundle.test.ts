@@ -5,10 +5,12 @@ import { type Show } from "./show";
 import {
   BundleSchema,
   collectDependencies,
+  collectReferencedChannelIds,
   detectImport,
   type BundleSelection,
   type StoreSnapshot,
 } from "./bundle";
+import { type Hotcard } from "./hotcard";
 import { type Project } from "./project";
 
 describe("BundleSchema", () => {
@@ -117,6 +119,7 @@ function makeSong(id: string, defaultLyricTemplateId?: string): Song {
     title: id,
     sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["x"] }] }],
     defaultArrangement: ["v1"],
+    customFields: {},
     ...(defaultLyricTemplateId !== undefined ? { defaultLyricTemplateId } : {}),
   };
 }
@@ -135,7 +138,7 @@ function makeTemplate(id: string): Template {
 }
 
 function makeShow(id: string, rows: Show["rows"]): Show {
-  return { id, name: id, projectId: "default", rows };
+  return { id, name: id, projectId: "default", rows, songs: [] };
 }
 
 describe("collectDependencies", () => {
@@ -336,5 +339,114 @@ describe("detectImport", () => {
       // missing exportedAt
     });
     expect(result.kind).toBe("error");
+  });
+});
+
+describe("collectReferencedChannelIds", () => {
+  function makeTemplate(overrides: Partial<Template> = {}): Template {
+    return {
+      id: "tpl-1",
+      name: "Template",
+      size: { w: 1920, h: 1080 },
+      fields: [],
+      layers: [],
+      timelines: { in: { keyframes: [] }, out: { keyframes: [] } },
+      fonts: [],
+      ...overrides,
+    } as Template;
+  }
+  function makeSong(overrides: Partial<Song> = {}): Song {
+    return {
+      id: "song-1",
+      title: "Song",
+      sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: [""] }] }],
+      defaultArrangement: ["v1"],
+      customFields: {},
+      ...overrides,
+    } as Song;
+  }
+  function makeShow(overrides: Partial<Show> = {}): Show {
+    return {
+      id: "show-1",
+      name: "Show",
+      projectId: "p",
+      rows: [],
+      songs: [],
+      ...overrides,
+    } as Show;
+  }
+  function makeHotcard(overrides: Partial<Hotcard> = {}): Hotcard {
+    return {
+      id: "hc-1",
+      name: "Hotcard",
+      projectId: "p",
+      templateId: "tpl-1",
+      data: {},
+      ...overrides,
+    } as Hotcard;
+  }
+
+  it("returns an empty set when no entities reference any channel", () => {
+    const ids = collectReferencedChannelIds({
+      shows: [],
+      hotcards: [],
+      songs: [],
+      templates: [],
+    });
+    expect([...ids]).toEqual([]);
+  });
+
+  it("collects channelHint from every show row (graphic + song rows)", () => {
+    const show = makeShow({
+      rows: [
+        { kind: "graphic", id: "r1", templateId: "tpl-1", data: {}, channelHint: "program" },
+        { kind: "song", id: "r2", songId: "song-1", lyricTemplateId: "tpl-1", channelHint: "preview" },
+        { kind: "graphic", id: "r3", templateId: "tpl-1", data: {} }, // no hint
+      ],
+    });
+    const ids = collectReferencedChannelIds({
+      shows: [show],
+      hotcards: [],
+      songs: [],
+      templates: [],
+    });
+    expect([...ids].sort()).toEqual(["preview", "program"]);
+  });
+
+  it("collects ShowSong.channelOverride alongside row hints", () => {
+    const show = makeShow({
+      rows: [{ kind: "graphic", id: "r1", templateId: "tpl-1", data: {} }],
+      songs: [{ songId: "song-1", channelOverride: "alpha-program" }],
+    });
+    const ids = collectReferencedChannelIds({
+      shows: [show],
+      hotcards: [],
+      songs: [],
+      templates: [],
+    });
+    expect([...ids]).toEqual(["alpha-program"]);
+  });
+
+  it("collects hotcard channelHint, song defaultChannel, and template defaultChannel", () => {
+    const ids = collectReferencedChannelIds({
+      shows: [],
+      hotcards: [makeHotcard({ channelHint: "stinger" })],
+      songs: [makeSong({ defaultChannel: "song-pgm" })],
+      templates: [makeTemplate({ defaultChannel: "tpl-pgm" })],
+    });
+    expect([...ids].sort()).toEqual(["song-pgm", "stinger", "tpl-pgm"]);
+  });
+
+  it("dedupes across sources", () => {
+    const show = makeShow({
+      rows: [{ kind: "graphic", id: "r1", templateId: "tpl-1", data: {}, channelHint: "program" }],
+    });
+    const ids = collectReferencedChannelIds({
+      shows: [show],
+      hotcards: [makeHotcard({ channelHint: "program" })],
+      songs: [makeSong({ defaultChannel: "program" })],
+      templates: [],
+    });
+    expect([...ids]).toEqual(["program"]);
   });
 });

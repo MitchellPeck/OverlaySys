@@ -30,6 +30,18 @@ export const HotcardSchema = z.preprocess(
     data: z.record(z.string(), z.string()),
     channelHint: z.string().optional(),
     notes: z.string().optional(),
+    /**
+     * ISO timestamp of the last write. Set by writers (server, cloud helper)
+     * on every save; consumed by the sync engine for last-writer-wins. Optional
+     * for backwards compatibility with pre-sync JSON; new writes always set it.
+     */
+    updatedAt: z.string().optional(),
+    /**
+     * Soft-delete tombstone. When set, the hotcard is hidden from UIs but the
+     * record persists so the deletion can propagate via sync before a future
+     * GC pass hard-deletes it.
+     */
+    deletedAt: z.string().optional(),
   }),
 );
 export type Hotcard = z.infer<typeof HotcardSchema>;

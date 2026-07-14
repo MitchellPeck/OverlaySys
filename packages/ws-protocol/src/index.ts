@@ -9,6 +9,10 @@ import {
   ProjectSchema,
   SttSpawnerConfigSchema,
   SttSpawnerStatusSchema,
+  SttPresenceSchema,
+  SttModelFileSchema,
+  SttCaptureDeviceSchema,
+  SttInstallProgressSchema,
   type TemplateMeta,
 } from "@overlaysys/core";
 
@@ -104,6 +108,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     channel: z.string(),
   }),
   z.object({
+    // Fire a single sub-take (intro / lyrics / outro) for a song row. The
+    // server resolves the Song → ShowSong → Row cascade for template id,
+    // field map, and field literals, then dispatches whichever underlying
+    // wire flow is right for the chosen sub: a graphic `take` for intro and
+    // outro, and `song_take` (or `song_advance` if a same-song session is
+    // live) for lyrics. `channel` is optional — when omitted, the server
+    // uses the cascade-resolved channel.
+    type: z.literal("take_song_sub"),
+    showId: z.string(),
+    songRowId: z.string(),
+    sub: z.enum(["intro", "lyrics", "outro"]),
+    channel: z.string().optional(),
+  }),
+  z.object({
     // Promote a song session: if `fromChannel` already has a session for
     // `songRowId`, copy its cursor (and trustMode) to a fresh session on
     // `toChannel`, then end the source. Otherwise start a fresh session
@@ -145,8 +163,47 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("stt_spawner_save_config"),
     config: SttSpawnerConfigSchema,
   }),
-  z.object({ type: z.literal("stt_spawner_start") }),
+  // Optional `config` lets the operator save and start atomically in a
+  // single handler. Without it, save_config + start are two separate
+  // async handlers and the save's disk write can race the start's read,
+  // causing the spawner to launch with stale config.
+  z.object({
+    type: z.literal("stt_spawner_start"),
+    config: SttSpawnerConfigSchema.optional(),
+  }),
   z.object({ type: z.literal("stt_spawner_stop") }),
+  // Presence / installer flows. The operator's /stt page sends these to
+  // poll for whisper-stream binary availability, list installed models,
+  // enumerate capture devices, and drive auto-install. Server responds
+  // with `stt_presence` / `stt_models` / `stt_capture_devices` and streams
+  // `stt_install_progress` for the duration of any active install job.
+  z.object({ type: z.literal("stt_check_presence") }),
+  z.object({ type: z.literal("stt_list_models") }),
+  z.object({
+    type: z.literal("stt_enumerate_capture_devices"),
+    // Bypass the server's enumeration cache. Heavy — spawns whisper-stream
+    // which loads ~500MB of backends and momentarily holds the audio
+    // device, so it should only be set on explicit user "rescan".
+    force: z.boolean().default(false),
+  }),
+  z.object({ type: z.literal("stt_install_binary") }),
+  z.object({ type: z.literal("stt_uninstall_binary") }),
+  z.object({
+    type: z.literal("stt_download_model"),
+    url: z.string().min(1),
+    // .bin filename. Must not contain path separators — installer enforces.
+    filename: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("stt_delete_model"),
+    // Filename only — installer resolves inside the managed models dir and
+    // refuses anything that escapes via `..` or path separators.
+    filename: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("stt_cancel_install"),
+    jobId: z.string(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -294,6 +351,25 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("stt_spawner_config"),
     config: SttSpawnerConfigSchema,
+  }),
+  z.object({
+    type: z.literal("stt_presence"),
+    presence: SttPresenceSchema,
+  }),
+  z.object({
+    type: z.literal("stt_models"),
+    models: z.array(SttModelFileSchema),
+    // Resolved absolute path of the managed models directory — the UI
+    // shows it so users can locate / drop in their own .bin files.
+    modelsDir: z.string(),
+  }),
+  z.object({
+    type: z.literal("stt_capture_devices"),
+    devices: z.array(SttCaptureDeviceSchema),
+  }),
+  z.object({
+    type: z.literal("stt_install_progress"),
+    progress: SttInstallProgressSchema,
   }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

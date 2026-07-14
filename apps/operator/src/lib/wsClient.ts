@@ -109,7 +109,17 @@ export class WsClient {
   send(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(encode(msg));
+      return;
     }
+    // Silently dropping the message would manifest as ghost UI: the user
+    // clicks Install, optimistic state shows progress, but nothing ever
+    // happens server-side because the socket was mid-reconnect. Log it so
+    // the issue surfaces in the console.
+    console.warn(
+      `[ws] dropping ${msg.type} — socket ${
+        this.ws ? readyStateLabel(this.ws.readyState) : "null"
+      }`,
+    );
   }
 
   on(listener: Listener): () => void {
@@ -145,6 +155,21 @@ export class WsClient {
     setTimeout(() => {
       if (!this.closedByUser) this.openSocket();
     }, delay);
+  }
+}
+
+function readyStateLabel(rs: number): string {
+  switch (rs) {
+    case WebSocket.CONNECTING:
+      return "CONNECTING";
+    case WebSocket.OPEN:
+      return "OPEN";
+    case WebSocket.CLOSING:
+      return "CLOSING";
+    case WebSocket.CLOSED:
+      return "CLOSED";
+    default:
+      return `state=${rs}`;
   }
 }
 

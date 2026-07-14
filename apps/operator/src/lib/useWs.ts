@@ -124,6 +124,18 @@ function bootstrap(): void {
       case "stt_spawner_config":
         store.setSttSpawnerConfig(msg.config);
         break;
+      case "stt_presence":
+        store.setSttPresence(msg.presence);
+        break;
+      case "stt_models":
+        store.setSttModels(msg.models, msg.modelsDir);
+        break;
+      case "stt_capture_devices":
+        store.setSttCaptureDevices(msg.devices);
+        break;
+      case "stt_install_progress":
+        store.setSttInstallProgress(msg.progress);
+        break;
       case "error":
         console.warn("[server error]", msg);
         break;

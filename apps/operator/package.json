@@ -16,6 +16,7 @@
   "dependencies": {
     "@overlaysys/core": "workspace:*",
     "@overlaysys/editor-kit": "workspace:*",
+    "@overlaysys/scripture": "workspace:*",
     "@overlaysys/supabase": "workspace:*",
     "@overlaysys/ui": "workspace:*",
     "@overlaysys/ws-protocol": "workspace:*",

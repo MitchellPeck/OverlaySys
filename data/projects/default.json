@@ -1,6 +1,12 @@
 {
   "id": "default",
   "name": "Default Project",
-  "createdAt": "2026-05-14T15:09:08.438Z",
-  "updatedAt": "2026-05-14T15:09:08.438Z"
+  "createdAt": "2026-05-14T15:09:08.438+00:00",
+  "updatedAt": "2026-05-17T13:52:56.220Z",
+  "songCustomFieldSchema": [
+    {
+      "key": "hymn_num",
+      "label": "Hymn Number"
+    }
+  ]
 }
