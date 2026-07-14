@@ -179,6 +179,12 @@ export const ShowSchema = z.preprocess(
      * field-level merge has a paper trail (see plan §Workstream 1).
      */
     updatedAt: z.string().optional(),
+    /**
+     * Optional service date, date-only ISO `YYYY-MM-DD`. Drives "next show"
+     * selection on control surfaces. Optional/backfill-free: shows saved before
+     * this field simply have no value and fall back to name-parsed dates.
+     */
+    scheduledFor: z.string().optional(),
     /** Soft-delete tombstone; see hotcard.ts for the rationale. */
     deletedAt: z.string().optional(),
   }),
