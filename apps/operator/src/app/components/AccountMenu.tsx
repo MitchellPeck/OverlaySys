@@ -136,7 +136,7 @@ export function AccountMenu() {
       <button
         onClick={signIn}
         disabled={busy}
-        style={{ ...pillStyle, borderColor: "var(--amber, #f0b95c)", color: "var(--amber, #f0b95c)" }}
+        style={{ ...pillStyle, borderColor: "var(--amber, var(--warn))", color: "var(--amber, var(--warn))" }}
         title="Your session has expired — sign in again"
       >
         {busy ? "Signing in…" : "Session expired — sign in"}
@@ -209,7 +209,7 @@ function MenuItem({
         border: "none",
         padding: "6px 10px",
         fontSize: 13,
-        color: variant === "destructive" ? "var(--red, #f0556b)" : "var(--text)",
+        color: variant === "destructive" ? "var(--red, var(--danger))" : "var(--text)",
         cursor: "pointer",
         borderRadius: 4,
       }}

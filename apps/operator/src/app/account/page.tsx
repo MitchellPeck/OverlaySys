@@ -58,11 +58,11 @@ export default function AccountPage() {
           <div
             style={{
               background: "var(--panel-2)",
-              border: `1px solid #f0b95c`,
+              border: `1px solid var(--warn)`,
               borderRadius: 6,
               padding: 12,
               marginBottom: 16,
-              color: "#f0b95c",
+              color: "var(--warn)",
               fontSize: 13,
             }}
           >

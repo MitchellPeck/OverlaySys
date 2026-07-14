@@ -532,7 +532,7 @@ function BackgroundEditor({
           border: `1px solid ${colors.border}`,
           background:
             v === "transparent"
-              ? "linear-gradient(45deg, #1a1c20 25%, transparent 25%, transparent 75%, #1a1c20 75%) 0 0 / 8px 8px, #0c0d10"
+              ? "linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%) 0 0 / 8px 8px, var(--bg)"
               : v,
         }}
         title={v}

@@ -328,7 +328,7 @@ function DesignPageInner() {
           </div>
         </EditorSection>
 
-        <div style={{ background: "#0a0b0e", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+        <div style={{ background: "var(--bg)", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
           <Canvas
             template={draft}
             data={previewData}
