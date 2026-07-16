@@ -9,7 +9,9 @@ import {
   ensureShowSongEntry,
   makeSourceRef,
   matchLibrarySong,
+  pcoItemGraphicDefaults,
   resolveImportedSongId,
+  type PcoPlanItem,
   type RundownRow,
   type Show,
 } from "@overlaysys/core";
@@ -26,10 +28,25 @@ export interface ImportTarget {
   projectId?: string;
 }
 
-export interface SongDecision {
-  action: "link" | "create";
-  /** For `link`: the library song id to reference (overrides auto-match). */
+/**
+ * Per-item import configuration from the operator UI. `kind` chooses whether a
+ * (song) plan item becomes a library-backed song row or a plain graphic row;
+ * `templateId` is the lyric template (song) or graphic template (graphic);
+ * `data` holds the configured graphic field values.
+ */
+export interface ImportItemConfig {
+  itemId: string;
+  kind: "song" | "graphic";
+  /** Song kind: link an existing library song or create/update one. */
+  songAction?: "link" | "create";
+  /** Song kind + link: the library song id to reference. */
   songId?: string;
+  /** Lyric template (song) or graphic template (graphic). */
+  templateId?: string;
+  /** Graphic kind: configured template field values. */
+  data?: Record<string, string>;
+  /** Graphic kind: optional row notes. */
+  notes?: string;
 }
 
 export interface ImportPlanRequest {
@@ -37,11 +54,10 @@ export interface ImportPlanRequest {
   planId: string;
   planTitle?: string;
   target: ImportTarget;
-  lyricTemplateId?: string;
-  graphicTemplateId?: string;
-  selectedItemIds: string[];
-  /** Per-item overrides keyed by PCO item id; falls back to auto-match. */
-  songDecisions?: Record<string, SongDecision>;
+  items: ImportItemConfig[];
+  /** Fallback templates when an item config omits `templateId`. */
+  defaultLyricTemplateId?: string;
+  defaultGraphicTemplateId?: string;
 }
 
 export interface ImportPlanResult {
@@ -73,48 +89,54 @@ export async function importPlan(
   const warnings: string[] = [];
   const errors: { itemId: string; message: string }[] = [];
 
-  // Resolve default templates (request → config → first available).
+  // Resolve fallback templates (request → config → first available), used only
+  // when an item config omits its own templateId.
   const config = await loadPcoConfig();
   const metas = await listTemplateMetas();
-  const lyricTemplateId =
-    req.lyricTemplateId ?? config.defaultLyricTemplateId ?? metas[0]?.id;
-  const graphicTemplateId =
-    req.graphicTemplateId ?? config.defaultGraphicTemplateId ?? metas[0]?.id;
-  if (!lyricTemplateId || !graphicTemplateId) {
-    return {
-      ok: false,
-      counts,
-      warnings,
-      errors: [{ itemId: "", message: "No templates available to assign to imported rows." }],
-    };
-  }
-  const graphicTemplate = await getTemplate(graphicTemplateId);
-  const titleField = graphicTemplate?.fields.find((f) => f.type === "text")?.key;
+  const fallbackLyric =
+    req.defaultLyricTemplateId ?? config.defaultLyricTemplateId ?? metas[0]?.id;
+  const fallbackGraphic =
+    req.defaultGraphicTemplateId ?? config.defaultGraphicTemplateId ?? metas[0]?.id;
 
-  // Fetch authoritative plan items and keep selection in plan order.
+  // Fetch authoritative plan items; keep the configured items in plan order.
   const allItems = await client.getPlanItems(req.serviceTypeId, req.planId);
-  const selected = new Set(req.selectedItemIds);
-  const chosen = allItems.filter((i) => selected.has(i.id));
+  const cfgById = new Map(req.items.map((c) => [c.itemId, c]));
+  const chosen = allItems.filter((i) => cfgById.has(i.id));
 
-  // ── 1. Resolve/create library songs first ────────────────────────────
+  // Memoize each template's first text field (the title target) for graphic
+  // fallbacks — only loaded when a config omits explicit field data.
+  const titleFieldCache = new Map<string, string | undefined>();
+  async function titleFieldFor(templateId: string): Promise<string | undefined> {
+    if (titleFieldCache.has(templateId)) return titleFieldCache.get(templateId);
+    const tpl = await getTemplate(templateId);
+    const key = tpl?.fields.find((f) => f.type === "text")?.key;
+    titleFieldCache.set(templateId, key);
+    return key;
+  }
+
+  /** Whether a config may be treated as a song (needs real PCO song data). */
+  function isSongConfig(item: PcoPlanItem, cfg: ImportItemConfig): boolean {
+    return cfg.kind === "song" && item.itemType === "song" && !!item.song;
+  }
+
+  // ── 1. Resolve/create library songs for song-kind items ──────────────
   const library = await songs.listSongs();
   const existingIds = new Set(library.map((s) => s.id));
   const songIdByItem = new Map<string, string>();
 
   for (const item of chosen) {
-    if (item.itemType !== "song" || !item.song) continue;
+    const cfg = cfgById.get(item.id)!;
+    if (!isSongConfig(item, cfg) || !item.song) continue;
     const pcoSong = item.song;
-    const decision = req.songDecisions?.[item.id];
 
-    if (decision?.action === "link" && decision.songId) {
-      songIdByItem.set(item.id, decision.songId);
+    if (cfg.songAction === "link" && cfg.songId) {
+      songIdByItem.set(item.id, cfg.songId);
       counts.songsLinked++;
       continue;
     }
-    if (!decision) {
-      // Auto-match. A match to a *pre-existing* library song (by CCLI or
-      // title) is linked and left untouched. A match by `pco-id` means we
-      // imported this song before — fall through to refresh it in place.
+    if (!cfg.songAction) {
+      // No explicit action: link a pre-existing match (CCLI/title); a
+      // `pco-id` match means we imported it before — refresh it in place.
       const match = matchLibrarySong(pcoSong, library);
       if (match && match.confidence !== "pco-id") {
         songIdByItem.set(item.id, match.song.id);
@@ -170,19 +192,40 @@ export async function importPlan(
     };
   }
 
-  // ── 3. Build rows (song → song row, everything else → graphic) ───────
+  // ── 3. Build rows per item config (song row vs graphic row) ──────────
   for (const item of chosen) {
+    const cfg = cfgById.get(item.id)!;
     const sourceRef = makeSourceRef(req.serviceTypeId, req.planId, item.id);
     const existingIdx = show.rows.findIndex((r) => r.sourceRef?.itemId === item.id);
     const rowId = existingIdx >= 0 ? show.rows[existingIdx]!.id : randomUUID();
 
     let row: RundownRow;
     const songId = songIdByItem.get(item.id);
-    if (item.itemType === "song" && songId) {
+    if (isSongConfig(item, cfg) && songId) {
+      const lyricTemplateId = cfg.templateId ?? fallbackLyric;
+      if (!lyricTemplateId) {
+        errors.push({ itemId: item.id, message: "No lyric template available for song row." });
+        continue;
+      }
       row = buildSongRow({ rowId, songId, lyricTemplateId, sourceRef });
       show.songs = ensureShowSongEntry(show.songs, songId);
     } else {
-      row = buildGraphicRow({ rowId, templateId: graphicTemplateId, item, titleField, sourceRef });
+      const templateId = cfg.templateId ?? fallbackGraphic;
+      if (!templateId) {
+        errors.push({ itemId: item.id, message: "No graphic template available for row." });
+        continue;
+      }
+      // Prefer the client's configured field values; fall back to seeding the
+      // item title into the template's first text field + description → notes.
+      const hasData = !!cfg.data && Object.keys(cfg.data).length > 0;
+      let data = cfg.data;
+      let notes = cfg.notes;
+      if (!hasData || notes === undefined) {
+        const defaults = pcoItemGraphicDefaults(item, await titleFieldFor(templateId));
+        if (!hasData) data = defaults.data;
+        if (notes === undefined) notes = defaults.notes;
+      }
+      row = buildGraphicRow({ rowId, templateId, data, notes, sourceRef });
     }
 
     if (existingIdx >= 0) show.rows[existingIdx] = row;

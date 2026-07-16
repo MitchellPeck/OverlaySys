@@ -38,11 +38,6 @@ async function get<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export interface SongDecision {
-  action: "link" | "create";
-  songId?: string;
-}
-
 export interface ImportTarget {
   mode: "new" | "existing";
   showId?: string;
@@ -50,15 +45,24 @@ export interface ImportTarget {
   projectId?: string;
 }
 
+export interface ImportItemConfig {
+  itemId: string;
+  kind: "song" | "graphic";
+  songAction?: "link" | "create";
+  songId?: string;
+  templateId?: string;
+  data?: Record<string, string>;
+  notes?: string;
+}
+
 export interface ImportPlanRequest {
   serviceTypeId: string;
   planId: string;
   planTitle?: string;
   target: ImportTarget;
-  lyricTemplateId?: string;
-  graphicTemplateId?: string;
-  selectedItemIds: string[];
-  songDecisions?: Record<string, SongDecision>;
+  items: ImportItemConfig[];
+  defaultLyricTemplateId?: string;
+  defaultGraphicTemplateId?: string;
 }
 
 export interface ImportPlanResult {

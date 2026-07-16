@@ -44,6 +44,11 @@ import {
   type MatchedBy,
 } from "./windowPrefs";
 import { identifyDisplays } from "./identifyDisplays";
+import {
+  clearPidFile,
+  reapPreviousServer,
+  writePidFile,
+} from "./serverProcess";
 import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
@@ -314,6 +319,13 @@ function prefsFilePath(): string {
   return path.join(app.getPath("userData"), "data", "channel-window-prefs.json");
 }
 
+// Records the embedded server child's PID so the NEXT launch can reap it if
+// this session dies without cleaning up (crash / force-quit / SIGKILL). See
+// serverProcess.ts.
+function serverPidFilePath(): string {
+  return path.join(app.getPath("userData"), "server.pid");
+}
+
 function currentDisplaysSnapshot() {
   return screen.getAllDisplays().map((d) => ({
     id: d.id,
@@ -415,17 +427,32 @@ function spawnServer(): Promise<{ port: number }> {
     OVERLAYSYS_STATIC_OPERATOR_DIR: operatorStatic,
     OVERLAYSYS_STATIC_RENDERER_DIR: rendererStatic,
     NODE_ENV: "production",
+    // Tells the server to watch its stdin pipe and exit when we (the host)
+    // die — see serverProcess.ts and server/src/index.ts. This is the
+    // primary defense against orphaned servers squatting on the port.
+    OVERLAYSYS_HOST_PIPE: "1",
   };
+
+  // Backstop: reap a server left running by a previous session that never
+  // cleaned up (crash / force-quit / SIGKILL), so it can't keep holding the
+  // port and block this launch.
+  reapPreviousServer(serverPidFilePath());
 
   return new Promise<{ port: number }>((resolve, reject) => {
     // cwd = serverDir so node resolves tsx and other deps from
-    // server/node_modules.
+    // server/node_modules. stdin is a live pipe (not "ignore") so the server
+    // detects our death when the OS closes it — the orphan watchdog.
     const child = spawn(
       process.execPath,
       ["--import", "tsx", "src/index.ts"],
-      { env, cwd: serverDir, stdio: ["ignore", "pipe", "pipe"] },
+      { env, cwd: serverDir, stdio: ["pipe", "pipe", "pipe"] },
     );
     serverChild = child;
+    if (child.pid) writePidFile(serverPidFilePath(), child.pid);
+    // We never write to the server's stdin — it exists only so the server
+    // can observe the pipe closing when we exit. Swallow errors so a server
+    // that dies first can't crash us with EPIPE.
+    child.stdin?.on("error", () => {});
 
     let resolved = false;
     let buffer = "";
@@ -460,6 +487,9 @@ function spawnServer(): Promise<{ port: number }> {
     child.on("exit", (code, signal) => {
       console.error(`[server] exited code=${code} signal=${signal}`);
       serverChild = null;
+      // This PID is dead — drop the record so the next boot doesn't try to
+      // reap an already-gone (or worse, recycled) PID.
+      clearPidFile(serverPidFilePath());
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
@@ -477,6 +507,11 @@ function spawnServer(): Promise<{ port: number }> {
 }
 
 function killServer(): void {
+  try {
+    clearPidFile(serverPidFilePath());
+  } catch {
+    // app path may be unavailable during teardown — best-effort.
+  }
   if (!serverChild) return;
   try {
     serverChild.kill("SIGTERM");

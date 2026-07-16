@@ -70,13 +70,18 @@ const fakeClient: PcoClient = {
   getPlanItems: async () => ITEMS,
 };
 
+// Default config: songs as song rows (auto-match), header as graphic.
 const baseReq: Omit<ImportPlanRequest, "target"> = {
   serviceTypeId: "st-1",
   planId: "plan-1",
   planTitle: "Sunday AM — 7/19/26",
-  lyricTemplateId: "tpl-lyric",
-  graphicTemplateId: "tpl-graphic",
-  selectedItemIds: ["item-A", "item-B", "item-C"],
+  defaultLyricTemplateId: "tpl-lyric",
+  defaultGraphicTemplateId: "tpl-graphic",
+  items: [
+    { itemId: "item-A", kind: "song", templateId: "tpl-lyric" },
+    { itemId: "item-B", kind: "song", templateId: "tpl-lyric" },
+    { itemId: "item-C", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome & Offering" } },
+  ],
 };
 
 describe("importPlan", () => {
@@ -128,5 +133,33 @@ describe("importPlan", () => {
     // Only one library song was created total for item-B.
     const allNew = (await songs.listSongs()).filter((s) => s.customFields["pco_song_id"] === "pco-song-B");
     expect(allNew).toHaveLength(1);
+  });
+
+  it("imports a song item as a graphic row when kind=graphic (no library song touched)", async () => {
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [
+          { itemId: "item-A", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Amazing Grace" } },
+        ],
+      },
+      NOW,
+    );
+
+    expect(result.counts).toMatchObject({ rows: 1, songsCreated: 0, songsLinked: 0, songsUpdated: 0 });
+    const show = await shows.getShow(result.showId!);
+    expect(show?.rows).toHaveLength(1);
+    expect(show?.rows[0]).toMatchObject({
+      kind: "graphic",
+      templateId: "tpl-graphic",
+      data: { headline: "Amazing Grace" },
+    });
+    expect(show?.songs).toHaveLength(0);
+    // The song item's PCO song was NOT imported into the library.
+    expect(
+      (await songs.listSongs()).some((s) => s.customFields["pco_song_id"] === "pco-song-A"),
+    ).toBe(false);
   });
 });

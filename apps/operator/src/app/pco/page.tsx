@@ -1,29 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Field as TemplateField,
   ItemPreview,
   PcoPlan,
   PcoPlanItem,
   PcoServiceType,
+  Template,
 } from "@overlaysys/core";
 import {
   Button,
   Field,
+  Inline,
   Panel,
   Pill,
   Select,
   Stack,
-  Table,
-  Td,
-  Th,
-  Tr,
   colors,
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
+import { useWs } from "@/lib/useWs";
+import { isCloudMode } from "@/lib/mode";
+import { getTemplateCloud } from "@/lib/cloudData";
+import { FieldInput } from "@/lib/FieldInput";
 import {
   getPcoStatus,
   getPlanItems,
@@ -31,11 +34,23 @@ import {
   listPlans,
   listServiceTypes,
   setPcoCredentials,
+  type ImportItemConfig,
   type ImportPlanResult,
 } from "@/lib/pcoClient";
 
 type Status = "checking" | "disconnected" | "connected";
 type SongAction = "link" | "create";
+type RowKind = "song" | "item";
+
+interface ItemCfg {
+  include: boolean;
+  kind: RowKind;
+  songAction: SongAction;
+  songId?: string;
+  lyricTemplateId: string;
+  graphicTemplateId: string;
+  data: Record<string, string>;
+}
 
 function planLabel(p: PcoPlan): string {
   return p.dates || p.title || p.sortDate || p.id;
@@ -43,9 +58,13 @@ function planLabel(p: PcoPlan): string {
 
 export default function PcoPage() {
   const templates = useStore((s) => s.templates);
+  const templateCache = useStore((s) => s.templateCache);
+  const setTemplate = useStore((s) => s.setTemplate);
   const allShowMetas = useStore((s) => s.showMetas);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
+  const { send } = useWs();
+  const cloud = isCloudMode();
 
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -57,30 +76,79 @@ export default function PcoPage() {
 
   const [items, setItems] = useState<PcoPlanItem[]>([]);
   const [previews, setPreviews] = useState<Record<string, ItemPreview>>({});
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [decisions, setDecisions] = useState<Record<string, SongAction>>({});
+  const [cfgs, setCfgs] = useState<Record<string, ItemCfg>>({});
   const [loadingItems, setLoadingItems] = useState(false);
+  const seededRef = useRef<Set<string>>(new Set());
 
   const [targetMode, setTargetMode] = useState<"new" | "existing">("new");
   const [newName, setNewName] = useState("");
   const [existingShowId, setExistingShowId] = useState("");
-  const [lyricTemplateId, setLyricTemplateId] = useState("");
-  const [graphicTemplateId, setGraphicTemplateId] = useState("");
 
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportPlanResult | null>(null);
 
-  // "For now use an access token" path: a Personal Access Token (App ID +
-  // Secret) entered directly, bypassing the OAuth flow.
   const [patAppId, setPatAppId] = useState("");
   const [patSecret, setPatSecret] = useState("");
   const [connectingPat, setConnectingPat] = useState(false);
 
-  // Default template selections once the store's templates arrive.
+  // Load full template bodies (with fields) into the cache for the pickers +
+  // field forms. Mirrors the show editor's hydration.
   useEffect(() => {
-    if (!lyricTemplateId && templates[0]) setLyricTemplateId(templates[0].id);
-    if (!graphicTemplateId && templates[0]) setGraphicTemplateId(templates[0].id);
-  }, [templates, lyricTemplateId, graphicTemplateId]);
+    for (const meta of templates) {
+      if (templateCache[meta.id]) continue;
+      if (cloud) {
+        void getTemplateCloud(meta.id)
+          .then((t) => t && setTemplate(t))
+          .catch(() => undefined);
+      } else {
+        send({ type: "get_template", templateId: meta.id });
+      }
+    }
+  }, [templates, templateCache, cloud, send, setTemplate]);
+
+  // Default each config's template ids once templates arrive.
+  useEffect(() => {
+    const def = templates[0]?.id;
+    if (!def) return;
+    setCfgs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const id of Object.keys(next)) {
+        const c = next[id]!;
+        if (!c.lyricTemplateId || !c.graphicTemplateId) {
+          next[id] = {
+            ...c,
+            lyricTemplateId: c.lyricTemplateId || def,
+            graphicTemplateId: c.graphicTemplateId || def,
+          };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [templates]);
+
+  // Seed the item title into a graphic template's first text field once that
+  // template body loads (one-time per item; user edits are never clobbered).
+  useEffect(() => {
+    setCfgs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const item of items) {
+        const c = next[item.id];
+        if (!c || c.kind !== "item" || seededRef.current.has(item.id)) continue;
+        const tpl = templateCache[c.graphicTemplateId];
+        if (!tpl) continue; // wait for the body, retry when it arrives
+        seededRef.current.add(item.id);
+        const titleField = tpl.fields.find((f) => f.type === "text")?.key;
+        if (titleField && !c.data[titleField]) {
+          next[item.id] = { ...c, data: { ...c.data, [titleField]: item.title } };
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items, templateCache]);
 
   const loadServiceTypes = useCallback(async () => {
     try {
@@ -123,7 +191,6 @@ export default function PcoPage() {
       setError(res.error);
       return;
     }
-    // Give the desktop a moment to push the token to the server.
     setTimeout(() => void checkStatus(), 600);
   }
 
@@ -167,16 +234,27 @@ export default function PcoPage() {
     setError(null);
     try {
       const { items: fetched, previews: pv } = await getPlanItems(serviceTypeId, id);
-      setItems(fetched);
       const map: Record<string, ItemPreview> = {};
-      const dec: Record<string, SongAction> = {};
-      for (const p of pv) {
-        map[p.itemId] = p;
-        if (p.itemType === "song") dec[p.itemId] = p.match ? "link" : "create";
+      for (const p of pv) map[p.itemId] = p;
+      const def = templates[0]?.id ?? "";
+      const nextCfgs: Record<string, ItemCfg> = {};
+      for (const it of fetched) {
+        const preview = map[it.id];
+        const isSong = it.itemType === "song" && !!it.song;
+        nextCfgs[it.id] = {
+          include: true,
+          kind: isSong ? "song" : "item",
+          songAction: preview?.match ? "link" : "create",
+          songId: preview?.match?.songId,
+          lyricTemplateId: def,
+          graphicTemplateId: def,
+          data: {},
+        };
       }
+      seededRef.current = new Set();
+      setItems(fetched);
       setPreviews(map);
-      setDecisions(dec);
-      setSelected(new Set(fetched.map((i) => i.id)));
+      setCfgs(nextCfgs);
       const plan = plans.find((p) => p.id === id);
       if (plan) setNewName(planLabel(plan));
     } catch (err) {
@@ -186,35 +264,63 @@ export default function PcoPage() {
     }
   }
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const patch = useCallback((itemId: string, updater: (c: ItemCfg) => ItemCfg) => {
+    setCfgs((prev) => {
+      const c = prev[itemId];
+      if (!c) return prev;
+      return { ...prev, [itemId]: updater(c) };
+    });
+  }, []);
+
+  function setKind(item: PcoPlanItem, kind: RowKind) {
+    patch(item.id, (c) => {
+      let data = c.data;
+      if (kind === "item") {
+        const tpl = templateCache[c.graphicTemplateId];
+        const tf = tpl?.fields.find((f) => f.type === "text")?.key;
+        if (tf && !data[tf]) data = { ...data, [tf]: item.title };
+      }
+      return { ...c, kind, data };
     });
   }
 
+  const includedCount = useMemo(
+    () => items.filter((i) => cfgs[i.id]?.include).length,
+    [items, cfgs],
+  );
+
   const canImport = useMemo(() => {
-    if (selected.size === 0 || importing) return false;
+    if (includedCount === 0 || importing) return false;
     if (targetMode === "existing" && !existingShowId) return false;
     return true;
-  }, [selected, importing, targetMode, existingShowId]);
+  }, [includedCount, importing, targetMode, existingShowId]);
 
   async function doImport() {
     setImporting(true);
     setResult(null);
     setError(null);
     try {
-      const songDecisions: Record<string, { action: SongAction; songId?: string }> = {};
-      for (const id of selected) {
-        const pv = previews[id];
-        if (pv?.itemType !== "song") continue;
-        const action = decisions[id] ?? (pv.match ? "link" : "create");
-        songDecisions[id] =
-          action === "link" && pv.match
-            ? { action: "link", songId: pv.match.songId }
-            : { action: "create" };
+      const payload: ImportItemConfig[] = [];
+      for (const it of items) {
+        const c = cfgs[it.id];
+        if (!c?.include) continue;
+        const isSong = it.itemType === "song" && !!it.song;
+        if (isSong && c.kind === "song") {
+          payload.push({
+            itemId: it.id,
+            kind: "song",
+            songAction: c.songAction,
+            songId: c.songAction === "link" ? c.songId : undefined,
+            templateId: c.lyricTemplateId || undefined,
+          });
+        } else {
+          payload.push({
+            itemId: it.id,
+            kind: "graphic",
+            templateId: c.graphicTemplateId || undefined,
+            data: c.data,
+          });
+        }
       }
       const res = await importPlan({
         serviceTypeId,
@@ -224,10 +330,7 @@ export default function PcoPage() {
           targetMode === "new"
             ? { mode: "new", name: newName, projectId: currentProjectId }
             : { mode: "existing", showId: existingShowId },
-        lyricTemplateId,
-        graphicTemplateId,
-        selectedItemIds: [...selected],
-        songDecisions,
+        items: payload,
       });
       setResult(res);
     } catch (err) {
@@ -276,11 +379,7 @@ export default function PcoPage() {
                     />
                   </Field>
                   <div>
-                    <Button
-                      variant="primary"
-                      disabled={connectingPat}
-                      onClick={() => void connectWithPat()}
-                    >
+                    <Button variant="primary" disabled={connectingPat} onClick={() => void connectWithPat()}>
                       {connectingPat ? "Connecting…" : "Connect"}
                     </Button>
                   </div>
@@ -310,10 +409,7 @@ export default function PcoPage() {
             <Panel title="Select a plan">
               <Stack gap={3}>
                 <Field label="Service type">
-                  <Select
-                    value={serviceTypeId}
-                    onChange={(e) => void onPickServiceType(e.target.value)}
-                  >
+                  <Select value={serviceTypeId} onChange={(e) => void onPickServiceType(e.target.value)}>
                     <option value="">— choose —</option>
                     {serviceTypes.map((st) => (
                       <option key={st.id} value={st.id}>
@@ -342,54 +438,33 @@ export default function PcoPage() {
             {loadingItems && <p style={{ color: colors.textDim }}>Loading plan items…</p>}
 
             {items.length > 0 && (
-              <Panel title={`Items (${selected.size}/${items.length} selected)`}>
-                <Table size="sm" style={{ width: "100%" }}>
-                  <thead>
-                    <tr>
-                      <Th style={{ width: 32 }} />
-                      <Th>Item</Th>
-                      <Th style={{ width: 80 }}>Type</Th>
-                      <Th style={{ width: 280 }}>Import as</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item) => {
-                      const pv = previews[item.id];
-                      const isSong = item.itemType === "song";
-                      const checked = selected.has(item.id);
-                      return (
-                        <Tr key={item.id} selected={checked}>
-                          <Td>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggle(item.id)}
-                            />
-                          </Td>
-                          <Td>{item.title}</Td>
-                          <Td>
-                            <Pill tone={isSong ? "accent" : "dim"} uppercase>
-                              {item.itemType}
-                            </Pill>
-                          </Td>
-                          <Td>
-                            {isSong ? (
-                              <SongDecisionCell
-                                preview={pv}
-                                value={decisions[item.id] ?? (pv?.match ? "link" : "create")}
-                                onChange={(a) =>
-                                  setDecisions((d) => ({ ...d, [item.id]: a }))
-                                }
-                              />
-                            ) : (
-                              <span style={{ color: colors.textDim }}>Graphic row</span>
-                            )}
-                          </Td>
-                        </Tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
+              <Panel title={`Items (${includedCount}/${items.length} selected)`}>
+                <Stack gap={2}>
+                  {items.map((item) => {
+                    const cfg = cfgs[item.id];
+                    if (!cfg) return null;
+                    return (
+                      <ItemConfigCard
+                        key={item.id}
+                        item={item}
+                        preview={previews[item.id]}
+                        cfg={cfg}
+                        templates={templates}
+                        template={templateCache[cfg.graphicTemplateId] ?? null}
+                        onToggleInclude={() =>
+                          patch(item.id, (c) => ({ ...c, include: !c.include }))
+                        }
+                        onKind={(k) => setKind(item, k)}
+                        onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
+                        onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
+                        onGraphicTemplate={(id) => patch(item.id, (c) => ({ ...c, graphicTemplateId: id }))}
+                        onFieldChange={(key, value) =>
+                          patch(item.id, (c) => ({ ...c, data: { ...c.data, [key]: value } }))
+                        }
+                      />
+                    );
+                  })}
+                </Stack>
               </Panel>
             )}
 
@@ -407,18 +482,11 @@ export default function PcoPage() {
                   </Field>
                   {targetMode === "new" ? (
                     <Field label="New show name">
-                      <input
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        style={inputStyle}
-                      />
+                      <input value={newName} onChange={(e) => setNewName(e.target.value)} style={inputStyle} />
                     </Field>
                   ) : (
                     <Field label="Existing show">
-                      <Select
-                        value={existingShowId}
-                        onChange={(e) => setExistingShowId(e.target.value)}
-                      >
+                      <Select value={existingShowId} onChange={(e) => setExistingShowId(e.target.value)}>
                         <option value="">— choose —</option>
                         {showMetas.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -428,37 +496,9 @@ export default function PcoPage() {
                       </Select>
                     </Field>
                   )}
-                  <Field label="Lyric template (songs)">
-                    <Select
-                      value={lyricTemplateId}
-                      onChange={(e) => setLyricTemplateId(e.target.value)}
-                    >
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="Graphic template (headers/media)">
-                    <Select
-                      value={graphicTemplateId}
-                      onChange={(e) => setGraphicTemplateId(e.target.value)}
-                    >
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
                   <div>
-                    <Button
-                      variant="primary"
-                      disabled={!canImport}
-                      onClick={() => void doImport()}
-                    >
-                      {importing ? "Importing…" : `Import ${selected.size} item(s)`}
+                    <Button variant="primary" disabled={!canImport} onClick={() => void doImport()}>
+                      {importing ? "Importing…" : `Import ${includedCount} item(s)`}
                     </Button>
                   </div>
                 </Stack>
@@ -505,32 +545,121 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
-function SongDecisionCell({
+function ItemConfigCard({
+  item,
   preview,
-  value,
-  onChange,
+  cfg,
+  templates,
+  template,
+  onToggleInclude,
+  onKind,
+  onSongAction,
+  onLyricTemplate,
+  onGraphicTemplate,
+  onFieldChange,
 }: {
+  item: PcoPlanItem;
   preview: ItemPreview | undefined;
-  value: SongAction;
-  onChange: (a: SongAction) => void;
+  cfg: ItemCfg;
+  templates: { id: string; name: string }[];
+  template: Template | null;
+  onToggleInclude: () => void;
+  onKind: (k: RowKind) => void;
+  onSongAction: (a: SongAction) => void;
+  onLyricTemplate: (id: string) => void;
+  onGraphicTemplate: (id: string) => void;
+  onFieldChange: (key: string, value: string) => void;
 }) {
+  const isSong = item.itemType === "song" && !!item.song;
   const hasMatch = !!preview?.match;
   return (
-    <Stack gap={1}>
-      <Select value={value} onChange={(e) => onChange(e.target.value as SongAction)}>
-        {hasMatch && (
-          <option value="link">Link to “{preview!.match!.title}”</option>
-        )}
-        <option value="create">Create new song</option>
-      </Select>
-      {value === "create" && preview && preview.hasLyrics === false && (
-        <span style={{ color: colors.textDim, fontSize: 12 }}>No lyrics in arrangement</span>
+    <div
+      style={{
+        border: `1px solid ${colors.border}`,
+        borderRadius: 6,
+        padding: 12,
+        opacity: cfg.include ? 1 : 0.55,
+      }}
+    >
+      <Inline gap={2} align="center">
+        <input type="checkbox" checked={cfg.include} onChange={onToggleInclude} />
+        <strong style={{ color: colors.text }}>{item.title}</strong>
+        <Pill tone={isSong ? "accent" : "dim"} uppercase>
+          {item.itemType}
+        </Pill>
+      </Inline>
+
+      {cfg.include && (
+        <div style={{ marginTop: 10 }}>
+          <Field label="Import as">
+            <Select value={cfg.kind} onChange={(e) => onKind(e.target.value as RowKind)} disabled={!isSong}>
+              {isSong && <option value="song">Song (lyrics)</option>}
+              <option value="item">Item (graphic)</option>
+            </Select>
+          </Field>
+
+          {isSong && cfg.kind === "song" ? (
+            <>
+              <Field label="Song">
+                <Select value={cfg.songAction} onChange={(e) => onSongAction(e.target.value as SongAction)}>
+                  {hasMatch && <option value="link">Link to “{preview!.match!.title}”</option>}
+                  <option value="create">Create new song</option>
+                </Select>
+              </Field>
+              {cfg.songAction === "create" && preview?.hasLyrics === false && (
+                <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
+                  No lyrics in arrangement — an empty stub will be created.
+                </p>
+              )}
+              <Field label="Lyric template">
+                <Select value={cfg.lyricTemplateId} onChange={(e) => onLyricTemplate(e.target.value)}>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Template">
+                <Select value={cfg.graphicTemplateId} onChange={(e) => onGraphicTemplate(e.target.value)}>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <GraphicFields template={template} data={cfg.data} onChange={onFieldChange} />
+            </>
+          )}
+        </div>
       )}
-      {hasMatch && (
-        <span style={{ color: colors.textDim, fontSize: 12 }}>
-          match: {preview!.match!.confidence}
-        </span>
-      )}
+    </div>
+  );
+}
+
+function GraphicFields({
+  template,
+  data,
+  onChange,
+}: {
+  template: Template | null;
+  data: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  if (!template) return <p style={{ color: colors.textDim, fontSize: 12 }}>Loading template…</p>;
+  if (template.fields.length === 0)
+    return <p style={{ color: colors.textDim, fontSize: 12 }}>Template declares no fields.</p>;
+  return (
+    <Stack gap={2}>
+      {template.fields.map((f: TemplateField) => (
+        <Field key={f.key} label={f.label || f.key}>
+          <FieldInput field={f} value={data[f.key]} onChange={(v) => onChange(f.key, v)} />
+        </Field>
+      ))}
     </Stack>
   );
 }

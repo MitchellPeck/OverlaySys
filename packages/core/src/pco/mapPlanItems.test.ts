@@ -10,6 +10,7 @@ import {
   ensureShowSongEntry,
   makeSourceRef,
   matchLibrarySong,
+  pcoItemGraphicDefaults,
   reorderArrangementBySequence,
   resolveImportedSongId,
 } from "./mapPlanItems";
@@ -114,10 +115,15 @@ describe("row + showsong builders", () => {
     expect(row).toMatchObject({ kind: "song", songId: "amazing-grace", sourceRef: ref });
   });
 
-  it("builds a graphic row with title field + notes", () => {
-    const item: PcoPlanItem = { id: "item-2", title: "Offering", itemType: "header", description: "5 min" };
-    const row = buildGraphicRow({ rowId: "r2", templateId: "tpl-header", item, titleField: "title", sourceRef: makeSourceRef("st-1", "plan-1", "item-2") });
+  it("builds a graphic row from explicit data + notes", () => {
+    const row = buildGraphicRow({ rowId: "r2", templateId: "tpl-header", data: { title: "Offering" }, notes: "5 min", sourceRef: makeSourceRef("st-1", "plan-1", "item-2") });
     expect(row).toMatchObject({ kind: "graphic", templateId: "tpl-header", data: { title: "Offering" }, notes: "5 min" });
+  });
+
+  it("pcoItemGraphicDefaults maps title→field and description→notes", () => {
+    const item: PcoPlanItem = { id: "item-2", title: "Offering", itemType: "header", description: "5 min" };
+    expect(pcoItemGraphicDefaults(item, "headline")).toEqual({ data: { headline: "Offering" }, notes: "5 min" });
+    expect(pcoItemGraphicDefaults(item)).toEqual({ data: {}, notes: "5 min" });
   });
 
   it("ensureShowSongEntry is idempotent", () => {

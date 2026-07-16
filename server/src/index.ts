@@ -16,6 +16,7 @@ import { registerImportRoutes } from "./importRoute";
 import { registerPcoRoutes } from "./pco/routes";
 import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
+import { listenWithFallback } from "./serverBoot";
 import {
   clearCloudTokens,
   getCloudSyncStatus,
@@ -138,12 +139,12 @@ app.post("/api/cloud/sync", async () => {
   return result ?? { skipped: true };
 });
 
-await app.listen({ host: HOST, port: PORT });
-
-// Resolve the actually-bound port (PORT=0 → OS-assigned). The Electron
-// host reads this from a magic stdout line so it can construct window URLs.
-const addr = app.server.address();
-const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
+// Bind, falling back to an OS-assigned port if the preferred one (4000) is
+// already taken — a stale/leftover server on 4000 must degrade to "runs on
+// another port", never "whole app fails to launch". The Electron host reads
+// the resolved port from the magic stdout line below and builds every window
+// URL from it, so a fallback is transparent to the app's own windows.
+const actualPort = await listenWithFallback(app, HOST, PORT);
 
 // Point the STT listener daemon at THIS server's real port over loopback.
 // Must happen before any spawner start — otherwise the daemon dials its
@@ -181,6 +182,23 @@ process.once("SIGINT", () => {
   process.exit(0);
 });
 process.on("exit", shutdownStt);
+
+// Parent-death watchdog. When the Electron host spawns us it passes a stdin
+// pipe and sets OVERLAYSYS_HOST_PIPE=1. If the host dies for ANY reason —
+// including a crash or SIGKILL, where the host's own before-quit/exit cleanup
+// never runs — the OS closes that pipe. Exiting on pipe-close guarantees we
+// never orphan and keep squatting on the port, which would block every
+// subsequent launch (both `pnpm dev` and the packaged app) with EADDRINUSE.
+if (process.env["OVERLAYSYS_HOST_PIPE"] === "1") {
+  const onParentGone = (): void => {
+    shutdownStt();
+    process.exit(0);
+  };
+  process.stdin.on("end", onParentGone);
+  process.stdin.on("close", onParentGone);
+  // stdin defaults to paused; resume so 'end'/'close' actually fire.
+  process.stdin.resume();
+}
 
 // Boot STT spawner: auto-start if configured (now that the listener URL is set).
 if (sttConfig.autoStart) {

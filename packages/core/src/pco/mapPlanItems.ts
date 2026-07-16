@@ -199,28 +199,42 @@ export function buildSongRow(opts: {
 }
 
 /**
- * Build a graphic row for a non-song plan item (header / media / note). The
- * item title lands in `titleField` of the template's data when provided;
- * PCO's plain-text description / html details go into `notes`.
+ * Default graphic field values + notes for a plan item: the item title lands
+ * in `titleField` (the template's first text field, when known) and PCO's
+ * plain-text description / html details become the row `notes`. Used to seed
+ * the import UI's field form and as a server-side fallback when the client
+ * sends no explicit field values.
+ */
+export function pcoItemGraphicDefaults(
+  item: PcoPlanItem,
+  titleField?: string,
+): { data: Record<string, string>; notes?: string } {
+  const notesParts = [item.description, item.htmlDetails].filter(
+    (v): v is string => !!v && v.trim() !== "",
+  );
+  return {
+    data: titleField ? { [titleField]: item.title } : {},
+    ...(notesParts.length > 0 ? { notes: notesParts.join("\n\n") } : {}),
+  };
+}
+
+/**
+ * Build a graphic row from an explicit template id + field-value `data` map
+ * (configured in the import UI). `notes` is optional free text.
  */
 export function buildGraphicRow(opts: {
   rowId: string;
   templateId: string;
-  item: PcoPlanItem;
-  titleField?: string;
+  data?: Record<string, string>;
+  notes?: string;
   sourceRef: RowSourceRef;
 }): GraphicRow {
-  const notesParts = [opts.item.description, opts.item.htmlDetails].filter(
-    (v): v is string => !!v && v.trim() !== "",
-  );
-  const data: Record<string, string> =
-    opts.titleField ? { [opts.titleField]: opts.item.title } : {};
   return {
     kind: "graphic",
     id: opts.rowId,
     templateId: opts.templateId,
-    data,
-    ...(notesParts.length > 0 ? { notes: notesParts.join("\n\n") } : {}),
+    data: opts.data ?? {},
+    ...(opts.notes && opts.notes.trim() !== "" ? { notes: opts.notes } : {}),
     sourceRef: opts.sourceRef,
   };
 }
