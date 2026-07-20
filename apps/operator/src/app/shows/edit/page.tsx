@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
 import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import { resolveArrangement } from "@overlaysys/core";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -15,6 +16,7 @@ import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
+import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import {
   deleteShowCloud,
@@ -829,6 +831,7 @@ function SongRowEditor({
   // Per-row overrides are collapsed by default — most users won't need them
   // and the row stays compact. Local state per editor instance.
   const [overridesOpen, setOverridesOpen] = useState(false);
+  const [arrModalOpen, setArrModalOpen] = useState(false);
 
   function patchRow(patch: Partial<SongRow>) {
     onUpdate((s) => {
@@ -1009,9 +1012,27 @@ function SongRowEditor({
             {overridesOpen ? "▾ Hide overrides" : "▸ Per-row overrides"}
           </button>
         </div>
-        {row.arrangement && row.arrangement.length > 0 && (
-          <div style={{ fontSize: 11, color: colors.textDim, marginTop: 4 }}>
-            arrangement override: {row.arrangement.join(" → ")}
+        {cachedSong && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginTop: 4 }}>
+            <span style={{ color: colors.textDim }}>Arrangement:</span>
+            <span style={{ color: colors.text }}>
+              {arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setArrModalOpen(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: colors.accent,
+                cursor: "pointer",
+                fontSize: 11,
+                padding: 0,
+                textDecoration: "underline",
+              }}
+            >
+              Arrangement…
+            </button>
           </div>
         )}
       </td>
@@ -1097,6 +1118,16 @@ function SongRowEditor({
           </div>
         </td>
       </tr>
+    )}
+    {arrModalOpen && cachedSong && (
+      <ArrangementModal
+        song={cachedSong}
+        level="row"
+        value={row.arrangement}
+        inherited={showSong?.arrangement ?? cachedSong.defaultArrangement}
+        onSave={(next) => patchRow({ arrangement: next })}
+        onClose={() => setArrModalOpen(false)}
+      />
     )}
     </>
   );
