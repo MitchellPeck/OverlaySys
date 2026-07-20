@@ -82,6 +82,10 @@ export const ShowSongSchema = z.object({
   outroFieldLiterals: z.record(z.string(), z.string()).optional(),
   lyricTemplateId: z.string().optional(),
   customFieldOverrides: z.record(z.string(), z.string()).optional(),
+  /** Per-show override of the section play order (ordered section ids; may
+   *  repeat). Falls back to Song.defaultArrangement. SongRow.arrangement takes
+   *  precedence over this. */
+  arrangement: z.array(z.string()).optional(),
 });
 export type ShowSong = z.infer<typeof ShowSongSchema>;
 
