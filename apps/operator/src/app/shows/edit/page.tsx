@@ -1035,6 +1035,16 @@ function SongRowEditor({
             </button>
           </div>
         )}
+        {arrModalOpen && cachedSong && (
+          <ArrangementModal
+            song={cachedSong}
+            level="row"
+            value={row.arrangement}
+            inherited={showSong?.arrangement ?? cachedSong.defaultArrangement}
+            onSave={(next) => patchRow({ arrangement: next })}
+            onClose={() => setArrModalOpen(false)}
+          />
+        )}
       </td>
       <td style={{ ...td, width: 100 }}>
         <ChannelHintSelect
@@ -1118,16 +1128,6 @@ function SongRowEditor({
           </div>
         </td>
       </tr>
-    )}
-    {arrModalOpen && cachedSong && (
-      <ArrangementModal
-        song={cachedSong}
-        level="row"
-        value={row.arrangement}
-        inherited={showSong?.arrangement ?? cachedSong.defaultArrangement}
-        onSave={(next) => patchRow({ arrangement: next })}
-        onClose={() => setArrModalOpen(false)}
-      />
     )}
     </>
   );
