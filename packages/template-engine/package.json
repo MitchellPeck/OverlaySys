@@ -13,7 +13,7 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@overlaysys/core": "workspace:*",
+    "@overlaysys/core": "*",
     "gsap": "^3.12.5"
   },
   "devDependencies": {

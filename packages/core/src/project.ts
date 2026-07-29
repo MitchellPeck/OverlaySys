@@ -1,44 +1,9 @@
-import { z } from "zod";
-
 /**
- * A Project groups Shows and Hotcards for an ongoing event series
- * (e.g. "Sunday Services", "Christmas Eve"). Songs and Templates live
- * outside any project, in the org library, so they can be reused across
- * projects without duplication.
+ * `Project` now lives in the shared contract package `@ovation/overlay-bridge`
+ * (single source of truth shared with Ovation). This module re-exports it so
+ * every existing `@overlaysys/core` importer — and the `./project` deep-path
+ * imports inside core (`show.ts`, `hotcard.ts`, `storageAdapter.ts`) — keep
+ * working unchanged.
  */
-export const ProjectSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  notes: z.string().optional(),
-  /**
-   * Optional schema describing the custom fields that songs in this project
-   * are expected to provide. Used by the song editor to render labelled inputs
-   * and by template field maps to suggest source keys. Missing or empty means
-   * no project-wide custom-field expectations.
-   */
-  songCustomFieldSchema: z
-    .array(
-      z.object({
-        key: z.string(),
-        label: z.string(),
-        type: z.enum(["text", "number"]).optional(),
-      }),
-    )
-    .optional(),
-  /**
-   * Soft-delete tombstone. When set, the project is hidden from UIs but the
-   * record persists so the deletion can propagate via sync before a GC pass
-   * hard-deletes it. Optional for backwards compatibility.
-   */
-  deletedAt: z.string().optional(),
-});
-export type Project = z.infer<typeof ProjectSchema>;
-
-/**
- * Slug assigned to existing Shows and Hotcards that pre-date the
- * Project concept. The server seeds a Project with this id on first boot
- * if no projects exist, so legacy data always has a real Project to land in.
- */
-export const DEFAULT_PROJECT_ID = "default";
+export { ProjectSchema, DEFAULT_PROJECT_ID } from "@ovation/overlay-bridge";
+export type { Project } from "@ovation/overlay-bridge";

@@ -1,4 +1,11 @@
 import { z } from "zod";
+// Field primitives (Field, TimeMode, TimeFormat) now live in the shared
+// contract package so Ovation's Run-of-Show editor can render typed field
+// forms against the same definitions. Imported for local use in TemplateSchema
+// and re-exported below so existing `./template` importers are unaffected.
+import { FieldSchema, TimeModeSchema, TimeFormatSchema } from "@ovation/overlay-bridge";
+export { FieldSchema, TimeModeSchema, TimeFormatSchema };
+export type { Field, TimeMode, TimeFormat } from "@ovation/overlay-bridge";
 
 export const TransformSchema = z.object({
   x: z.number().default(0),
@@ -13,41 +20,6 @@ export const TransformSchema = z.object({
   anchorY: z.number().default(0),
 });
 export type Transform = z.infer<typeof TransformSchema>;
-
-/**
- * `time` is a reactive field type. The renderer ticks the bound text layer
- * locally every animation frame instead of waiting on per-second WS updates,
- * so we get sub-second precision without chatty traffic. Mode is locked at
- * template-author time — operators just supply the anchor value:
- *   - countdown: epoch ms of the target end. Display = remaining time.
- *   - countup:   epoch ms of the start. Display = elapsed time.
- *   - clock:     anchor ignored. Display = current wall-clock time.
- * Format selects which placeholders (HH, MM, SS) appear.
- */
-export const TimeModeSchema = z.enum(["countdown", "countup", "clock"]);
-export type TimeMode = z.infer<typeof TimeModeSchema>;
-
-export const TimeFormatSchema = z.enum([
-  "MM:SS",
-  "M:SS",
-  "HH:MM:SS",
-  "H:MM:SS",
-  "HH:MM",
-  "H:MM",
-]);
-export type TimeFormat = z.infer<typeof TimeFormatSchema>;
-
-export const FieldSchema = z.object({
-  key: z.string(),
-  label: z.string(),
-  type: z.enum(["text", "image", "color", "number", "video", "time"]),
-  default: z.string().optional(),
-  // Only meaningful when `type === "time"`. Kept optional on the schema so
-  // existing template files (no time fields) keep parsing untouched.
-  timeMode: TimeModeSchema.optional(),
-  timeFormat: TimeFormatSchema.optional(),
-});
-export type Field = z.infer<typeof FieldSchema>;
 
 export const FieldRefSchema = z.object({ fieldKey: z.string() });
 export type FieldRef = z.infer<typeof FieldRefSchema>;

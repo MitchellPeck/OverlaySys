@@ -13,8 +13,8 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@overlaysys/core": "workspace:*",
-    "@overlaysys/template-engine": "workspace:*",
+    "@overlaysys/core": "*",
+    "@overlaysys/template-engine": "*",
     "immer": "^10.1.1"
   },
   "peerDependencies": {

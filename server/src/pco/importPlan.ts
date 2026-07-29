@@ -196,7 +196,9 @@ export async function importPlan(
   for (const item of chosen) {
     const cfg = cfgById.get(item.id)!;
     const sourceRef = makeSourceRef(req.serviceTypeId, req.planId, item.id);
-    const existingIdx = show.rows.findIndex((r) => r.sourceRef?.itemId === item.id);
+    const existingIdx = show.rows.findIndex(
+      (r) => r.sourceRef?.provider === "pco" && r.sourceRef.itemId === item.id,
+    );
     const rowId = existingIdx >= 0 ? show.rows[existingIdx]!.id : randomUUID();
 
     let row: RundownRow;

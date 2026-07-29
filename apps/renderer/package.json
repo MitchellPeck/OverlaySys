@@ -11,9 +11,9 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@overlaysys/core": "workspace:*",
-    "@overlaysys/template-engine": "workspace:*",
-    "@overlaysys/ws-protocol": "workspace:*",
+    "@overlaysys/core": "*",
+    "@overlaysys/template-engine": "*",
+    "@overlaysys/ws-protocol": "*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

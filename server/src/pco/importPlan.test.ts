@@ -99,7 +99,9 @@ describe("importPlan", () => {
     expect(show?.rows[1]).toMatchObject({ kind: "song", songId: "brand-new-song" });
     expect(show?.rows[2]).toMatchObject({ kind: "graphic", notes: "3 min" });
     // Every imported row carries a sourceRef for idempotency.
-    expect(show?.rows.map((r) => r.sourceRef?.itemId)).toEqual(["item-A", "item-B", "item-C"]);
+    expect(
+      show?.rows.map((r) => (r.sourceRef?.provider === "pco" ? r.sourceRef.itemId : undefined)),
+    ).toEqual(["item-A", "item-B", "item-C"]);
     // ShowSong entries seeded for both song rows.
     expect(show?.songs.map((s) => s.songId).sort()).toEqual(["amazing-grace", "brand-new-song"]);
 

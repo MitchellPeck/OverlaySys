@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@companion-module/base": "~1.14.1",
-    "@overlaysys/core": "workspace:*",
-    "@overlaysys/ws-protocol": "workspace:*",
+    "@overlaysys/core": "*",
+    "@overlaysys/ws-protocol": "*",
     "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
