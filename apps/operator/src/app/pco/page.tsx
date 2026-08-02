@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   buildImportedSong,
+  effectiveLyricsArrangement,
   resolveImportedSongId,
   type Field as TemplateField,
   type ItemPreview,
@@ -391,7 +392,11 @@ export default function PcoPage() {
         if (next[item.id] || !item.song) continue;
         const songId = resolveImportedSongId(item.song, taken);
         taken.add(songId);
-        next[item.id] = buildImportedSong(songId, item.song, item.arrangement).song;
+        next[item.id] = buildImportedSong(
+          songId,
+          item.song,
+          effectiveLyricsArrangement(item),
+        ).song;
         changed = true;
       }
       return changed ? next : prev;
@@ -655,6 +660,11 @@ export default function PcoPage() {
                               no lyrics
                             </Pill>
                           )}
+                          {pv?.lyricsFromArrangement && (
+                            <Pill tone="good" uppercase>
+                              lyrics from {pv.lyricsFromArrangement}
+                            </Pill>
+                          )}
                           {customizedSongs.has(item.id) && (
                             <Pill tone="good" uppercase>
                               customized
@@ -851,6 +861,12 @@ function ItemConfigCard({
               {cfg.songAction === "create" && preview?.hasLyrics === false && (
                 <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
                   No lyrics in arrangement — an empty stub will be created.
+                </p>
+              )}
+              {preview?.lyricsFromArrangement && (
+                <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
+                  Lyrics will come from the “{preview.lyricsFromArrangement}” arrangement —
+                  this item’s own arrangement has none.
                 </p>
               )}
               <Field label="Lyric template">
