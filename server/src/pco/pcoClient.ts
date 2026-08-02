@@ -4,6 +4,8 @@ import {
   PcoPlanSchema,
   PcoServiceTypeSchema,
   PcoSongSchema,
+  pickLyricsArrangement,
+  type PcoArrangement,
   type PcoItemType,
   type PcoPlan,
   type PcoPlanItem,
@@ -23,6 +25,7 @@ export interface PcoClient {
   listServiceTypes(): Promise<PcoServiceType[]>;
   listPlans(serviceTypeId: string): Promise<PcoPlan[]>;
   getPlanItems(serviceTypeId: string, planId: string): Promise<PcoPlanItem[]>;
+  listSongArrangements(songId: string): Promise<PcoArrangement[]>;
 }
 
 interface JsonApiResource {
@@ -46,6 +49,19 @@ function str(v: unknown): string | undefined {
 const ITEM_TYPES: PcoItemType[] = ["song", "header", "media", "item"];
 function coerceItemType(v: unknown): PcoItemType {
   return ITEM_TYPES.includes(v as PcoItemType) ? (v as PcoItemType) : "item";
+}
+
+/** Shared JSON:API → PcoArrangement mapping, used for both the plan item's
+ * own arrangement (`getPlanItems`) and a song's sibling arrangements
+ * (`listSongArrangements`). */
+function parseArrangement(r: JsonApiResource) {
+  const seq = r.attributes?.["sequence"];
+  return PcoArrangementSchema.parse({
+    id: r.id,
+    name: str(r.attributes?.["name"]),
+    lyrics: str(r.attributes?.["lyrics"]),
+    sequence: Array.isArray(seq) ? seq.map((s) => String(s)) : undefined,
+  });
 }
 
 /**
@@ -100,7 +116,16 @@ export function createPcoClient(
     return { data, included };
   }
 
+  /** All arrangements for a song, e.g. to find one carrying lyrics when the
+   * plan item's own arrangement is empty. */
+  async function listSongArrangements(songId: string): Promise<PcoArrangement[]> {
+    const { data } = await getAll(`/songs/${songId}/arrangements?per_page=100`);
+    return data.map(parseArrangement);
+  }
+
   return {
+    listSongArrangements,
+
     async listServiceTypes() {
       const { data } = await getAll(`/service_types?per_page=100`);
       return data.map((r) =>
@@ -150,15 +175,7 @@ export function createPcoClient(
 
         const arrRef = rel["arrangement"]?.data;
         const arrRes = arrRef ? byKey.get(`${arrRef.type}:${arrRef.id}`) : undefined;
-        const seq = arrRes?.attributes?.["sequence"];
-        const arrangement = arrRes
-          ? PcoArrangementSchema.parse({
-              id: arrRes.id,
-              name: str(arrRes.attributes?.["name"]),
-              lyrics: str(arrRes.attributes?.["lyrics"]),
-              sequence: Array.isArray(seq) ? seq.map((s) => String(s)) : undefined,
-            })
-          : undefined;
+        const arrangement = arrRes ? parseArrangement(arrRes) : undefined;
 
         const seqNum = a["sequence"];
         return PcoPlanItemSchema.parse({
@@ -174,7 +191,22 @@ export function createPcoClient(
       });
 
       // PCO returns items already ordered by sequence, but sort defensively.
-      return items.sort((x, y) => (x.sequence ?? 0) - (y.sequence ?? 0));
+      items.sort((x, y) => (x.sequence ?? 0) - (y.sequence ?? 0));
+
+      // Lyrics live on the arrangement in PCO, and a song's lyrics are often
+      // filled in on only one of several arrangements. When the arrangement
+      // this plan item references is empty, look at the song's others. Only
+      // lyric-less song items pay for the extra request.
+      return Promise.all(
+        items.map(async (item) => {
+          if (item.itemType !== "song" || !item.song) return item;
+          const own = item.arrangement;
+          if (own?.lyrics && own.lyrics.trim() !== "") return item;
+          const siblings = await listSongArrangements(item.song.id);
+          const pick = pickLyricsArrangement(siblings, own?.id);
+          return pick ? { ...item, lyricsArrangement: pick } : item;
+        }),
+      );
     },
   };
 }

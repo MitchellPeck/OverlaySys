@@ -83,6 +83,7 @@ const fakeClient: PcoClient = {
   listServiceTypes: async () => [],
   listPlans: async () => [],
   getPlanItems: async () => ITEMS,
+  listSongArrangements: async () => [],
 };
 
 // A plan that lists the SAME PCO song twice — e.g. a reprise later in the
@@ -110,6 +111,7 @@ const duplicateSongClient: PcoClient = {
   listServiceTypes: async () => [],
   listPlans: async () => [],
   getPlanItems: async () => DUPLICATE_SONG_ITEMS,
+  listSongArrangements: async () => [],
 };
 
 /** A configured draft for `pco-song-D` whose only slide carries `line`. */
