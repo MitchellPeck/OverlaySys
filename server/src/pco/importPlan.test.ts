@@ -77,6 +77,20 @@ const ITEMS: PcoPlanItem[] = [
     arrangement: { id: "arr-B", lyrics: "Verse 1\nfresh lyric line", sequence: ["Verse 1"] },
   },
   { id: "item-C", title: "Welcome & Offering", sequence: 3, itemType: "header", description: "3 min" },
+  {
+    id: "item-D",
+    title: "Fallback Song",
+    sequence: 4,
+    itemType: "song",
+    song: { id: "pco-song-D", title: "Fallback Song" },
+    arrangement: { id: "arr-D-empty", name: "Default", lyrics: "" },
+    lyricsArrangement: {
+      id: "arr-D-acoustic",
+      name: "Acoustic",
+      lyrics: "Chorus\nfallback line",
+      sequence: ["Chorus"],
+    },
+  },
 ];
 
 const fakeClient: PcoClient = {
@@ -359,5 +373,47 @@ describe("importPlan", () => {
     // The bad item produced no row at all (not a silent graphic row), and the
     // healthy item still imported.
     expect(show?.rows.map((r) => r.sourceRef?.itemId)).toEqual(["item-C"]);
+  });
+
+  it("imports lyrics from the fallback arrangement and stamps its id", async () => {
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [{ itemId: "item-D", kind: "song", songAction: "create", templateId: "tpl-lyric" }],
+      },
+      NOW,
+    );
+
+    expect(result.counts).toMatchObject({ songsCreated: 1 });
+    const song = await songs.getSong("fallback-song");
+    expect(song?.sections[0]?.slides[0]?.lines).toEqual(["fallback line"]);
+    // Provenance points at the arrangement the lyrics actually came from.
+    expect(song?.customFields["pco_arrangement_id"]).toBe("arr-D-acoustic");
+  });
+
+  it("stamps the fallback arrangement id on the client-draft path too", async () => {
+    const draft = SongSchema.parse({
+      id: "whatever",
+      title: "Fallback Song",
+      sections: [{ id: "c1", kind: "chorus", label: "Chorus", slides: [{ id: "c1s1", lines: ["edited"] }] }],
+      defaultArrangement: ["c1"],
+      customFields: {},
+    });
+
+    await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [{ itemId: "item-D", kind: "song", songAction: "create", templateId: "tpl-lyric", song: draft }],
+      },
+      NOW,
+    );
+
+    const song = await songs.getSong("fallback-song");
+    expect(song?.sections[0]?.slides[0]?.lines).toEqual(["edited"]);
+    expect(song?.customFields["pco_arrangement_id"]).toBe("arr-D-acoustic");
   });
 });

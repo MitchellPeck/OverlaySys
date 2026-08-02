@@ -8,6 +8,7 @@ import {
   buildGraphicRow,
   buildImportedSong,
   buildSongRow,
+  effectiveLyricsArrangement,
   ensureShowSongEntry,
   makeSourceRef,
   matchLibrarySong,
@@ -175,6 +176,9 @@ export async function importPlan(
       (s) => !s.deletedAt && s.customFields?.[PCO_SONG_ID_KEY] === pcoSong.id,
     );
     const id = existing ? existing.id : resolveImportedSongId(pcoSong, existingIds);
+    // Lyrics (and the sequence that orders them) may come from a sibling
+    // arrangement when the plan item's own has none — see pcoClient.
+    const lyricsArrangement = effectiveLyricsArrangement(item);
 
     let songToSave: Song;
     if (cfg.song) {
@@ -196,12 +200,12 @@ export async function importPlan(
           ...(existing?.customFields ?? {}),
           ...parsed.data.customFields,
           [PCO_SONG_ID_KEY]: pcoSong.id,
-          ...(item.arrangement ? { [PCO_ARRANGEMENT_ID_KEY]: item.arrangement.id } : {}),
+          ...(lyricsArrangement ? { [PCO_ARRANGEMENT_ID_KEY]: lyricsArrangement.id } : {}),
         },
         updatedAt: now,
       };
     } else {
-      const built = buildImportedSong(id, pcoSong, item.arrangement, {
+      const built = buildImportedSong(id, pcoSong, lyricsArrangement, {
         updatedAt: now,
         preserveCustomFields: existing?.customFields,
       });
