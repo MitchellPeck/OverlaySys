@@ -8,7 +8,9 @@ import {
   buildItemPreview,
   buildSongRow,
   ensureShowSongEntry,
+  listPcoItemFieldDescriptors,
   makeSourceRef,
+  mapPcoItemFields,
   matchLibrarySong,
   pcoItemGraphicDefaults,
   reorderArrangementBySequence,
@@ -107,6 +109,60 @@ describe("buildImportedSong", () => {
   });
 });
 
+describe("mapPcoItemFields", () => {
+  const fullItem: PcoPlanItem = {
+    id: "item-1",
+    title: "Amazing Grace",
+    itemType: "song",
+    description: "Band only",
+    htmlDetails: "<p>Key of <b>G</b></p>",
+    song: { id: "pco-123", title: "Amazing Grace (Live)", author: "John Newton", ccliNumber: "22025", copyright: "Public Domain" },
+    arrangement: { id: "arr-1", name: "Sunday Arrangement", lyrics: "Verse 1\nx" },
+  };
+
+  it("lists only the descriptors the item actually carries", () => {
+    const bare: PcoPlanItem = { id: "i", title: "Welcome", itemType: "header" };
+    expect(listPcoItemFieldDescriptors(bare).map((d) => d.key)).toEqual(["title"]);
+    expect(listPcoItemFieldDescriptors(fullItem).map((d) => d.key)).toEqual([
+      "title", "description", "details", "song_title", "author", "ccli", "copyright", "arrangement",
+    ]);
+  });
+
+  it("fills template fields whose key matches a PCO field exactly", () => {
+    const data = mapPcoItemFields(fullItem, [
+      { key: "title", label: "Headline", type: "text" },
+      { key: "author", label: "By", type: "text" },
+    ]);
+    expect(data).toEqual({ title: "Amazing Grace", author: "John Newton" });
+  });
+
+  it("falls back to label similarity when keys differ", () => {
+    const data = mapPcoItemFields(fullItem, [{ key: "line1", label: "Copyright", type: "text" }]);
+    expect(data["line1"]).toBe("Public Domain");
+  });
+
+  it("seeds the first text field with the item title when nothing else claims it", () => {
+    const data = mapPcoItemFields(
+      { id: "i", title: "Welcome & Offering", itemType: "header" },
+      [{ key: "line1", label: "Top Line", type: "text" }, { key: "line2", label: "Bottom Line", type: "text" }],
+    );
+    expect(data).toEqual({ line1: "Welcome & Offering" });
+  });
+
+  it("never writes into non-text template fields", () => {
+    const data = mapPcoItemFields(fullItem, [
+      { key: "title", label: "Title", type: "image" },
+      { key: "author", label: "Author", type: "color" },
+    ]);
+    expect(data).toEqual({});
+  });
+
+  it("strips html from details", () => {
+    const data = mapPcoItemFields(fullItem, [{ key: "details", label: "Details", type: "text" }]);
+    expect(data["details"]).toBe("Key of G");
+  });
+});
+
 describe("row + showsong builders", () => {
   const ref = makeSourceRef("st-1", "plan-1", "item-1");
 
@@ -120,9 +176,12 @@ describe("row + showsong builders", () => {
     expect(row).toMatchObject({ kind: "graphic", templateId: "tpl-header", data: { title: "Offering" }, notes: "5 min" });
   });
 
-  it("pcoItemGraphicDefaults maps title→field and description→notes", () => {
+  it("pcoItemGraphicDefaults maps item fields→template fields and description→notes", () => {
     const item: PcoPlanItem = { id: "item-2", title: "Offering", itemType: "header", description: "5 min" };
-    expect(pcoItemGraphicDefaults(item, "headline")).toEqual({ data: { headline: "Offering" }, notes: "5 min" });
+    expect(pcoItemGraphicDefaults(item, [{ key: "headline", label: "Headline", type: "text" }])).toEqual({
+      data: { headline: "Offering" },
+      notes: "5 min",
+    });
     expect(pcoItemGraphicDefaults(item)).toEqual({ data: {}, notes: "5 min" });
   });
 

@@ -11,6 +11,7 @@ import {
   matchLibrarySong,
   pcoItemGraphicDefaults,
   resolveImportedSongId,
+  type Field,
   type PcoPlanItem,
   type RundownRow,
   type Show,
@@ -103,15 +104,16 @@ export async function importPlan(
   const cfgById = new Map(req.items.map((c) => [c.itemId, c]));
   const chosen = allItems.filter((i) => cfgById.has(i.id));
 
-  // Memoize each template's first text field (the title target) for graphic
-  // fallbacks — only loaded when a config omits explicit field data.
-  const titleFieldCache = new Map<string, string | undefined>();
-  async function titleFieldFor(templateId: string): Promise<string | undefined> {
-    if (titleFieldCache.has(templateId)) return titleFieldCache.get(templateId);
+  // Memoize each template's field list (used only when a config omits explicit
+  // field data and we fall back to deriving values from the plan item).
+  const templateFieldsCache = new Map<string, Field[]>();
+  async function templateFieldsFor(templateId: string): Promise<Field[]> {
+    const hit = templateFieldsCache.get(templateId);
+    if (hit) return hit;
     const tpl = await getTemplate(templateId);
-    const key = tpl?.fields.find((f) => f.type === "text")?.key;
-    titleFieldCache.set(templateId, key);
-    return key;
+    const fields = tpl?.fields ?? [];
+    templateFieldsCache.set(templateId, fields);
+    return fields;
   }
 
   /** Whether a config may be treated as a song (needs real PCO song data). */
@@ -221,7 +223,7 @@ export async function importPlan(
       let data = cfg.data;
       let notes = cfg.notes;
       if (!hasData || notes === undefined) {
-        const defaults = pcoItemGraphicDefaults(item, await titleFieldFor(templateId));
+        const defaults = pcoItemGraphicDefaults(item, await templateFieldsFor(templateId));
         if (!hasData) data = defaults.data;
         if (notes === undefined) notes = defaults.notes;
       }
