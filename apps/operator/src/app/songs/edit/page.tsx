@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
 import { type Song } from "@overlaysys/core";
 import { Button, colors } from "@overlaysys/ui";
@@ -42,6 +42,13 @@ function SongEditorPageInner() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const { alert, dialog } = useDialog();
   const cloud = isCloudMode();
+
+  // SongDraftEditor speaks React's setState shape so that several of its
+  // updaters landing in one commit compose instead of clobbering each other.
+  // The page's draft is nullable until the song loads, so unwrap the editor's
+  // update against the latest non-null draft rather than a render snapshot.
+  const updateDraft: Dispatch<SetStateAction<Song>> = (update) =>
+    setDraft((d) => (d ? (typeof update === "function" ? update(d) : update) : d));
 
   async function showCloudError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -123,7 +130,7 @@ function SongEditorPageInner() {
             onClose={() => setPasteOpen(false)}
           />
         )}
-        <SongDraftEditor draft={draft} onChange={setDraft} />
+        <SongDraftEditor draft={draft} onChange={updateDraft} />
       </PageBody>
       {dialog}
     </>

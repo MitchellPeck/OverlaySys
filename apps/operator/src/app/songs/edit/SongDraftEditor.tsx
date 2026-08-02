@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   type Song,
   type Section,
@@ -29,7 +29,7 @@ export function SongDraftEditor({
   onChange,
 }: {
   draft: Song;
-  onChange: (next: Song) => void;
+  onChange: Dispatch<SetStateAction<Song>>;
 }) {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
@@ -60,12 +60,14 @@ export function SongDraftEditor({
 
   function moveSection(from: number, to: number) {
     if (from === to) return;
-    const next = draft.sections.slice();
-    const [removed] = next.splice(from, 1);
-    if (!removed) return;
-    const adjustedTo = from < to ? to - 1 : to;
-    next.splice(adjustedTo, 0, removed);
-    onChange({ ...draft, sections: next });
+    onChange((d) => {
+      const next = d.sections.slice();
+      const [removed] = next.splice(from, 1);
+      if (!removed) return d;
+      const adjustedTo = from < to ? to - 1 : to;
+      next.splice(adjustedTo, 0, removed);
+      return { ...d, sections: next };
+    });
   }
 
   // Fetch full template payloads for the intro/outro defaults so we can show
@@ -106,8 +108,7 @@ export function SongDraftEditor({
   // Derived data for the Custom Fields + Defaults sections. The cheap pieces
   // (projectSchema, adHocKeys) recompute each render; the expensive ones
   // (listSongFieldDescriptors, suggestFieldMap) are memoized so typing in
-  // unrelated inputs doesn't re-run them. All useMemo calls live ABOVE the
-  // early-return below to keep hook order stable across renders.
+  // unrelated inputs doesn't re-run them.
   const projectSchema =
     projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [];
   const songFieldDescriptors = useMemo(
@@ -147,7 +148,7 @@ export function SongDraftEditor({
       if (s.kind === "exact") exacts.add(k);
     }
     if (Object.keys(next).length === 0) return;
-    onChange({ ...draft, defaultIntroFieldMap: next });
+    onChange((d) => ({ ...d, defaultIntroFieldMap: next }));
     setIntroConfirmed(exacts);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- introSuggestions/confirmed/draft are checked above; seeding fires only on the cold→warm transition
   }, [introTemplate]);
@@ -162,13 +163,13 @@ export function SongDraftEditor({
       if (s.kind === "exact") exacts.add(k);
     }
     if (Object.keys(next).length === 0) return;
-    onChange({ ...draft, defaultOutroFieldMap: next });
+    onChange((d) => ({ ...d, defaultOutroFieldMap: next }));
     setOutroConfirmed(exacts);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mirror of intro seeding effect above
   }, [outroTemplate]);
 
   function setMeta<K extends keyof Song>(key: K, value: Song[K]) {
-    onChange({ ...draft, [key]: value });
+    onChange((d) => ({ ...d, [key]: value }));
   }
 
   const projectSchemaKeyMap = new Map(projectSchema.map((f) => [f.key, f]));
@@ -197,65 +198,75 @@ export function SongDraftEditor({
   }
 
   function updateSection(idx: number, patch: Partial<Section>) {
-    const next = draft.sections.slice();
-    const target = next[idx];
-    if (!target) return;
-    next[idx] = { ...target, ...patch };
-    onChange({ ...draft, sections: next });
+    onChange((d) => {
+      const next = d.sections.slice();
+      const target = next[idx];
+      if (!target) return d;
+      next[idx] = { ...target, ...patch };
+      return { ...d, sections: next };
+    });
   }
 
   function updateSlide(secIdx: number, slideIdx: number, lines: string[]) {
-    const sections = draft.sections.slice();
-    const sec = sections[secIdx];
-    if (!sec) return;
-    const slides = sec.slides.slice();
-    const target = slides[slideIdx];
-    if (!target) return;
-    slides[slideIdx] = { ...target, lines };
-    sections[secIdx] = { ...sec, slides };
-    onChange({ ...draft, sections });
+    onChange((d) => {
+      const sections = d.sections.slice();
+      const sec = sections[secIdx];
+      if (!sec) return d;
+      const slides = sec.slides.slice();
+      const target = slides[slideIdx];
+      if (!target) return d;
+      slides[slideIdx] = { ...target, lines };
+      sections[secIdx] = { ...sec, slides };
+      return { ...d, sections };
+    });
   }
 
   function addSlide(secIdx: number) {
-    const sections = draft.sections.slice();
-    const sec = sections[secIdx];
-    if (!sec) return;
-    sections[secIdx] = {
-      ...sec,
-      slides: [...sec.slides, { id: `${sec.id}s${sec.slides.length + 1}`, lines: [""] }],
-    };
-    onChange({ ...draft, sections });
+    onChange((d) => {
+      const sections = d.sections.slice();
+      const sec = sections[secIdx];
+      if (!sec) return d;
+      sections[secIdx] = {
+        ...sec,
+        slides: [...sec.slides, { id: `${sec.id}s${sec.slides.length + 1}`, lines: [""] }],
+      };
+      return { ...d, sections };
+    });
   }
 
   function removeSlide(secIdx: number, slideIdx: number) {
-    const sections = draft.sections.slice();
-    const sec = sections[secIdx];
-    if (!sec) return;
-    if (sec.slides.length <= 1) return;
-    sections[secIdx] = { ...sec, slides: sec.slides.filter((_, i) => i !== slideIdx) };
-    onChange({ ...draft, sections });
+    onChange((d) => {
+      const sections = d.sections.slice();
+      const sec = sections[secIdx];
+      if (!sec) return d;
+      if (sec.slides.length <= 1) return d;
+      sections[secIdx] = { ...sec, slides: sec.slides.filter((_, i) => i !== slideIdx) };
+      return { ...d, sections };
+    });
   }
 
   function addSection(kind: Section["kind"] = "verse") {
-    // Generate a unique kind-prefixed id by counting existing sections of
-    // the same kind. Falls back to a numeric suffix on collision so it
-    // works even when the song was authored with hand-picked ids.
-    const prefix = SECTION_ID_PREFIX[kind];
-    const sameKindCount = draft.sections.filter((s) => s.kind === kind).length;
-    let n = sameKindCount + 1;
-    let id = `${prefix}${n}`;
-    while (draft.sections.some((s) => s.id === id)) {
-      n += 1;
-      id = `${prefix}${n}`;
-    }
-    const label = `${KIND_LABEL[kind]} ${n}`;
-    const newSection: Section = {
-      id,
-      kind,
-      label,
-      slides: [{ id: `${id}s1`, lines: [""] }],
-    };
-    onChange({ ...draft, sections: [...draft.sections, newSection] });
+    onChange((d) => {
+      // Generate a unique kind-prefixed id by counting existing sections of
+      // the same kind. Falls back to a numeric suffix on collision so it
+      // works even when the song was authored with hand-picked ids.
+      const prefix = SECTION_ID_PREFIX[kind];
+      const sameKindCount = d.sections.filter((s) => s.kind === kind).length;
+      let n = sameKindCount + 1;
+      let id = `${prefix}${n}`;
+      while (d.sections.some((s) => s.id === id)) {
+        n += 1;
+        id = `${prefix}${n}`;
+      }
+      const label = `${KIND_LABEL[kind]} ${n}`;
+      const newSection: Section = {
+        id,
+        kind,
+        label,
+        slides: [{ id: `${id}s1`, lines: [""] }],
+      };
+      return { ...d, sections: [...d.sections, newSection] };
+    });
   }
 
   async function removeSection(secIdx: number) {
@@ -287,19 +298,23 @@ export function SongDraftEditor({
       ),
     });
     if (!ok) return;
-    const sections = draft.sections.filter((_, i) => i !== secIdx);
-    const defaultArrangement = draft.defaultArrangement.filter((sid) => sid !== sec.id);
-    onChange({ ...draft, sections, defaultArrangement });
+    onChange((d) => {
+      const sections = d.sections.filter((_, i) => i !== secIdx);
+      const defaultArrangement = d.defaultArrangement.filter((sid) => sid !== sec.id);
+      return { ...d, sections, defaultArrangement };
+    });
   }
 
   function setCustomField(key: string, value: string) {
-    onChange({ ...draft, customFields: { ...draft.customFields, [key]: value } });
+    onChange((d) => ({ ...d, customFields: { ...d.customFields, [key]: value } }));
   }
 
   function removeCustomField(key: string) {
-    const next = { ...draft.customFields };
-    delete next[key];
-    onChange({ ...draft, customFields: next });
+    onChange((d) => {
+      const next = { ...d.customFields };
+      delete next[key];
+      return { ...d, customFields: next };
+    });
   }
 
   /**
@@ -332,19 +347,20 @@ export function SongDraftEditor({
     // "absent" rather than "explicitly empty" to be the canonical form.
     const persistedMap =
       templateId && Object.keys(nextMap).length > 0 ? nextMap : undefined;
-    if (which === "intro") {
-      onChange({
-        ...draft,
-        defaultIntroTemplateId: templateId,
-        defaultIntroFieldMap: persistedMap,
-      });
-    } else {
-      onChange({
-        ...draft,
+    onChange((d) => {
+      if (which === "intro") {
+        return {
+          ...d,
+          defaultIntroTemplateId: templateId,
+          defaultIntroFieldMap: persistedMap,
+        };
+      }
+      return {
+        ...d,
         defaultOutroTemplateId: templateId,
         defaultOutroFieldMap: persistedMap,
-      });
-    }
+      };
+    });
     // Exact-match rows don't need confirmation; they render the ✓ indicator.
     // Treat them as confirmed-by-default so the parent state is consistent
     // (clicking them later is a no-op).
