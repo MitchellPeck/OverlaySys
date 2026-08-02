@@ -1,18 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  Field as TemplateField,
-  ItemPreview,
-  PcoPlan,
-  PcoPlanItem,
-  PcoServiceType,
-  Template,
+import {
+  buildImportedSong,
+  resolveImportedSongId,
+  type Field as TemplateField,
+  type ItemPreview,
+  type PcoPlan,
+  type PcoPlanItem,
+  type PcoServiceType,
+  type Song,
+  type Template,
 } from "@overlaysys/core";
 import {
   Button,
   Field,
   Inline,
+  Modal,
   Panel,
   Pill,
   Select,
@@ -21,6 +25,7 @@ import {
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
+import { SongDraftEditor } from "@/app/songs/edit/SongDraftEditor";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -82,6 +87,15 @@ export default function PcoPage() {
   const [cfgs, setCfgs] = useState<Record<string, ItemCfg>>({});
   const [loadingItems, setLoadingItems] = useState(false);
   const seededRef = useRef<Set<string>>(new Set());
+
+  // Drafts for songs this import would create, keyed by plan item id. They are
+  // built here (not on the server) so the operator can configure templates,
+  // fields, lyrics and arrangement *before* the song lands in the library; the
+  // import request carries the configured draft along.
+  const songMetas = useStore((s) => s.songs);
+  const [songDrafts, setSongDrafts] = useState<Record<string, Song>>({});
+  const [customizedSongs, setCustomizedSongs] = useState<Set<string>>(() => new Set());
+  const [editingSongItemId, setEditingSongItemId] = useState<string | null>(null);
 
   const [targetMode, setTargetMode] = useState<"new" | "existing">("new");
   const [newName, setNewName] = useState("");
@@ -263,6 +277,10 @@ export default function PcoPage() {
         };
       }
       seededRef.current = new Set();
+      // A new plan means new items — drop every draft built for the old one.
+      setSongDrafts({});
+      setCustomizedSongs(new Set());
+      setEditingSongItemId(null);
       setItems(fetched);
       setPreviews(map);
       setCfgs(nextCfgs);
@@ -307,6 +325,47 @@ export default function PcoPage() {
     [items, cfgs],
   );
 
+  // Items that will put a NEW song into the library. Linked songs are excluded
+  // on purpose — their configuration already lives in the library and the
+  // import must not silently overwrite it.
+  const creatingSongItems = useMemo(
+    () =>
+      items.filter((it) => {
+        const c = cfgs[it.id];
+        return (
+          !!c?.include &&
+          c.kind === "song" &&
+          c.songAction === "create" &&
+          it.itemType === "song" &&
+          !!it.song
+        );
+      }),
+    [items, cfgs],
+  );
+
+  // Build each draft with the same core builders the server would use, so the
+  // modal shows exactly what would otherwise be created. Drafts are built
+  // lazily and never rebuilt — whatever the operator edited must survive an
+  // unrelated re-render. Ids are resolved against the library plus the drafts
+  // already built this session; the server re-resolves anyway, this is just
+  // for display.
+  useEffect(() => {
+    setSongDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      const taken = new Set(songMetas.map((s) => s.id));
+      for (const draft of Object.values(next)) taken.add(draft.id);
+      for (const item of creatingSongItems) {
+        if (next[item.id] || !item.song) continue;
+        const songId = resolveImportedSongId(item.song, taken);
+        taken.add(songId);
+        next[item.id] = buildImportedSong(songId, item.song, item.arrangement).song;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [creatingSongItems, songMetas]);
+
   const canImport = useMemo(() => {
     if (includedCount === 0 || importing) return false;
     if (targetMode === "existing" && !existingShowId) return false;
@@ -324,12 +383,16 @@ export default function PcoPage() {
         if (!c?.include) continue;
         const isSong = it.itemType === "song" && !!it.song;
         if (isSong && c.kind === "song") {
+          // The server only honours a supplied draft on the "create" branch —
+          // keep the draft and songAction paired or it is silently discarded.
+          const draft = c.songAction === "create" ? songDrafts[it.id] : undefined;
           payload.push({
             itemId: it.id,
             kind: "song",
             songAction: c.songAction,
             songId: c.songAction === "link" ? c.songId : undefined,
             templateId: c.lyricTemplateId || undefined,
+            ...(draft ? { song: draft } : {}),
           });
         } else {
           payload.push({
@@ -506,6 +569,80 @@ export default function PcoPage() {
               </Panel>
             )}
 
+            {creatingSongItems.length > 0 && (
+              <Panel title={`New songs (${creatingSongItems.length})`}>
+                <Stack gap={2}>
+                  <p style={{ color: colors.textDim, fontSize: 12 }}>
+                    These songs will be written to the library on import. Edit one to
+                    set its templates, fields, lyrics and arrangement first.
+                  </p>
+                  {creatingSongItems.map((item) => {
+                    const draft = songDrafts[item.id];
+                    const pv = previews[item.id];
+                    // A prior-import (pco-id) match means the server updates that
+                    // library song in place — the draft replaces its config.
+                    const updatesExisting = pv?.match?.confidence === "pco-id";
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: 6,
+                          padding: 12,
+                        }}
+                      >
+                        <Inline gap={2} align="center">
+                          <strong style={{ color: colors.text }}>
+                            {draft?.title ?? item.title}
+                          </strong>
+                          <Pill tone={updatesExisting ? "warn" : "accent"} uppercase>
+                            {updatesExisting ? "updates existing" : "creates new"}
+                          </Pill>
+                          {pv?.hasLyrics === false && (
+                            <Pill tone="dim" uppercase>
+                              no lyrics
+                            </Pill>
+                          )}
+                          {customizedSongs.has(item.id) && (
+                            <Pill tone="good" uppercase>
+                              customized
+                            </Pill>
+                          )}
+                          <div style={{ marginLeft: "auto" }}>
+                            <Button
+                              size="sm"
+                              disabled={!draft}
+                              onClick={() => setEditingSongItemId(item.id)}
+                            >
+                              Edit…
+                            </Button>
+                          </div>
+                        </Inline>
+                      </div>
+                    );
+                  })}
+                </Stack>
+              </Panel>
+            )}
+
+            {editingSongItemId && songDrafts[editingSongItemId] && (
+              <SongDraftModal
+                draft={songDrafts[editingSongItemId]!}
+                onCancel={() => setEditingSongItemId(null)}
+                onSave={(next) => {
+                  const itemId = editingSongItemId;
+                  setSongDrafts((prev) => ({ ...prev, [itemId]: next }));
+                  // The modal hands back the very object it was given when the
+                  // operator changed nothing (every editor edit allocates a new
+                  // draft), so identity is enough to drive the pill.
+                  if (next !== songDrafts[itemId]) {
+                    setCustomizedSongs((prev) => new Set(prev).add(itemId));
+                  }
+                  setEditingSongItemId(null);
+                }}
+              />
+            )}
+
             {items.length > 0 && (
               <Panel title="Import target">
                 <Stack gap={3}>
@@ -676,6 +813,44 @@ function ItemConfigCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Hosts {@link SongDraftEditor} in a modal with its own local draft, so
+ * Cancel discards the operator's edits and Save commits them in one go.
+ * `local` is deliberately non-nullable: the editor drives it with functional
+ * updaters, so its setter must be a `Dispatch<SetStateAction<Song>>`.
+ */
+function SongDraftModal({
+  draft,
+  onCancel,
+  onSave,
+}: {
+  draft: Song;
+  onCancel: () => void;
+  onSave: (next: Song) => void;
+}) {
+  const [local, setLocal] = useState<Song>(draft);
+  return (
+    <Modal
+      open
+      size="lg"
+      title={`Configure “${draft.title}”`}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => onSave(local)}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <SongDraftEditor draft={local} onChange={setLocal} />
+    </Modal>
   );
 }
 
