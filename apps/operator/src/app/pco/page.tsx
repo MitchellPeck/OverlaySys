@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   buildImportedSong,
   resolveImportedSongId,
@@ -30,7 +31,7 @@ import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
-import { getTemplateCloud } from "@/lib/cloudData";
+import { getTemplateCloud, refreshShowMetasCloud } from "@/lib/cloudData";
 import { FieldInput } from "@/lib/FieldInput";
 import { refillItemFields } from "@/lib/pcoFieldRefill";
 import {
@@ -73,6 +74,7 @@ export default function PcoPage() {
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const { send } = useWs();
   const cloud = isCloudMode();
+  const router = useRouter();
 
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -372,6 +374,20 @@ export default function PcoPage() {
     return true;
   }, [includedCount, importing, targetMode, existingShowId]);
 
+  /**
+   * Make the imported show the active one and jump to its editor. The server
+   * already broadcasts show_list/song_list after an import, so local mode only
+   * needs the get_show; cloud mode has no broadcast and refreshes explicitly.
+   */
+  const openShow = useCallback(
+    async (showId: string) => {
+      if (cloud) await refreshShowMetasCloud();
+      else send({ type: "get_show", showId });
+      router.push(`/shows/edit?id=${encodeURIComponent(showId)}`);
+    },
+    [cloud, send, router],
+  );
+
   async function doImport() {
     setImporting(true);
     setResult(null);
@@ -414,6 +430,7 @@ export default function PcoPage() {
         items: payload,
       });
       setResult(res);
+      if (res.ok && res.showId) await openShow(res.showId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -702,6 +719,13 @@ export default function PcoPage() {
                       {e.itemId}: {e.message}
                     </p>
                   ))}
+                  {!result.ok && result.showId && (
+                    <div>
+                      <Button size="sm" onClick={() => void openShow(result.showId!)}>
+                        Open show
+                      </Button>
+                    </div>
+                  )}
                 </Stack>
               </Panel>
             )}
