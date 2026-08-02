@@ -327,23 +327,53 @@ export default function PcoPage() {
     [items, cfgs],
   );
 
-  // Items that will put a NEW song into the library. Linked songs are excluded
-  // on purpose — their configuration already lives in the library and the
-  // import must not silently overwrite it.
-  const creatingSongItems = useMemo(
-    () =>
-      items.filter((it) => {
-        const c = cfgs[it.id];
-        return (
-          !!c?.include &&
-          c.kind === "song" &&
-          c.songAction === "create" &&
-          it.itemType === "song" &&
-          !!it.song
-        );
-      }),
-    [items, cfgs],
-  );
+  /**
+   * Items that will put a NEW song into the library — at most ONE entry per
+   * PCO song id, keeping the first occurrence in plan order.
+   *
+   * Why the dedupe (do not "simplify" it away): this page models a draft per
+   * PLAN ITEM, but the server (server/src/pco/importPlan.ts) resolves and
+   * persists library songs per PCO SONG ID. A plan that lists the same song
+   * twice — a reprise, say — therefore writes ONE library song from TWO
+   * independently-editable drafts, and the second write silently clobbers the
+   * first. Collapsing the editable entries means the operator can only produce
+   * one draft per library song, so there is nothing to clobber. This collapses
+   * the panel entries only: every row still imports, and `doImport` fans the
+   * surviving draft back out to every row sharing that PCO song id.
+   *
+   * Linked songs are excluded on purpose — their configuration already lives
+   * in the library and the import must not silently overwrite it.
+   */
+  const creatingSongItems = useMemo(() => {
+    const seenPcoSongIds = new Set<string>();
+    return items.filter((it) => {
+      const c = cfgs[it.id];
+      if (
+        !c?.include ||
+        c.kind !== "song" ||
+        c.songAction !== "create" ||
+        it.itemType !== "song" ||
+        !it.song
+      ) {
+        return false;
+      }
+      if (seenPcoSongIds.has(it.song.id)) return false;
+      seenPcoSongIds.add(it.song.id);
+      return true;
+    });
+  }, [items, cfgs]);
+
+  // The drafts above, re-keyed by PCO song id so `doImport` can attach the one
+  // surviving draft to every row referencing the same PCO song (see the dedupe
+  // rationale on `creatingSongItems`).
+  const songDraftsByPcoSongId = useMemo(() => {
+    const map: Record<string, Song> = {};
+    for (const item of creatingSongItems) {
+      const draft = songDrafts[item.id];
+      if (item.song && draft) map[item.song.id] = draft;
+    }
+    return map;
+  }, [creatingSongItems, songDrafts]);
 
   // Build each draft with the same core builders the server would use, so the
   // modal shows exactly what would otherwise be created. Drafts are built
@@ -401,7 +431,12 @@ export default function PcoPage() {
         if (isSong && c.kind === "song") {
           // The server only honours a supplied draft on the "create" branch —
           // keep the draft and songAction paired or it is silently discarded.
-          const draft = c.songAction === "create" ? songDrafts[it.id] : undefined;
+          // Looked up by PCO song id, not item id: a plan may reference one
+          // PCO song from several rows and only the first owns a draft.
+          const draft =
+            c.songAction === "create" && it.song
+              ? songDraftsByPcoSongId[it.song.id]
+              : undefined;
           payload.push({
             itemId: it.id,
             kind: "song",
@@ -591,7 +626,7 @@ export default function PcoPage() {
                 <Stack gap={2}>
                   <p style={{ color: colors.textDim, fontSize: 12 }}>
                     These songs will be written to the library on import. Edit one to
-                    set its templates, fields, lyrics and arrangement first.
+                    set its templates, fields, sections and arrangement first.
                   </p>
                   {creatingSongItems.map((item) => {
                     const draft = songDrafts[item.id];
@@ -719,7 +754,12 @@ export default function PcoPage() {
                       {e.itemId}: {e.message}
                     </p>
                   ))}
-                  {!result.ok && result.showId && (
+                  {/* Deliberately not gated on `!result.ok`: the success path
+                      normally navigates away, so this panel is only ever seen
+                      when something went wrong — including when `openShow`
+                      itself threw after a successful import. Without the
+                      button that operator has no way into their new show. */}
+                  {result.showId && (
                     <div>
                       <Button size="sm" onClick={() => void openShow(result.showId!)}>
                         Open show

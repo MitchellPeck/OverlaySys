@@ -79,6 +79,14 @@ export interface ImportPlanResult {
     songsLinked: number;
     songsUpdated: number;
   };
+  /**
+   * Library song ids this import wrote (created or updated in place), in write
+   * order and deduped. Callers need this to tell open clients which songs
+   * changed: a `song_list` broadcast only carries metadata, and editors that
+   * already cache a full song skip re-fetching it — so without a full-song
+   * push they keep rendering the pre-import content.
+   */
+  writtenSongIds: string[];
   warnings: string[];
   errors: { itemId: string; message: string }[];
 }
@@ -134,6 +142,9 @@ export async function importPlan(
   const library = await songs.listSongs();
   const existingIds = new Set(library.map((s) => s.id));
   const songIdByItem = new Map<string, string>();
+  // Every library song actually persisted below — reported to the caller so it
+  // can broadcast the full song to connected clients.
+  const writtenSongIds = new Set<string>();
   // Items whose song could not be persisted. They are skipped in the row loop
   // rather than silently falling through to a graphic row.
   const failedItems = new Set<string>();
@@ -178,6 +189,9 @@ export async function importPlan(
       songToSave = {
         ...parsed.data,
         id,
+        // A client draft must never resurrect (or create) a tombstone: the
+        // show row would point at a song the library treats as deleted.
+        deletedAt: undefined,
         customFields: {
           ...(existing?.customFields ?? {}),
           ...parsed.data.customFields,
@@ -202,6 +216,7 @@ export async function importPlan(
       failedItems.add(item.id);
       continue;
     }
+    writtenSongIds.add(id);
     if (existing) {
       counts.songsUpdated++;
     } else {
@@ -216,11 +231,23 @@ export async function importPlan(
   let show: Show;
   if (req.target.mode === "existing") {
     if (!req.target.showId) {
-      return { ok: false, counts, warnings, errors: [{ itemId: "", message: "existing target requires showId" }] };
+      return {
+        ok: false,
+        counts,
+        writtenSongIds: [...writtenSongIds],
+        warnings,
+        errors: [{ itemId: "", message: "existing target requires showId" }],
+      };
     }
     const found = await shows.getShow(req.target.showId);
     if (!found) {
-      return { ok: false, counts, warnings, errors: [{ itemId: "", message: `show ${req.target.showId} not found` }] };
+      return {
+        ok: false,
+        counts,
+        writtenSongIds: [...writtenSongIds],
+        warnings,
+        errors: [{ itemId: "", message: `show ${req.target.showId} not found` }],
+      };
     }
     show = structuredClone(found);
   } else {
@@ -282,5 +309,12 @@ export async function importPlan(
   const parsed = ShowSchema.parse(show);
   await shows.saveShow(parsed);
 
-  return { ok: errors.length === 0, showId: parsed.id, counts, warnings, errors };
+  return {
+    ok: errors.length === 0,
+    showId: parsed.id,
+    counts,
+    writtenSongIds: [...writtenSongIds],
+    warnings,
+    errors,
+  };
 }

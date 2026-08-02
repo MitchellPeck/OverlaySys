@@ -272,6 +272,10 @@ export function SongDraftEditor({
   async function removeSection(secIdx: number) {
     const sec = draft.sections[secIdx];
     if (!sec) return;
+    // `SongSchema` requires at least one section, so deleting the last one
+    // would only fail at the save boundary — as a raw Zod message in the PCO
+    // import's result panel. Mirrors the `removeSlide` guard above.
+    if (draft.sections.length <= 1) return;
     const arrangementUses = (draft.defaultArrangement ?? []).filter(
       (sid) => sid === sec.id,
     ).length;
@@ -299,6 +303,7 @@ export function SongDraftEditor({
     });
     if (!ok) return;
     onChange((d) => {
+      if (d.sections.length <= 1) return d;
       const sections = d.sections.filter((_, i) => i !== secIdx);
       const defaultArrangement = d.defaultArrangement.filter((sid) => sid !== sec.id);
       return { ...d, sections, defaultArrangement };
@@ -729,7 +734,12 @@ export function SongDraftEditor({
                   onClick={() => removeSection(secIdx)}
                   variant="destructive"
                   size="sm"
-                  title="Delete section"
+                  disabled={draft.sections.length <= 1}
+                  title={
+                    draft.sections.length <= 1
+                      ? "A song must keep at least one section"
+                      : "Delete section"
+                  }
                 >
                   Delete section
                 </Button>

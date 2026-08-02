@@ -85,6 +85,42 @@ const fakeClient: PcoClient = {
   getPlanItems: async () => ITEMS,
 };
 
+// A plan that lists the SAME PCO song twice — e.g. a reprise later in the
+// service. Both items are separate plan rows; both point at `pco-song-D`.
+const DUPLICATE_SONG_ITEMS: PcoPlanItem[] = [
+  {
+    id: "item-D1",
+    title: "Great Are You Lord",
+    sequence: 1,
+    itemType: "song",
+    song: { id: "pco-song-D", title: "Great Are You Lord" },
+    arrangement: { id: "arr-D", lyrics: "Verse 1\nyou give life" },
+  },
+  {
+    id: "item-D2",
+    title: "Great Are You Lord (reprise)",
+    sequence: 2,
+    itemType: "song",
+    song: { id: "pco-song-D", title: "Great Are You Lord" },
+    arrangement: { id: "arr-D", lyrics: "Verse 1\nyou give life" },
+  },
+];
+
+const duplicateSongClient: PcoClient = {
+  listServiceTypes: async () => [],
+  listPlans: async () => [],
+  getPlanItems: async () => DUPLICATE_SONG_ITEMS,
+};
+
+/** A configured draft for `pco-song-D` whose only slide carries `line`. */
+function repriseDraft(line: string): Song {
+  return configuredDraft({
+    title: "Great Are You Lord",
+    sections: [{ id: "c1", kind: "chorus", label: "Chorus", slides: [{ id: "c1s1", lines: [line] }] }],
+    defaultArrangement: ["c1"],
+  });
+}
+
 // Default config: songs as song rows (auto-match), header as graphic.
 const baseReq: Omit<ImportPlanRequest, "target"> = {
   serviceTypeId: "st-1",
@@ -257,6 +293,47 @@ describe("importPlan", () => {
     expect(saved?.customFields["keep_me"]).toBe("yes");
     expect(saved?.customFields["hymn_number"]).toBe("42");
     expect(await songs.getSong("brand-new-song")).toBeNull();
+  });
+
+  it("collapses two plan rows referencing one PCO song into a single library song (last draft wins)", async () => {
+    // The client models drafts per PLAN ITEM but the server persists per PCO
+    // SONG ID, so two rows for one song write the same library song twice.
+    // This pins the server half of that asymmetry: nothing is duplicated, both
+    // rows import, and the LAST draft written is what survives. The operator
+    // UI dedupes its editable drafts by PCO song id (see `creatingSongItems`
+    // in apps/operator/src/app/pco/page.tsx) precisely so that both payload
+    // entries carry the *same* draft and last-write-wins is harmless.
+    const result = await importPlan(
+      duplicateSongClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [
+          { itemId: "item-D1", kind: "song", songAction: "create", templateId: "tpl-lyric", song: repriseDraft("first draft") },
+          { itemId: "item-D2", kind: "song", songAction: "create", templateId: "tpl-lyric", song: repriseDraft("second draft") },
+        ],
+      },
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    // One PCO song → exactly one library song, written twice.
+    expect(result.counts).toMatchObject({ rows: 2, songsCreated: 1, songsUpdated: 1 });
+    const written = (await songs.listSongs()).filter(
+      (s) => s.customFields[PCO_SONG_ID_KEY] === "pco-song-D",
+    );
+    expect(written).toHaveLength(1);
+    expect(result.writtenSongIds).toEqual([written[0]!.id]);
+
+    // Both plan rows still import, and both reference that one library song.
+    const show = await shows.getShow(result.showId!);
+    expect(show?.rows.map((r) => r.sourceRef?.itemId)).toEqual(["item-D1", "item-D2"]);
+    expect(show?.rows.every((r) => r.kind === "song" && r.songId === written[0]!.id)).toBe(true);
+    expect(show?.songs).toHaveLength(1);
+
+    // Documented behaviour: the second write lands on the same library song,
+    // so the second draft is what persists. The first draft is NOT merged.
+    expect(written[0]?.sections[0]?.slides[0]?.lines).toEqual(["second draft"]);
   });
 
   it("reports an invalid song draft and skips the row entirely", async () => {
