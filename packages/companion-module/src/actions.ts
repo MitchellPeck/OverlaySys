@@ -129,10 +129,11 @@ function rowPvwPgmMessages(
 }
 
 /**
- * Resolves the soonest show scheduled today or later and returns the load-show
- * dispatch for it. `todayISO` is injected by the caller so this stays pure and
- * testable; the wall-clock lives at the module edge (index.ts). No qualifying
- * show → empty result (caller logs a warning).
+ * Resolves the soonest show scheduled today or later — or, when nothing is
+ * upcoming, the most recent past one — and returns the load-show dispatch for
+ * it. `todayISO` is injected by the caller so this stays pure and testable; the
+ * wall-clock lives at the module edge (index.ts). Only a show list where
+ * nothing carries a resolvable date yields an empty result (caller warns).
  */
 export function selectNextShowResult(
   state: CompanionState,
@@ -651,7 +652,7 @@ export function actionDefinitions(
       callback: wrap("clear_loaded_show"),
     },
     select_next_show: {
-      name: "Select next show (soonest today or later)",
+      name: "Select next show (soonest upcoming, else most recent)",
       options: [],
       callback: wrap("select_next_show"),
     },

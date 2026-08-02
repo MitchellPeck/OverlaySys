@@ -386,11 +386,19 @@ describe("selectNextShowResult", () => {
     expect(messages).toEqual([{ type: "get_show", showId: "soon" }]);
   });
 
-  it("is a no-op when nothing is scheduled today or later", () => {
+  it("falls back to the most recent past show when nothing is upcoming", () => {
     const { messages, localEvents } = selectNextShowResult(
       stateWithShows(),
       "2027-01-01",
     );
+    expect(localEvents).toEqual([{ type: "local_load_show", showId: "later" }]);
+    expect(messages).toEqual([{ type: "get_show", showId: "later" }]);
+  });
+
+  it("is a no-op when no show has a resolvable date", () => {
+    const s = initialState();
+    s.shows = [{ id: "x", name: "Sunday Gathering", rowCount: 3 }];
+    const { messages, localEvents } = selectNextShowResult(s, "2026-07-14");
     expect(messages).toEqual([]);
     expect(localEvents).toEqual([]);
   });

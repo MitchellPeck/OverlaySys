@@ -181,7 +181,11 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
         };
         this.saveConfig(this.currentConfig);
       } else {
-        this.log("warn", "select_next_show: no show scheduled today or later");
+        this.log(
+          "warn",
+          "select_next_show: no show carries a date — set a service date in " +
+            "the show editor, or put M/D/YY in the show name",
+        );
       }
       return;
     }
