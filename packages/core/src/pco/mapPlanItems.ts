@@ -126,6 +126,37 @@ export interface BuiltSong {
   warnings: string[];
 }
 
+function hasLyricText(arrangement: PcoArrangement | undefined): boolean {
+  return !!arrangement?.lyrics && arrangement.lyrics.trim() !== "";
+}
+
+/**
+ * Choose the arrangement to take lyrics from out of a song's arrangements.
+ * First one with non-empty lyrics wins, in PCO's returned order — there is no
+ * preference ordering, because PCO exposes nothing that reliably marks an
+ * arrangement as canonical. `excludeId` skips the plan item's own arrangement,
+ * which the caller has already established is empty.
+ */
+export function pickLyricsArrangement(
+  arrangements: PcoArrangement[],
+  excludeId?: string,
+): PcoArrangement | undefined {
+  return arrangements.find((a) => a.id !== excludeId && hasLyricText(a));
+}
+
+/**
+ * The arrangement a caller should read lyrics (and sequence) from. Sequence
+ * travels with lyrics deliberately: `reorderArrangementBySequence` matches
+ * sequence labels against parsed section labels, so pairing one arrangement's
+ * sequence with another's sections would silently produce a wrong section
+ * order rather than an error.
+ */
+export function effectiveLyricsArrangement(
+  item: PcoPlanItem,
+): PcoArrangement | undefined {
+  return item.lyricsArrangement ?? item.arrangement;
+}
+
 /**
  * Build a library {@link Song} from a PCO song + arrangement. `id` is supplied
  * by the caller (a fresh slug for new songs, or the existing id when updating
@@ -362,6 +393,12 @@ export interface ItemPreview {
   willCreateSong?: boolean;
   /** Song items: whether the referenced arrangement has any lyrics. */
   hasLyrics?: boolean;
+  /**
+   * Set only when the lyrics came from a DIFFERENT arrangement than the one
+   * the plan item references — the source arrangement's name, or its id when
+   * unnamed. The import UI surfaces this so a substitution is never silent.
+   */
+  lyricsFromArrangement?: string;
 }
 
 /**
@@ -381,6 +418,8 @@ export function buildItemPreview(
   if (item.itemType !== "song" || !item.song) return base;
 
   const match = matchLibrarySong(item.song, library);
+  const lyricsArrangement = effectiveLyricsArrangement(item);
+  const hasLyrics = hasLyricText(lyricsArrangement);
   return {
     ...base,
     ...(match
@@ -392,6 +431,12 @@ export function buildItemPreview(
           },
         }
       : { willCreateSong: true }),
-    hasLyrics: !!item.arrangement?.lyrics && item.arrangement.lyrics.trim() !== "",
+    hasLyrics,
+    ...(hasLyrics && item.lyricsArrangement
+      ? {
+          lyricsFromArrangement:
+            item.lyricsArrangement.name ?? item.lyricsArrangement.id,
+        }
+      : {}),
   };
 }
