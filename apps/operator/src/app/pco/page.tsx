@@ -27,6 +27,7 @@ import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
 import { FieldInput } from "@/lib/FieldInput";
+import { refillItemFields } from "@/lib/pcoFieldRefill";
 import {
   getPcoStatus,
   getPlanItems,
@@ -50,6 +51,8 @@ interface ItemCfg {
   lyricTemplateId: string;
   graphicTemplateId: string;
   data: Record<string, string>;
+  /** Field keys the operator typed into — preserved across template changes. */
+  edited: Set<string>;
 }
 
 function planLabel(p: PcoPlan): string {
@@ -128,23 +131,30 @@ export default function PcoPage() {
     });
   }, [templates]);
 
-  // Seed the item title into a graphic template's first text field once that
-  // template body loads (one-time per item; user edits are never clobbered).
+  // Fill a graphic row's fields from its PCO item once the chosen template's
+  // body arrives. Keyed by item+template so switching templates re-seeds
+  // (the switch handler below covers the warm-cache case; this covers the
+  // cold one). `refillItemFields` preserves anything the user typed.
   useEffect(() => {
     setCfgs((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const item of items) {
         const c = next[item.id];
-        if (!c || c.kind !== "item" || seededRef.current.has(item.id)) continue;
+        if (!c || c.kind !== "item") continue;
+        const seedKey = `${item.id}:${c.graphicTemplateId}`;
+        if (seededRef.current.has(seedKey)) continue;
         const tpl = templateCache[c.graphicTemplateId];
         if (!tpl) continue; // wait for the body, retry when it arrives
-        seededRef.current.add(item.id);
-        const titleField = tpl.fields.find((f) => f.type === "text")?.key;
-        if (titleField && !c.data[titleField]) {
-          next[item.id] = { ...c, data: { ...c.data, [titleField]: item.title } };
-          changed = true;
-        }
+        seededRef.current.add(seedKey);
+        const data = refillItemFields({
+          item,
+          templateFields: tpl.fields,
+          data: c.data,
+          edited: c.edited,
+        });
+        next[item.id] = { ...c, data };
+        changed = true;
       }
       return changed ? next : prev;
     });
@@ -249,6 +259,7 @@ export default function PcoPage() {
           lyricTemplateId: def,
           graphicTemplateId: def,
           data: {},
+          edited: new Set<string>(),
         };
       }
       seededRef.current = new Set();
@@ -274,13 +285,20 @@ export default function PcoPage() {
 
   function setKind(item: PcoPlanItem, kind: RowKind) {
     patch(item.id, (c) => {
-      let data = c.data;
-      if (kind === "item") {
-        const tpl = templateCache[c.graphicTemplateId];
-        const tf = tpl?.fields.find((f) => f.type === "text")?.key;
-        if (tf && !data[tf]) data = { ...data, [tf]: item.title };
-      }
-      return { ...c, kind, data };
+      if (kind !== "item") return { ...c, kind };
+      const tpl = templateCache[c.graphicTemplateId];
+      if (!tpl) return { ...c, kind };
+      seededRef.current.add(`${item.id}:${c.graphicTemplateId}`);
+      return {
+        ...c,
+        kind,
+        data: refillItemFields({
+          item,
+          templateFields: tpl.fields,
+          data: c.data,
+          edited: c.edited,
+        }),
+      };
     });
   }
 
@@ -457,9 +475,29 @@ export default function PcoPage() {
                         onKind={(k) => setKind(item, k)}
                         onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
                         onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
-                        onGraphicTemplate={(id) => patch(item.id, (c) => ({ ...c, graphicTemplateId: id }))}
+                        onGraphicTemplate={(id) =>
+                          patch(item.id, (c) => {
+                            const tpl = templateCache[id];
+                            if (!tpl) return { ...c, graphicTemplateId: id };
+                            seededRef.current.add(`${item.id}:${id}`);
+                            return {
+                              ...c,
+                              graphicTemplateId: id,
+                              data: refillItemFields({
+                                item,
+                                templateFields: tpl.fields,
+                                data: c.data,
+                                edited: c.edited,
+                              }),
+                            };
+                          })
+                        }
                         onFieldChange={(key, value) =>
-                          patch(item.id, (c) => ({ ...c, data: { ...c.data, [key]: value } }))
+                          patch(item.id, (c) => ({
+                            ...c,
+                            data: { ...c.data, [key]: value },
+                            edited: new Set(c.edited).add(key),
+                          }))
                         }
                       />
                     );
