@@ -627,6 +627,9 @@ export default function PcoPage() {
 
             {editingSongItemId && songDrafts[editingSongItemId] && (
               <SongDraftModal
+                // `local` inside the modal is seeded from `draft` once, so the
+                // modal must remount when the operator edits a different item.
+                key={editingSongItemId}
                 draft={songDrafts[editingSongItemId]!}
                 onCancel={() => setEditingSongItemId(null)}
                 onSave={(next) => {
@@ -832,11 +835,45 @@ function SongDraftModal({
   onSave: (next: Song) => void;
 }) {
   const [local, setLocal] = useState<Song>(draft);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // True when Escape was pressed while a nested dialog was open. See the
+  // effect below — this is sampled during capture, deliberately not read live.
+  const escapeHitNestedRef = useRef(false);
+
+  // `SongDraftEditor` opens `useDialog` confirms (e.g. "Delete section"), which
+  // are themselves Modals nested inside our children. Every Modal registers its
+  // own window keydown listener — the confirm's is capture-phase, ours is
+  // bubble-phase — and `preventDefault()` on one does not stop the other. So a
+  // single Escape meant for the confirm would ALSO reach us and discard the
+  // whole draft. We can't test for the nested dialog when our own handler runs:
+  // React flushes the confirm's close in a microtask, and browsers run a
+  // microtask checkpoint *between* listeners of one dispatch, so by then the
+  // nested dialog may already be unmounted. Instead we snapshot the answer from
+  // a capture-phase listener registered at mount — capture listeners on the
+  // same target fire in registration order, and the confirm registers its own
+  // only when it opens, so ours always runs first, before anything closes.
+  useEffect(() => {
+    function onKeyDownCapture(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      escapeHitNestedRef.current = !!bodyRef.current?.querySelector('[role="dialog"]');
+    }
+    window.addEventListener("keydown", onKeyDownCapture, true);
+    return () => window.removeEventListener("keydown", onKeyDownCapture, true);
+  }, []);
+
   return (
     <Modal
       open
       size="lg"
       title={`Configure “${draft.title}”`}
+      // Escape only cancels this editor when it wasn't aimed at a nested dialog.
+      onCancel={() => {
+        if (escapeHitNestedRef.current) return;
+        onCancel();
+      }}
+      // An editor this large must not be dismissible by a stray click — losing
+      // an arrangement's worth of edits to a mis-aimed click is not recoverable.
+      closeOnBackdrop={false}
       onClose={onCancel}
       footer={
         <>
@@ -849,7 +886,11 @@ function SongDraftModal({
         </>
       }
     >
-      <SongDraftEditor draft={local} onChange={setLocal} />
+      {/* Wrapper exists so the Escape guard above can scope its nested-dialog
+          lookup to this editor's own subtree. */}
+      <div ref={bodyRef}>
+        <SongDraftEditor draft={local} onChange={setLocal} />
+      </div>
     </Modal>
   );
 }
