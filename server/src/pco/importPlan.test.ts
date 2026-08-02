@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { SongSchema, type Song } from "@overlaysys/core";
+import { PCO_SONG_ID_KEY, SongSchema, type Song } from "@overlaysys/core";
 import type { PcoPlanItem } from "@overlaysys/core";
 import * as storage from "../storage";
 import * as songs from "../songs";
@@ -41,6 +41,21 @@ function existingLibrarySong(): Song {
     sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["x"] }] }],
     defaultArrangement: ["v1"],
     customFields: {},
+  });
+}
+
+function configuredDraft(overrides: Partial<Song> = {}): Song {
+  return SongSchema.parse({
+    id: "client-supplied-id",
+    title: "Brand New Song",
+    sections: [{ id: "c1", kind: "chorus", label: "Chorus", slides: [{ id: "c1s1", lines: ["edited line"] }] }],
+    defaultArrangement: ["c1"],
+    customFields: { hymn_number: "42" },
+    defaultLyricTemplateId: "tpl-lyric",
+    defaultIntroTemplateId: "tpl-intro",
+    defaultIntroFieldLiterals: { line1: "{title}" },
+    defaultChannel: "main",
+    ...overrides,
   });
 }
 
@@ -161,5 +176,109 @@ describe("importPlan", () => {
     expect(
       (await songs.listSongs()).some((s) => s.customFields["pco_song_id"] === "pco-song-A"),
     ).toBe(false);
+  });
+
+  it("persists a client-configured song draft instead of rebuilding it", async () => {
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [{ itemId: "item-B", kind: "song", songAction: "create", templateId: "tpl-lyric", song: configuredDraft() }],
+      },
+      NOW,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.counts).toMatchObject({ rows: 1, songsCreated: 1, songsUpdated: 0 });
+
+    // The client id is ignored; the server derives the id from the PCO title.
+    // (`songs.getSong` resolves to `Song | null`, so assert null, not undefined.)
+    expect(await songs.getSong("client-supplied-id")).toBeNull();
+    const saved = await songs.getSong("brand-new-song");
+    expect(saved?.sections[0]?.slides[0]?.lines).toEqual(["edited line"]);
+    expect(saved?.defaultIntroTemplateId).toBe("tpl-intro");
+    expect(saved?.defaultIntroFieldLiterals).toEqual({ line1: "{title}" });
+    expect(saved?.defaultChannel).toBe("main");
+    expect(saved?.customFields["hymn_number"]).toBe("42");
+    // PCO stamps are still applied on top of the draft.
+    expect(saved?.customFields[PCO_SONG_ID_KEY]).toBe("pco-song-B");
+    expect(saved?.customFields["pco_arrangement_id"]).toBe("arr-B");
+    expect(saved?.updatedAt).toBe(NOW);
+  });
+
+  it("re-resolves a draft id that collides with an unrelated library song", async () => {
+    await songs.saveSong(existingLibrarySong()); // id: amazing-grace
+
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [{ itemId: "item-A", kind: "song", songAction: "create", templateId: "tpl-lyric", song: configuredDraft({ id: "amazing-grace", title: "Amazing Grace" }) }],
+      },
+      NOW,
+    );
+
+    expect(result.counts).toMatchObject({ songsCreated: 1 });
+    // The pre-existing library song is untouched...
+    const untouched = await songs.getSong("amazing-grace");
+    expect(untouched?.sections[0]?.slides[0]?.lines).toEqual(["x"]);
+    // ...and the draft landed on a collision-free id.
+    const created = await songs.getSong("amazing-grace-2");
+    expect(created?.customFields[PCO_SONG_ID_KEY]).toBe("pco-song-A");
+  });
+
+  it("reuses the library id of a previously imported song and counts it as an update", async () => {
+    await songs.saveSong(
+      SongSchema.parse({
+        id: "legacy-id",
+        title: "Brand New Song",
+        sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["old"] }] }],
+        defaultArrangement: ["v1"],
+        customFields: { [PCO_SONG_ID_KEY]: "pco-song-B", keep_me: "yes" },
+      }),
+    );
+
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [{ itemId: "item-B", kind: "song", songAction: "create", templateId: "tpl-lyric", song: configuredDraft() }],
+      },
+      NOW,
+    );
+
+    expect(result.counts).toMatchObject({ songsCreated: 0, songsUpdated: 1 });
+    const saved = await songs.getSong("legacy-id");
+    expect(saved?.sections[0]?.slides[0]?.lines).toEqual(["edited line"]);
+    // Pre-existing custom fields survive underneath the draft's own.
+    expect(saved?.customFields["keep_me"]).toBe("yes");
+    expect(saved?.customFields["hymn_number"]).toBe("42");
+    expect(await songs.getSong("brand-new-song")).toBeNull();
+  });
+
+  it("reports an invalid song draft and skips the row entirely", async () => {
+    const result = await importPlan(
+      fakeClient,
+      {
+        ...baseReq,
+        target: { mode: "new", name: "Sunday" },
+        items: [
+          { itemId: "item-B", kind: "song", songAction: "create", templateId: "tpl-lyric", song: { id: "x", title: "y" } as unknown as Song },
+          { itemId: "item-C", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome" } },
+        ],
+      },
+      NOW,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]?.itemId).toBe("item-B");
+    expect(result.counts.songsCreated).toBe(0);
+    const show = await shows.getShow(result.showId!);
+    // The bad item produced no row at all (not a silent graphic row), and the
+    // healthy item still imported.
+    expect(show?.rows.map((r) => r.sourceRef?.itemId)).toEqual(["item-C"]);
   });
 });

@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_PROJECT_ID,
+  PCO_ARRANGEMENT_ID_KEY,
   PCO_SONG_ID_KEY,
   ShowSchema,
+  SongSchema,
   buildGraphicRow,
   buildImportedSong,
   buildSongRow,
@@ -15,6 +17,7 @@ import {
   type PcoPlanItem,
   type RundownRow,
   type Show,
+  type Song,
 } from "@overlaysys/core";
 import * as songs from "../songs";
 import * as shows from "../shows";
@@ -42,6 +45,12 @@ export interface ImportItemConfig {
   songAction?: "link" | "create";
   /** Song kind + link: the library song id to reference. */
   songId?: string;
+  /**
+   * Song kind + create: a fully configured song from the import UI, persisted
+   * as-is. The server still owns the id, the PCO custom-field stamps and
+   * `updatedAt` — a client id is never trusted.
+   */
+  song?: Song;
   /** Lyric template (song) or graphic template (graphic). */
   templateId?: string;
   /** Graphic kind: configured template field values. */
@@ -125,6 +134,9 @@ export async function importPlan(
   const library = await songs.listSongs();
   const existingIds = new Set(library.map((s) => s.id));
   const songIdByItem = new Map<string, string>();
+  // Items whose song could not be persisted. They are skipped in the row loop
+  // rather than silently falling through to a graphic row.
+  const failedItems = new Set<string>();
 
   for (const item of chosen) {
     const cfg = cfgById.get(item.id)!;
@@ -152,15 +164,42 @@ export async function importPlan(
       (s) => !s.deletedAt && s.customFields?.[PCO_SONG_ID_KEY] === pcoSong.id,
     );
     const id = existing ? existing.id : resolveImportedSongId(pcoSong, existingIds);
-    const built = buildImportedSong(id, pcoSong, item.arrangement, {
-      updatedAt: now,
-      preserveCustomFields: existing?.customFields,
-    });
-    warnings.push(...built.warnings);
+
+    let songToSave: Song;
+    if (cfg.song) {
+      // The operator configured this song in the import UI: persist their
+      // draft verbatim, but keep ownership of identity + PCO stamps.
+      const parsed = SongSchema.safeParse(cfg.song);
+      if (!parsed.success) {
+        errors.push({ itemId: item.id, message: `Invalid song configuration: ${parsed.error.message}` });
+        failedItems.add(item.id);
+        continue;
+      }
+      songToSave = {
+        ...parsed.data,
+        id,
+        customFields: {
+          ...(existing?.customFields ?? {}),
+          ...parsed.data.customFields,
+          [PCO_SONG_ID_KEY]: pcoSong.id,
+          ...(item.arrangement ? { [PCO_ARRANGEMENT_ID_KEY]: item.arrangement.id } : {}),
+        },
+        updatedAt: now,
+      };
+    } else {
+      const built = buildImportedSong(id, pcoSong, item.arrangement, {
+        updatedAt: now,
+        preserveCustomFields: existing?.customFields,
+      });
+      warnings.push(...built.warnings);
+      songToSave = built.song;
+    }
+
     try {
-      await songs.saveSong(built.song);
+      await songs.saveSong(songToSave);
     } catch (err) {
       errors.push({ itemId: item.id, message: err instanceof Error ? err.message : String(err) });
+      failedItems.add(item.id);
       continue;
     }
     if (existing) {
@@ -168,7 +207,7 @@ export async function importPlan(
     } else {
       counts.songsCreated++;
       existingIds.add(id);
-      library.push(built.song);
+      library.push(songToSave);
     }
     songIdByItem.set(item.id, id);
   }
@@ -196,6 +235,7 @@ export async function importPlan(
 
   // ── 3. Build rows per item config (song row vs graphic row) ──────────
   for (const item of chosen) {
+    if (failedItems.has(item.id)) continue;
     const cfg = cfgById.get(item.id)!;
     const sourceRef = makeSourceRef(req.serviceTypeId, req.planId, item.id);
     const existingIdx = show.rows.findIndex((r) => r.sourceRef?.itemId === item.id);
