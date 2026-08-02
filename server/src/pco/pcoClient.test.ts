@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { createPcoClient } from "./pcoClient";
+import { createPcoClient, PcoAuthError } from "./pcoClient";
 
-/** Minimal JSON:API responder keyed by URL substring. */
-function stubFetch(routes: Record<string, unknown>): {
+/**
+ * Minimal JSON:API responder keyed by URL substring. `statuses` optionally
+ * overrides the HTTP status for a route (keyed the same way) so tests can
+ * exercise failure paths; routes default to 200/ok.
+ */
+function stubFetch(
+  routes: Record<string, unknown>,
+  statuses: Record<string, number> = {},
+): {
   impl: typeof fetch;
   calls: string[];
 } {
@@ -11,9 +18,10 @@ function stubFetch(routes: Record<string, unknown>): {
     calls.push(url);
     const key = Object.keys(routes).find((k) => url.includes(k));
     if (!key) throw new Error(`unexpected fetch: ${url}`);
+    const status = statuses[key] ?? 200;
     return {
-      ok: true,
-      status: 200,
+      ok: status >= 200 && status < 300,
+      status,
       headers: { get: () => null },
       json: async () => routes[key],
     };
@@ -44,6 +52,32 @@ function itemsDoc(arrangementLyrics: string) {
         id: "arr-own",
         attributes: { name: "Default", lyrics: arrangementLyrics },
       },
+    ],
+  };
+}
+
+/**
+ * A plan whose only item is a header that (unrealistically) also carries song
+ * and arrangement relationships — so asserting "no arrangements fetch" pins the
+ * item-type guard specifically, rather than passing merely because there is no
+ * song to look up.
+ */
+function headerItemsDoc() {
+  return {
+    data: [
+      {
+        type: "Item",
+        id: "item-h",
+        attributes: { title: "Welcome", sequence: 1, item_type: "header" },
+        relationships: {
+          song: { data: { type: "Song", id: "song-1" } },
+          arrangement: { data: { type: "Arrangement", id: "arr-own" } },
+        },
+      },
+    ],
+    included: [
+      { type: "Song", id: "song-1", attributes: { title: "Amazing Grace" } },
+      { type: "Arrangement", id: "arr-own", attributes: { name: "Default", lyrics: "" } },
     ],
   };
 }
@@ -84,7 +118,7 @@ describe("getPlanItems lyrics fallback", () => {
   });
 
   it("leaves lyricsArrangement unset when no sibling has lyrics", async () => {
-    const { impl } = stubFetch({
+    const { impl, calls } = stubFetch({
       [ITEMS_ROUTE]: itemsDoc(""),
       [ARRANGEMENTS_ROUTE]: {
         data: [{ type: "Arrangement", id: "arr-own", attributes: { lyrics: "" } }],
@@ -93,6 +127,48 @@ describe("getPlanItems lyrics fallback", () => {
     const client = createPcoClient("Bearer x", impl);
 
     expect((await client.getPlanItems("st-1", "plan-1"))[0]?.lyricsArrangement).toBeUndefined();
+    // Absence alone would also hold if the fallback never ran — assert the
+    // lookup actually happened and simply found nothing usable.
+    expect(calls.some((c) => c.includes("/arrangements"))).toBe(true);
+  });
+
+  it("degrades a single song, not the plan, when the sibling fetch fails", async () => {
+    const { impl } = stubFetch(
+      { [ITEMS_ROUTE]: itemsDoc(""), [ARRANGEMENTS_ROUTE]: {} },
+      { [ARRANGEMENTS_ROUTE]: 500 },
+    );
+    const client = createPcoClient("Bearer x", impl);
+
+    // The fallback is an enhancement: a failing lookup must leave the plan
+    // loadable (and importable) minus this one song's lyrics.
+    const items = await client.getPlanItems("st-1", "plan-1");
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.id).toBe("item-1");
+    expect(items[0]?.lyricsArrangement).toBeUndefined();
+    expect(items[0]?.arrangement?.id).toBe("arr-own");
+  });
+
+  it("still throws PcoAuthError when the sibling fetch 401s", async () => {
+    const { impl } = stubFetch(
+      { [ITEMS_ROUTE]: itemsDoc(""), [ARRANGEMENTS_ROUTE]: {} },
+      { [ARRANGEMENTS_ROUTE]: 401 },
+    );
+    const client = createPcoClient("Bearer x", impl);
+
+    // An expired session affects every request, so it must reach the 401
+    // handler instead of being swallowed as a per-song degradation.
+    await expect(client.getPlanItems("st-1", "plan-1")).rejects.toBeInstanceOf(PcoAuthError);
+  });
+
+  it("never fetches arrangements for a header item", async () => {
+    const { impl, calls } = stubFetch({ [ITEMS_ROUTE]: headerItemsDoc() });
+    const client = createPcoClient("Bearer x", impl);
+
+    const items = await client.getPlanItems("st-1", "plan-1");
+
+    expect(items[0]?.itemType).toBe("header");
+    expect(calls.some((c) => c.includes("/arrangements"))).toBe(false);
   });
 
   it("listSongArrangements parses name, lyrics and sequence", async () => {

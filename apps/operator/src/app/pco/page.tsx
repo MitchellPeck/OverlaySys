@@ -863,7 +863,9 @@ function ItemConfigCard({
                   No lyrics in arrangement — an empty stub will be created.
                 </p>
               )}
-              {preview?.lyricsFromArrangement && (
+              {/* Only the create branch writes song content; linking leaves the
+                  library song untouched, so the promise would be false there. */}
+              {cfg.songAction === "create" && preview?.lyricsFromArrangement && (
                 <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
                   Lyrics will come from the “{preview.lyricsFromArrangement}” arrangement —
                   this item’s own arrangement has none.

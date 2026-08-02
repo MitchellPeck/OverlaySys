@@ -202,8 +202,23 @@ export function createPcoClient(
           if (item.itemType !== "song" || !item.song) return item;
           const own = item.arrangement;
           if (own?.lyrics && own.lyrics.trim() !== "") return item;
-          const siblings = await listSongArrangements(item.song.id);
-          const pick = pickLyricsArrangement(siblings, own?.id);
+          let pick: PcoArrangement | undefined;
+          try {
+            pick = pickLyricsArrangement(
+              await listSongArrangements(item.song.id),
+              own?.id,
+            );
+          } catch (err) {
+            // The sibling lookup is an enhancement: if it fails, fall back to
+            // the pre-existing behavior (this song imports without lyrics)
+            // rather than failing the whole plan load — which would also abort
+            // an import the operator has already configured. A 404/403 on one
+            // song is permanent, so containment matters beyond transient
+            // blips. An expired session is different: it affects every
+            // request, so let it propagate to the 401 handler.
+            if (err instanceof PcoAuthError) throw err;
+            pick = undefined;
+          }
           return pick ? { ...item, lyricsArrangement: pick } : item;
         }),
       );
