@@ -119,6 +119,15 @@ export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
         const config = await loadPcoConfig();
         await savePcoConfig({ ...config, lastImport: { planId: req.body.planId, at: new Date().toISOString() } });
       }
+      // `song_list` above only carries metadata, and the show/song editors
+      // skip fetching any song already in their cache — so a client that had
+      // one of these songs open would keep rendering its pre-import content
+      // (which reads as "my edits didn't persist"). Push the full song for
+      // everything this import wrote, whatever the counts above said.
+      for (const songId of result.writtenSongIds) {
+        const song = await songs.getSong(songId);
+        if (song) broadcast({ type: "song", song });
+      }
       return result;
     } catch (err) {
       return pcoErrorReply(reply, err);

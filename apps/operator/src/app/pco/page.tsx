@@ -1,18 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  Field as TemplateField,
-  ItemPreview,
-  PcoPlan,
-  PcoPlanItem,
-  PcoServiceType,
-  Template,
+import { useRouter } from "next/navigation";
+import {
+  buildImportedSong,
+  effectiveLyricsArrangement,
+  resolveImportedSongId,
+  type Field as TemplateField,
+  type ItemPreview,
+  type PcoPlan,
+  type PcoPlanItem,
+  type PcoServiceType,
+  type Song,
+  type Template,
 } from "@overlaysys/core";
 import {
   Button,
   Field,
   Inline,
+  Modal,
   Panel,
   Pill,
   Select,
@@ -21,12 +27,14 @@ import {
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
+import { SongDraftEditor } from "@/app/songs/edit/SongDraftEditor";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
-import { getTemplateCloud } from "@/lib/cloudData";
+import { getTemplateCloud, refreshShowMetasCloud } from "@/lib/cloudData";
 import { FieldInput } from "@/lib/FieldInput";
+import { refillItemFields } from "@/lib/pcoFieldRefill";
 import {
   getPcoStatus,
   getPlanItems,
@@ -50,6 +58,8 @@ interface ItemCfg {
   lyricTemplateId: string;
   graphicTemplateId: string;
   data: Record<string, string>;
+  /** Field keys the operator typed into — preserved across template changes. */
+  edited: Set<string>;
 }
 
 function planLabel(p: PcoPlan): string {
@@ -65,6 +75,7 @@ export default function PcoPage() {
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const { send } = useWs();
   const cloud = isCloudMode();
+  const router = useRouter();
 
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +90,15 @@ export default function PcoPage() {
   const [cfgs, setCfgs] = useState<Record<string, ItemCfg>>({});
   const [loadingItems, setLoadingItems] = useState(false);
   const seededRef = useRef<Set<string>>(new Set());
+
+  // Drafts for songs this import would create, keyed by plan item id. They are
+  // built here (not on the server) so the operator can configure templates,
+  // fields, lyrics and arrangement *before* the song lands in the library; the
+  // import request carries the configured draft along.
+  const songMetas = useStore((s) => s.songs);
+  const [songDrafts, setSongDrafts] = useState<Record<string, Song>>({});
+  const [customizedSongs, setCustomizedSongs] = useState<Set<string>>(() => new Set());
+  const [editingSongItemId, setEditingSongItemId] = useState<string | null>(null);
 
   const [targetMode, setTargetMode] = useState<"new" | "existing">("new");
   const [newName, setNewName] = useState("");
@@ -128,23 +148,30 @@ export default function PcoPage() {
     });
   }, [templates]);
 
-  // Seed the item title into a graphic template's first text field once that
-  // template body loads (one-time per item; user edits are never clobbered).
+  // Fill a graphic row's fields from its PCO item once the chosen template's
+  // body arrives. Keyed by item+template so switching templates re-seeds
+  // (the switch handler below covers the warm-cache case; this covers the
+  // cold one). `refillItemFields` preserves anything the user typed.
   useEffect(() => {
     setCfgs((prev) => {
       let changed = false;
       const next = { ...prev };
       for (const item of items) {
         const c = next[item.id];
-        if (!c || c.kind !== "item" || seededRef.current.has(item.id)) continue;
+        if (!c || c.kind !== "item") continue;
+        const seedKey = `${item.id}:${c.graphicTemplateId}`;
+        if (seededRef.current.has(seedKey)) continue;
         const tpl = templateCache[c.graphicTemplateId];
         if (!tpl) continue; // wait for the body, retry when it arrives
-        seededRef.current.add(item.id);
-        const titleField = tpl.fields.find((f) => f.type === "text")?.key;
-        if (titleField && !c.data[titleField]) {
-          next[item.id] = { ...c, data: { ...c.data, [titleField]: item.title } };
-          changed = true;
-        }
+        seededRef.current.add(seedKey);
+        const data = refillItemFields({
+          item,
+          templateFields: tpl.fields,
+          data: c.data,
+          edited: c.edited,
+        });
+        next[item.id] = { ...c, data };
+        changed = true;
       }
       return changed ? next : prev;
     });
@@ -249,9 +276,14 @@ export default function PcoPage() {
           lyricTemplateId: def,
           graphicTemplateId: def,
           data: {},
+          edited: new Set<string>(),
         };
       }
       seededRef.current = new Set();
+      // A new plan means new items — drop every draft built for the old one.
+      setSongDrafts({});
+      setCustomizedSongs(new Set());
+      setEditingSongItemId(null);
       setItems(fetched);
       setPreviews(map);
       setCfgs(nextCfgs);
@@ -274,13 +306,20 @@ export default function PcoPage() {
 
   function setKind(item: PcoPlanItem, kind: RowKind) {
     patch(item.id, (c) => {
-      let data = c.data;
-      if (kind === "item") {
-        const tpl = templateCache[c.graphicTemplateId];
-        const tf = tpl?.fields.find((f) => f.type === "text")?.key;
-        if (tf && !data[tf]) data = { ...data, [tf]: item.title };
-      }
-      return { ...c, kind, data };
+      if (kind !== "item") return { ...c, kind };
+      const tpl = templateCache[c.graphicTemplateId];
+      if (!tpl) return { ...c, kind };
+      seededRef.current.add(`${item.id}:${c.graphicTemplateId}`);
+      return {
+        ...c,
+        kind,
+        data: refillItemFields({
+          item,
+          templateFields: tpl.fields,
+          data: c.data,
+          edited: c.edited,
+        }),
+      };
     });
   }
 
@@ -289,11 +328,100 @@ export default function PcoPage() {
     [items, cfgs],
   );
 
+  /**
+   * Items that will put a NEW song into the library — at most ONE entry per
+   * PCO song id, keeping the first occurrence in plan order.
+   *
+   * Why the dedupe (do not "simplify" it away): this page models a draft per
+   * PLAN ITEM, but the server (server/src/pco/importPlan.ts) resolves and
+   * persists library songs per PCO SONG ID. A plan that lists the same song
+   * twice — a reprise, say — therefore writes ONE library song from TWO
+   * independently-editable drafts, and the second write silently clobbers the
+   * first. Collapsing the editable entries means the operator can only produce
+   * one draft per library song, so there is nothing to clobber. This collapses
+   * the panel entries only: every row still imports, and `doImport` fans the
+   * surviving draft back out to every row sharing that PCO song id.
+   *
+   * Linked songs are excluded on purpose — their configuration already lives
+   * in the library and the import must not silently overwrite it.
+   */
+  const creatingSongItems = useMemo(() => {
+    const seenPcoSongIds = new Set<string>();
+    return items.filter((it) => {
+      const c = cfgs[it.id];
+      if (
+        !c?.include ||
+        c.kind !== "song" ||
+        c.songAction !== "create" ||
+        it.itemType !== "song" ||
+        !it.song
+      ) {
+        return false;
+      }
+      if (seenPcoSongIds.has(it.song.id)) return false;
+      seenPcoSongIds.add(it.song.id);
+      return true;
+    });
+  }, [items, cfgs]);
+
+  // The drafts above, re-keyed by PCO song id so `doImport` can attach the one
+  // surviving draft to every row referencing the same PCO song (see the dedupe
+  // rationale on `creatingSongItems`).
+  const songDraftsByPcoSongId = useMemo(() => {
+    const map: Record<string, Song> = {};
+    for (const item of creatingSongItems) {
+      const draft = songDrafts[item.id];
+      if (item.song && draft) map[item.song.id] = draft;
+    }
+    return map;
+  }, [creatingSongItems, songDrafts]);
+
+  // Build each draft with the same core builders the server would use, so the
+  // modal shows exactly what would otherwise be created. Drafts are built
+  // lazily and never rebuilt — whatever the operator edited must survive an
+  // unrelated re-render. Ids are resolved against the library plus the drafts
+  // already built this session; the server re-resolves anyway, this is just
+  // for display.
+  useEffect(() => {
+    setSongDrafts((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      const taken = new Set(songMetas.map((s) => s.id));
+      for (const draft of Object.values(next)) taken.add(draft.id);
+      for (const item of creatingSongItems) {
+        if (next[item.id] || !item.song) continue;
+        const songId = resolveImportedSongId(item.song, taken);
+        taken.add(songId);
+        next[item.id] = buildImportedSong(
+          songId,
+          item.song,
+          effectiveLyricsArrangement(item),
+        ).song;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [creatingSongItems, songMetas]);
+
   const canImport = useMemo(() => {
     if (includedCount === 0 || importing) return false;
     if (targetMode === "existing" && !existingShowId) return false;
     return true;
   }, [includedCount, importing, targetMode, existingShowId]);
+
+  /**
+   * Make the imported show the active one and jump to its editor. The server
+   * already broadcasts show_list/song_list after an import, so local mode only
+   * needs the get_show; cloud mode has no broadcast and refreshes explicitly.
+   */
+  const openShow = useCallback(
+    async (showId: string) => {
+      if (cloud) await refreshShowMetasCloud();
+      else send({ type: "get_show", showId });
+      router.push(`/shows/edit?id=${encodeURIComponent(showId)}`);
+    },
+    [cloud, send, router],
+  );
 
   async function doImport() {
     setImporting(true);
@@ -306,12 +434,21 @@ export default function PcoPage() {
         if (!c?.include) continue;
         const isSong = it.itemType === "song" && !!it.song;
         if (isSong && c.kind === "song") {
+          // The server only honours a supplied draft on the "create" branch —
+          // keep the draft and songAction paired or it is silently discarded.
+          // Looked up by PCO song id, not item id: a plan may reference one
+          // PCO song from several rows and only the first owns a draft.
+          const draft =
+            c.songAction === "create" && it.song
+              ? songDraftsByPcoSongId[it.song.id]
+              : undefined;
           payload.push({
             itemId: it.id,
             kind: "song",
             songAction: c.songAction,
             songId: c.songAction === "link" ? c.songId : undefined,
             templateId: c.lyricTemplateId || undefined,
+            ...(draft ? { song: draft } : {}),
           });
         } else {
           payload.push({
@@ -333,6 +470,7 @@ export default function PcoPage() {
         items: payload,
       });
       setResult(res);
+      if (res.ok && res.showId) await openShow(res.showId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -457,15 +595,117 @@ export default function PcoPage() {
                         onKind={(k) => setKind(item, k)}
                         onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
                         onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
-                        onGraphicTemplate={(id) => patch(item.id, (c) => ({ ...c, graphicTemplateId: id }))}
+                        onGraphicTemplate={(id) =>
+                          patch(item.id, (c) => {
+                            const tpl = templateCache[id];
+                            if (!tpl) return { ...c, graphicTemplateId: id };
+                            seededRef.current.add(`${item.id}:${id}`);
+                            return {
+                              ...c,
+                              graphicTemplateId: id,
+                              data: refillItemFields({
+                                item,
+                                templateFields: tpl.fields,
+                                data: c.data,
+                                edited: c.edited,
+                              }),
+                            };
+                          })
+                        }
                         onFieldChange={(key, value) =>
-                          patch(item.id, (c) => ({ ...c, data: { ...c.data, [key]: value } }))
+                          patch(item.id, (c) => ({
+                            ...c,
+                            data: { ...c.data, [key]: value },
+                            edited: new Set(c.edited).add(key),
+                          }))
                         }
                       />
                     );
                   })}
                 </Stack>
               </Panel>
+            )}
+
+            {creatingSongItems.length > 0 && (
+              <Panel title={`New songs (${creatingSongItems.length})`}>
+                <Stack gap={2}>
+                  <p style={{ color: colors.textDim, fontSize: 12 }}>
+                    These songs will be written to the library on import. Edit one to
+                    set its templates, fields, sections and arrangement first.
+                  </p>
+                  {creatingSongItems.map((item) => {
+                    const draft = songDrafts[item.id];
+                    const pv = previews[item.id];
+                    // A prior-import (pco-id) match means the server updates that
+                    // library song in place — the draft replaces its config.
+                    const updatesExisting = pv?.match?.confidence === "pco-id";
+                    return (
+                      <div
+                        key={item.id}
+                        style={{
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: 6,
+                          padding: 12,
+                        }}
+                      >
+                        <Inline gap={2} align="center">
+                          <strong style={{ color: colors.text }}>
+                            {draft?.title ?? item.title}
+                          </strong>
+                          <Pill tone={updatesExisting ? "warn" : "accent"} uppercase>
+                            {updatesExisting ? "updates existing" : "creates new"}
+                          </Pill>
+                          {pv?.hasLyrics === false && (
+                            <Pill tone="dim" uppercase>
+                              no lyrics
+                            </Pill>
+                          )}
+                          {pv?.lyricsFromArrangement && (
+                            <Pill tone="good" uppercase>
+                              lyrics from {pv.lyricsFromArrangement}
+                            </Pill>
+                          )}
+                          {customizedSongs.has(item.id) && (
+                            <Pill tone="good" uppercase>
+                              customized
+                            </Pill>
+                          )}
+                          <div style={{ marginLeft: "auto" }}>
+                            <Button
+                              size="sm"
+                              disabled={!draft}
+                              onClick={() => setEditingSongItemId(item.id)}
+                            >
+                              Edit…
+                            </Button>
+                          </div>
+                        </Inline>
+                      </div>
+                    );
+                  })}
+                </Stack>
+              </Panel>
+            )}
+
+            {editingSongItemId && songDrafts[editingSongItemId] && (
+              <SongDraftModal
+                // `local` inside the modal is seeded from `draft` once, so the
+                // modal must remount when the operator edits a different item.
+                key={editingSongItemId}
+                draft={songDrafts[editingSongItemId]!}
+                onCancel={() => setEditingSongItemId(null)}
+                onSave={(next) => {
+                  const itemId = editingSongItemId;
+                  setSongDrafts((prev) => ({ ...prev, [itemId]: next }));
+                  // The modal hands back the very object it was given when the
+                  // operator changed nothing (every editor edit allocates a new
+                  // draft), so identity is enough to drive the pill.
+                  if (next !== songDrafts[itemId]) {
+                    setCustomizedSongs((prev) => new Set(prev).add(itemId));
+                  }
+                  setEditingSongItemId(null);
+                }}
+              />
             )}
 
             {items.length > 0 && (
@@ -524,6 +764,18 @@ export default function PcoPage() {
                       {e.itemId}: {e.message}
                     </p>
                   ))}
+                  {/* Deliberately not gated on `!result.ok`: the success path
+                      normally navigates away, so this panel is only ever seen
+                      when something went wrong — including when `openShow`
+                      itself threw after a successful import. Without the
+                      button that operator has no way into their new show. */}
+                  {result.showId && (
+                    <div>
+                      <Button size="sm" onClick={() => void openShow(result.showId!)}>
+                        Open show
+                      </Button>
+                    </div>
+                  )}
                 </Stack>
               </Panel>
             )}
@@ -611,6 +863,14 @@ function ItemConfigCard({
                   No lyrics in arrangement — an empty stub will be created.
                 </p>
               )}
+              {/* Only the create branch writes song content; linking leaves the
+                  library song untouched, so the promise would be false there. */}
+              {cfg.songAction === "create" && preview?.lyricsFromArrangement && (
+                <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
+                  Lyrics will come from the “{preview.lyricsFromArrangement}” arrangement —
+                  this item’s own arrangement has none.
+                </p>
+              )}
               <Field label="Lyric template">
                 <Select value={cfg.lyricTemplateId} onChange={(e) => onLyricTemplate(e.target.value)}>
                   {templates.map((t) => (
@@ -638,6 +898,82 @@ function ItemConfigCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Hosts {@link SongDraftEditor} in a modal with its own local draft, so
+ * Cancel discards the operator's edits and Save commits them in one go.
+ * `local` is deliberately non-nullable: the editor drives it with functional
+ * updaters, so its setter must be a `Dispatch<SetStateAction<Song>>`.
+ */
+function SongDraftModal({
+  draft,
+  onCancel,
+  onSave,
+}: {
+  draft: Song;
+  onCancel: () => void;
+  onSave: (next: Song) => void;
+}) {
+  const [local, setLocal] = useState<Song>(draft);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // True when Escape was pressed while a nested dialog was open. See the
+  // effect below — this is sampled during capture, deliberately not read live.
+  const escapeHitNestedRef = useRef(false);
+
+  // `SongDraftEditor` opens `useDialog` confirms (e.g. "Delete section"), which
+  // are themselves Modals nested inside our children. Every Modal registers its
+  // own window keydown listener — the confirm's is capture-phase, ours is
+  // bubble-phase — and `preventDefault()` on one does not stop the other. So a
+  // single Escape meant for the confirm would ALSO reach us and discard the
+  // whole draft. We can't test for the nested dialog when our own handler runs:
+  // React flushes the confirm's close in a microtask, and browsers run a
+  // microtask checkpoint *between* listeners of one dispatch, so by then the
+  // nested dialog may already be unmounted. Instead we snapshot the answer from
+  // a capture-phase listener registered at mount — capture listeners on the
+  // same target fire in registration order, and the confirm registers its own
+  // only when it opens, so ours always runs first, before anything closes.
+  useEffect(() => {
+    function onKeyDownCapture(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      escapeHitNestedRef.current = !!bodyRef.current?.querySelector('[role="dialog"]');
+    }
+    window.addEventListener("keydown", onKeyDownCapture, true);
+    return () => window.removeEventListener("keydown", onKeyDownCapture, true);
+  }, []);
+
+  return (
+    <Modal
+      open
+      size="lg"
+      title={`Configure “${draft.title}”`}
+      // Escape only cancels this editor when it wasn't aimed at a nested dialog.
+      onCancel={() => {
+        if (escapeHitNestedRef.current) return;
+        onCancel();
+      }}
+      // An editor this large must not be dismissible by a stray click — losing
+      // an arrangement's worth of edits to a mis-aimed click is not recoverable.
+      closeOnBackdrop={false}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => onSave(local)}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      {/* Wrapper exists so the Escape guard above can scope its nested-dialog
+          lookup to this editor's own subtree. */}
+      <div ref={bodyRef}>
+        <SongDraftEditor draft={local} onChange={setLocal} />
+      </div>
+    </Modal>
   );
 }
 

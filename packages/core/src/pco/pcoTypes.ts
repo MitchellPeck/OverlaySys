@@ -57,5 +57,11 @@ export const PcoPlanItemSchema = z.object({
   /** Present (with lyrics/meta) when itemType === "song". */
   song: PcoSongSchema.optional(),
   arrangement: PcoArrangementSchema.optional(),
+  /**
+   * An arrangement of the same PCO song that carries lyrics, resolved by the
+   * client when the item's own `arrangement` has none. Absent when the item's
+   * arrangement has lyrics, or when no sibling arrangement has any either.
+   */
+  lyricsArrangement: PcoArrangementSchema.optional(),
 });
 export type PcoPlanItem = z.infer<typeof PcoPlanItemSchema>;
