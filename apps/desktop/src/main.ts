@@ -235,28 +235,27 @@ let serverHost = "127.0.0.1";
  * server may be unreachable during boot races; callers wrap the call in
  * a `.catch` so we don't crash the desktop on a sync-side hiccup.
  */
-async function pushTokensToServer(tokens: {
+async function pushTokensToServer(_tokens: {
   accessToken: string;
   refreshToken: string;
   registryOrgId: string | null;
 }): Promise<void> {
-  if (!tokens.registryOrgId) return; // no org → nothing to scope sync to
-  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      orgId: tokens.registryOrgId,
-    }),
-  });
+  // No-op since the sync cutover.
+  //
+  // The embedded server used to sync straight to apps-portal's Supabase with
+  // these tokens. It now syncs to Ovation's overlay database through Ovation's
+  // HTTP sync API, authenticated by a workspace-scoped operator key entered in
+  // the operator's Ovation page — not by the signed-in user's Supabase session.
+  //
+  // Kept as a no-op rather than deleted because the cloud sign-in flow (and the
+  // operator's cloud-mode data access) still legitimately produce these tokens;
+  // only the hand-off to the server's sync engine went away.
 }
 
-/** Clear the server's cloud session — companion to `pushTokensToServer`. */
+/** Companion no-op to {@link pushTokensToServer}; see the note there. */
 async function clearServerCloudTokens(): Promise<void> {
-  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
-    method: "DELETE",
-  });
+  // Intentionally empty — the server holds no user session to clear. The
+  // Ovation connection is disconnected from the operator's Ovation page.
 }
 
 // ── Planning Center token hand-off ─────────────────────────────────────────

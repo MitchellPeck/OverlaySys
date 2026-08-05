@@ -46,6 +46,7 @@ export const WORKSPACES: Record<WorkspaceId, Workspace> = {
       { route: "/hotcards", label: "Hotcards", icon: "⚡" },
       { route: "/data", label: "Data", icon: "⇅" },
       { route: "/pco", label: "Planning Center", icon: "☁", desktopOnly: true },
+      { route: "/ovation", label: "Ovation", icon: "▣", desktopOnly: true },
     ],
   },
 };

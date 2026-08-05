@@ -10,7 +10,12 @@ import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import * as sttSpawner from "./sttSpawner";
-import { loadSttConfig } from "./storage";
+import {
+  loadSttConfig,
+  loadOvationConnection,
+  saveOvationConnection,
+  clearOvationConnectionFile,
+} from "./storage";
 import { registerAssetRoutes } from "./assets";
 import { registerImportRoutes } from "./importRoute";
 import { registerPcoRoutes } from "./pco/routes";
@@ -18,10 +23,10 @@ import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
 import { listenWithFallback } from "./serverBoot";
 import {
-  clearCloudTokens,
+  clearOvationConnection,
   getCloudSyncStatus,
   runSyncNow,
-  setCloudTokens,
+  setOvationConnection,
 } from "./cloudSync";
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
@@ -70,6 +75,23 @@ await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();
 await initScripture();
+
+// Reconnect to Ovation from the persisted config so a restarted server keeps
+// syncing without the operator re-entering their key. A failure here is
+// non-fatal: the server still runs on its local replica, and the operator UI
+// surfaces the error from the sync status.
+{
+  const stored = await loadOvationConnection();
+  if (stored) {
+    const result = await setOvationConnection(stored);
+    if (result.ok) {
+      app.log.info(`ovation: reconnected to workspace ${stored.workspaceId}`);
+    } else {
+      app.log.warn(`ovation: stored connection rejected — ${result.error}`);
+    }
+  }
+}
+
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
@@ -111,25 +133,46 @@ app.get("/api/projects", async () => {
 // apps-portal's Supabase. Status endpoint lets the operator UI surface
 // "last synced at" and any recent errors.
 
-interface SetTokensBody {
-  accessToken?: string;
-  refreshToken?: string;
-  orgId?: string;
+interface ConnectOvationBody {
+  baseUrl?: string;
+  operatorKey?: string;
+  workspaceId?: string;
 }
-app.post<{ Body: SetTokensBody }>("/api/cloud/tokens", async (req, reply) => {
-  const { accessToken, refreshToken, orgId } = req.body ?? {};
-  if (!accessToken || !refreshToken || !orgId) {
+app.post<{ Body: ConnectOvationBody }>("/api/ovation/connect", async (req, reply) => {
+  const { baseUrl, operatorKey, workspaceId } = req.body ?? {};
+  if (!baseUrl || !operatorKey || !workspaceId) {
     return reply
       .status(400)
-      .send({ error: "accessToken, refreshToken, and orgId are required" });
+      .send({ error: "baseUrl, operatorKey, and workspaceId are required" });
   }
-  const ok = await setCloudTokens({ accessToken, refreshToken, orgId });
-  return { ok };
+
+  const result = await setOvationConnection({ baseUrl, operatorKey, workspaceId });
+  if (!result.ok) {
+    return reply.status(401).send({ ok: false, error: result.error });
+  }
+
+  // Only persist a connection the handshake accepted.
+  await saveOvationConnection({ baseUrl, operatorKey, workspaceId });
+  return { ok: true, workspaceName: result.workspaceName };
 });
 
-app.delete("/api/cloud/tokens", async () => {
-  await clearCloudTokens();
+app.delete("/api/ovation/connect", async () => {
+  await clearOvationConnection();
+  await clearOvationConnectionFile();
   return { ok: true };
+});
+
+/**
+ * Non-secret view of the stored connection, for the operator UI. The key is
+ * never echoed — only whether one is present.
+ */
+app.get("/api/ovation/connect", async () => {
+  const stored = await loadOvationConnection();
+  return {
+    connected: !!stored,
+    baseUrl: stored?.baseUrl ?? null,
+    workspaceId: stored?.workspaceId ?? null,
+  };
 });
 
 app.get("/api/cloud/sync", async () => getCloudSyncStatus());

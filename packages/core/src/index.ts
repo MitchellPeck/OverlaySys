@@ -5,6 +5,7 @@ export * from "./showSchedule";
 export * from "./hotcard";
 export * from "./project";
 export * from "./storageAdapter";
+export * from "./ovationAdapter";
 export * from "./syncEngine";
 export * from "./channel";
 export * from "./channelConfig";

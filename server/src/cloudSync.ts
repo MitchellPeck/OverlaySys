@@ -1,18 +1,21 @@
-// Server-side sync orchestration. The Electron host pushes cloud tokens
-// down to the server on startup + on refresh; this module holds them in
-// memory, materializes a Supabase client + CloudStorageAdapter, and runs
-// the engine against the local FsStorageAdapter on a periodic cadence.
+// Server-side sync orchestration.
 //
-// Idempotent — multiple setTokens calls just update the in-memory copy.
-// Sync passes are debounced: a pass in flight serializes with the next,
-// so an aggressive caller can't pile up concurrent reconciles.
+// The canonical store is the `overlay` database inside Ovation's Supabase
+// project. PostgREST does not serve that database, so we reach it through
+// Ovation's HTTP sync API rather than a Supabase client — which also means the
+// overlay database credentials never reach an operator machine. This server
+// holds only a workspace-scoped operator key, issued from the workspace's
+// OverlaySys settings in Ovation.
+//
+// Idempotent — repeated connect calls just update the in-memory config. Sync
+// passes are debounced: a pass in flight serializes with the next, so an
+// aggressive caller can\'t pile up concurrent reconciles.
 
-import { sync, type SyncResult } from "@overlaysys/core";
 import {
-  CloudStorageAdapter,
-  createNodeAnonClient,
-  type OverlaySysSupabaseClient,
-} from "@overlaysys/supabase";
+  OvationCloudStorageAdapter,
+  sync,
+  type SyncResult,
+} from "@overlaysys/core";
 import { FsStorageAdapter } from "./fsStorageAdapter";
 import { broadcast } from "./broadcast";
 import {
@@ -25,16 +28,19 @@ import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
 
-export interface CloudTokens {
-  accessToken: string;
-  refreshToken: string;
-  orgId: string;
+/**
+ * What the operator needs to reach its workspace in Ovation. `workspaceId` is
+ * the tenant key the sync engine passes through as its `orgId` argument.
+ */
+export interface OvationConnection {
+  baseUrl: string;
+  operatorKey: string;
+  workspaceId: string;
 }
 
 interface State {
-  tokens: CloudTokens | null;
-  client: OverlaySysSupabaseClient | null;
-  cloud: CloudStorageAdapter | null;
+  connection: OvationConnection | null;
+  cloud: OvationCloudStorageAdapter | null;
   local: FsStorageAdapter;
   // Last pass result for /health-style introspection.
   lastResult: SyncResult | null;
@@ -46,8 +52,7 @@ interface State {
 }
 
 const state: State = {
-  tokens: null,
-  client: null,
+  connection: null,
   cloud: null,
   local: new FsStorageAdapter(),
   lastResult: null,
@@ -61,38 +66,37 @@ const state: State = {
 const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
- * Apply tokens pushed from the Electron host. Spins up a Supabase client
- * the first time, then forwards subsequent token pairs into its session
- * (Supabase JS handles the swap in-place). Returns true when the new
- * tokens were successfully applied to the client.
+ * Connect this server to an Ovation workspace.
+ *
+ * The key is verified against the sync API's handshake before it is stored, so
+ * a bad key or a disabled integration fails here — at setup, with a message the
+ * operator can act on — instead of silently at the next scheduled pass.
  */
-export async function setCloudTokens(tokens: CloudTokens): Promise<boolean> {
-  const url = process.env["OVERLAYSYS_SUPABASE_URL"];
-  const anonKey = process.env["OVERLAYSYS_SUPABASE_ANON_KEY"];
-  if (!url || !anonKey) {
-    state.lastError =
-      "OVERLAYSYS_SUPABASE_URL / OVERLAYSYS_SUPABASE_ANON_KEY not set on the server";
-    console.warn(`[cloudSync] ${state.lastError}`);
-    return false;
-  }
-
-  state.tokens = tokens;
-  if (!state.client) {
-    state.client = createNodeAnonClient({ url, anonKey });
-    state.cloud = new CloudStorageAdapter(state.client);
-  }
-  const { error } = await state.client.auth.setSession({
-    access_token: tokens.accessToken,
-    refresh_token: tokens.refreshToken,
+export async function setOvationConnection(
+  connection: OvationConnection,
+): Promise<{ ok: boolean; error?: string; workspaceName?: string }> {
+  const cloud = new OvationCloudStorageAdapter({
+    baseUrl: connection.baseUrl,
+    operatorKey: connection.operatorKey,
   });
-  if (error) {
-    state.lastError = `setSession failed: ${error.message}`;
+
+  let workspaceName: string;
+  try {
+    const hello = await cloud.hello(connection.workspaceId);
+    workspaceName = hello.workspace_name;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    state.lastError = `Ovation connection failed: ${message}`;
     console.warn(`[cloudSync] ${state.lastError}`);
-    return false;
+    return { ok: false, error: message };
   }
 
-  // Schedule the periodic loop on first successful set; subsequent
-  // refreshes just update the session in place.
+  state.connection = connection;
+  state.cloud = cloud;
+  state.lastError = null;
+
+  // Schedule the periodic loop on first successful connect; later reconnects
+  // just swap the config in place.
   if (!state.intervalId) {
     state.intervalId = setInterval(() => {
       void runSyncNow().catch((err) => {
@@ -101,24 +105,22 @@ export async function setCloudTokens(tokens: CloudTokens): Promise<boolean> {
     }, SYNC_INTERVAL_MS);
   }
 
-  // Kick a sync immediately so the user sees changes propagate without
-  // waiting up to SYNC_INTERVAL_MS for the first scheduled pass.
+  // Kick a pass immediately so the operator sees their shows without waiting
+  // up to SYNC_INTERVAL_MS.
   void runSyncNow().catch((err) => {
     console.warn("[cloudSync] initial sync failed", err);
   });
 
-  return true;
+  return { ok: true, workspaceName };
 }
 
 /**
- * Clear cached tokens + cancel the periodic loop. Called when the user
- * signs out so a fresh sign-in starts from a clean slate.
+ * Forget the connection + cancel the periodic loop. The local FS replica is
+ * left intact so the operator keeps working offline with what already synced.
  */
-export async function clearCloudTokens(): Promise<void> {
-  state.tokens = null;
-  if (state.client) {
-    await state.client.auth.signOut().catch(() => undefined);
-  }
+export async function clearOvationConnection(): Promise<void> {
+  state.connection = null;
+  state.cloud = null;
   if (state.intervalId) {
     clearInterval(state.intervalId);
     state.intervalId = null;
@@ -135,11 +137,11 @@ export async function clearCloudTokens(): Promise<void> {
  * the server's single-event-loop model.
  */
 export async function runSyncNow(): Promise<SyncResult | null> {
-  if (!state.tokens || !state.cloud) return null;
+  if (!state.connection || !state.cloud) return null;
   if (state.running) return state.lastResult;
   state.running = true;
   try {
-    const result = await sync(state.local, state.cloud, state.tokens.orgId);
+    const result = await sync(state.local, state.cloud, state.connection.workspaceId);
     state.lastResult = result;
     state.lastRanAt = new Date().toISOString();
     state.lastError = null;
@@ -226,13 +228,15 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
  */
 export function getCloudSyncStatus(): {
   paired: boolean;
+  workspaceId: string | null;
   running: boolean;
   lastRanAt: string | null;
   lastError: string | null;
   lastResult: SyncResult | null;
 } {
   return {
-    paired: state.tokens !== null,
+    paired: state.connection !== null,
+    workspaceId: state.connection?.workspaceId ?? null,
     running: state.running,
     lastRanAt: state.lastRanAt,
     lastError: state.lastError,

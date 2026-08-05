@@ -57,6 +57,8 @@ const PROJECTS_DIR = (): string => path.join(dataRoot(), "projects");
 const STT_DIR = (): string => path.join(dataRoot(), "stt");
 const STT_CONFIG_FILE = (): string => path.join(STT_DIR(), "config.json");
 const PCO_DIR = (): string => path.join(dataRoot(), "pco");
+const OVATION_DIR = (): string => path.join(dataRoot(), "ovation");
+const OVATION_CONFIG_FILE = (): string => path.join(OVATION_DIR(), "connection.json");
 const PCO_CONFIG_FILE = (): string => path.join(PCO_DIR(), "config.json");
 
 // Fixture directories used to seed empty live folders. In dev they sit
@@ -413,4 +415,47 @@ export async function savePcoConfig(config: PcoConfig): Promise<void> {
   await ensureDir(PCO_DIR());
   const parsed = PcoConfigSchema.parse(config);
   await writeAtomic(PCO_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
+}
+
+// Ovation bridge connection ──────────────────────────────────────────────────
+//
+// Persisted so a restarted server reconnects without the operator re-entering
+// the key. Stored on the operator's own machine alongside the rest of its data
+// — the key is workspace-scoped and grants nothing beyond that workspace's
+// overlay records.
+
+export interface StoredOvationConnection {
+  baseUrl: string;
+  operatorKey: string;
+  workspaceId: string;
+}
+
+export async function loadOvationConnection(): Promise<StoredOvationConnection | null> {
+  try {
+    const raw = await fs.readFile(OVATION_CONFIG_FILE(), "utf8");
+    const parsed = JSON.parse(raw) as Partial<StoredOvationConnection>;
+    if (!parsed.baseUrl || !parsed.operatorKey || !parsed.workspaceId) return null;
+    return {
+      baseUrl: parsed.baseUrl,
+      operatorKey: parsed.operatorKey,
+      workspaceId: parsed.workspaceId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveOvationConnection(
+  connection: StoredOvationConnection,
+): Promise<void> {
+  await ensureDir(OVATION_DIR());
+  await writeAtomic(OVATION_CONFIG_FILE(), JSON.stringify(connection, null, 2));
+}
+
+export async function clearOvationConnectionFile(): Promise<void> {
+  try {
+    await fs.unlink(OVATION_CONFIG_FILE());
+  } catch {
+    // Already absent — disconnecting twice is not an error.
+  }
 }

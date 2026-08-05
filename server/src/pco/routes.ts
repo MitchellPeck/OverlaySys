@@ -18,7 +18,7 @@ import { importPlan, type ImportPlanRequest } from "./importPlan";
 
 /**
  * Planning Center Services REST surface. Token receipt mirrors the cloud
- * endpoints (`/api/cloud/tokens`); the import route mirrors `/api/import`
+ * endpoints (`/api/ovation/connect`); the import route mirrors `/api/import`
  * (single request → one response → broadcast).
  */
 export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
