@@ -203,10 +203,18 @@ export const useStore = create<StoreState>((set) => ({
   setChannelState: (s) =>
     set((cur) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
-      // Any state carrying media is a fresh playback report.
-      mediaHeardAt: s.media
-        ? { ...cur.mediaHeardAt, [s.channel]: Date.now() }
-        : cur.mediaHeardAt,
+      // Only a new take or a new renderer report (playback.updatedAt changed)
+      // counts as "heard". Control re-broadcasts reuse the old updatedAt and
+      // must not mask a dead renderer.
+      mediaHeardAt: (() => {
+        const prev = cur.channelStates[s.channel]?.media;
+        const fresh =
+          !!s.media &&
+          (!prev ||
+            prev.takenAt !== s.media.takenAt ||
+            prev.playback.updatedAt !== s.media.playback.updatedAt);
+        return fresh ? { ...cur.mediaHeardAt, [s.channel]: Date.now() } : cur.mediaHeardAt;
+      })(),
     })),
   applyMediaPlayback: (channel, takenAt, playback) =>
     set((cur) => {
