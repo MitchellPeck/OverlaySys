@@ -16,6 +16,7 @@ const DEFAULT_PREFS: ChannelWindowPrefs = {
   frameless: false,
   alwaysOnTop: false,
   transparent: false,
+  audioOutput: undefined,
 };
 
 export function ChannelWindowSettingsPopover({
@@ -32,6 +33,29 @@ export function ChannelWindowSettingsPopover({
   const [prefs, setPrefs] = useState<ChannelWindowPrefs>(DEFAULT_PREFS);
   const [file, setFile] = useState<WindowPrefsFile | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [audioDevices, setAudioDevices] = useState<{ deviceId: string; label: string }[]>([]);
+  const [savedAudio, setSavedAudio] = useState<ChannelWindowPrefs["audioOutput"]>(undefined);
+
+  useEffect(() => {
+    if (!api) return;
+    void (async () => {
+      const list = async () =>
+        (await navigator.mediaDevices.enumerateDevices())
+          .filter((d) => d.kind === "audiooutput" && d.deviceId !== "default" && d.deviceId !== "communications");
+      let outs = await list();
+      // Chromium hides labels until a media permission has been granted once.
+      if (outs.length > 0 && outs.every((d) => !d.label)) {
+        try {
+          const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+          for (const t of s.getTracks()) t.stop();
+          outs = await list();
+        } catch {
+          // Leave unlabeled; ids still work.
+        }
+      }
+      setAudioDevices(outs.map((d) => ({ deviceId: d.deviceId, label: d.label || d.deviceId })));
+    })();
+  }, [api]);
 
   useEffect(() => {
     if (!api) return;
@@ -44,6 +68,7 @@ export function ChannelWindowSettingsPopover({
       setFile(f);
       const existing = f.channels[channelId];
       if (existing) setPrefs(existing);
+      setSavedAudio(existing?.audioOutput);
     })();
   }, [api, channelId]);
 
@@ -67,6 +92,16 @@ export function ChannelWindowSettingsPopover({
 
   const onSave = async () => {
     await api.setChannelWindowPrefs(channelId, prefs);
+    // The renderer reads its audio device from the URL, so an open window
+    // must be reopened for a change to take effect. It rejoins mid-video
+    // from the server's last reported position.
+    const audioChanged =
+      (savedAudio?.deviceId ?? "") !== (prefs.audioOutput?.deviceId ?? "");
+    if (audioChanged) {
+      const open = await api.listChannelWindows();
+      if (open.includes(channelId)) await api.reopenChannelOnConfiguredDisplay(channelId);
+    }
+    setSavedAudio(prefs.audioOutput);
     setDirty(false);
     onSaved?.();
     onClose();
@@ -138,6 +173,33 @@ export function ChannelWindowSettingsPopover({
         >
           Identify displays
         </button>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ color: colors.textDim, marginBottom: 4 }}>Audio output (video rows)</div>
+        <select
+          value={prefs.audioOutput?.deviceId ?? ""}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (id === "") return update("audioOutput", undefined);
+            const d = audioDevices.find((x) => x.deviceId === id) ?? prefs.audioOutput;
+            update("audioOutput", d ? { deviceId: d.deviceId, label: d.label } : undefined);
+          }}
+          style={{ width: "100%", padding: 4 }}
+        >
+          <option value="">System default</option>
+          {audioDevices.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+          ))}
+          {prefs.audioOutput &&
+            !audioDevices.some(
+              (d) => d.deviceId === prefs.audioOutput!.deviceId || d.label === prefs.audioOutput!.label,
+            ) && (
+              <option value={prefs.audioOutput.deviceId}>
+                {prefs.audioOutput.label} ⚠ not connected
+              </option>
+            )}
+        </select>
       </div>
 
       {(

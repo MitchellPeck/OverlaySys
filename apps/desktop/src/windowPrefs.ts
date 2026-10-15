@@ -43,6 +43,7 @@ const WindowPrefsFileSchema = z.object({
         frameless: z.boolean().default(false),
         alwaysOnTop: z.boolean().default(false),
         transparent: z.boolean().default(false),
+        audioOutput: z.object({ deviceId: z.string(), label: z.string() }).optional(),
       }),
     )
     .default({}),

@@ -44,6 +44,7 @@ import {
   type MatchedBy,
 } from "./windowPrefs";
 import { identifyDisplays } from "./identifyDisplays";
+import { buildRendererChannelUrl } from "./rendererUrl";
 import {
   clearPidFile,
   reapPreviousServer,
@@ -360,15 +361,16 @@ function operatorUrl(): string {
 }
 
 function rendererChannelUrl(channelId: string): string {
-  if (isDev) {
-    const dev = process.env["RENDERER_URL"] ?? "http://localhost:3001";
-    const u = new URL(dev);
-    u.searchParams.set("channel", channelId);
-    return u.toString();
-  }
-  return `http://${serverHost}:${serverPort}/renderer/?channel=${encodeURIComponent(
+  // Audio device is a per-machine pref, read fresh so a reopen picks up changes.
+  const audioOutput = loadPrefs(prefsFilePath()).channels[channelId]?.audioOutput;
+  return buildRendererChannelUrl({
+    isDev,
+    devRendererUrl: process.env["RENDERER_URL"] ?? "http://localhost:3001",
+    serverHost,
+    serverPort,
     channelId,
-  )}&server=ws://${serverHost}:${serverPort}/ws`;
+    ...(audioOutput ? { audioOutput } : {}),
+  });
 }
 
 // ── Server lifecycle ─────────────────────────────────────────────────────────
@@ -652,6 +654,8 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      // Media rows play with sound; Chromium blocks unmuted autoplay by default.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 

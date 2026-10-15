@@ -37,6 +37,9 @@ export const ChannelWindowPrefsSchema = z.object({
   frameless: z.boolean().default(false),
   alwaysOnTop: z.boolean().default(false),
   transparent: z.boolean().default(false),
+  /** Output device for media audio in this window (per-machine; never synced).
+   *  `label` is the fallback match — device ids are per-origin hashes. */
+  audioOutput: z.object({ deviceId: z.string(), label: z.string() }).optional(),
 });
 export type ChannelWindowPrefs = z.infer<typeof ChannelWindowPrefsSchema>;
 

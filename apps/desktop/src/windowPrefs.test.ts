@@ -42,6 +42,23 @@ describe("loadPrefs / savePrefs", () => {
     require("node:fs").writeFileSync(file, "{not-json", "utf8");
     expect(loadPrefs(file)).toEqual({ version: 1, displays: [], channels: {} });
   });
+
+  it("round-trips audioOutput and tolerates its absence", () => {
+    savePrefs(file, {
+      version: 1,
+      displays: [],
+      channels: {
+        program: {
+          autoOpen: false, fullscreen: false, frameless: false, alwaysOnTop: false, transparent: false,
+          audioOutput: { deviceId: "abc", label: "Aux" },
+        },
+        alpha: { autoOpen: false, fullscreen: false, frameless: false, alwaysOnTop: false, transparent: false },
+      },
+    });
+    const loaded = loadPrefs(file);
+    expect(loaded.channels.program?.audioOutput).toEqual({ deviceId: "abc", label: "Aux" });
+    expect(loaded.channels.alpha?.audioOutput).toBeUndefined();
+  });
 });
 
 import { resolveDisplay, type DisplayLike, updateDisplayCache, fingerprintDisplay } from "./windowPrefs";
