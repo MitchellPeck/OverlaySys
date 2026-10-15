@@ -6,7 +6,7 @@ import { resolveArrangement, resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { videoRowTakeMessage, formatClock } from "@/lib/mediaTake";
+import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
 import { HotcardsPanel } from "./HotcardsPanel";
@@ -129,6 +129,8 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
         return;
       }
       if (row.kind === "video") {
+        // Already on air: Restart lives in the transport strip.
+        if (onAirMediaFor(row, useStore.getState().channelStates)) return;
         send(videoRowTakeMessage(row));
         return;
       }
@@ -302,6 +304,7 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
                   onClick={() => setSelectedRow(row.id)}
                   onDoubleClick={() => {
                     setSelectedRow(row.id);
+                    if (onAirMediaFor(row, useStore.getState().channelStates)) return;
                     send(videoRowTakeMessage(row));
                   }}
                   style={{

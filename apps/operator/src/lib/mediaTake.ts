@@ -1,4 +1,4 @@
-import type { VideoRow } from "@overlaysys/core";
+import type { ChannelMedia, ChannelState, VideoRow } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 /** Media takes go straight to their channel — there is no PVW stage for video. */
@@ -12,6 +12,21 @@ export function videoRowTakeMessage(row: VideoRow): ClientMessage {
     volume: row.volume,
     endAction: row.endAction,
   };
+}
+
+/**
+ * The media currently on air for this row (same row, its channel, not
+ * ended/errored), or null. While non-null, Take/double-click must not
+ * re-take the row; Space toggles pause instead.
+ */
+export function onAirMediaFor(
+  row: VideoRow,
+  channelStates: Record<string, ChannelState>,
+): ChannelMedia | null {
+  const media = channelStates[row.channelHint ?? "program"]?.media;
+  if (!media || media.rowId !== row.id) return null;
+  if (media.playback.status === "ended" || media.playback.status === "error") return null;
+  return media;
 }
 
 export function formatClock(sec: number): string {

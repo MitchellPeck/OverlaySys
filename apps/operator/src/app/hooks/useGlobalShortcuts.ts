@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import type { SongSessionSummary } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
-import { videoRowTakeMessage } from "@/lib/mediaTake";
+import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 
 /**
  * Global keyboard shortcuts for the show page.
@@ -120,7 +120,17 @@ export function useGlobalShortcuts(): void {
             songRowId: row.id,
           });
         } else if (row && row.kind === "video") {
-          client.send(videoRowTakeMessage(row));
+          const onAir = onAirMediaFor(row, store.channelStates);
+          if (onAir) {
+            client.send({
+              type: "media_control",
+              channel: row.channelHint ?? "program",
+              takenAt: onAir.takenAt,
+              action: onAir.paused ? "play" : "pause",
+            });
+          } else {
+            client.send(videoRowTakeMessage(row));
+          }
         } else if (hotcard) {
           client.send({
             type: "take",
