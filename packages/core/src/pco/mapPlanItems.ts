@@ -7,6 +7,11 @@ import type {
 } from "../show";
 import { slugifyTitle } from "../songSelectParser";
 import { parsePlainLyrics } from "../parsePlainLyrics";
+import {
+  suggestFieldMap,
+  type FieldDescriptor,
+  type TemplateFieldLike,
+} from "../songResolution";
 import type { PcoArrangement, PcoPlanItem, PcoSong } from "./pcoTypes";
 
 /**
@@ -121,6 +126,37 @@ export interface BuiltSong {
   warnings: string[];
 }
 
+function hasLyricText(arrangement: PcoArrangement | undefined): boolean {
+  return !!arrangement?.lyrics && arrangement.lyrics.trim() !== "";
+}
+
+/**
+ * Choose the arrangement to take lyrics from out of a song's arrangements.
+ * First one with non-empty lyrics wins, in PCO's returned order — there is no
+ * preference ordering, because PCO exposes nothing that reliably marks an
+ * arrangement as canonical. `excludeId` skips the plan item's own arrangement,
+ * which the caller has already established is empty.
+ */
+export function pickLyricsArrangement(
+  arrangements: PcoArrangement[],
+  excludeId?: string,
+): PcoArrangement | undefined {
+  return arrangements.find((a) => a.id !== excludeId && hasLyricText(a));
+}
+
+/**
+ * The arrangement a caller should read lyrics (and sequence) from. Sequence
+ * travels with lyrics deliberately: `reorderArrangementBySequence` matches
+ * sequence labels against parsed section labels, so pairing one arrangement's
+ * sequence with another's sections would silently produce a wrong section
+ * order rather than an error.
+ */
+export function effectiveLyricsArrangement(
+  item: PcoPlanItem,
+): PcoArrangement | undefined {
+  return item.lyricsArrangement ?? item.arrangement;
+}
+
 /**
  * Build a library {@link Song} from a PCO song + arrangement. `id` is supplied
  * by the caller (a fresh slug for new songs, or the existing id when updating
@@ -199,21 +235,114 @@ export function buildSongRow(opts: {
 }
 
 /**
- * Default graphic field values + notes for a plan item: the item title lands
- * in `titleField` (the template's first text field, when known) and PCO's
- * plain-text description / html details become the row `notes`. Used to seed
- * the import UI's field form and as a server-side fallback when the client
- * sends no explicit field values.
+ * Plain-text-ify PCO's `htmlDetails`. PCO stores rich text there; template
+ * fields are plain strings, so tags become newlines/nothing and the handful of
+ * entities PCO actually emits are decoded.
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li)>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Every value a plan item can contribute to a graphic template, in a fixed
+ * order. `read` returns undefined when the item doesn't carry that value, in
+ * which case the field is omitted entirely (so it can't be suggested).
+ */
+const PCO_ITEM_FIELD_SPECS: Array<{
+  key: string;
+  label: string;
+  read: (item: PcoPlanItem) => string | undefined;
+}> = [
+  { key: "title", label: "Title", read: (i) => i.title },
+  { key: "description", label: "Description", read: (i) => i.description },
+  { key: "details", label: "Details", read: (i) => (i.htmlDetails ? stripHtml(i.htmlDetails) : undefined) },
+  { key: "song_title", label: "Song Title", read: (i) => i.song?.title },
+  { key: "author", label: "Author", read: (i) => i.song?.author },
+  { key: "ccli", label: "CCLI Number", read: (i) => i.song?.ccliNumber },
+  { key: "copyright", label: "Copyright", read: (i) => i.song?.copyright },
+  { key: "arrangement", label: "Arrangement", read: (i) => i.arrangement?.name },
+];
+
+function pcoItemFields(item: PcoPlanItem): Array<FieldDescriptor & { value: string }> {
+  const out: Array<FieldDescriptor & { value: string }> = [];
+  for (const spec of PCO_ITEM_FIELD_SPECS) {
+    const raw = spec.read(item);
+    if (!raw || raw.trim() === "") continue;
+    out.push({ key: spec.key, label: spec.label, type: "text", value: raw.trim() });
+  }
+  return out;
+}
+
+/**
+ * Descriptors for the values this plan item carries — the PCO-side half of a
+ * {@link suggestFieldMap} call. Values with no content are omitted so they
+ * never get suggested for a template field.
+ */
+export function listPcoItemFieldDescriptors(item: PcoPlanItem): FieldDescriptor[] {
+  return pcoItemFields(item).map(({ key, label, type }) => ({ key, label, type }));
+}
+
+/**
+ * Derive template field values from a plan item, reusing the same
+ * exact-key-then-label-similarity heuristic the song intro/outro mapping
+ * tables use. Only `text` fields are filled — an image/color/time field can't
+ * hold a PCO string, and label similarity would happily suggest one.
+ *
+ * Fallback (the original seeding behavior): if the template's first text field
+ * ends up empty, it gets the item title.
+ */
+export function mapPcoItemFields(
+  item: PcoPlanItem,
+  templateFields: TemplateFieldLike[],
+): Record<string, string> {
+  const textFields = templateFields.filter((f) => f.type === "text");
+  const fields = pcoItemFields(item);
+  const valueByKey = new Map(fields.map((f) => [f.key, f.value]));
+  const suggestions = suggestFieldMap(
+    textFields,
+    fields.map(({ key, label, type }) => ({ key, label, type })),
+  );
+
+  const data: Record<string, string> = {};
+  for (const [templateKey, match] of Object.entries(suggestions)) {
+    if (match.kind === "none") continue;
+    const value = valueByKey.get(match.songFieldKey);
+    if (value) data[templateKey] = value;
+  }
+
+  const first = textFields[0];
+  if (first && !data[first.key] && item.title.trim() !== "") {
+    data[first.key] = item.title.trim();
+  }
+  return data;
+}
+
+/**
+ * Default graphic field values + notes for a plan item: field values come from
+ * {@link mapPcoItemFields} and PCO's plain-text description / html details
+ * become the row `notes`. Used as a server-side fallback when the client sends
+ * no explicit field values.
  */
 export function pcoItemGraphicDefaults(
   item: PcoPlanItem,
-  titleField?: string,
+  templateFields: TemplateFieldLike[] = [],
 ): { data: Record<string, string>; notes?: string } {
   const notesParts = [item.description, item.htmlDetails].filter(
     (v): v is string => !!v && v.trim() !== "",
   );
   return {
-    data: titleField ? { [titleField]: item.title } : {},
+    data: mapPcoItemFields(item, templateFields),
     ...(notesParts.length > 0 ? { notes: notesParts.join("\n\n") } : {}),
   };
 }
@@ -264,6 +393,12 @@ export interface ItemPreview {
   willCreateSong?: boolean;
   /** Song items: whether the referenced arrangement has any lyrics. */
   hasLyrics?: boolean;
+  /**
+   * Set only when the lyrics came from a DIFFERENT arrangement than the one
+   * the plan item references — the source arrangement's name, or its id when
+   * unnamed. The import UI surfaces this so a substitution is never silent.
+   */
+  lyricsFromArrangement?: string;
 }
 
 /**
@@ -283,6 +418,8 @@ export function buildItemPreview(
   if (item.itemType !== "song" || !item.song) return base;
 
   const match = matchLibrarySong(item.song, library);
+  const lyricsArrangement = effectiveLyricsArrangement(item);
+  const hasLyrics = hasLyricText(lyricsArrangement);
   return {
     ...base,
     ...(match
@@ -294,6 +431,12 @@ export function buildItemPreview(
           },
         }
       : { willCreateSong: true }),
-    hasLyrics: !!item.arrangement?.lyrics && item.arrangement.lyrics.trim() !== "",
+    hasLyrics,
+    ...(hasLyrics && item.lyricsArrangement
+      ? {
+          lyricsFromArrangement:
+            item.lyricsArrangement.name ?? item.lyricsArrangement.id,
+        }
+      : {}),
   };
 }

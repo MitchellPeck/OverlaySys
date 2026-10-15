@@ -4,6 +4,7 @@ import {
   resolveCustomFieldValue,
   resolveIntroTake,
   resolveOutroTake,
+  resolveArrangement,
   suggestFieldMap,
   listSongFieldDescriptors,
   interpolateSongString,
@@ -513,5 +514,32 @@ describe("resolveOutroTake — literals", () => {
     });
     const out = resolveOutroTake(makeRow(), undefined, song, [tpl]);
     expect(out?.fieldValues.footer).toBe("© Public Domain");
+  });
+});
+
+describe("resolveArrangement", () => {
+  const song = makeSong({ defaultArrangement: ["v1", "c", "v2"] });
+
+  it("falls back to song.defaultArrangement when nothing overrides", () => {
+    expect(resolveArrangement(makeRow(), undefined, song)).toEqual(["v1", "c", "v2"]);
+  });
+
+  it("uses the ShowSong arrangement over the song default", () => {
+    const showSong = { songId: "song1", arrangement: ["v1", "c", "c"] } as ShowSong;
+    expect(resolveArrangement(makeRow(), showSong, song)).toEqual(["v1", "c", "c"]);
+  });
+
+  it("uses the row arrangement over both ShowSong and song", () => {
+    const showSong = { songId: "song1", arrangement: ["v1", "c"] } as ShowSong;
+    const row = makeRow({ arrangement: ["c", "v2", "c"] });
+    expect(resolveArrangement(row, showSong, song)).toEqual(["c", "v2", "c"]);
+  });
+
+  it("ignores an undefined level and continues the cascade", () => {
+    // row undefined → falls to showSong
+    const showSong = { songId: "song1", arrangement: ["v2"] } as ShowSong;
+    expect(resolveArrangement(makeRow(), showSong, song)).toEqual(["v2"]);
+    // row + showSong undefined → song default
+    expect(resolveArrangement(makeRow(), undefined, song)).toEqual(["v1", "c", "v2"]);
   });
 });

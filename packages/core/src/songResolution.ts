@@ -39,6 +39,20 @@ export function resolveSongChannel(
 }
 
 /**
+ * Resolves the effective section arrangement (ordered section ids) for a song
+ * row. Cascade: SongRow.arrangement → ShowSong.arrangement →
+ * Song.defaultArrangement. Returned verbatim — may contain repeats; stale ids
+ * are tolerated by the runtime song session and filtered by the editor.
+ */
+export function resolveArrangement(
+  row: SongRow,
+  showSong: ShowSong | undefined,
+  song: Song,
+): string[] {
+  return row.arrangement ?? showSong?.arrangement ?? song.defaultArrangement;
+}
+
+/**
  * Looks up the value of a song "field" by key.
  *
  * Built-in keys ("title", "ccliNumber", "author", "copyright") read straight

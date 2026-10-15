@@ -52,14 +52,16 @@ Data input fields parse `key=value` lines into a record. Empty values are allowe
 
 ## Select next show
 
-The **Select next show (soonest today or later)** action loads the show whose
-service date is the soonest on or after today, then resets the row cursor — the
-same as picking it via **Load show**, but with no dropdown. A show's date comes
-from its `scheduledFor` field (set in the operator's show editor); if that is
-empty, the date is parsed from the show name (`M/D/YY` or `M/D/YYYY`, e.g.
-"5/17/26 Service"). If nothing is scheduled today or later, the button does
-nothing and logs a warning. A ready-to-use **Select Next Show** preset button is
-included.
+The **Select next show (soonest upcoming, else most recent)** action loads the
+show whose service date is the soonest on or after today, then resets the row
+cursor — the same as picking it via **Load show**, but with no dropdown. When
+nothing is scheduled today or later it falls back to the most recent past show,
+so the button always lands somewhere as long as your shows carry dates. A show's
+date comes from its `scheduledFor` field (set in the operator's show editor); if
+that is empty, the date is parsed from the show name (`M/D/YY` or `M/D/YYYY`,
+e.g. "5/17/26 Service"). A show with neither is invisible to this action — if
+*no* show carries a date, the button does nothing and logs a warning. A
+ready-to-use **Select Next Show** preset button is included.
 
 ## Variables
 

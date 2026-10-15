@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { Field, ScriptureRow, SongRow } from "@overlaysys/core";
-import { resolveSongChannel } from "@overlaysys/core";
+import { resolveArrangement, resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
 import { HotcardsPanel } from "./HotcardsPanel";
 import { SongTakeStrip } from "./SongTakeStrip";
 import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
@@ -213,6 +214,8 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
             const selected = row.id === selectedRowId;
             if (row.kind === "song") {
               const song = songs.find((s) => s.id === row.songId);
+              const cachedSong = songCache[row.songId];
+              const showSong = show.songs.find((s) => s.songId === row.songId);
               return (
                 <tr
                   key={row.id}
@@ -247,7 +250,9 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
                   </td>
                   <td style={td()}>
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
-                      arrangement: {(row.arrangement ?? []).join(" → ") || "(default)"}
+                      arrangement: {cachedSong
+                        ? arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)
+                        : (row.arrangement ?? showSong?.arrangement ?? []).join(" · ") || "(default)"}
                     </span>
                   </td>
                 </tr>

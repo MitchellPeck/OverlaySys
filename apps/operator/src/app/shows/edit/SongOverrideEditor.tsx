@@ -10,6 +10,7 @@ import {
   type Template,
   type TemplateMeta,
   listSongFieldDescriptors,
+  resolveArrangement,
   resolveCustomFieldValue,
   suggestFieldMap,
 } from "@overlaysys/core";
@@ -19,6 +20,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
+import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 
 /**
  * Inline override editor for a single {@link ShowSong} entry. Owns per-editor
@@ -49,6 +51,7 @@ export function SongOverrideEditor({
   const cloud = isCloudMode();
   const [introConfirmed, setIntroConfirmed] = useState<Set<string>>(() => new Set());
   const [outroConfirmed, setOutroConfirmed] = useState<Set<string>>(() => new Set());
+  const [arrModalOpen, setArrModalOpen] = useState(false);
 
   // Memoize so projectSchema is stable across renders that don't change the
   // project schema; otherwise the downstream `useMemo`s that depend on it
@@ -388,6 +391,26 @@ export function SongOverrideEditor({
             }
           />
         </div>
+      )}
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ color: colors.textDim, width: 100, flexShrink: 0 }}>Arrangement</span>
+        <span style={{ color: colors.text, flex: 1 }}>
+          {arrangementSummary(resolveArrangement(dummyRow, entry, song), song)}
+        </span>
+        <button type="button" onClick={() => setArrModalOpen(true)} style={linkBtn}>
+          Arrangement…
+        </button>
+      </div>
+      {arrModalOpen && (
+        <ArrangementModal
+          song={song}
+          level="show"
+          value={entry.arrangement}
+          inherited={song.defaultArrangement}
+          onSave={(next) => onChange({ arrangement: next })}
+          onClose={() => setArrModalOpen(false)}
+        />
       )}
 
       {customFieldKeys.length > 0 && (

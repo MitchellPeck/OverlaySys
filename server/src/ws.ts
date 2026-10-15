@@ -9,6 +9,7 @@ import {
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
 import {
+  resolveArrangement,
   resolveIntroTake,
   resolveOutroTake,
   resolveSongChannel,
@@ -336,10 +337,11 @@ export function handleConnection(
             send({ type: "error", code: "not_found", message: row.songId });
             break;
           }
+          const showSong = show.songs.find((e) => e.songId === row.songId);
           songSession.start(parsed.channel, {
             song,
             lyricTemplateId: row.lyricTemplateId,
-            arrangement: row.arrangement ?? song.defaultArrangement,
+            arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
           });
           break;
@@ -360,10 +362,11 @@ export function handleConnection(
             send({ type: "error", code: "not_found", message: row.songId });
             break;
           }
+          const showSong = show.songs.find((e) => e.songId === row.songId);
           songSession.promoteTo(parsed.fromChannel, parsed.toChannel, {
             song,
             lyricTemplateId: row.lyricTemplateId,
-            arrangement: row.arrangement ?? song.defaultArrangement,
+            arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
           });
           break;
@@ -470,7 +473,7 @@ export function handleConnection(
             songSession.start(resolvedChannel, {
               song,
               lyricTemplateId: row.lyricTemplateId,
-              arrangement: row.arrangement ?? song.defaultArrangement,
+              arrangement: resolveArrangement(row, showSong, song),
               trustMode: row.trustMode ?? false,
             });
           }

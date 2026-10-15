@@ -5,6 +5,7 @@ import type {
   PcoPlan,
   PcoPlanItem,
   PcoServiceType,
+  Song,
 } from "@overlaysys/core";
 import { defaultServerUrl } from "./wsClient";
 
@@ -50,6 +51,7 @@ export interface ImportItemConfig {
   kind: "song" | "graphic";
   songAction?: "link" | "create";
   songId?: string;
+  song?: Song;
   templateId?: string;
   data?: Record<string, string>;
   notes?: string;

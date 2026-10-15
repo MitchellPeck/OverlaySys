@@ -145,12 +145,25 @@ function bootstrap(): void {
   client.connect();
 }
 
+// Both handles are module constants, NOT rebuilt per call. Nearly every
+// data-fetching effect in the operator lists `send` in its dependency array
+// (`useEffect(..., [conn, send])`), so a fresh closure per render would make
+// those effects re-run on every render — and because the effect's own
+// responses land in the store, that re-render produces yet another `send`,
+// re-firing the effect. The resulting feedback loop pegs the renderer and
+// hammers the server: on the STT page each iteration re-read
+// data/stt/config.json until the server ran out of file descriptors and
+// spawn("bash", …) failed with EBADF, so STT could never start.
+//
+// getClient() is itself a lazy singleton, so resolving it inside the closure
+// (rather than at module scope) keeps the WS from being constructed during
+// SSR/import while still giving callers one stable function identity.
+const WS_HANDLE = { send: (msg: ClientMessage) => getClient().send(msg) };
+// No WS in cloud mode. A no-op send keeps existing call sites type-safe
+// while we migrate them to cloud-aware data paths page by page.
+const CLOUD_HANDLE = { send: () => {} };
+
 export function useWs(): { send: (msg: ClientMessage) => void } {
   bootstrap();
-  if (isCloudMode()) {
-    // No WS in cloud mode. Returning a no-op send keeps existing call sites
-    // type-safe while we migrate them to cloud-aware data paths page by page.
-    return { send: () => {} };
-  }
-  return { send: (msg) => getClient().send(msg) };
+  return isCloudMode() ? CLOUD_HANDLE : WS_HANDLE;
 }

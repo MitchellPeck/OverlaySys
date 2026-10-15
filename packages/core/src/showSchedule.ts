@@ -61,24 +61,34 @@ export function resolveShowDate(input: {
 
 /**
  * Returns the id of the show with the soonest resolved date on or after
- * `todayISO` (a `YYYY-MM-DD` string). Ties break by input order. Shows with no
- * resolvable date, or a date before today, are ignored. Returns `null` when
- * nothing qualifies.
+ * `todayISO` (a `YYYY-MM-DD` string), falling back to the most recent show
+ * before `todayISO` when nothing is upcoming — a rundown that has run past its
+ * date is still the one an operator wants on the panel. Ties break by input
+ * order in both tiers. Shows with no resolvable date are ignored entirely, so
+ * `null` means no show carries a date at all.
  */
 export function pickNextShow(
   shows: { id: string; name: string; scheduledFor?: string }[],
   todayISO: string,
 ): string | null {
-  let bestId: string | null = null;
-  let bestDate: string | null = null;
+  let upcomingId: string | null = null;
+  let upcomingDate: string | null = null;
+  let pastId: string | null = null;
+  let pastDate: string | null = null;
   for (const show of shows) {
     const date = resolveShowDate(show);
-    if (date === null || date < todayISO) continue;
-    // Strict `<` so the first show at a given date wins the tie.
-    if (bestDate === null || date < bestDate) {
-      bestDate = date;
-      bestId = show.id;
+    if (date === null) continue;
+    if (date >= todayISO) {
+      // Strict `<` so the first show at a given date wins the tie.
+      if (upcomingDate === null || date < upcomingDate) {
+        upcomingDate = date;
+        upcomingId = show.id;
+      }
+    } else if (pastDate === null || date > pastDate) {
+      // Strict `>`, same reason: first show at the date wins.
+      pastDate = date;
+      pastId = show.id;
     }
   }
-  return bestId;
+  return upcomingId ?? pastId;
 }

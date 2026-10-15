@@ -47,16 +47,44 @@ describe("pickNextShow", () => {
     expect(pickNextShow(shows, "2026-07-20")).toBe("soon");
   });
 
-  it("returns null when every dated show is in the past", () => {
-    expect(pickNextShow(shows, "2027-01-01")).toBeNull();
+  it("prefers an upcoming show over a nearer past one", () => {
+    const mixed = [
+      { id: "yesterday", name: "Y", scheduledFor: "2026-07-13" },
+      { id: "next-year", name: "N", scheduledFor: "2027-06-01" },
+    ];
+    expect(pickNextShow(mixed, "2026-07-14")).toBe("next-year");
   });
 
-  it("breaks ties by input order", () => {
+  it("falls back to the most recent past show when nothing is upcoming", () => {
+    expect(pickNextShow(shows, "2027-01-01")).toBe("later");
+  });
+
+  it("breaks upcoming ties by input order", () => {
     const tied = [
       { id: "b", name: "B", scheduledFor: "2026-08-01" },
       { id: "a", name: "A", scheduledFor: "2026-08-01" },
     ];
     expect(pickNextShow(tied, "2026-07-01")).toBe("b");
+  });
+
+  it("breaks past-fallback ties by input order", () => {
+    const tied = [
+      { id: "b", name: "B", scheduledFor: "2026-08-01" },
+      { id: "a", name: "A", scheduledFor: "2026-08-01" },
+    ];
+    expect(pickNextShow(tied, "2027-01-01")).toBe("b");
+  });
+
+  it("returns null when no show has a resolvable date", () => {
+    expect(
+      pickNextShow(
+        [
+          { id: "x", name: "Sunday Gathering" },
+          { id: "y", name: "Midweek", scheduledFor: "not-a-date" },
+        ],
+        "2026-07-14",
+      ),
+    ).toBeNull();
   });
 
   it("returns null for an empty list", () => {

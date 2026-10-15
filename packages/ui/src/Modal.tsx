@@ -94,6 +94,13 @@ export function Modal({
 
   const widths = SIZE_WIDTHS[size];
 
+  // Renders IN PLACE — deliberately not through createPortal. A consumer
+  // (apps/operator/src/app/pco/page.tsx's SongDraftModal) detects a nested
+  // confirm dialog by querying its own subtree for `[role="dialog"]`, and uses
+  // that to decide whether an Escape was meant for the confirm or for itself.
+  // Portalling this component would move nested modals out of that subtree, the
+  // query would silently find nothing, and one Escape aimed at a confirm would
+  // also discard the operator's entire song draft. Fix that consumer first.
   return (
     <div
       onClick={closeOnBackdrop ? () => onClose?.() : undefined}

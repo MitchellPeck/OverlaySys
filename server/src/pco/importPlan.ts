@@ -1,19 +1,24 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_PROJECT_ID,
+  PCO_ARRANGEMENT_ID_KEY,
   PCO_SONG_ID_KEY,
   ShowSchema,
+  SongSchema,
   buildGraphicRow,
   buildImportedSong,
   buildSongRow,
+  effectiveLyricsArrangement,
   ensureShowSongEntry,
   makeSourceRef,
   matchLibrarySong,
   pcoItemGraphicDefaults,
   resolveImportedSongId,
+  type Field,
   type PcoPlanItem,
   type RundownRow,
   type Show,
+  type Song,
 } from "@overlaysys/core";
 import * as songs from "../songs";
 import * as shows from "../shows";
@@ -41,6 +46,12 @@ export interface ImportItemConfig {
   songAction?: "link" | "create";
   /** Song kind + link: the library song id to reference. */
   songId?: string;
+  /**
+   * Song kind + create: a fully configured song from the import UI, persisted
+   * as-is. The server still owns the id, the PCO custom-field stamps and
+   * `updatedAt` — a client id is never trusted.
+   */
+  song?: Song;
   /** Lyric template (song) or graphic template (graphic). */
   templateId?: string;
   /** Graphic kind: configured template field values. */
@@ -69,6 +80,14 @@ export interface ImportPlanResult {
     songsLinked: number;
     songsUpdated: number;
   };
+  /**
+   * Library song ids this import wrote (created or updated in place), in write
+   * order and deduped. Callers need this to tell open clients which songs
+   * changed: a `song_list` broadcast only carries metadata, and editors that
+   * already cache a full song skip re-fetching it — so without a full-song
+   * push they keep rendering the pre-import content.
+   */
+  writtenSongIds: string[];
   warnings: string[];
   errors: { itemId: string; message: string }[];
 }
@@ -103,15 +122,16 @@ export async function importPlan(
   const cfgById = new Map(req.items.map((c) => [c.itemId, c]));
   const chosen = allItems.filter((i) => cfgById.has(i.id));
 
-  // Memoize each template's first text field (the title target) for graphic
-  // fallbacks — only loaded when a config omits explicit field data.
-  const titleFieldCache = new Map<string, string | undefined>();
-  async function titleFieldFor(templateId: string): Promise<string | undefined> {
-    if (titleFieldCache.has(templateId)) return titleFieldCache.get(templateId);
+  // Memoize each template's field list (used only when a config omits explicit
+  // field data and we fall back to deriving values from the plan item).
+  const templateFieldsCache = new Map<string, Field[]>();
+  async function templateFieldsFor(templateId: string): Promise<Field[]> {
+    const hit = templateFieldsCache.get(templateId);
+    if (hit) return hit;
     const tpl = await getTemplate(templateId);
-    const key = tpl?.fields.find((f) => f.type === "text")?.key;
-    titleFieldCache.set(templateId, key);
-    return key;
+    const fields = tpl?.fields ?? [];
+    templateFieldsCache.set(templateId, fields);
+    return fields;
   }
 
   /** Whether a config may be treated as a song (needs real PCO song data). */
@@ -123,6 +143,12 @@ export async function importPlan(
   const library = await songs.listSongs();
   const existingIds = new Set(library.map((s) => s.id));
   const songIdByItem = new Map<string, string>();
+  // Every library song actually persisted below — reported to the caller so it
+  // can broadcast the full song to connected clients.
+  const writtenSongIds = new Set<string>();
+  // Items whose song could not be persisted. They are skipped in the row loop
+  // rather than silently falling through to a graphic row.
+  const failedItems = new Set<string>();
 
   for (const item of chosen) {
     const cfg = cfgById.get(item.id)!;
@@ -150,23 +176,57 @@ export async function importPlan(
       (s) => !s.deletedAt && s.customFields?.[PCO_SONG_ID_KEY] === pcoSong.id,
     );
     const id = existing ? existing.id : resolveImportedSongId(pcoSong, existingIds);
-    const built = buildImportedSong(id, pcoSong, item.arrangement, {
-      updatedAt: now,
-      preserveCustomFields: existing?.customFields,
-    });
-    warnings.push(...built.warnings);
+    // Lyrics (and the sequence that orders them) may come from a sibling
+    // arrangement when the plan item's own has none — see pcoClient.
+    const lyricsArrangement = effectiveLyricsArrangement(item);
+
+    let songToSave: Song;
+    if (cfg.song) {
+      // The operator configured this song in the import UI: persist their
+      // draft verbatim, but keep ownership of identity + PCO stamps.
+      const parsed = SongSchema.safeParse(cfg.song);
+      if (!parsed.success) {
+        errors.push({ itemId: item.id, message: `Invalid song configuration: ${parsed.error.message}` });
+        failedItems.add(item.id);
+        continue;
+      }
+      songToSave = {
+        ...parsed.data,
+        id,
+        // A client draft must never resurrect (or create) a tombstone: the
+        // show row would point at a song the library treats as deleted.
+        deletedAt: undefined,
+        customFields: {
+          ...(existing?.customFields ?? {}),
+          ...parsed.data.customFields,
+          [PCO_SONG_ID_KEY]: pcoSong.id,
+          ...(lyricsArrangement ? { [PCO_ARRANGEMENT_ID_KEY]: lyricsArrangement.id } : {}),
+        },
+        updatedAt: now,
+      };
+    } else {
+      const built = buildImportedSong(id, pcoSong, lyricsArrangement, {
+        updatedAt: now,
+        preserveCustomFields: existing?.customFields,
+      });
+      warnings.push(...built.warnings);
+      songToSave = built.song;
+    }
+
     try {
-      await songs.saveSong(built.song);
+      await songs.saveSong(songToSave);
     } catch (err) {
       errors.push({ itemId: item.id, message: err instanceof Error ? err.message : String(err) });
+      failedItems.add(item.id);
       continue;
     }
+    writtenSongIds.add(id);
     if (existing) {
       counts.songsUpdated++;
     } else {
       counts.songsCreated++;
       existingIds.add(id);
-      library.push(built.song);
+      library.push(songToSave);
     }
     songIdByItem.set(item.id, id);
   }
@@ -175,11 +235,23 @@ export async function importPlan(
   let show: Show;
   if (req.target.mode === "existing") {
     if (!req.target.showId) {
-      return { ok: false, counts, warnings, errors: [{ itemId: "", message: "existing target requires showId" }] };
+      return {
+        ok: false,
+        counts,
+        writtenSongIds: [...writtenSongIds],
+        warnings,
+        errors: [{ itemId: "", message: "existing target requires showId" }],
+      };
     }
     const found = await shows.getShow(req.target.showId);
     if (!found) {
-      return { ok: false, counts, warnings, errors: [{ itemId: "", message: `show ${req.target.showId} not found` }] };
+      return {
+        ok: false,
+        counts,
+        writtenSongIds: [...writtenSongIds],
+        warnings,
+        errors: [{ itemId: "", message: `show ${req.target.showId} not found` }],
+      };
     }
     show = structuredClone(found);
   } else {
@@ -194,6 +266,7 @@ export async function importPlan(
 
   // ── 3. Build rows per item config (song row vs graphic row) ──────────
   for (const item of chosen) {
+    if (failedItems.has(item.id)) continue;
     const cfg = cfgById.get(item.id)!;
     const sourceRef = makeSourceRef(req.serviceTypeId, req.planId, item.id);
     const existingIdx = show.rows.findIndex((r) => r.sourceRef?.itemId === item.id);
@@ -221,7 +294,7 @@ export async function importPlan(
       let data = cfg.data;
       let notes = cfg.notes;
       if (!hasData || notes === undefined) {
-        const defaults = pcoItemGraphicDefaults(item, await titleFieldFor(templateId));
+        const defaults = pcoItemGraphicDefaults(item, await templateFieldsFor(templateId));
         if (!hasData) data = defaults.data;
         if (notes === undefined) notes = defaults.notes;
       }
@@ -240,5 +313,12 @@ export async function importPlan(
   const parsed = ShowSchema.parse(show);
   await shows.saveShow(parsed);
 
-  return { ok: errors.length === 0, showId: parsed.id, counts, warnings, errors };
+  return {
+    ok: errors.length === 0,
+    showId: parsed.id,
+    counts,
+    writtenSongIds: [...writtenSongIds],
+    warnings,
+    errors,
+  };
 }
