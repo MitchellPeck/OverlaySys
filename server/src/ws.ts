@@ -140,7 +140,13 @@ export function handleConnection(
           const unsub = channels.subscribe(parsed.channel, (state) => {
             send({ type: "state", channel: state.channel, state });
           });
-          subscriptions.set(parsed.channel, unsub);
+          const unsubPlayback = channels.subscribeMediaPlayback(parsed.channel, (e) => {
+            send({ type: "media_playback", ...e });
+          });
+          subscriptions.set(parsed.channel, () => {
+            unsub();
+            unsubPlayback();
+          });
           break;
         }
         case "take": {
@@ -161,6 +167,33 @@ export function handleConnection(
         }
         case "take_pvw_to_pgm": {
           channels.takePvwToPgm(parsed.fromChannel, parsed.toChannel);
+          break;
+        }
+        case "media_take": {
+          channels.mediaTake(parsed.channel, {
+            rowId: parsed.rowId,
+            assetUrl: parsed.assetUrl,
+            ...(parsed.label !== undefined ? { label: parsed.label } : {}),
+            volume: parsed.volume,
+            endAction: parsed.endAction,
+          });
+          break;
+        }
+        case "media_clear": {
+          channels.mediaClear(parsed.channel);
+          break;
+        }
+        case "media_control": {
+          channels.mediaControl(parsed.channel, parsed.takenAt, parsed.action, parsed.time);
+          break;
+        }
+        case "media_status": {
+          channels.mediaStatus(parsed.channel, parsed.takenAt, {
+            status: parsed.status,
+            currentTime: parsed.currentTime,
+            duration: parsed.duration,
+            ...(parsed.error !== undefined ? { error: parsed.error } : {}),
+          });
           break;
         }
         case "list_templates": {

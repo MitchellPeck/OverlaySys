@@ -1,4 +1,11 @@
-import type { ChannelState, SongSessionSummary, SubTakeContext } from "@overlaysys/core";
+import type {
+  ChannelState,
+  MediaEndAction,
+  MediaPlayback,
+  MediaStatus,
+  SongSessionSummary,
+  SubTakeContext,
+} from "@overlaysys/core";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
 
@@ -255,4 +262,149 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // Schedule auto-out on the destination if the promoted template defines
   // it. Same async-with-takenAt-recheck pattern as take().
   void maybeScheduleAutoOut(toChannel, queued.templateId, pgm.active.takenAt);
+}
+
+// ───── Media slot ──────────────────────────────────────────────────────────
+//
+// Full-frame video beneath graphics. Independent of `active`: nothing above
+// touches `media`, nothing below touches `active`. Status transitions emit
+// full `state`; ~4 Hz time ticks go to playback listeners only, so template
+// renderers and Companion aren't re-rendered on every tick.
+
+export type MediaPlaybackEvent = {
+  channel: string;
+  takenAt: number;
+  playback: MediaPlayback;
+};
+type PlaybackListener = (e: MediaPlaybackEvent) => void;
+const playbackListeners = new Map<string, Set<PlaybackListener>>();
+
+export function subscribeMediaPlayback(
+  channel: string,
+  listener: PlaybackListener,
+): () => void {
+  let set = playbackListeners.get(channel);
+  if (!set) {
+    set = new Set();
+    playbackListeners.set(channel, set);
+  }
+  set.add(listener);
+  return () => {
+    set!.delete(listener);
+  };
+}
+
+function notifyPlayback(e: MediaPlaybackEvent): void {
+  const ls = playbackListeners.get(e.channel);
+  if (!ls) return;
+  for (const l of ls) l(e);
+}
+
+export type MediaTakeArgs = {
+  rowId: string;
+  assetUrl: string;
+  label?: string;
+  volume: number;
+  endAction: MediaEndAction;
+};
+
+export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()): void {
+  const s = getOrInit(channel);
+  // takenAt is the take's identity — a late `ended` from the previous take
+  // must never match, so force it strictly increasing even within one ms.
+  const prev = s.media?.takenAt ?? 0;
+  const takenAt = now > prev ? now : prev + 1;
+  s.media = {
+    rowId: args.rowId,
+    assetUrl: args.assetUrl,
+    ...(args.label !== undefined ? { label: args.label } : {}),
+    volume: args.volume,
+    endAction: args.endAction,
+    takenAt,
+    paused: false,
+    playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: now },
+  };
+  emit(channel);
+}
+
+export function mediaClear(channel: string): void {
+  const s = getOrInit(channel);
+  if (!s.media) return;
+  s.media = null;
+  emit(channel);
+}
+
+export type MediaControlAction = "play" | "pause" | "restart" | "seek";
+
+export function mediaControl(
+  channel: string,
+  takenAt: number,
+  action: MediaControlAction,
+  time?: number,
+): void {
+  const m = states.get(channel)?.media;
+  if (!m || m.takenAt !== takenAt) return;
+  const nextSeq = (m.seek?.seq ?? 0) + 1;
+  switch (action) {
+    case "play":
+      // Playing a held-at-end video starts it over.
+      if (m.playback.status === "ended") m.seek = { time: 0, seq: nextSeq };
+      m.paused = false;
+      break;
+    case "pause":
+      m.paused = true;
+      break;
+    case "restart":
+      m.seek = { time: 0, seq: nextSeq };
+      m.paused = false;
+      break;
+    case "seek":
+      if (time === undefined) return;
+      m.seek = { time: Math.max(0, time), seq: nextSeq };
+      break;
+  }
+  emit(channel);
+}
+
+export type MediaStatusReport = {
+  status: MediaStatus;
+  currentTime: number;
+  duration: number;
+  error?: string;
+};
+
+export function mediaStatus(
+  channel: string,
+  takenAt: number,
+  report: MediaStatusReport,
+  now = Date.now(),
+): void {
+  const m = states.get(channel)?.media;
+  if (!m || m.takenAt !== takenAt) return;
+  const prev = m.playback;
+  const next: MediaPlayback = {
+    status: report.status,
+    currentTime: report.currentTime,
+    duration: report.duration,
+    updatedAt: now,
+    ...(report.error ? { error: report.error } : {}),
+  };
+  m.playback = next;
+
+  if (report.status === "ended") {
+    if (m.endAction === "clear") {
+      mediaClear(channel);
+    } else {
+      m.paused = true;
+      emit(channel);
+    }
+    return;
+  }
+
+  const transition =
+    prev.status !== next.status ||
+    prev.error !== next.error ||
+    prev.duration !== next.duration;
+  if (transition) emit(channel);
+  else notifyPlayback({ channel, takenAt, playback: next });
 }
