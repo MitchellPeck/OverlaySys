@@ -42,6 +42,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
   const warningRef = useRef<string | undefined>(undefined);
   const mediaRef = useRef(media);
   mediaRef.current = media;
+  const unmountedRef = useRef(false);
   const takenAt = media.takenAt;
 
   function report(status: MediaStatus, error?: string) {
@@ -57,6 +58,18 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       duration: v && Number.isFinite(v.duration) ? v.duration : 0,
       ...(err ? { error: err } : {}),
     });
+  }
+
+  // AbortError means a pause()/src removal interrupted play(); media errors
+  // arrive via the video "error" event, so only report real play() failures.
+  function onPlayRejected(err: unknown) {
+    if (unmountedRef.current) return;
+    if (err instanceof DOMException && err.name === "AbortError") return;
+    if (err instanceof DOMException && err.name === "NotAllowedError") {
+      report("error", `autoplay blocked: ${err.message}`);
+    } else {
+      report("error", `play failed: ${String(err)}`);
+    }
   }
 
   // Mount: source, start position, audio sink, event reporting, ticks.
@@ -116,14 +129,13 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       }
       if (disposed) return;
       if (!mediaRef.current.paused) {
-        v.play().catch((err: unknown) => {
-          if (!disposed) report("error", `autoplay blocked: ${String(err)}`);
-        });
+        v.play().catch(onPlayRejected);
       }
     })();
 
     return () => {
       disposed = true;
+      unmountedRef.current = true;
       clearInterval(tick);
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("pause", onPause);
@@ -151,7 +163,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
     }
     if (media.paused && !v.paused) v.pause();
     if (!media.paused && v.paused && v.readyState > 0) {
-      v.play().catch((err: unknown) => report("error", `autoplay blocked: ${String(err)}`));
+      v.play().catch(onPlayRejected);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [media.paused, media.seek?.seq, media.volume, isMirror]);
