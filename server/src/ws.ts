@@ -140,9 +140,14 @@ export function handleConnection(
           const unsub = channels.subscribe(parsed.channel, (state) => {
             send({ type: "state", channel: state.channel, state });
           });
-          const unsubPlayback = channels.subscribeMediaPlayback(parsed.channel, (e) => {
-            send({ type: "media_playback", ...e });
-          });
+          // Renderers are the source of playback reports and never read the
+          // 4 Hz ticks; only operator-role subscribers get them.
+          const unsubPlayback =
+            parsed.role === "renderer"
+              ? () => {}
+              : channels.subscribeMediaPlayback(parsed.channel, (e) => {
+                  send({ type: "media_playback", ...e });
+                });
           subscriptions.set(parsed.channel, () => {
             unsub();
             unsubPlayback();

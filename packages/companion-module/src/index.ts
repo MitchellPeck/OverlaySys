@@ -108,6 +108,8 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
           this.applyEvent({ type: "local_reconnecting" });
         },
         onMessage: (msg) => {
+          // ~4 Hz playback ticks carry nothing Companion renders; skip the full refresh.
+          if (msg.type === "media_playback") return;
           this.applyEvent(msg);
           if (msg.type === "hotcard_list") {
             for (const h of msg.hotcards) {
