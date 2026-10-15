@@ -6,6 +6,8 @@ import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine
 import { colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { formatClock } from "@/lib/mediaTake";
+import { displayTime } from "@/lib/mediaTime";
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
@@ -24,6 +26,7 @@ type Props = {
 export function ChannelPreview({ config, state }: Props) {
   const { send } = useWs();
   const templateCache = useStore((s) => s.templateCache);
+  const heardAt = useStore((s) => s.mediaHeardAt[config.id] ?? 0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef<MountedTemplate | null>(null);
@@ -209,6 +212,23 @@ export function ChannelPreview({ config, state }: Props) {
           }}
         >
           (idle)
+        </div>
+      )}
+      {state?.media && (
+        <div
+          style={{
+            position: "absolute",
+            left: 6,
+            bottom: 6,
+            padding: "2px 6px",
+            borderRadius: 4,
+            background: "rgba(0,0,0,0.7)",
+            color: "#fff",
+            fontSize: 10,
+            pointerEvents: "none",
+          }}
+        >
+          ▶ {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
         </div>
       )}
     </div>

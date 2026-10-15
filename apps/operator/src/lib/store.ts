@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   ChannelState,
+  MediaPlayback,
   ChannelConfig,
   ProjectChannelOverride,
   Show,
@@ -62,6 +63,9 @@ type StoreState = {
   selectedRowId: string | null;
   selectedHotcardId: string | null;
   channelStates: Record<string, ChannelState>;
+  /** Local ms when each channel's media playback was last heard (for interpolation / staleness). */
+  mediaHeardAt: Record<string, number>;
+  applyMediaPlayback: (channel: string, takenAt: number, playback: MediaPlayback) => void;
   channelConfigs: ChannelConfig[];
   /**
    * Per-project channel overrides, keyed by `${projectId}:${channelId}`.
@@ -141,6 +145,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedRowId: null,
   selectedHotcardId: null,
   channelStates: {},
+  mediaHeardAt: {},
   channelConfigs: [],
   projectChannelOverrides: {},
   songs: [],
@@ -198,7 +203,20 @@ export const useStore = create<StoreState>((set) => ({
   setChannelState: (s) =>
     set((cur) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
+      // Any state carrying media is a fresh playback report.
+      mediaHeardAt: s.media
+        ? { ...cur.mediaHeardAt, [s.channel]: Date.now() }
+        : cur.mediaHeardAt,
     })),
+  applyMediaPlayback: (channel, takenAt, playback) =>
+    set((cur) => {
+      const st = cur.channelStates[channel];
+      if (!st?.media || st.media.takenAt !== takenAt) return {};
+      return {
+        channelStates: { ...cur.channelStates, [channel]: { ...st, media: { ...st.media, playback } } },
+        mediaHeardAt: { ...cur.mediaHeardAt, [channel]: Date.now() },
+      };
+    }),
   setChannelConfigs: (c) => set({ channelConfigs: c }),
   setProjectChannelOverrides: (overrides) =>
     set(() => {

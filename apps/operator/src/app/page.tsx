@@ -12,6 +12,7 @@ import { TakePanel } from "./components/TakePanel";
 import { ChannelsList } from "./components/ChannelsList";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { SongModePanel } from "./components/SongModePanel";
+import { MediaTransportStrip } from "./components/MediaTransportStrip";
 import { PageChrome } from "./shell/PageChrome";
 
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
@@ -103,6 +104,7 @@ function ShowPageLocal() {
               : "Take controls"
           }
         >
+          <MediaTransportStrip />
           {activeSongSession && activeSongChannel ? (
             <SongModePanel channel={activeSongChannel} session={activeSongSession} />
           ) : (

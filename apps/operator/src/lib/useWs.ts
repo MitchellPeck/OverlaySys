@@ -59,6 +59,9 @@ function bootstrap(): void {
         store.setChannelState(msg.state);
         store.setSongSession(msg.state.channel, msg.state.songSession ?? null);
         break;
+      case "media_playback":
+        store.applyMediaPlayback(msg.channel, msg.takenAt, msg.playback);
+        break;
       case "template_list":
         store.setTemplates(msg.templates);
         break;
