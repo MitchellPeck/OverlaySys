@@ -43,6 +43,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
   const mediaRef = useRef(media);
   mediaRef.current = media;
   const unmountedRef = useRef(false);
+  const sinkReadyRef = useRef(false);
   const takenAt = media.takenAt;
 
   function report(status: MediaStatus, error?: string) {
@@ -98,7 +99,13 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
     };
     const onEnded = () => report("ended");
     const onWaiting = () => report("loading");
-    const onMeta = () => report(v.paused ? "loading" : "playing");
+    const onMeta = () => {
+      // A Pause->Play that landed before metadata loaded was held back; catch up.
+      if (sinkReadyRef.current && !mediaRef.current.paused && v.paused) {
+        v.play().catch(onPlayRejected);
+      }
+      report(v.paused ? "loading" : "playing");
+    };
     const onError = () => report("error", v.error?.message || `media error ${v.error?.code ?? ""}`.trim());
     v.addEventListener("playing", onPlaying);
     v.addEventListener("pause", onPause);
@@ -106,6 +113,8 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
     v.addEventListener("waiting", onWaiting);
     v.addEventListener("loadedmetadata", onMeta);
     v.addEventListener("error", onError);
+    const onSeeked = () => report(v.paused ? "paused" : "playing");
+    v.addEventListener("seeked", onSeeked);
 
     const tick = setInterval(() => {
       if (!v.paused && !v.ended) report("playing");
@@ -128,6 +137,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
         }
       }
       if (disposed) return;
+      sinkReadyRef.current = true;
       if (!mediaRef.current.paused) {
         v.play().catch(onPlayRejected);
       }
@@ -143,6 +153,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       v.removeEventListener("waiting", onWaiting);
       v.removeEventListener("loadedmetadata", onMeta);
       v.removeEventListener("error", onError);
+      v.removeEventListener("seeked", onSeeked);
       v.pause();
       v.removeAttribute("src");
       v.load();
@@ -162,7 +173,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       v.currentTime = seekTo;
     }
     if (media.paused && !v.paused) v.pause();
-    if (!media.paused && v.paused && v.readyState > 0) {
+    if (!media.paused && v.paused && sinkReadyRef.current) {
       v.play().catch(onPlayRejected);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
