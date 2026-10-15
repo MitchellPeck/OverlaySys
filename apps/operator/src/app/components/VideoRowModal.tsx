@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChannelConfig, VideoRow } from "@overlaysys/core";
 import { VideoInput } from "@overlaysys/editor-kit";
 import { Button, Field, Input, Modal, Select } from "@overlaysys/ui";
@@ -52,9 +52,15 @@ export function VideoRowModal({
   const [endAction, setEndAction] = useState<"clear" | "hold">("clear");
   const [channelHint, setChannelHint] = useState("program");
   const [saving, setSaving] = useState(false);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      cancelledRef.current = true;
+      return;
+    }
+    cancelledRef.current = false;
+    setSaving(false);
     setAssetUrl(editingRow?.assetUrl ?? "");
     setLabel(editingRow?.label ?? "");
     setVolume(editingRow?.volume ?? 1);
@@ -66,7 +72,11 @@ export function VideoRowModal({
     if (!assetUrl) return;
     setSaving(true);
     try {
-      const durationSec = await probeDuration(resolveAssetUrl(assetUrl));
+      const unchanged = editingRow !== undefined && assetUrl === editingRow.assetUrl && editingRow.durationSec !== undefined;
+      const durationSec = unchanged
+        ? editingRow.durationSec
+        : await probeDuration(resolveAssetUrl(assetUrl));
+      if (cancelledRef.current) return;
       onSave({
         assetUrl,
         label: label.trim(),
@@ -126,7 +136,7 @@ export function VideoRowModal({
       </Field>
       <Field label="When the video ends">
         <Select value={endAction} onChange={(e) => setEndAction(e.target.value as "clear" | "hold")}>
-          <option value="clear">Clear automatically</option>
+          <option value="clear">Clear when finished</option>
           <option value="hold">Hold last frame</option>
         </Select>
       </Field>
