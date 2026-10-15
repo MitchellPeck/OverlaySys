@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import type { ChannelMedia } from "@overlaysys/core";
+import {
+  initialMountPlan,
+  pendingSeek,
+  pickAudioSink,
+  readSinkRequest,
+  resolveMediaUrl,
+} from "./mediaSync";
+
+const base: ChannelMedia = {
+  rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear",
+  takenAt: 100, paused: false,
+  playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: 0 },
+};
+
+describe("resolveMediaUrl", () => {
+  it("prefixes relative /assets paths with the ws server's http origin", () => {
+    expect(resolveMediaUrl("/assets/a.mp4", "ws://10.0.0.5:4000/ws")).toBe("http://10.0.0.5:4000/assets/a.mp4");
+    expect(resolveMediaUrl("/assets/a.mp4", "wss://h.example/ws")).toBe("https://h.example/assets/a.mp4");
+  });
+  it("leaves absolute urls alone", () => {
+    expect(resolveMediaUrl("https://cdn/x.mp4", "ws://h:4000/ws")).toBe("https://cdn/x.mp4");
+  });
+});
+
+describe("pickAudioSink", () => {
+  const devices = [
+    { deviceId: "default", label: "Default", kind: "audiooutput" },
+    { deviceId: "abc", label: "Aux (USB Audio)", kind: "audiooutput" },
+    { deviceId: "mic1", label: "Aux (USB Audio)", kind: "audioinput" },
+  ];
+  it("returns default when nothing requested", () => {
+    expect(pickAudioSink(devices, {})).toEqual({ deviceId: null });
+  });
+  it("matches by id", () => {
+    expect(pickAudioSink(devices, { id: "abc", label: "whatever" })).toEqual({ deviceId: "abc" });
+  });
+  it("falls back to label among outputs only", () => {
+    expect(pickAudioSink(devices, { id: "stale", label: "Aux (USB Audio)" })).toEqual({ deviceId: "abc" });
+  });
+  it("falls back to default with a warning when missing", () => {
+    const r = pickAudioSink(devices, { id: "gone", label: "Focusrite" });
+    expect(r.deviceId).toBeNull();
+    expect(r.warning).toBe("audio device 'Focusrite' not found — using default");
+  });
+});
+
+describe("readSinkRequest", () => {
+  it("reads both params", () => {
+    expect(readSinkRequest("?channel=program&audioSinkId=abc&audioSinkLabel=Aux%201")).toEqual({ id: "abc", label: "Aux 1" });
+  });
+  it("is empty without params", () => {
+    expect(readSinkRequest("?channel=program")).toEqual({});
+  });
+});
+
+describe("initialMountPlan", () => {
+  it("starts at 0 on a fresh take", () => {
+    expect(initialMountPlan(base)).toEqual({ startAt: 0, applied: { takenAt: 100, seq: 0 } });
+  });
+  it("resumes from last reported time and marks existing seek as applied", () => {
+    const m = { ...base, seek: { time: 10, seq: 2 }, playback: { ...base.playback, status: "playing" as const, currentTime: 95 } };
+    expect(initialMountPlan(m)).toEqual({ startAt: 95, applied: { takenAt: 100, seq: 2 } });
+  });
+});
+
+describe("pendingSeek", () => {
+  it("returns the time for an unseen seq", () => {
+    expect(pendingSeek({ ...base, seek: { time: 30, seq: 1 } }, { takenAt: 100, seq: 0 })).toBe(30);
+  });
+  it("returns null when already applied or none", () => {
+    expect(pendingSeek({ ...base, seek: { time: 30, seq: 1 } }, { takenAt: 100, seq: 1 })).toBeNull();
+    expect(pendingSeek(base, { takenAt: 100, seq: 0 })).toBeNull();
+  });
+  it("treats a different takenAt as unapplied", () => {
+    expect(pendingSeek({ ...base, seek: { time: 0, seq: 1 } }, { takenAt: 99, seq: 5 })).toBe(0);
+  });
+});
