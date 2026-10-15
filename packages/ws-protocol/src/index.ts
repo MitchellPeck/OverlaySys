@@ -2,6 +2,9 @@ import { z } from "zod";
 import {
   ChannelStateSchema,
   ChannelConfigSchema,
+  MediaEndActionSchema,
+  MediaStatusSchema,
+  MediaPlaybackSchema,
   TemplateSchema,
   ShowSchema,
   SongSchema,
@@ -16,7 +19,7 @@ import {
   type TemplateMeta,
 } from "@overlaysys/core";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const DataPayload = z.record(z.string(), z.string());
 
@@ -138,6 +141,34 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     fromChannel: z.string().default("preview"),
     toChannel: z.string().default("program"),
   }),
+  // ── Media slot (full-frame video beneath graphics) ──
+  z.object({
+    type: z.literal("media_take"),
+    channel: z.string(),
+    rowId: z.string(),
+    assetUrl: z.string(),
+    label: z.string().optional(),
+    volume: z.number().min(0).max(1),
+    endAction: MediaEndActionSchema,
+  }),
+  z.object({ type: z.literal("media_clear"), channel: z.string() }),
+  z.object({
+    type: z.literal("media_control"),
+    channel: z.string(),
+    takenAt: z.number(),
+    action: z.enum(["play", "pause", "restart", "seek"]),
+    time: z.number().min(0).optional(),
+  }),
+  /** Renderer → server playback report. Stale `takenAt` is ignored. */
+  z.object({
+    type: z.literal("media_status"),
+    channel: z.string(),
+    takenAt: z.number(),
+    status: MediaStatusSchema,
+    currentTime: z.number().min(0),
+    duration: z.number().min(0),
+    error: z.string().optional(),
+  }),
   z.object({ type: z.literal("list_channels") }),
   z.object({ type: z.literal("get_channel"), channelId: z.string() }),
   z.object({ type: z.literal("save_channel"), config: ChannelConfigSchema }),
@@ -219,6 +250,13 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("state"),
     channel: z.string(),
     state: ChannelStateSchema,
+  }),
+  /** ~4 Hz playback tick for a channel's media slot. Status transitions arrive as `state`. */
+  z.object({
+    type: z.literal("media_playback"),
+    channel: z.string(),
+    takenAt: z.number(),
+    playback: MediaPlaybackSchema,
   }),
   z.object({
     type: z.literal("template_list"),
