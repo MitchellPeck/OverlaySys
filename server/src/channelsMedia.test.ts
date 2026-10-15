@@ -170,6 +170,14 @@ describe("mediaStatus", () => {
     expect(media()).toMatchObject({ paused: false, seek: { time: 0, seq: 1 } });
   });
 
+  it("scrub while held at end, then play, keeps the scrub position", () => {
+    channels.mediaTake(ch, { ...ARGS, endAction: "hold" }, 5000);
+    channels.mediaStatus(ch, 5000, { status: "ended", currentTime: 300, duration: 300 }, 6000);
+    channels.mediaControl(ch, 5000, "seek", 120);
+    channels.mediaControl(ch, 5000, "play");
+    expect(media()).toMatchObject({ paused: false, seek: { time: 120, seq: 1 } });
+  });
+
   it("a stale ended after re-take does not clear the new take", () => {
     channels.mediaTake(ch, ARGS, 1000); // same ms → takenAt 1001
     channels.mediaStatus(ch, 1000, { status: "ended", currentTime: 300, duration: 300 }, 2000);

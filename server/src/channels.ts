@@ -361,6 +361,9 @@ export function mediaControl(
     case "seek":
       if (time === undefined) return;
       m.seek = { time: Math.max(0, time), seq: nextSeq };
+      // A scrub leaves the held-at-end state, so a following Play resumes
+      // from here instead of restarting from 0.
+      if (m.playback.status === "ended") m.playback.status = "paused";
       break;
   }
   emit(channel);
