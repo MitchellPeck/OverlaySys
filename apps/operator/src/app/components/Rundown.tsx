@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Field, ScriptureRow, SongRow } from "@overlaysys/core";
+import type { Field, ScriptureRow, SongRow, VideoRow } from "@overlaysys/core";
 import { resolveArrangement, resolveSongChannel } from "@overlaysys/core";
 import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { videoRowTakeMessage, formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
 import { HotcardsPanel } from "./HotcardsPanel";
@@ -42,6 +43,7 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
         // they dispatch per-slide via ScriptureTakeStrip.
         continue;
       }
+      if (r.kind === "video") continue;
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -77,6 +79,10 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
       }
       if (row.kind === "scripture") {
         // No cue semantics for scripture rows; see takeSelected.
+        return;
+      }
+      if (row.kind === "video") {
+        // No cue for video — previewing would double the audio.
         return;
       }
       send({
@@ -120,6 +126,10 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
         // Scripture rows are taken per-slide via ScriptureTakeStrip — there's
         // no "take whole row" semantics. Selecting the row swaps the Cue/Take
         // bar out for the slide strip below.
+        return;
+      }
+      if (row.kind === "video") {
+        send(videoRowTakeMessage(row));
         return;
       }
       send({
@@ -280,6 +290,37 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
                     </div>
                     <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
                       scripture · {row.translation}
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
+            if (row.kind === "video") {
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => setSelectedRow(row.id)}
+                  onDoubleClick={() => {
+                    setSelectedRow(row.id);
+                    send(videoRowTakeMessage(row));
+                  }}
+                  style={{
+                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
+                    borderLeft: selected
+                      ? `3px solid ${colors.accent}`
+                      : "3px solid transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <td style={td()}>{i + 1}</td>
+                  <td style={td()} colSpan={2}>
+                    <div style={{ fontWeight: 600 }}>
+                      <span aria-hidden style={{ marginRight: 6 }}>🎬</span>
+                      {row.label || "Video"}
+                    </div>
+                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
+                      video{row.durationSec ? ` · ${formatClock(row.durationSec)}` : ""} ·{" "}
+                      {row.endAction === "clear" ? "clears at end" : "holds at end"}
                     </div>
                   </td>
                 </tr>

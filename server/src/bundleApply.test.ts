@@ -10,6 +10,7 @@ import {
   liftHotcard,
   liftShow,
   liftTemplate,
+  normalizeAssetUrlsInShow,
   rewriteAssetUrlsInHotcard,
   rewriteAssetUrlsInShow,
   rewriteAssetUrlsInTemplate,
@@ -279,5 +280,25 @@ describe("writeBundledAsset", () => {
 
   it("rejects unsafe filenames", async () => {
     await expect(writeBundledAsset("../../../etc/passwd", "x")).rejects.toThrow();
+  });
+});
+
+describe("video rows", () => {
+  const show = {
+    id: "s1", name: "Sun", projectId: "p1", songs: [],
+    rows: [{ kind: "video" as const, id: "v1", assetUrl: "http://old-host:5555/assets/abc.mp4", volume: 1, endAction: "clear" as const }],
+  };
+
+  it("normalizes an absolute video asset url to relative", () => {
+    const out = normalizeAssetUrlsInShow(show as never);
+    expect((out.rows[0] as { assetUrl: string }).assetUrl).toBe("/assets/abc.mp4");
+  });
+
+  it("retargets a video asset url like graphic data", () => {
+    const rel = { ...show, rows: [{ ...show.rows[0]!, assetUrl: "/assets/abc.mp4" }] };
+    const graphic = { ...show, rows: [{ kind: "graphic" as const, id: "g", templateId: "t", data: { v: "/assets/abc.mp4" } }] };
+    const vOut = rewriteAssetUrlsInShow(rel as never, "http://new:4000").rows[0] as { assetUrl: string };
+    const gOut = rewriteAssetUrlsInShow(graphic as never, "http://new:4000").rows[0] as unknown as { data: { v: string } };
+    expect(vOut.assetUrl).toBe(gOut.data.v);
   });
 });

@@ -86,6 +86,19 @@ function rowMessages(
     // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
     return [];
   }
+  if (row.kind === "video") {
+    return [
+      {
+        type: "media_take",
+        channel,
+        rowId: row.id,
+        assetUrl: row.assetUrl,
+        ...(row.label !== undefined ? { label: row.label } : {}),
+        volume: row.volume,
+        endAction: row.endAction,
+      },
+    ];
+  }
   return [
     {
       type: "take",
@@ -115,6 +128,10 @@ function rowPvwPgmMessages(
   }
   if (row.kind === "scripture") {
     // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
+    return [];
+  }
+  if (row.kind === "video") {
+    // No PVW stage for video (would double audio).
     return [];
   }
   return [

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import type { SongSessionSummary } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
+import { videoRowTakeMessage } from "@/lib/mediaTake";
 
 /**
  * Global keyboard shortcuts for the show page.
@@ -118,6 +119,8 @@ export function useGlobalShortcuts(): void {
             showId: show.id,
             songRowId: row.id,
           });
+        } else if (row && row.kind === "video") {
+          client.send(videoRowTakeMessage(row));
         } else if (hotcard) {
           client.send({
             type: "take",

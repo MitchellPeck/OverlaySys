@@ -5,6 +5,8 @@ import { type Show } from "./show";
 import {
   BundleSchema,
   collectDependencies,
+  collectReferencedAssetFilenames,
+  rewriteShowAssetUrls,
   collectReferencedChannelIds,
   detectImport,
   type BundleSelection,
@@ -448,5 +450,28 @@ describe("collectReferencedChannelIds", () => {
       templates: [],
     });
     expect([...ids]).toEqual(["program"]);
+  });
+});
+
+describe("video rows in bundles", () => {
+  const show: Show = {
+    id: "s1", name: "Sun", projectId: "p1", songs: [],
+    rows: [{ kind: "video", id: "v1", assetUrl: "/assets/abc123.mp4", volume: 1, endAction: "clear" }],
+  } as Show;
+
+  it("collects the video asset", () => {
+    const files = collectReferencedAssetFilenames({ templates: [], hotcards: [], shows: [show] });
+    expect([...files]).toContain("abc123.mp4");
+  });
+
+  it("rewrites the video asset url exactly like a graphic row's asset value", () => {
+    const graphicShow = {
+      ...show,
+      rows: [{ kind: "graphic", id: "g", templateId: "t", data: { v: "/assets/abc123.mp4" } }],
+    } as Show;
+    const videoRow = rewriteShowAssetUrls(show, "http://host:4000").rows[0] as { assetUrl: string };
+    const graphicRow = rewriteShowAssetUrls(graphicShow, "http://host:4000").rows[0] as { data: Record<string, string> };
+    expect(videoRow.assetUrl).toBe(graphicRow.data.v);
+    expect(videoRow.assetUrl).not.toBe("/assets/abc123.mp4");
   });
 });

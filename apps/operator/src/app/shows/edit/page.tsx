@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, VideoRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
@@ -544,6 +544,7 @@ function RundownTable({
   onUpdate,
   onDeleteRow,
   onEditScriptureRow,
+  onEditVideoRow,
 }: {
   draft: Show;
   templates: TemplateMeta[];
@@ -557,6 +558,7 @@ function RundownTable({
   onUpdate: (recipe: (s: Show) => void) => void;
   onDeleteRow: (id: string) => void;
   onEditScriptureRow?: (row: ScriptureRow) => void;
+  onEditVideoRow?: (row: VideoRow) => void;
 }) {
   if (draft.rows.length === 0) {
     return (
@@ -636,6 +638,44 @@ function RundownTable({
                       }}
                     >
                       Edit slides…
+                    </button>
+                    <IconButton
+                      onClick={() => onDeleteRow(row.id)}
+                      title="Delete row"
+                      size={24}
+                      style={{ color: colors.red, fontSize: 14 }}
+                    >
+                      ×
+                    </IconButton>
+                  </div>
+                </td>
+              </tr>
+            );
+          }
+          if (row.kind === "video") {
+            return (
+              <tr key={row.id}>
+                <td colSpan={10} style={{ padding: "6px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>🎬 {row.label || "Video"}</span>
+                    <span style={{ color: colors.textDim, fontSize: 11 }}>
+                      {row.channelHint ?? "program"} · {row.endAction === "clear" ? "clears at end" : "holds at end"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onEditVideoRow?.(row)}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: colors.accent,
+                        cursor: "pointer",
+                        fontSize: 11,
+                        padding: 0,
+                        textDecoration: "underline",
+                        marginLeft: "auto",
+                      }}
+                    >
+                      Edit video…
                     </button>
                     <IconButton
                       onClick={() => onDeleteRow(row.id)}

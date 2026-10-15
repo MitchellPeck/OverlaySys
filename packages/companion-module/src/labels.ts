@@ -9,6 +9,7 @@ export function rowDisplayLabel(
     const meta = state.songs.find((s) => s.id === row.songId);
     return meta?.title ?? row.songId;
   }
+  if (row.kind === "video") return row.label || "Video";
   if (row.notes && row.notes.trim().length > 0) return row.notes;
   const tpl = state.templates.find((t) => t.id === row.templateId);
   return tpl?.name ?? row.templateId;

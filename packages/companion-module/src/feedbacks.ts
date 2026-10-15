@@ -240,6 +240,7 @@ function rowMatchesPgm(
     // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
     return false;
   }
+  if (row.kind === "video") return false;
   if (!active) return false;
   if (active.templateId !== row.templateId) return false;
   const a = active.data;

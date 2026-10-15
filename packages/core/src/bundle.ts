@@ -118,6 +118,10 @@ export function collectDependencies(
           // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
           templateIds.add(row.templateId);
           break;
+        case "video":
+          // Video rows reference an asset, not a template; the asset is
+          // picked up by collectReferencedAssetFilenames.
+          break;
       }
     }
   }
@@ -317,6 +321,8 @@ export function collectReferencedAssetFilenames(payload: {
     for (const row of sh.rows) {
       if (row.kind === "graphic") {
         for (const v of Object.values(row.data)) add(v);
+      } else if (row.kind === "video") {
+        add(row.assetUrl);
       }
     }
   }
@@ -391,11 +397,11 @@ export function rewriteHotcardAssetUrls(h: Hotcard, originBase: string): Hotcard
 export function rewriteShowAssetUrls(s: Show, originBase: string): Show {
   return {
     ...s,
-    rows: s.rows.map((row) =>
-      row.kind === "graphic"
-        ? { ...row, data: rewriteDataRecord(row.data, originBase) }
-        : row,
-    ),
+    rows: s.rows.map((row) => {
+      if (row.kind === "graphic") return { ...row, data: rewriteDataRecord(row.data, originBase) };
+      if (row.kind === "video") return { ...row, assetUrl: rewriteAssetUrlToHost(row.assetUrl, originBase) };
+      return row;
+    }),
   };
 }
 

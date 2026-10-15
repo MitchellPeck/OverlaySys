@@ -231,6 +231,12 @@ export function normalizeAssetUrlsInHotcard(h: Hotcard): Hotcard {
 export function normalizeAssetUrlsInShow(s: Show): Show {
   let changed = false;
   const rows = s.rows.map((row) => {
+    if (row.kind === "video") {
+      const assetUrl = normalizeOne(row.assetUrl);
+      if (assetUrl === row.assetUrl) return row;
+      changed = true;
+      return { ...row, assetUrl };
+    }
     if (row.kind !== "graphic") return row;
     const data = normalizeDataRecord(row.data);
     if (data === row.data) return row;
@@ -287,11 +293,11 @@ export function rewriteAssetUrlsInHotcard(h: Hotcard, originBase: string): Hotca
 export function rewriteAssetUrlsInShow(s: Show, originBase: string): Show {
   return {
     ...s,
-    rows: s.rows.map((row) =>
-      row.kind === "graphic"
-        ? { ...row, data: retargetRecord(row.data, originBase) }
-        : row,
-    ),
+    rows: s.rows.map((row) => {
+      if (row.kind === "graphic") return { ...row, data: retargetRecord(row.data, originBase) };
+      if (row.kind === "video") return { ...row, assetUrl: retargetOne(row.assetUrl, originBase) };
+      return row;
+    }),
   };
 }
 
