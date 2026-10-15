@@ -349,3 +349,28 @@ describe("Show scheduledFor", () => {
     expect(show.scheduledFor).toBeUndefined();
   });
 });
+
+describe("VideoRow", () => {
+  it("parses with defaults", () => {
+    const row = RundownRowSchema.parse({ kind: "video", id: "v1", assetUrl: "/assets/a.mp4" });
+    if (row.kind !== "video") throw new Error("expected video");
+    expect(row.volume).toBe(1);
+    expect(row.endAction).toBe("clear");
+    expect(row.label).toBeUndefined();
+  });
+
+  it("keeps label, duration, hold and channel", () => {
+    const row = RundownRowSchema.parse({
+      kind: "video", id: "v1", assetUrl: "/assets/a.mp4",
+      label: "Giving", durationSec: 301.2, volume: 0.5, endAction: "hold", channelHint: "program",
+    });
+    if (row.kind !== "video") throw new Error("expected video");
+    expect(row).toMatchObject({ label: "Giving", durationSec: 301.2, volume: 0.5, endAction: "hold" });
+  });
+
+  it("rejects volume > 1", () => {
+    expect(() =>
+      RundownRowSchema.parse({ kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 2 }),
+    ).toThrow();
+  });
+});

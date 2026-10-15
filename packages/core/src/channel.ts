@@ -27,9 +27,45 @@ export const ActiveGraphicSchema = z.object({
 });
 export type ActiveGraphic = z.infer<typeof ActiveGraphicSchema>;
 
+export const MediaEndActionSchema = z.enum(["clear", "hold"]);
+export type MediaEndAction = z.infer<typeof MediaEndActionSchema>;
+
+export const MediaStatusSchema = z.enum(["loading", "playing", "paused", "ended", "error"]);
+export type MediaStatus = z.infer<typeof MediaStatusSchema>;
+
+/** Last playback report from a renderer, stamped with server receive time. */
+export const MediaPlaybackSchema = z.object({
+  status: MediaStatusSchema,
+  currentTime: z.number(),
+  duration: z.number(),
+  updatedAt: z.number(),
+  error: z.string().optional(),
+});
+export type MediaPlayback = z.infer<typeof MediaPlaybackSchema>;
+
+/**
+ * Full-frame video slot, independent of `active` so a graphic can sit on
+ * top of a playing video. Transport is declarative: renderers converge on
+ * `paused` and apply any `seek.seq` they haven't applied for this
+ * `takenAt`, so reconnects and multiple renderers need no command replay.
+ */
+export const ChannelMediaSchema = z.object({
+  rowId: z.string(),
+  assetUrl: z.string(),
+  label: z.string().optional(),
+  volume: z.number().min(0).max(1),
+  endAction: MediaEndActionSchema,
+  takenAt: z.number(),
+  paused: z.boolean(),
+  seek: z.object({ time: z.number(), seq: z.number() }).optional(),
+  playback: MediaPlaybackSchema,
+});
+export type ChannelMedia = z.infer<typeof ChannelMediaSchema>;
+
 export const ChannelStateSchema = z.object({
   channel: z.string(),
   active: ActiveGraphicSchema.nullable(),
   songSession: SongSessionSummarySchema.optional(),
+  media: ChannelMediaSchema.nullable().optional(),
 });
 export type ChannelState = z.infer<typeof ChannelStateSchema>;

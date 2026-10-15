@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_PROJECT_ID } from "./project";
+import { MediaEndActionSchema } from "./channel";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -136,6 +137,24 @@ export const ScriptureRowSchema = z.object({
 export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
 
 /**
+ * Full-frame video played in the channel's media slot (beneath graphics).
+ * `durationSec` is display-only, captured when the row is saved.
+ */
+export const VideoRowSchema = z.object({
+  kind: z.literal("video"),
+  id: z.string(),
+  assetUrl: z.string(),
+  label: z.string().optional(),
+  durationSec: z.number().optional(),
+  volume: z.number().min(0).max(1).default(1),
+  endAction: MediaEndActionSchema.default("clear"),
+  channelHint: z.string().optional(),
+  notes: z.string().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
+});
+export type VideoRow = z.infer<typeof VideoRowSchema>;
+
+/**
  * Show JSON files predating the row union have rows without a `kind` field.
  * Default missing `kind` to `"graphic"` on read; writes always include `kind`.
  */
@@ -151,7 +170,7 @@ export const RundownRowSchema = z.preprocess(
     }
     return raw;
   },
-  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema]),
+  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema]),
 );
 export type RundownRow = z.infer<typeof RundownRowSchema>;
 
