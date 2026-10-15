@@ -17,6 +17,7 @@ import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
+import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import {
   deleteShowCloud,
@@ -77,6 +78,8 @@ function ShowEditPageInner() {
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [editingVideoRow, setEditingVideoRow] = useState<VideoRow | null>(null);
   // Cloud `updated_at` value at the moment the editor loaded the draft.
   // Used by save() in cloud mode to detect concurrent writes — a newer
   // value in Supabase means another tab/user saved while we were editing.
@@ -370,6 +373,32 @@ function ShowEditPageInner() {
     setScriptureModalOpen(false);
   }
 
+  function saveVideoRow(args: VideoRowSaveArgs) {
+    const fields = {
+      assetUrl: args.assetUrl,
+      ...(args.label ? { label: args.label } : {}),
+      ...(args.durationSec !== undefined ? { durationSec: args.durationSec } : {}),
+      volume: args.volume,
+      endAction: args.endAction,
+      channelHint: args.channelHint,
+    };
+    if (editingVideoRow) {
+      update((s) => {
+        const idx = s.rows.findIndex((r) => r.id === editingVideoRow.id);
+        if (idx >= 0) {
+          const { label: _l, durationSec: _d, ...keep } = editingVideoRow;
+          s.rows[idx] = { ...keep, ...fields };
+        }
+      });
+    } else {
+      update((s) => {
+        s.rows.push({ kind: "video", id: uuid(), ...fields });
+      });
+    }
+    setVideoModalOpen(false);
+    setEditingVideoRow(null);
+  }
+
   function deleteRow(rowId: string) {
     update((s) => {
       s.rows = s.rows.filter((r) => r.id !== rowId);
@@ -509,11 +538,16 @@ function ShowEditPageInner() {
               setEditingScriptureRow(row);
               setScriptureModalOpen(true);
             }}
+            onEditVideoRow={(row) => {
+              setEditingVideoRow(row);
+              setVideoModalOpen(true);
+            }}
           />
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={addRow} style={addRowBtn}>+ Add row</button>
             <button onClick={addSongRow} style={addRowBtn}>+ Add song</button>
             <button onClick={() => setScriptureModalOpen(true)} style={addRowBtn}>+ Scripture</button>
+            <button onClick={() => setVideoModalOpen(true)} style={addRowBtn}>+ Video</button>
           </div>
         </div>
       </div>
@@ -525,6 +559,16 @@ function ShowEditPageInner() {
           setEditingScriptureRow(null);
         }}
         onSave={addScriptureRow}
+      />
+      <VideoRowModal
+        open={videoModalOpen}
+        editingRow={editingVideoRow ?? undefined}
+        channels={takeableChannels}
+        onClose={() => {
+          setVideoModalOpen(false);
+          setEditingVideoRow(null);
+        }}
+        onSave={saveVideoRow}
       />
       {dialog}
     </div>
