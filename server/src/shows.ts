@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Show } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInShow } from "./bundleApply";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 const REGISTRY = new Map<string, Show>();
 let loaded = false;
@@ -30,7 +31,7 @@ export async function listShowMetas(): Promise<
   { id: string; name: string; projectId: string; rowCount: number; scheduledFor?: string }[]
 > {
   await ensureLoaded();
-  return Array.from(REGISTRY.values()).map((s) => ({
+  return liveOnly(REGISTRY.values()).map((s) => ({
     id: s.id,
     name: s.name,
     projectId: s.projectId,
@@ -41,32 +42,40 @@ export async function listShowMetas(): Promise<
 
 export async function getShow(id: string): Promise<Show | null> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  const s = REGISTRY.get(id);
+  return s && isLive(s) ? s : null;
 }
 
-export async function saveShow(show: Show): Promise<void> {
-  const normalized = normalizeAssetUrlsInShow(show);
+export async function saveShow(show: Show): Promise<Show> {
+  await ensureLoaded();
+  // See templates.saveTemplate — local writes stamp updatedAt for sync.
+  const normalized = stampWrite(normalizeAssetUrlsInShow(show));
   await storage.saveShow(normalized);
   REGISTRY.set(normalized.id, normalized);
+  return normalized;
 }
 
 export async function deleteShow(id: string): Promise<boolean> {
-  const ok = await storage.deleteShow(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  const dead = tombstone(current);
+  await storage.saveShow(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }
 
 export async function duplicateShow(sourceId: string): Promise<Show | null> {
   await ensureLoaded();
   const src = REGISTRY.get(sourceId);
-  if (!src) return null;
-  const copy: Show = {
+  if (!src || !isLive(src)) return null;
+  const copy: Show = stampWrite<Show>({
     id: `show-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
     projectId: src.projectId,
     rows: src.rows.map((row) => ({ ...row, id: randomUUID() })),
     songs: src.songs.map((s) => ({ ...s })),
-  };
+  });
   await storage.saveShow(copy);
   REGISTRY.set(copy.id, copy);
   return copy;

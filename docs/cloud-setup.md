@@ -101,6 +101,15 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<apps-portal-anon-key>
 Both point at apps-portal's Supabase (not a separate OverlaySys project).
 Public — the anon key only grants access through RLS.
 
+The embedded desktop server's sync engine (`server/src/cloudSync.ts`)
+reads `OVERLAYSYS_SUPABASE_URL` / `OVERLAYSYS_SUPABASE_ANON_KEY`. You do
+not need to set those separately: the Electron host mirrors the
+`NEXT_PUBLIC_SUPABASE_*` pair from `apps/desktop/.env` (baked into the
+packaged build) across to the server (`apps/desktop/src/serverEnv.ts`),
+and the server accepts either spelling. If the server has neither, the
+operator header shows a red **sync unavailable** pill with the reason —
+it never silently skips sync.
+
 The server-side bootstrap endpoint (Phase 3) will also need:
 
 ```
@@ -171,7 +180,8 @@ affected (RLS silently filters).
 ## Electron desktop sign-in (Phase 4)
 
 The Electron build can sign in to the cloud without changing modes — it
-keeps its local WS-backed editor and gains Publish/Pull buttons. Flow:
+keeps its local WS-backed editor, the embedded server starts syncing, and
+`/projects` gains a Publish button. Flow:
 
 1. User clicks **☁ Sign in to cloud** in the operator header (Electron-only).
 2. Electron main process opens a 127.0.0.1 loopback HTTP server on a
@@ -197,19 +207,32 @@ Set these in the shell when running `pnpm package:desktop`, or write
 them into `apps/desktop/.env`. They are *not* embedded in the renderer
 bundle — they're only read by the Electron main process.
 
-### Publish / Pull project
+### Publish a project
 
-Once signed in, the `/projects` page shows a "☁ Cloud sync" bar with:
+Entity JSON (projects, shows, hotcards, songs, templates, channels) is
+reconciled automatically by the server's sync engine whenever the desktop
+is paired — every local save kicks a pass, and one runs every five minutes
+regardless. Two things sync deliberately does not do, and **Publish** is
+the button for both:
 
-- **Publish** (per row) — bundles the project's shows + hotcards + their
-  referenced songs/templates + assets, then runs `applyBundleCloud` to
-  upsert everything into `overlaysys.*` and the storage bucket.
-- **Pull from cloud** (header) — lists cloud projects, picks one,
-  builds the bundle from cloud reads, POSTs it to the local server's
-  `/api/import` endpoint to land it on disk.
+- **Assets.** The sync engine never moves binaries. Publish bundles every
+  asset the project's templates, hotcards and shows reference and uploads
+  them to the storage bucket.
+- **"Make my version canonical."** Sync is last-writer-wins on
+  `updatedAt`, so an older local copy loses to the cloud. Publish
+  re-stamps everything it includes, so the version on this machine
+  becomes the newest one everywhere.
 
-Both directions go through the same Bundle shape, so a round trip
-preserves entity ids and asset SHAs (idempotent).
+On `/projects` each row has a **☁ Publish** button (desktop only; enabled
+once signed in and connected). It asks the local server for
+`POST /api/projects/<id>/publish-bundle` — the project, its shows and
+hotcards, the templates/songs/channels they reference, and asset bytes —
+pushes that bundle to `overlaysys.*` and the bucket with `applyBundleCloud`,
+then kicks a sync pass so the replicas settle. A result dialog lists what
+landed and any per-entity errors.
+
+Pulling is automatic: a paired desktop receives cloud changes on the next
+sync pass, and the header pill reports the last pass.
 
 ### Conflict detection
 

@@ -1,5 +1,6 @@
 import type { Project } from "@overlaysys/core";
 import * as storage from "./storage";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 const REGISTRY = new Map<string, Project>();
 let loaded = false;
@@ -20,21 +21,30 @@ async function ensureLoaded(): Promise<void> {
 
 export async function listProjects(): Promise<Project[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values());
+  return liveOnly(REGISTRY.values());
 }
 
 export async function getProject(id: string): Promise<Project | null> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  const p = REGISTRY.get(id);
+  return p && isLive(p) ? p : null;
 }
 
-export async function saveProject(project: Project): Promise<void> {
-  await storage.saveProject(project);
-  REGISTRY.set(project.id, project);
+export async function saveProject(project: Project): Promise<Project> {
+  await ensureLoaded();
+  // See templates.saveTemplate — local writes stamp updatedAt for sync.
+  const stamped = stampWrite(project);
+  await storage.saveProject(stamped);
+  REGISTRY.set(stamped.id, stamped);
+  return stamped;
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-  const ok = await storage.deleteProject(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  const dead = tombstone(current);
+  await storage.saveProject(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }

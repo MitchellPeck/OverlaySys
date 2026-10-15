@@ -25,6 +25,7 @@ import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
 import * as sttInstaller from "./sttInstaller";
+import { scheduleSync } from "./cloudSync";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 
@@ -123,7 +124,19 @@ export function handleConnection(
     try {
       switch (parsed.type) {
         case "subscribe": {
-          if (subscriptions.has(parsed.channel)) return;
+          if (subscriptions.has(parsed.channel)) {
+            // Already live on this socket — don't double-subscribe, but
+            // do answer with the current state. A renderer that re-sends
+            // its subscriptions (mirror retarget, defensive resync) must
+            // be able to catch up; a silent no-op left it painting
+            // whatever it last saw.
+            send({
+              type: "state",
+              channel: parsed.channel,
+              state: channels.getState(parsed.channel),
+            });
+            break;
+          }
           const unsub = channels.subscribe(parsed.channel, (state) => {
             send({ type: "state", channel: state.channel, state });
           });
@@ -162,12 +175,14 @@ export function handleConnection(
           break;
         }
         case "save_template": {
-          await templates.saveTemplate(parsed.template);
-          send({ type: "ack", op: "save_template", id: parsed.template.id });
-          // Notify everyone (the editor itself, plus the operator's template list).
+          const saved = await templates.saveTemplate(parsed.template);
+          send({ type: "ack", op: "save_template", id: saved.id });
+          // Notify everyone (the editor itself, plus the operator's template
+          // list). Broadcast the stamped record so clients see updatedAt.
           const list = await templates.listTemplateMetas();
           broadcast({ type: "template_list", templates: list });
-          broadcast({ type: "template", template: parsed.template });
+          broadcast({ type: "template", template: saved });
+          scheduleSync();
           break;
         }
         case "delete_template": {
@@ -176,6 +191,7 @@ export function handleConnection(
           if (ok) {
             const list = await templates.listTemplateMetas();
             broadcast({ type: "template_list", templates: list });
+            scheduleSync();
           }
           break;
         }
@@ -203,11 +219,12 @@ export function handleConnection(
           break;
         }
         case "save_show": {
-          await shows.saveShow(parsed.show);
-          send({ type: "ack", op: "save_show", id: parsed.show.id });
-          broadcast({ type: "show", show: parsed.show });
+          const saved = await shows.saveShow(parsed.show);
+          send({ type: "ack", op: "save_show", id: saved.id });
+          broadcast({ type: "show", show: saved });
           const list = await shows.listShowMetas();
           broadcast({ type: "show_list", shows: list });
+          scheduleSync();
           break;
         }
         case "delete_show": {
@@ -216,6 +233,7 @@ export function handleConnection(
           if (ok) {
             const list = await shows.listShowMetas();
             broadcast({ type: "show_list", shows: list });
+            scheduleSync();
           }
           break;
         }
@@ -237,11 +255,12 @@ export function handleConnection(
           break;
         }
         case "save_project": {
-          await projects.saveProject(parsed.project);
-          send({ type: "ack", op: "save_project", id: parsed.project.id });
-          broadcast({ type: "project", project: parsed.project });
+          const saved = await projects.saveProject(parsed.project);
+          send({ type: "ack", op: "save_project", id: saved.id });
+          broadcast({ type: "project", project: saved });
           const list = await projects.listProjects();
           broadcast({ type: "project_list", projects: list });
+          scheduleSync();
           break;
         }
         case "delete_project": {
@@ -250,6 +269,7 @@ export function handleConnection(
           if (ok) {
             const list = await projects.listProjects();
             broadcast({ type: "project_list", projects: list });
+            scheduleSync();
           }
           break;
         }
@@ -265,11 +285,12 @@ export function handleConnection(
           break;
         }
         case "save_hotcard": {
-          await hotcards.saveHotcard(parsed.hotcard);
-          send({ type: "ack", op: "save_hotcard", id: parsed.hotcard.id });
-          broadcast({ type: "hotcard", hotcard: parsed.hotcard });
+          const saved = await hotcards.saveHotcard(parsed.hotcard);
+          send({ type: "ack", op: "save_hotcard", id: saved.id });
+          broadcast({ type: "hotcard", hotcard: saved });
           const list = await hotcards.listHotcardMetas();
           broadcast({ type: "hotcard_list", hotcards: list });
+          scheduleSync();
           break;
         }
         case "delete_hotcard": {
@@ -278,6 +299,7 @@ export function handleConnection(
           if (ok) {
             const list = await hotcards.listHotcardMetas();
             broadcast({ type: "hotcard_list", hotcards: list });
+            scheduleSync();
           }
           break;
         }
@@ -305,11 +327,12 @@ export function handleConnection(
           break;
         }
         case "save_song": {
-          await songs.saveSong(parsed.song);
-          send({ type: "ack", op: "save_song", id: parsed.song.id });
-          broadcast({ type: "song", song: parsed.song });
+          const saved = await songs.saveSong(parsed.song);
+          send({ type: "ack", op: "save_song", id: saved.id });
+          broadcast({ type: "song", song: saved });
           const list = await songs.listSongMetas();
           broadcast({ type: "song_list", songs: list });
+          scheduleSync();
           break;
         }
         case "delete_song": {
@@ -318,6 +341,7 @@ export function handleConnection(
           if (ok) {
             const list = await songs.listSongMetas();
             broadcast({ type: "song_list", songs: list });
+            scheduleSync();
           }
           break;
         }
@@ -491,11 +515,12 @@ export function handleConnection(
           break;
         }
         case "save_channel": {
-          await channelConfigs.saveChannelConfig(parsed.config);
-          send({ type: "ack", op: "save_channel", id: parsed.config.id });
-          broadcast({ type: "channel", config: parsed.config });
+          const saved = await channelConfigs.saveChannelConfig(parsed.config);
+          send({ type: "ack", op: "save_channel", id: saved.id });
+          broadcast({ type: "channel", config: saved });
           const list = await channelConfigs.listChannelConfigs();
           broadcast({ type: "channel_list", configs: list });
+          scheduleSync();
           break;
         }
         case "delete_channel": {
@@ -504,6 +529,7 @@ export function handleConnection(
           if (ok) {
             const list = await channelConfigs.listChannelConfigs();
             broadcast({ type: "channel_list", configs: list });
+            scheduleSync();
           }
           break;
         }

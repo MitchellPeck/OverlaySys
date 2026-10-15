@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Hotcard, HotcardMeta } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInHotcard } from "./bundleApply";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 const REGISTRY = new Map<string, Hotcard>();
 let loaded = false;
@@ -28,7 +29,7 @@ async function ensureLoaded(): Promise<void> {
 
 export async function listHotcardMetas(): Promise<HotcardMeta[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values()).map((h) => ({
+  return liveOnly(REGISTRY.values()).map((h) => ({
     id: h.id,
     name: h.name,
     projectId: h.projectId,
@@ -38,19 +39,27 @@ export async function listHotcardMetas(): Promise<HotcardMeta[]> {
 
 export async function getHotcard(id: string): Promise<Hotcard | null> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  const h = REGISTRY.get(id);
+  return h && isLive(h) ? h : null;
 }
 
-export async function saveHotcard(hotcard: Hotcard): Promise<void> {
-  const normalized = normalizeAssetUrlsInHotcard(hotcard);
+export async function saveHotcard(hotcard: Hotcard): Promise<Hotcard> {
+  await ensureLoaded();
+  // See templates.saveTemplate — local writes stamp updatedAt for sync.
+  const normalized = stampWrite(normalizeAssetUrlsInHotcard(hotcard));
   await storage.saveHotcard(normalized);
   REGISTRY.set(normalized.id, normalized);
+  return normalized;
 }
 
 export async function deleteHotcard(id: string): Promise<boolean> {
-  const ok = await storage.deleteHotcard(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  const dead = tombstone(current);
+  await storage.saveHotcard(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }
 
 export async function duplicateHotcard(
@@ -58,12 +67,12 @@ export async function duplicateHotcard(
 ): Promise<Hotcard | null> {
   await ensureLoaded();
   const src = REGISTRY.get(sourceId);
-  if (!src) return null;
-  const copy: Hotcard = {
+  if (!src || !isLive(src)) return null;
+  const copy: Hotcard = stampWrite({
     ...src,
     id: `hotcard-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
-  };
+  });
   await storage.saveHotcard(copy);
   REGISTRY.set(copy.id, copy);
   return copy;

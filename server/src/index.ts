@@ -13,6 +13,8 @@ import * as sttSpawner from "./sttSpawner";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
 import { registerImportRoutes } from "./importRoute";
+import { registerPublishRoutes } from "./publishRoute";
+import { defaultDevEnvFiles, loadDevEnvFiles } from "./devEnv";
 import { registerPcoRoutes } from "./pco/routes";
 import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
@@ -23,6 +25,16 @@ import {
   runSyncNow,
   setCloudTokens,
 } from "./cloudSync";
+
+// Source-run only (the packaged host sets OVERLAYSYS_DATA_DIR and passes
+// its own env): pick up apps/desktop/.env so cloud sync has credentials
+// in dev. Shell values always win.
+if (!process.env["OVERLAYSYS_DATA_DIR"]) {
+  const applied = loadDevEnvFiles(process.env, defaultDevEnvFiles());
+  if (applied.length > 0) {
+    console.log(`[env] loaded ${applied.join(", ")} from apps/desktop/.env*`);
+  }
+}
 
 const HOST = process.env["HOST"] ?? "0.0.0.0";
 // PORT=0 → OS-assigned ephemeral port (used by the Electron host so two
@@ -82,6 +94,7 @@ app.get("/health", async () => ({ ok: true, time: Date.now() }));
 
 await registerAssetRoutes(app);
 await registerImportRoutes(app);
+await registerPublishRoutes(app);
 await registerPcoRoutes(app);
 // Seed a Planning Center credential from env (PCO_ACCESS_TOKEN, or
 // PCO_APP_ID + PCO_SECRET) so a PAT connects without any UI or OAuth flow.

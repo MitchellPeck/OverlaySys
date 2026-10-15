@@ -78,6 +78,17 @@ export type SyncEntityKind =
   | "channelConfigs"
   | "projectChannelOverrides";
 
+/**
+ * Epoch millis for an ISO timestamp; 0 for missing/unparseable so a
+ * record without `updatedAt` is the oldest possible (see caveats on
+ * {@link sync}).
+ */
+function toInstant(iso: string): number {
+  if (!iso) return 0;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
 /** Stable identity for an override row — composed of (projectId, channelId). */
 function overrideKey(o: { projectId: string; channelId: string }): string {
   return `${o.projectId}:${o.channelId}`;
@@ -259,11 +270,19 @@ async function reconcileTable<
       } else if (L && R) {
         const lts = L.updatedAt ?? "";
         const rts = R.updatedAt ?? "";
-        if (lts > rts) {
+        // Compare instants, not strings. The two replicas format the same
+        // moment differently — JS writes `…00.000Z`, PostgREST returns
+        // `…00+00:00` — and lexically `Z`/`.` sort above `+`, so a string
+        // compare called every pulled record "locally newer" and pushed it
+        // straight back (an extra round trip per edit, with the cloud's
+        // updated_at bumped each time).
+        const lt = toInstant(lts);
+        const rt = toInstant(rts);
+        if (lt > rt) {
           await pushToRemote(L);
           result.pushed += 1;
           result.perTable[kind].pushed += 1;
-        } else if (rts > lts) {
+        } else if (rt > lt) {
           await pushToLocal(R);
           result.pulled += 1;
           result.perTable[kind].pulled += 1;

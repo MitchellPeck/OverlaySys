@@ -284,3 +284,42 @@ describe("syncEngine.sync", () => {
     expect((await local.getChannelConfig(ORG, "program"))?.name).toBe("Fresh");
   });
 });
+
+describe("syncEngine.sync — timestamp formats", () => {
+  it("compares timestamps as instants, so `Z` vs `+00:00` spellings of one moment are equal", async () => {
+    // Local disk writes `…00.000Z` (JS toISOString); PostgREST returns the
+    // same instant as `…00+00:00`. A string compare would call local newer
+    // and push it back every pass.
+    const local = makeMemAdapter();
+    const remote = makeMemAdapter();
+    await local.saveChannelConfig(ORG, makeChannel({ updatedAt: "2026-08-29T12:00:00.000Z" }));
+    await remote.saveChannelConfig(ORG, makeChannel({ name: "Cloud", updatedAt: "2026-08-29T12:00:00+00:00" }));
+    const result = await sync(local, remote, ORG);
+    expect(result.pushed).toBe(0);
+    expect(result.pulled).toBe(0);
+    expect(result.overwrites).toEqual([]);
+  });
+
+  it("still orders correctly across formats when the instants differ", async () => {
+    const local = makeMemAdapter();
+    const remote = makeMemAdapter();
+    await local.saveChannelConfig(ORG, makeChannel({ updatedAt: "2026-08-29T12:00:00.000Z" }));
+    await remote.saveChannelConfig(ORG, makeChannel({ name: "Cloud", updatedAt: "2026-08-29T12:00:01+00:00" }));
+    const result = await sync(local, remote, ORG);
+    expect(result.pulled).toBe(1);
+    expect((await local.getChannelConfig(ORG, "program"))?.name).toBe("Cloud");
+    expect(result.overwrites).toHaveLength(1);
+  });
+
+  it("treats a missing updatedAt as oldest even against an offset-formatted remote", async () => {
+    const local = makeMemAdapter();
+    const remote = makeMemAdapter();
+    await local.saveChannelConfig(ORG, makeChannel({ name: "Fixture" }));
+    await remote.saveChannelConfig(ORG, makeChannel({ name: "Cloud", updatedAt: "2026-08-29T12:00:00+00:00" }));
+    const result = await sync(local, remote, ORG);
+    expect(result.pulled).toBe(1);
+    expect((await local.getChannelConfig(ORG, "program"))?.name).toBe("Cloud");
+    // No prior local write → a first-time fetch, not a user-visible overwrite.
+    expect(result.overwrites).toEqual([]);
+  });
+});

@@ -1,5 +1,6 @@
 import type { Song, SongMeta } from "@overlaysys/core";
 import * as storage from "./storage";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 const REGISTRY = new Map<string, Song>();
 let loaded = false;
@@ -18,7 +19,7 @@ async function ensureLoaded(): Promise<void> {
 
 export async function listSongMetas(): Promise<SongMeta[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values()).map((s) => ({
+  return liveOnly(REGISTRY.values()).map((s) => ({
     id: s.id,
     title: s.title,
     ccliNumber: s.ccliNumber,
@@ -28,22 +29,31 @@ export async function listSongMetas(): Promise<SongMeta[]> {
 
 export async function getSong(id: string): Promise<Song | null> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  const s = REGISTRY.get(id);
+  return s && isLive(s) ? s : null;
 }
 
 /** Full song objects — used by importers that match on ccli / customFields. */
 export async function listSongs(): Promise<Song[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values());
+  return liveOnly(REGISTRY.values());
 }
 
-export async function saveSong(song: Song): Promise<void> {
-  await storage.saveSong(song);
-  REGISTRY.set(song.id, song);
+export async function saveSong(song: Song): Promise<Song> {
+  await ensureLoaded();
+  // See templates.saveTemplate — local writes stamp updatedAt for sync.
+  const stamped = stampWrite(song);
+  await storage.saveSong(stamped);
+  REGISTRY.set(stamped.id, stamped);
+  return stamped;
 }
 
 export async function deleteSong(id: string): Promise<boolean> {
-  const ok = await storage.deleteSong(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  const dead = tombstone(current);
+  await storage.saveSong(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }

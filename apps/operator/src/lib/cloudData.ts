@@ -4,6 +4,7 @@ import {
   ChannelConfigSchema,
   HotcardSchema,
   ProjectChannelOverrideSchema,
+  ProjectSchema,
   ShowSchema,
   SongSchema,
   TemplateSchema,
@@ -52,7 +53,7 @@ export async function listProjectsCloud(): Promise<Project[]> {
   const client = getCloudClient();
   const { data, error } = await client
     .from("projects")
-    .select("id, name, notes, created_at, updated_at")
+    .select("id, name, notes, song_custom_field_schema, created_at, updated_at")
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []).map(rowToProject);
@@ -63,7 +64,7 @@ export async function getProjectCloud(id: string): Promise<Project | null> {
   const orgId = getOrgId();
   const { data, error } = await client
     .from("projects")
-    .select("id, name, notes, created_at, updated_at")
+    .select("id, name, notes, song_custom_field_schema, created_at, updated_at")
     .eq("org_id", orgId)
     .eq("id", id)
     .maybeSingle();
@@ -88,9 +89,13 @@ export async function saveProjectCloud(project: Project): Promise<void> {
           org_id: orgId,
           name: project.name,
           notes: project.notes ?? null,
+          song_custom_field_schema: project.songCustomFieldSchema ?? null,
           created_at: project.createdAt,
-          // Trigger bumps updated_at; sending it explicitly is allowed but
-          // overridden by the trigger.
+          // Carry the entity's own stamp when it has one (a published
+          // bundle, a synced record) so the cloud row matches the local
+          // file and the sync engine sees agreement, not an overwrite.
+          // Without one the 0010 trigger stamps now().
+          ...(project.updatedAt ? { updated_at: project.updatedAt } : {}),
         },
       ],
       { onConflict: "org_id,id" },
@@ -185,6 +190,7 @@ export async function saveShowCloud(show: Show): Promise<void> {
           // with our RundownRow discriminated union, but the runtime
           // shape is fine — Postgres just stores it.
           rows: show.rows as unknown as Show["rows"],
+          ...(show.updatedAt ? { updated_at: show.updatedAt } : {}),
         },
       ],
       { onConflict: "org_id,id" },
@@ -331,6 +337,7 @@ export async function saveHotcardCloud(hotcard: Hotcard): Promise<void> {
           data: hotcard.data as unknown as Hotcard["data"],
           channel_hint: hotcard.channelHint ?? null,
           notes: hotcard.notes ?? null,
+          ...(hotcard.updatedAt ? { updated_at: hotcard.updatedAt } : {}),
         },
       ],
       { onConflict: "org_id,id" },
@@ -419,6 +426,8 @@ export async function saveTemplateCloud(template: Template): Promise<void> {
           // Templates store their full Zod payload as jsonb. Cast through
           // unknown to satisfy the Json index signature.
           payload: template as unknown as Template,
+          // See saveProjectCloud — keep the entity's stamp when present.
+          ...(template.updatedAt ? { updated_at: template.updatedAt } : {}),
         },
       ],
       { onConflict: "org_id,id" },
@@ -502,6 +511,7 @@ export async function saveSongCloud(song: Song): Promise<void> {
           // Send the whole Zod payload. Casting through unknown for the
           // Json index-signature constraint, same pattern as shows/hotcards.
           payload: song as unknown as Song,
+          ...(song.updatedAt ? { updated_at: song.updatedAt } : {}),
         },
       ],
       { onConflict: "org_id,id" },
@@ -930,15 +940,25 @@ function rowToProject(row: {
   id: string;
   name: string;
   notes: string | null;
+  song_custom_field_schema: unknown;
   created_at: string;
   updated_at: string;
 }): Project {
+  // Validate the jsonb against the same schema the editors read it
+  // through; a pre-0010 row parses as undefined and the field is
+  // omitted, which is exactly what legacy projects expect.
+  const fields = ProjectSchema.shape.songCustomFieldSchema.safeParse(
+    row.song_custom_field_schema ?? undefined,
+  );
   return {
     id: row.id,
     name: row.name,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.notes ? { notes: row.notes } : {}),
+    ...(fields.success && fields.data
+      ? { songCustomFieldSchema: fields.data }
+      : {}),
   };
 }
 
@@ -964,12 +984,13 @@ export async function listChannelConfigsCloud(): Promise<ChannelConfig[]> {
 export async function saveChannelConfigCloud(channel: ChannelConfig): Promise<void> {
   const client = getCloudClient();
   const orgId = getOrgId();
-  // Stamp updatedAt for sync. The Postgres trigger also sets updated_at on
-  // the row; we keep it in the payload too so consumers reading the JSON
-  // directly (bundle exports, sync engine) don't have to join the column.
+  // Keep the entity's stamp when it has one (published bundle, synced
+  // record); otherwise this edit is the new version — stamp it now. Send
+  // the same value as the row column so the sync engine's LWW sees the
+  // cloud and local copies agree.
   const stamped: ChannelConfig = {
     ...channel,
-    updatedAt: new Date().toISOString(),
+    updatedAt: channel.updatedAt ?? new Date().toISOString(),
   };
   const { data, error } = await client
     .from("channel_configs")
@@ -979,6 +1000,7 @@ export async function saveChannelConfigCloud(channel: ChannelConfig): Promise<vo
           id: stamped.id,
           org_id: orgId,
           payload: stamped as unknown as import("@overlaysys/supabase").Database["overlaysys"]["Tables"]["channel_configs"]["Row"]["payload"],
+          updated_at: stamped.updatedAt,
         },
       ],
       { onConflict: "org_id,id" },

@@ -8,19 +8,24 @@ import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { ManagementList } from "@/app/components/ManagementList";
 import { isCloudMode } from "@/lib/mode";
+import { isElectron } from "@/lib/desktop";
+import { useAuthStore } from "@/lib/useAuth";
 import {
   deleteProjectCloud,
   refreshProjectsCloud,
   saveProjectCloud,
 } from "@/lib/cloudData";
+import { publishProjectToCloud } from "@/lib/projectPublish";
 import { CustomFieldSchemaModal } from "./CustomFieldSchemaModal";
 
 /**
  * The Projects page lists every Project for the org and lets the
  * operator create, rename, delete them, and edit their custom-field
- * schemas. Cloud sync (publish + pull) is no longer manual — the
- * SyncEngine in @overlaysys/core handles bidirectional reconciliation
- * on a periodic cadence whenever the desktop is paired to apps-portal.
+ * schemas. Entity JSON is reconciled automatically by the SyncEngine in
+ * @overlaysys/core whenever the desktop is paired to apps-portal; the
+ * per-row **Publish** button is the explicit push — it also carries the
+ * project's assets, which automatic sync never moves, and makes the
+ * local version the newest one everywhere (see lib/projectPublish.ts).
  * Songs and Templates are org-wide and not project-scoped today;
  * Shows + Hotcards belong to a Project.
  */
@@ -37,6 +42,59 @@ export default function ProjectsIndexPage() {
   const disabled = !cloud && conn !== "open";
 
   const [schemaEditing, setSchemaEditing] = useState<Project | null>(null);
+
+  // ── Publish to cloud (desktop only) ───────────────────────────────────
+  // Absent in the cloud build (the data already lives there) and in the
+  // bare web operator (nothing to publish to). On desktop the button is
+  // always visible so the capability is discoverable; it's enabled once
+  // the user is signed in and the local server is connected.
+  const inElectron = isElectron();
+  const signedIn = useAuthStore((s) => s.status === "signed_in");
+  const [publishing, setPublishing] = useState<string | null>(null);
+  const publishBlockedReason = !signedIn
+    ? "Sign in to cloud to publish"
+    : conn !== "open"
+      ? "Not connected to the local server"
+      : publishing
+        ? "A publish is already running"
+        : null;
+
+  async function publish(p: Project) {
+    if (publishBlockedReason) return;
+    setPublishing(p.id);
+    try {
+      const result = await publishProjectToCloud(p.id);
+      await alert({
+        title: result.ok ? "Published to cloud" : "Published with errors",
+        message: (
+          <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+            <div style={{ marginBottom: 6 }}>
+              <strong>{p.name}</strong> pushed to the cloud.
+            </div>
+            {Object.entries(result.counts).map(([k, v]) => (
+              <div key={k}>
+                {k}: {v}
+              </div>
+            ))}
+            {result.errors.length > 0 && (
+              <details style={{ marginTop: 8 }} open>
+                <summary style={{ cursor: "pointer", color: colors.red }}>
+                  {result.errors.length} error{result.errors.length === 1 ? "" : "s"}
+                </summary>
+                <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, margin: 0 }}>
+                  {result.errors.map((e) => `[${e.kind}:${e.id}] ${e.message}`).join("\n")}
+                </pre>
+              </details>
+            )}
+          </div>
+        ),
+      });
+    } catch (err) {
+      await showError("publish", err);
+    } finally {
+      setPublishing(null);
+    }
+  }
 
   async function showError(action: string, err: unknown) {
     const message =
@@ -176,6 +234,21 @@ export default function ProjectsIndexPage() {
         }}
         rowActions={(p) => (
           <>
+            {inElectron && (
+              <Button
+                onClick={() => publish(p)}
+                disabled={publishBlockedReason !== null}
+                title={
+                  publishBlockedReason ??
+                  "Push this project — shows, hotcards, templates, songs and assets — to the cloud"
+                }
+                variant="primary"
+                size="sm"
+                style={{ width: 96 }}
+              >
+                {publishing === p.id ? "Publishing…" : "☁ Publish"}
+              </Button>
+            )}
             {p.id !== currentProjectId && (
               <Button
                 onClick={() => setCurrentProjectId(p.id)}

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Template, ChannelState, ChannelConfig } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
+import { createMirrorSubscription } from "./mirrorSubscription";
 
 type Props = {
   channel: string;
@@ -52,9 +53,12 @@ export function Renderer({ channel, debug = false }: Props) {
   // take) would call playOut twice on the same mount, restarting the
   // animation back to t=0 mid-fade.
   const outStartedRef = useRef<WeakSet<MountedTemplate>>(new WeakSet());
-  // The channel whose runtime state we apply. Defaults to the URL param;
-  // overridden once a config arrives that specifies `mirrorOf`.
-  const sourceChannelRef = useRef<string>(channel);
+  // Which channel we subscribe to and whose state we apply. Defaults to
+  // the URL param; retargets when a config with `mirrorOf` arrives. The
+  // sequencing (reconnects, late config, changed mirrorOf) lives in
+  // mirrorSubscription.ts where it is unit-tested — see that file for the
+  // reconnect bug that used to black out the alpha output.
+  const subscriptionRef = useRef(createMirrorSubscription(channel));
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
@@ -243,25 +247,39 @@ export function Renderer({ channel, debug = false }: Props) {
       }
     }
 
+    const subscription = subscriptionRef.current;
+    const sendAll = (msgs: ReturnType<typeof subscription.hello>) => {
+      for (const m of msgs) client.send(m);
+    };
+
     const offStatus = client.onStatus((s) => setStatus(s));
     const offMsg = client.on((msg) => {
       if (msg.type === "hello") {
-        // Always subscribe to the URL channel first so we get state without
-        // waiting on config (which may not exist for ad-hoc channels).
-        client.send({ type: "subscribe", channel, role: "renderer" });
-        // Fetch config to learn renderMode + any mirror source.
-        client.send({ type: "get_channel", channelId: channel });
-      } else if (msg.type === "channel" && msg.config.id === channel) {
-        setConfig(msg.config);
-        // If the config redirects us to mirror another channel, subscribe
-        // to that source and update the active source ref so subsequent
-        // state messages from the URL channel are ignored.
-        const src = msg.config.mirrorOf;
-        if (src && src !== sourceChannelRef.current) {
-          sourceChannelRef.current = src;
-          client.send({ type: "subscribe", channel: src, role: "renderer" });
+        // Every hello is a fresh socket (first connect OR a reconnect), so
+        // the server knows nothing about us: subscribe to the URL channel,
+        // re-subscribe to the mirror source if we already have one, and
+        // re-fetch config in case mirrorOf changed while we were away.
+        sendAll(subscription.hello());
+      } else if (msg.type === "channel") {
+        const before = subscription.source;
+        const msgs = subscription.channelConfig(msg.config);
+        if (msg.config.id === channel) setConfig(msg.config);
+        sendAll(msgs);
+        if (subscription.source !== before) {
+          console.log(`[renderer] ${channel}: now mirroring ${subscription.source}`);
         }
-      } else if (msg.type === "state" && msg.channel === sourceChannelRef.current) {
+      } else if (msg.type === "channel_list") {
+        // Broadcast after sync pulls and operator edits. It is the only
+        // signal an open window gets when its config lands late (fresh
+        // install, cloud pull) — get_channel may have answered not_found.
+        const before = subscription.source;
+        const msgs = subscription.channelList(msg.configs);
+        if (subscription.config) setConfig(subscription.config);
+        sendAll(msgs);
+        if (subscription.source !== before) {
+          console.log(`[renderer] ${channel}: now mirroring ${subscription.source}`);
+        }
+      } else if (msg.type === "state" && subscription.accepts(msg.channel)) {
         // Session boundary fades: a stage-wide opacity overlay applied on
         // top of whatever the template's own IN/OUT does, as a deliberate
         // session-boundary cue.
@@ -308,9 +326,18 @@ export function Renderer({ channel, debug = false }: Props) {
         for (const r of waiting) r(msg.template);
         pendingTemplateLoads.current.delete(msg.template.id);
       } else if (msg.type === "error") {
-        // not_found for get_channel just means the channel has no config —
-        // that's a normal case for ad-hoc channels, no action needed.
-        if (msg.code !== "not_found") console.warn("[server error]", msg);
+        if (msg.code === "not_found" && msg.message === channel) {
+          // No config for this channel yet. Normal for ad-hoc channels;
+          // for a channel that is SUPPOSED to mirror (alpha outputs) it
+          // means we are painting our own — usually empty — state until a
+          // channel_list broadcast brings the config. Say so, because a
+          // black output with no log line is undiagnosable.
+          console.warn(
+            `[renderer] ${channel}: no channel config on server — rendering own state, not a mirror`,
+          );
+        } else if (msg.code !== "not_found") {
+          console.warn("[server error]", msg);
+        }
       }
     });
 
@@ -371,7 +398,7 @@ export function Renderer({ channel, debug = false }: Props) {
           status={status}
           state={latestState}
           channel={channel}
-          source={sourceChannelRef.current}
+          source={subscriptionRef.current.source}
           scale={scale}
           config={config}
         />

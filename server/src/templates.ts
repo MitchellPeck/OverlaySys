@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Template, TemplateMeta } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInTemplate } from "./bundleApply";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 // In-memory cache rebuilt on first load and on every save.
 const REGISTRY = new Map<string, Template>();
@@ -32,7 +33,7 @@ async function ensureLoaded(): Promise<void> {
 
 export async function listTemplateMetas(): Promise<TemplateMeta[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values()).map((t) => ({
+  return liveOnly(REGISTRY.values()).map((t) => ({
     id: t.id,
     name: t.name,
     size: t.size,
@@ -43,21 +44,38 @@ export async function listTemplateMetas(): Promise<TemplateMeta[]> {
   }));
 }
 
-export async function getTemplate(id: string): Promise<Template | null> {
+/** Full template objects — used by the publish bundler's dependency walk. */
+export async function listTemplates(): Promise<Template[]> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  return liveOnly(REGISTRY.values());
 }
 
-export async function saveTemplate(template: Template): Promise<void> {
-  const normalized = normalizeAssetUrlsInTemplate(template);
+export async function getTemplate(id: string): Promise<Template | null> {
+  await ensureLoaded();
+  const t = REGISTRY.get(id);
+  return t && isLive(t) ? t : null;
+}
+
+export async function saveTemplate(template: Template): Promise<Template> {
+  await ensureLoaded();
+  // Local write: stamp updatedAt so the sync engine sees a new version
+  // (and clear any tombstone — re-saving a deleted id resurrects it).
+  const normalized = stampWrite(normalizeAssetUrlsInTemplate(template));
   await storage.saveTemplate(normalized);
   REGISTRY.set(normalized.id, normalized);
+  return normalized;
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
-  const ok = await storage.deleteTemplate(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  // Soft delete: the file stays as a tombstone so the deletion propagates
+  // through sync instead of the cloud copy resurrecting it next pass.
+  const dead = tombstone(current);
+  await storage.saveTemplate(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }
 
 export async function duplicateTemplate(
@@ -65,12 +83,12 @@ export async function duplicateTemplate(
 ): Promise<Template | null> {
   await ensureLoaded();
   const src = REGISTRY.get(sourceId);
-  if (!src) return null;
-  const copy: Template = {
+  if (!src || !isLive(src)) return null;
+  const copy: Template = stampWrite({
     ...src,
     id: `template-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
-  };
+  });
   await storage.saveTemplate(copy);
   REGISTRY.set(copy.id, copy);
   return copy;

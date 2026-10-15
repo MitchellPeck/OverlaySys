@@ -83,16 +83,21 @@ export default function ChannelsPage() {
   const projectOverridesMap = useStore((s) => s.projectChannelOverrides);
   const setProjectOverrides = useStore((s) => s.setProjectChannelOverrides);
   const cloud = isCloudMode();
-  // Whenever there's a live cloud session we treat the cloud as the
-  // source of truth for both channel configs AND project overrides —
-  // that matches the user-facing model ("channels live in cloud, devices
-  // sync from there"). Without a session we fall back to the local WS
-  // backend so an offline Electron operator still has a working channels
-  // page. The eventual SyncEngine (W1) bridges those two replicas; this
-  // is the interim wiring.
   const cloudSession = useAuthStore((s) => s.status === "signed_in");
-  const useCloudBackend = cloud || cloudSession;
-  const overridesAvailable = useCloudBackend;
+  // Channel configs: on desktop the local server is the source of truth —
+  // it is what serves `get_channel` to every renderer window, and its sync
+  // engine (server/src/cloudSync.ts) reconciles it with the cloud. Reading
+  // configs straight from Supabase here used to race the WS `channel_list`
+  // into the same store slice, so a signed-in desktop could list a cloud
+  // channel the local server didn't hold yet; ↗ on that row opened a
+  // window that never mirrored anything. Only the pure cloud build (no
+  // local server) reads and writes configs in the cloud directly. Local
+  // WS writes are stamped + tombstoned server-side and pushed to the
+  // cloud on the next sync pass, which the server kicks after each write.
+  const useCloudBackend = cloud;
+  // Per-project overrides have no WS surface yet, so they still come from
+  // the cloud whenever a session exists (cloud build or paired desktop).
+  const overridesAvailable = cloud || cloudSession;
   const rendererBase = useRendererBase();
   const [creating, setCreating] = useState<{
     id: string;
@@ -218,10 +223,8 @@ export default function ChannelsPage() {
       title: "Delete channel",
       message: (
         <>
-          Delete <strong>{name}</strong>?
-          {useCloudBackend
-            ? " This soft-deletes the channel; paired devices will remove their local copy on next sync."
-            : " This removes the JSON file."}
+          Delete <strong>{name}</strong>? This soft-deletes the channel; other
+          replicas remove their copy on the next sync.
         </>
       ),
       confirmLabel: "Delete",

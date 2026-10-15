@@ -42,7 +42,12 @@ interface State {
   lastError: string | null;
   // Running flag — serializes overlapping triggers.
   running: boolean;
+  // A trigger that arrived mid-pass. Dropping it meant an edit made while a
+  // pass was in flight waited a full SYNC_INTERVAL_MS to reach the cloud.
+  rerunRequested: boolean;
   intervalId: ReturnType<typeof setInterval> | null;
+  // Debounce for scheduleSync — a burst of saves collapses into one pass.
+  kickTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const state: State = {
@@ -54,7 +59,9 @@ const state: State = {
   lastRanAt: null,
   lastError: null,
   running: false,
+  rerunRequested: false,
   intervalId: null,
+  kickTimer: null,
 };
 
 /** Cadence at which the server retries sync once tokens are present. */
@@ -67,11 +74,19 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000;
  * tokens were successfully applied to the client.
  */
 export async function setCloudTokens(tokens: CloudTokens): Promise<boolean> {
-  const url = process.env["OVERLAYSYS_SUPABASE_URL"];
-  const anonKey = process.env["OVERLAYSYS_SUPABASE_ANON_KEY"];
+  // Accept the operator's build-time names too. The desktop host bridges
+  // them explicitly (apps/desktop/src/serverEnv.ts), but a `pnpm dev`
+  // shell only has the NEXT_PUBLIC_* pair from apps/operator/.env.local —
+  // and that mismatch meant sync silently never ran in packaged builds.
+  const url =
+    process.env["OVERLAYSYS_SUPABASE_URL"] || process.env["NEXT_PUBLIC_SUPABASE_URL"];
+  const anonKey =
+    process.env["OVERLAYSYS_SUPABASE_ANON_KEY"] ||
+    process.env["NEXT_PUBLIC_SUPABASE_ANON_KEY"];
   if (!url || !anonKey) {
     state.lastError =
-      "OVERLAYSYS_SUPABASE_URL / OVERLAYSYS_SUPABASE_ANON_KEY not set on the server";
+      "cloud sync unavailable: OVERLAYSYS_SUPABASE_URL / OVERLAYSYS_SUPABASE_ANON_KEY " +
+      "(or NEXT_PUBLIC_SUPABASE_*) not set on the server";
     console.warn(`[cloudSync] ${state.lastError}`);
     return false;
   }
@@ -123,6 +138,32 @@ export async function clearCloudTokens(): Promise<void> {
     clearInterval(state.intervalId);
     state.intervalId = null;
   }
+  if (state.kickTimer) {
+    clearTimeout(state.kickTimer);
+    state.kickTimer = null;
+  }
+  state.rerunRequested = false;
+}
+
+/** Debounce window for {@link scheduleSync}. */
+const KICK_DELAY_MS = 1000;
+
+/**
+ * Ask for a pass "soon". Called by the WS handlers after every local save
+ * or delete so an operator edit reaches the cloud within seconds instead
+ * of on the next SYNC_INTERVAL_MS tick. No-op when not paired. Debounced,
+ * and if a pass is already running the request is queued rather than
+ * dropped (see runSyncNow).
+ */
+export function scheduleSync(): void {
+  if (!state.tokens || !state.cloud) return;
+  if (state.kickTimer) clearTimeout(state.kickTimer);
+  state.kickTimer = setTimeout(() => {
+    state.kickTimer = null;
+    void runSyncNow().catch((err) => {
+      console.warn("[cloudSync] scheduled sync failed", err);
+    });
+  }, KICK_DELAY_MS);
 }
 
 /**
@@ -136,7 +177,12 @@ export async function clearCloudTokens(): Promise<void> {
  */
 export async function runSyncNow(): Promise<SyncResult | null> {
   if (!state.tokens || !state.cloud) return null;
-  if (state.running) return state.lastResult;
+  if (state.running) {
+    // Something changed (or someone asked) while a pass is in flight.
+    // Remember to go again as soon as this one finishes.
+    state.rerunRequested = true;
+    return state.lastResult;
+  }
   state.running = true;
   try {
     const result = await sync(state.local, state.cloud, state.tokens.orgId);
@@ -166,6 +212,12 @@ export async function runSyncNow(): Promise<SyncResult | null> {
     return null;
   } finally {
     state.running = false;
+    if (state.rerunRequested) {
+      state.rerunRequested = false;
+      void runSyncNow().catch((err) => {
+        console.warn("[cloudSync] queued re-run failed", err);
+      });
+    }
   }
 }
 

@@ -26,17 +26,15 @@ import { defaultServerUrl } from "./wsClient";
  *
  * Two parallel paths for each entity type:
  *
- *   1. Refresh the Zustand store directly via the loose `refreshX`
- *      helpers in cloudData.ts so the current React render has cloud
- *      data immediately — fast UI feedback, no waiting on the server's
- *      sync loop.
- *   2. Kick the embedded server's sync engine (POST /api/cloud/sync)
- *      so its local fs replica gets written through with cloud data
- *      for every entity type at once. Without this, a page refresh
- *      would re-read the server's pre-sync fs over WS and show stale
- *      defaults briefly before the cloud fetch landed again. By
- *      writing through, the next refresh reads synced fs straight away
- *      — no flash.
+ *   1. (Cloud build only) Refresh the Zustand store directly via the
+ *      loose `refreshX` helpers in cloudData.ts so the current React
+ *      render has cloud data immediately — there is no local server to
+ *      wait on.
+ *   2. (Desktop) Kick the embedded server's sync engine (POST
+ *      /api/cloud/sync) so its local fs replica is written through with
+ *      cloud data for every entity type at once; the server then
+ *      broadcasts the synced `*_list`s over WS. The server is the single
+ *      source for the store on desktop — see the note inside the effect.
  *
  * All paths are best-effort; transient errors just log. The hook
  * re-runs when auth flips to `signed_in` or when the current project
@@ -56,23 +54,34 @@ export function useCloudBootstrap(): void {
     let cancelled = false;
     // Fan out the metadata refreshes in parallel — they all populate
     // independent store slices, so there's no ordering constraint.
-    void Promise.allSettled([
-      refreshProjectsCloud(),
-      refreshShowMetasCloud(),
-      refreshHotcardMetasCloud(),
-      refreshTemplateMetasCloud(),
-      refreshSongMetasCloud(),
-      refreshChannelConfigsCloud(),
-    ]).then((results) => {
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0) {
-        for (const r of failed) {
-          if (r.status === "rejected") {
-            console.warn("[useCloudBootstrap] entity refresh failed", r.reason);
+    //
+    // Desktop is the exception: there the same slices are owned by the
+    // local server's WS `*_list` broadcasts, and the server is what takes,
+    // renderer windows and `get_template`/`get_channel` actually read
+    // from. Writing the cloud's lists over them here meant the UI could
+    // offer a template or channel the local server didn't hold yet (the
+    // cloud fetch lands after the WS list and wins). So on desktop we only
+    // kick the server's sync pass below; its fan-out broadcasts the
+    // synced lists within seconds and every reader agrees.
+    if (!isElectron()) {
+      void Promise.allSettled([
+        refreshProjectsCloud(),
+        refreshShowMetasCloud(),
+        refreshHotcardMetasCloud(),
+        refreshTemplateMetasCloud(),
+        refreshSongMetasCloud(),
+        refreshChannelConfigsCloud(),
+      ]).then((results) => {
+        const failed = results.filter((r) => r.status === "rejected");
+        if (failed.length > 0) {
+          for (const r of failed) {
+            if (r.status === "rejected") {
+              console.warn("[useCloudBootstrap] entity refresh failed", r.reason);
+            }
           }
         }
-      }
-    });
+      });
+    }
     listProjectChannelOverridesCloud(currentProjectId)
       .then((overrides) => {
         if (!cancelled) setProjectOverrides(overrides);

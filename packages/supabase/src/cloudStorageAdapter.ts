@@ -10,6 +10,7 @@ import {
   ChannelConfigSchema,
   HotcardSchema,
   ProjectChannelOverrideSchema,
+  ProjectSchema,
   ShowSchema,
   SongSchema,
   TemplateSchema,
@@ -53,7 +54,7 @@ export class CloudStorageAdapter implements StorageAdapter {
   async getProject(orgId: string, id: string): Promise<Project | null> {
     const { data, error } = await this.client
       .from("projects")
-      .select("id, name, notes, created_at, updated_at, deleted_at")
+      .select("id, name, notes, song_custom_field_schema, created_at, updated_at, deleted_at")
       .eq("org_id", orgId)
       .eq("id", id)
       .maybeSingle();
@@ -68,6 +69,7 @@ export class CloudStorageAdapter implements StorageAdapter {
           org_id: orgId,
           name: project.name,
           notes: project.notes ?? null,
+          song_custom_field_schema: project.songCustomFieldSchema ?? null,
           created_at: project.createdAt,
           ...(project.updatedAt ? { updated_at: project.updatedAt } : {}),
           deleted_at: project.deletedAt ?? null,
@@ -92,7 +94,7 @@ export class CloudStorageAdapter implements StorageAdapter {
   ): Promise<Project[]> {
     let q = this.client
       .from("projects")
-      .select("id, name, notes, created_at, updated_at, deleted_at")
+      .select("id, name, notes, song_custom_field_schema, created_at, updated_at, deleted_at")
       .eq("org_id", orgId);
     if (!includeTombstones) q = q.is("deleted_at", null);
     const { data, error } = await q;
@@ -362,7 +364,7 @@ export class CloudStorageAdapter implements StorageAdapter {
         if (!parsed.success) return null;
         return {
           ...parsed.data,
-          updatedAt: row.updated_at,
+          updatedAt: isoZ(row.updated_at),
           deletedAt: row.deleted_at ?? undefined,
         };
       })
@@ -404,7 +406,7 @@ export class CloudStorageAdapter implements StorageAdapter {
         if (!parsed.success || !parsed.data) return null;
         return {
           ...parsed.data,
-          updatedAt: row.updated_at,
+          updatedAt: isoZ(row.updated_at),
           deletedAt: row.deleted_at ?? undefined,
         } as T;
       })
@@ -429,7 +431,7 @@ export class CloudStorageAdapter implements StorageAdapter {
     if (!parsed.success || !parsed.data) return null;
     return {
       ...parsed.data,
-      updatedAt: data.updated_at,
+      updatedAt: isoZ(data.updated_at),
       deletedAt: data.deleted_at ?? undefined,
     } as T;
   }
@@ -471,20 +473,43 @@ export class CloudStorageAdapter implements StorageAdapter {
 
 // ── Row → core type converters ───────────────────────────────────────────
 
+/**
+ * PostgREST renders timestamptz as `2026-08-29T12:00:00+00:00`; every
+ * on-disk write uses JS `toISOString()` (`…00.000Z`). Normalise on the way
+ * in so the two replicas spell one instant the same way — the sync engine
+ * compares instants regardless, but logs, overwrite reports and anything
+ * that round-trips the value back into a payload stay consistent.
+ */
+function isoZ(ts: string): string {
+  const t = Date.parse(ts);
+  return Number.isFinite(t) ? new Date(t).toISOString() : ts;
+}
+
 function rowToProject(row: {
   id: string;
   name: string;
   notes: string | null;
+  song_custom_field_schema: unknown;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
 }): Project {
+  // jsonb comes back untyped. Validate against the same schema the rest
+  // of the app reads it through rather than trusting the column — a row
+  // written before 0010, or by hand, parses as undefined and the field
+  // is simply omitted (which is what legacy projects expect anyway).
+  const fields = ProjectSchema.shape.songCustomFieldSchema.safeParse(
+    row.song_custom_field_schema ?? undefined,
+  );
   return {
     id: row.id,
     name: row.name,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    updatedAt: isoZ(row.updated_at),
     ...(row.notes ? { notes: row.notes } : {}),
+    ...(fields.success && fields.data
+      ? { songCustomFieldSchema: fields.data }
+      : {}),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
   };
 }
@@ -515,7 +540,7 @@ function rowToShow(row: {
       };
   return {
     ...base,
-    updatedAt: row.updated_at,
+    updatedAt: isoZ(row.updated_at),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
   };
 }
@@ -551,7 +576,7 @@ function rowToHotcard(row: {
       };
   return {
     ...base,
-    updatedAt: row.updated_at,
+    updatedAt: isoZ(row.updated_at),
     ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
   };
 }

@@ -65,6 +65,34 @@ export function extFromName(filename: string, mime: string): string {
 }
 
 /**
+ * Mime type for a stored asset filename, from its extension. Used when
+ * bundling assets for publish so the cloud upload gets a real content
+ * type instead of application/octet-stream. "" when unrecognized.
+ */
+export function mimeFromFilename(filename: string): string {
+  const map: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+    ".avif": "image/avif",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".mkv": "video/x-matroska",
+    ".m4v": "video/mp4",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".otf": "font/otf",
+  };
+  return map[path.extname(filename).toLowerCase()] ?? "";
+}
+
+/**
  * Pick an extension from a mime type alone, e.g. for inline `data:` URLs that
  * don't carry a filename. Returns "" when the mime isn't on the allowlist.
  */

@@ -14,17 +14,27 @@ import { useSyncStatus } from "@/lib/useSyncStatus";
  *   - last had errors: bad, "sync error"
  *   - last succeeded: good, "synced Xm ago"
  *   - paired, no pass yet: dim, "sync pending"
+ *   - NOT paired but the server reported an error (e.g. missing Supabase
+ *     env): bad, "sync unavailable" — the one state that must never hide.
  */
 export function SyncStatusPill() {
   const status = useSyncStatus();
-  if (!status || !status.paired) return null;
+  if (!status) return null;
 
   const { running, lastRanAt, lastError, lastResult } = status;
   let tone: PillTone = "dim";
   let label: string;
   let title: string | undefined;
 
-  if (running) {
+  if (!status.paired) {
+    // Not paired: either the user hasn't signed in (nothing to show) or the
+    // server refused the tokens — a misconfigured build used to vanish
+    // here silently, which is how "sync never ran" went unnoticed.
+    if (!lastError) return null;
+    tone = "bad";
+    label = "sync unavailable";
+    title = lastError;
+  } else if (running) {
     tone = "warn";
     label = "syncing…";
   } else if (lastError) {

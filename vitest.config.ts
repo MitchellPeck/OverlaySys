@@ -7,6 +7,7 @@ export default defineConfig({
       "server/src/**/*.test.ts",
       "apps/desktop/src/**/*.test.ts",
       "apps/operator/src/**/*.test.ts",
+      "apps/renderer/src/**/*.test.ts",
     ],
     environment: "node",
     passWithNoTests: false,

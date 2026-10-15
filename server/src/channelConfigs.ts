@@ -1,5 +1,6 @@
 import type { ChannelConfig } from "@overlaysys/core";
 import * as storage from "./storage";
+import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 const REGISTRY = new Map<string, ChannelConfig>();
 let loaded = false;
@@ -18,21 +19,30 @@ async function ensureLoaded(): Promise<void> {
 
 export async function listChannelConfigs(): Promise<ChannelConfig[]> {
   await ensureLoaded();
-  return Array.from(REGISTRY.values());
+  return liveOnly(REGISTRY.values());
 }
 
 export async function getChannelConfig(id: string): Promise<ChannelConfig | null> {
   await ensureLoaded();
-  return REGISTRY.get(id) ?? null;
+  const c = REGISTRY.get(id);
+  return c && isLive(c) ? c : null;
 }
 
-export async function saveChannelConfig(config: ChannelConfig): Promise<void> {
-  await storage.saveChannelConfig(config);
-  REGISTRY.set(config.id, config);
+export async function saveChannelConfig(config: ChannelConfig): Promise<ChannelConfig> {
+  await ensureLoaded();
+  // See templates.saveTemplate — local writes stamp updatedAt for sync.
+  const stamped = stampWrite(config);
+  await storage.saveChannelConfig(stamped);
+  REGISTRY.set(stamped.id, stamped);
+  return stamped;
 }
 
 export async function deleteChannelConfig(id: string): Promise<boolean> {
-  const ok = await storage.deleteChannelConfig(id);
-  if (ok) REGISTRY.delete(id);
-  return ok;
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || !isLive(current)) return false;
+  const dead = tombstone(current);
+  await storage.saveChannelConfig(dead);
+  REGISTRY.set(id, dead);
+  return true;
 }

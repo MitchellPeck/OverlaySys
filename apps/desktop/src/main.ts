@@ -49,6 +49,7 @@ import {
   reapPreviousServer,
   writePidFile,
 } from "./serverProcess";
+import { resolveServerCloudEnv } from "./serverEnv";
 import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
@@ -407,8 +408,18 @@ function spawnServer(): Promise<{ port: number }> {
   // separate install.
   const sharedNodePath = path.join(serverDir, "node_modules");
 
+  // A packaged user's <userData>/.env is the only per-machine override
+  // they have. Load it BEFORE the child inherits process.env — the lazy
+  // IPC-time load below is too late for anything the server reads at
+  // boot (cloud credentials, PORT/HOST overrides).
+  ensureUserDataEnv();
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    // The server's sync engine reads OVERLAYSYS_SUPABASE_*; the desktop
+    // only ever has the operator's NEXT_PUBLIC_SUPABASE_* pair. Bridge
+    // them or the server rejects every token push and sync never runs.
+    ...resolveServerCloudEnv(process.env),
     ELECTRON_RUN_AS_NODE: "1",
     // Default to 4000 so external integrations (Companion, Stream Deck,
     // anything that connects to the WS) can target a known port. Set
@@ -615,11 +626,15 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
       ? screen.getAllDisplays().find((d) => d.id === opts.displayId)
       : undefined) ?? screen.getPrimaryDisplay();
 
+  // Cascade successive windows so a second output opened on the same
+  // display doesn't land exactly on top of the first (program and alpha
+  // both defaulted to +40,+40 and one hid the other).
+  const cascade = 40 * (1 + (channelWindows.size % 8));
   const win = new BrowserWindow({
     width: 1280,
     height: 720,
-    x: targetDisplay.bounds.x + 40,
-    y: targetDisplay.bounds.y + 40,
+    x: targetDisplay.bounds.x + cascade,
+    y: targetDisplay.bounds.y + cascade,
     title: `Channel — ${channelId}`,
     backgroundColor: opts.transparent ? "#00000000" : "#000000",
     transparent: !!opts.transparent,
@@ -666,7 +681,54 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
     win.setSimpleFullScreen(true);
   }
 
-  win.loadURL(rendererChannelUrl(channelId));
+  const url = rendererChannelUrl(channelId);
+  console.log(
+    `[desktop] channel window "${channelId}": loading ${url} ` +
+      `display=${targetDisplay.id} (${targetDisplay.label || "unlabeled"} ` +
+      `${targetDisplay.bounds.width}x${targetDisplay.bounds.height}) ` +
+      `opts=${JSON.stringify({
+        fullscreen: !!opts.fullscreen,
+        frameless: !!opts.frameless,
+        alwaysOnTop: !!opts.alwaysOnTop,
+        transparent: !!opts.transparent,
+      })}`,
+  );
+  win.loadURL(url);
+
+  // A channel window is a broadcast output with no operator looking at
+  // its devtools. Without these hooks a blank output leaves no trace —
+  // the renderer's own console (WS status, mirror source, template
+  // fetch errors) never reaches boot.log. Same handlers as the operator
+  // window, plus console forwarding.
+  win.webContents.on("did-finish-load", () => {
+    console.log(`[desktop] channel "${channelId}": loaded`);
+  });
+  win.webContents.on(
+    "did-fail-load",
+    (_e, code, description, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return;
+      console.error(
+        `[desktop] channel "${channelId}" did-fail-load: code=${code} desc=${description} url=${validatedURL}`,
+      );
+    },
+  );
+  win.webContents.on("render-process-gone", (_e, details) => {
+    console.error(
+      `[desktop] channel "${channelId}" render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`,
+    );
+  });
+  win.webContents.on("unresponsive", () => {
+    console.warn(`[desktop] channel "${channelId}" renderer unresponsive`);
+  });
+  win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    // Info/debug chatter (GSAP, React) is noise in a boot log; warnings
+    // and errors are exactly what a "why is this output black" report
+    // needs. Electron 33 levels: 0 verbose, 1 info, 2 warning, 3 error.
+    if (level < 2) return;
+    console.warn(
+      `[desktop] channel "${channelId}" console.${level === 3 ? "error" : "warn"}: ${message} (${sourceId}:${line})`,
+    );
+  });
 
   win.on("closed", () => {
     // Guard: forceRecreate flow closes the old window AFTER inserting

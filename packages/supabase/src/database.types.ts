@@ -29,6 +29,7 @@ export interface Database {
           org_id: string;
           name: string;
           notes: string | null;
+          song_custom_field_schema: Json | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -38,6 +39,7 @@ export interface Database {
           org_id: string;
           name: string;
           notes?: string | null;
+          song_custom_field_schema?: Json | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -45,6 +47,8 @@ export interface Database {
         Update: {
           name?: string;
           notes?: string | null;
+          song_custom_field_schema?: Json | null;
+          updated_at?: string;
           deleted_at?: string | null;
         };
         Relationships: [];
