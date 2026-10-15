@@ -3,6 +3,8 @@ import type { Template, ChannelState, ChannelConfig } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
 import { createMirrorSubscription } from "./mirrorSubscription";
+import { MediaLayer } from "./MediaLayer";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 type Props = {
   channel: string;
@@ -59,6 +61,8 @@ export function Renderer({ channel, debug = false }: Props) {
   // mirrorSubscription.ts where it is unit-tested — see that file for the
   // reconnect bug that used to black out the alpha output.
   const subscriptionRef = useRef(createMirrorSubscription(channel));
+  const clientRef = useRef<WsClient | null>(null);
+  const sendRef = useRef((msg: ClientMessage) => clientRef.current?.send(msg));
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
@@ -112,6 +116,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
   useEffect(() => {
     const client = new WsClient(defaultServerUrl());
+    clientRef.current = client;
 
     function ensureTemplate(id: string): Promise<Template> {
       const cached = templateCacheRef.current.get(id);
@@ -347,6 +352,7 @@ export function Renderer({ channel, debug = false }: Props) {
       offStatus();
       offMsg();
       client.close();
+      clientRef.current = null;
       if (songFadeOutTimerRef.current) {
         clearTimeout(songFadeOutTimerRef.current);
         songFadeOutTimerRef.current = null;
@@ -371,6 +377,14 @@ export function Renderer({ channel, debug = false }: Props) {
           zIndex: 0,
         }}
       />
+      <MediaLayer
+        media={latestState?.media ?? null}
+        channel={channel}
+        isMirror={subscriptionRef.current.source !== channel}
+        matte={matte}
+        scale={scale}
+        send={sendRef.current}
+      />
       <div
         ref={stageRef}
         style={{
@@ -386,7 +400,7 @@ export function Renderer({ channel, debug = false }: Props) {
           // transparent and reveal the bg's black background. Result:
           // white silhouette on black, suitable for hardware fill+key.
           filter: matte ? "brightness(0) invert(1)" : undefined,
-          zIndex: 1,
+          zIndex: 2,
           opacity: songFadeOpacity,
           transition: songFadeTransitionMs > 0
             ? `opacity ${songFadeTransitionMs}ms ease`
@@ -444,6 +458,7 @@ function DebugOverlay({
       <div>mode: {config?.renderMode ?? "normal"}</div>
       <div>scale: {(scale * 100).toFixed(0)}%</div>
       <div>active: {state?.active ? `${state.active.templateId} (${state.active.phase})` : "—"}</div>
+      <div>media: {state?.media ? `${state.media.label ?? state.media.rowId} (${state.media.playback.status})` : "—"}</div>
     </div>
   );
 }
