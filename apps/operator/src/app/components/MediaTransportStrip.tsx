@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChannelMedia } from "@overlaysys/core";
-import { Film, Play } from "lucide-react";
+import { Film, Pause, Play, RotateCcw } from "lucide-react";
 import { Button, colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -161,9 +161,9 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
         {media.paused ? (
           <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}><Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Play</Button>
         ) : (
-          <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}>❚❚ Pause</Button>
+          <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}><Pause size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pause</Button>
         )}
-        <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}>⟲ Restart</Button>
+        <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}><RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Restart</Button>
         <Button
           size="sm"
           variant="danger"
