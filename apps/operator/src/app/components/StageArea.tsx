@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { BookOpen, Film, Music, RotateCcw, Type } from "lucide-react";
 import { resolveSongChannel, type ChannelConfig, type ChannelState, type GraphicRow, type VideoRow } from "@overlaysys/core";
-import { Button, IconButton, PanelHeader, colors, space } from "@overlaysys/ui";
+import { Button, IconButton, PanelHeader, colors, radius, space } from "@overlaysys/ui";
 import { FieldInput } from "@/lib/FieldInput";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock, onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
-import { editedFieldKeys, effectiveRowData, graphicRowMessage } from "@/lib/rowData";
+import { editedFieldKeys, effectiveRowData, graphicRowMessage, upNextRows } from "@/lib/rowData";
 import { shortcutHint, stageModeFor, type StageMode } from "@/lib/stageMode";
 import { SongModePanel } from "./SongModePanel";
 import { SongTakeStrip } from "./SongTakeStrip";
@@ -63,7 +63,12 @@ export function StageArea() {
             )}
           </>
         ) : (
-          <SelectionControls mode={mode} />
+          <>
+            <SelectionControls mode={mode} />
+            {(mode.kind === "graphic" || mode.kind === "video" || mode.kind === "song" || mode.kind === "scripture") && (
+              <UpNext selectedRowId={mode.row.id} />
+            )}
+          </>
         )}
       </div>
       <div style={{ padding: "6px 12px", fontSize: 11, color: colors.textMuted, borderTop: `1px solid ${colors.border}` }}>
@@ -284,6 +289,120 @@ function StagePreview({ rowId, templateId, data }: { rowId: string; templateId: 
       <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>Selected</div>
       <ChannelPreview config={STAGE_PREVIEW_CONFIG} state={state} />
     </div>
+  );
+}
+
+/** The next few rundown rows after the selection, each with its own quick controls. */
+function UpNext({ selectedRowId }: { selectedRowId: string }) {
+  const { send } = useWs();
+  const show = useStore((s) => s.show);
+  const templates = useStore((s) => s.templates);
+  const songs = useStore((s) => s.songs);
+  const overrides = useStore((s) => s.rowDataOverrides);
+  const channelStates = useStore((s) => s.channelStates);
+  const setSelectedRow = useStore((s) => s.setSelectedRow);
+  const disconnected = useStore((s) => s.conn) !== "open";
+  const rows = upNextRows(show, selectedRowId, 3);
+  if (!show || rows.length === 0) return null;
+
+  const btn = { disabled: disconnected, title: disconnected ? "Disconnected from server" : undefined };
+  const stop = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    fn();
+  };
+
+  return (
+    <section style={{ marginTop: space[4], paddingTop: space[3], borderTop: `1px solid ${colors.border}` }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: colors.textDim, marginBottom: space[2] }}>Up next</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: space[1] }}>
+        {rows.map((row) => {
+          const index = show.rows.indexOf(row) + 1;
+          let icon: React.ReactNode;
+          let title: string;
+          let actions: React.ReactNode;
+          switch (row.kind) {
+            case "graphic": {
+              const name = templates.find((t) => t.id === row.templateId)?.name ?? row.templateId;
+              const t = effectiveRowData(row, overrides).title;
+              icon = <Type size={14} />;
+              title = t ? `${name} · ${t}` : name;
+              actions = (
+                <>
+                  <Button size="sm" {...btn} onClick={stop(() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides)))}>
+                    Cue
+                  </Button>
+                  <Button size="sm" variant="onair" {...btn} onClick={stop(() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides)))}>
+                    Take
+                  </Button>
+                </>
+              );
+              break;
+            }
+            case "video": {
+              const onAir = !!onAirMediaFor(row, channelStates);
+              icon = <Film size={14} />;
+              title = row.label || "Video";
+              actions = (
+                <Button
+                  size="sm"
+                  variant="onair"
+                  disabled={disconnected || onAir}
+                  title={disconnected ? "Disconnected from server" : onAir ? "Already on air" : undefined}
+                  onClick={stop(() => {
+                    if (onAirMediaFor(row, useStore.getState().channelStates)) return;
+                    send(videoRowTakeMessage(row));
+                  })}
+                >
+                  Take
+                </Button>
+              );
+              break;
+            }
+            case "song":
+              icon = <Music size={14} />;
+              title = songs.find((s) => s.id === row.songId)?.title ?? row.songId;
+              actions = (
+                <Button size="sm" variant="ghost" onClick={stop(() => setSelectedRow(row.id))}>
+                  Select
+                </Button>
+              );
+              break;
+            case "scripture":
+              icon = <BookOpen size={14} />;
+              title = row.reference || "Scripture";
+              actions = (
+                <Button size="sm" variant="ghost" onClick={stop(() => setSelectedRow(row.id))}>
+                  Select
+                </Button>
+              );
+              break;
+          }
+          return (
+            <div
+              key={row.id}
+              onClick={() => setSelectedRow(row.id)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: space[2],
+                padding: "4px 8px",
+                borderRadius: radius.sm,
+                background: colors.surface,
+                cursor: "pointer",
+                minWidth: 0,
+              }}
+            >
+              <span style={{ width: 18, textAlign: "right", color: colors.textMuted, fontSize: 11 }}>{index}</span>
+              <span style={{ color: colors.textDim, display: "inline-flex" }}>{icon}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13 }} title={title}>
+                {title}
+              </span>
+              <span style={{ display: "flex", gap: space[1], flexShrink: 0 }}>{actions}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
