@@ -58,7 +58,7 @@ export function StageArea() {
                 <div style={{ fontSize: 12, fontWeight: 600, color: colors.textDim, marginBottom: 8 }}>
                   Selected: <SelectionTitle mode={extra} />
                 </div>
-                <SelectionControls mode={extra} />
+                <SelectionControls mode={extra} compact />
               </section>
             )}
           </>
@@ -78,8 +78,12 @@ export function StageArea() {
   );
 }
 
-/** Controls for a non-song-live stage mode. Shared by the main stage and the song-mode "Selected" section. */
-function SelectionControls({ mode }: { mode: StageMode }) {
+/**
+ * Controls for a non-song-live stage mode. Shared by the main stage and the
+ * song-mode "Selected" section; `compact` (song mode) drops previews so
+ * Cue/Take sit directly under the "Selected" header.
+ */
+function SelectionControls({ mode, compact = false }: { mode: StageMode; compact?: boolean }) {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const songSessions = useStore((s) => s.songSessions);
@@ -115,7 +119,7 @@ function SelectionControls({ mode }: { mode: StageMode }) {
     case "scripture":
       return <ScriptureTakeStrip row={mode.row} channel={mode.row.channelHint ?? "program"} />;
     case "graphic":
-      return <GraphicStage row={mode.row} />;
+      return <GraphicStage key={mode.row.id} row={mode.row} compact={compact} />;
     case "video":
       return (
         <>
@@ -124,7 +128,7 @@ function SelectionControls({ mode }: { mode: StageMode }) {
           ) : (
             <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row))} />
           )}
-          <VideoDetails row={mode.row} />
+          <VideoDetails key={mode.row.id} row={mode.row} />
         </>
       );
     case "hotcard": {
@@ -140,9 +144,9 @@ function SelectionControls({ mode }: { mode: StageMode }) {
           <div style={{ fontWeight: 600, marginBottom: 8 }}>
             {hotcards.find((h) => h.id === mode.hotcardId)?.name ?? "Hotcard"}
           </div>
-          <div style={stageColumns}>
+          <div key={mode.hotcardId} style={stageColumns}>
             <div style={previewColumn}>
-              {h && <StagePreview rowId={`hotcard:${h.id}`} templateId={h.templateId} data={h.data} />}
+              {h && !compact && <StagePreview rowId={`hotcard:${h.id}`} templateId={h.templateId} data={h.data} />}
               <TakeButtons onCue={() => fireHotcard(mode.hotcardId, "preview")} onTake={() => fireHotcard(mode.hotcardId, "program")} />
             </div>
             {entries.length > 0 && (
@@ -178,27 +182,41 @@ const previewColumn: React.CSSProperties = {
 };
 const fieldsColumn: React.CSSProperties = { flex: "999 1 320px", minWidth: 0 };
 
-/** Selected graphic row: preview + Cue/Take on the left, session-only field edits on the right. */
-function GraphicStage({ row }: { row: GraphicRow }) {
+/**
+ * Selected graphic row: preview + Cue/Take on the left, session-only field
+ * edits on the right. Compact (song mode) shows Cue/Take first, then fields,
+ * with no preview.
+ */
+function GraphicStage({ row, compact }: { row: GraphicRow; compact: boolean }) {
   const { send } = useWs();
   const templateCache = useStore((s) => s.templateCache);
-  const overrides = useStore((s) => s.rowDataOverrides);
+  const rowOverrides = useStore((s) => s.rowDataOverrides[row.id]);
   const setRowFieldOverride = useStore((s) => s.setRowFieldOverride);
   const clearRowOverrides = useStore((s) => s.clearRowOverrides);
-  const data = useMemo(() => effectiveRowData(row, overrides), [row, overrides]);
-  const edited = editedFieldKeys(row, overrides);
+  // Only this row's edits, so other rows' edits don't re-render the preview.
+  const own = useMemo(() => (rowOverrides ? { [row.id]: rowOverrides } : {}), [row.id, rowOverrides]);
+  const data = useMemo(() => effectiveRowData(row, own), [row, own]);
+  const edited = editedFieldKeys(row, own);
   const fields = templateCache[row.templateId]?.fields;
 
+  const takeButtons = (
+    <TakeButtons
+      onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides))}
+      onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides))}
+    />
+  );
+
   return (
-    <div style={stageColumns}>
-      <div style={previewColumn}>
-        <StagePreview rowId={row.id} templateId={row.templateId} data={data} />
-        <TakeButtons
-          onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides))}
-          onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides))}
-        />
-      </div>
-      <div style={fieldsColumn}>
+    <div style={compact ? { display: "flex", flexDirection: "column", gap: space[3] } : stageColumns}>
+      {compact ? (
+        takeButtons
+      ) : (
+        <div style={previewColumn}>
+          <StagePreview rowId={row.id} templateId={row.templateId} data={data} />
+          {takeButtons}
+        </div>
+      )}
+      <div style={compact ? { minWidth: 0 } : fieldsColumn}>
         {!fields ? (
           <p style={{ fontSize: 12, color: colors.textDim, margin: 0 }}>Loading fields…</p>
         ) : (
@@ -292,7 +310,11 @@ function StagePreview({ rowId, templateId, data }: { rowId: string; templateId: 
   );
 }
 
-/** The next few rundown rows after the selection, each with its own quick controls. */
+/**
+ * The next few rundown rows after the selection, each with its own quick
+ * controls. Cards aren't click targets: the list shifts when the selection
+ * moves, so only explicit buttons act.
+ */
 function UpNext({ selectedRowId }: { selectedRowId: string }) {
   const { send } = useWs();
   const show = useStore((s) => s.show);
@@ -306,10 +328,17 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
   if (!show || rows.length === 0) return null;
 
   const btn = { disabled: disconnected, title: disconnected ? "Disconnected from server" : undefined };
-  const stop = (fn: () => void) => (e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Blur after clicking so a later Space/Enter goes to the global shortcuts, not this button.
+  const act = (fn: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
     fn();
+    e.currentTarget.blur();
   };
+  // Cue/Take also select the row (as Rundown double-click does), so Space follows what was sent.
+  const select = (id: string) => (
+    <Button size="sm" variant="ghost" onClick={act(() => setSelectedRow(id))}>
+      Select
+    </Button>
+  );
 
   return (
     <section style={{ marginTop: space[4], paddingTop: space[3], borderTop: `1px solid ${colors.border}` }}>
@@ -328,10 +357,26 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
               title = t ? `${name} · ${t}` : name;
               actions = (
                 <>
-                  <Button size="sm" {...btn} onClick={stop(() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides)))}>
+                  {select(row.id)}
+                  <Button
+                    size="sm"
+                    {...btn}
+                    onClick={act(() => {
+                      setSelectedRow(row.id);
+                      send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides));
+                    })}
+                  >
                     Cue
                   </Button>
-                  <Button size="sm" variant="onair" {...btn} onClick={stop(() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides)))}>
+                  <Button
+                    size="sm"
+                    variant="onair"
+                    {...btn}
+                    onClick={act(() => {
+                      setSelectedRow(row.id);
+                      send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides));
+                    })}
+                  >
                     Take
                   </Button>
                 </>
@@ -343,44 +388,39 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
               icon = <Film size={14} />;
               title = row.label || "Video";
               actions = (
-                <Button
-                  size="sm"
-                  variant="onair"
-                  disabled={disconnected || onAir}
-                  title={disconnected ? "Disconnected from server" : onAir ? "Already on air" : undefined}
-                  onClick={stop(() => {
-                    if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-                    send(videoRowTakeMessage(row));
-                  })}
-                >
-                  Take
-                </Button>
+                <>
+                  {select(row.id)}
+                  <Button
+                    size="sm"
+                    variant="onair"
+                    disabled={disconnected || onAir}
+                    title={disconnected ? "Disconnected from server" : onAir ? "Already on air" : undefined}
+                    onClick={act(() => {
+                      setSelectedRow(row.id);
+                      if (onAirMediaFor(row, useStore.getState().channelStates)) return;
+                      send(videoRowTakeMessage(row));
+                    })}
+                  >
+                    Take
+                  </Button>
+                </>
               );
               break;
             }
             case "song":
               icon = <Music size={14} />;
               title = songs.find((s) => s.id === row.songId)?.title ?? row.songId;
-              actions = (
-                <Button size="sm" variant="ghost" onClick={stop(() => setSelectedRow(row.id))}>
-                  Select
-                </Button>
-              );
+              actions = select(row.id);
               break;
             case "scripture":
               icon = <BookOpen size={14} />;
               title = row.reference || "Scripture";
-              actions = (
-                <Button size="sm" variant="ghost" onClick={stop(() => setSelectedRow(row.id))}>
-                  Select
-                </Button>
-              );
+              actions = select(row.id);
               break;
           }
           return (
             <div
               key={row.id}
-              onClick={() => setSelectedRow(row.id)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -388,7 +428,6 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
                 padding: "4px 8px",
                 borderRadius: radius.sm,
                 background: colors.surface,
-                cursor: "pointer",
                 minWidth: 0,
               }}
             >
