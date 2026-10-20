@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -24,6 +25,7 @@ import {
   Select,
   Stack,
   colors,
+  StatusDot,
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -652,23 +654,17 @@ export default function PcoPage() {
                           <strong style={{ color: colors.text }}>
                             {draft?.title ?? item.title}
                           </strong>
-                          <Pill tone={updatesExisting ? "warn" : "accent"} uppercase>
+                          <Pill tone={updatesExisting ? "warn" : "accent"}>
                             {updatesExisting ? "updates existing" : "creates new"}
                           </Pill>
                           {pv?.hasLyrics === false && (
-                            <Pill tone="dim" uppercase>
-                              no lyrics
-                            </Pill>
+                            <StatusDot tone="dim" label="no lyrics" />
                           )}
                           {pv?.lyricsFromArrangement && (
-                            <Pill tone="good" uppercase>
-                              lyrics from {pv.lyricsFromArrangement}
-                            </Pill>
+                            <StatusDot tone="good" label={`lyrics from ${pv.lyricsFromArrangement}`} />
                           )}
                           {customizedSongs.has(item.id) && (
-                            <Pill tone="good" uppercase>
-                              customized
-                            </Pill>
+                            <StatusDot tone="good" label="customized" />
                           )}
                           <div style={{ marginLeft: "auto" }}>
                             <Button
@@ -756,7 +752,7 @@ export default function PcoPage() {
                   </p>
                   {result.warnings.map((w, i) => (
                     <p key={i} style={{ color: colors.textDim, fontSize: 13 }}>
-                      ⚠ {w}
+                      <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {w}
                     </p>
                   ))}
                   {result.errors.map((e, i) => (
@@ -836,7 +832,7 @@ function ItemConfigCard({
       <Inline gap={2} align="center">
         <input type="checkbox" checked={cfg.include} onChange={onToggleInclude} />
         <strong style={{ color: colors.text }}>{item.title}</strong>
-        <Pill tone={isSong ? "accent" : "dim"} uppercase>
+        <Pill tone={isSong ? "accent" : "dim"}>
           {item.itemType}
         </Pill>
       </Inline>

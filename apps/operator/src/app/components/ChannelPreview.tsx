@@ -1,5 +1,6 @@
 "use client";
 
+import { Play } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
@@ -228,7 +229,7 @@ export function ChannelPreview({ config, state }: Props) {
             pointerEvents: "none",
           }}
         >
-          ▶ {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
+          <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
         </div>
       )}
     </div>

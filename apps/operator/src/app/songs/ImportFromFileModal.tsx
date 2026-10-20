@@ -110,7 +110,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
           <Field
             label="Slug"
             layout="inline"
-            hint={existingIds.has(slug) ? "⚠ slug collides with existing song" : undefined}
+            hint={existingIds.has(slug) ? "Slug collides with existing song" : undefined}
           >
             <Input
               value={slug}

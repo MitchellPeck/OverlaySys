@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ScriptureVerse } from "@overlaysys/scripture";
 import { Button, colors } from "@overlaysys/ui";
 
@@ -49,7 +50,7 @@ export function ScriptureSlideEditor({ slides, onChange }: Props) {
                   disabled={isFirstVerseOfFirstSlide}
                   onClick={() => onChange(moveVerse(slides, slideIdx, verseIdx, -1))}
                 >
-                  ◀
+                  <ChevronLeft size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
                 </Button>
                 <Button
                   size="sm"
@@ -58,7 +59,7 @@ export function ScriptureSlideEditor({ slides, onChange }: Props) {
                   disabled={isLastVerseOfLastSlide}
                   onClick={() => onChange(moveVerse(slides, slideIdx, verseIdx, +1))}
                 >
-                  ▶
+                  <ChevronRight size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
                 </Button>
               </div>
             );

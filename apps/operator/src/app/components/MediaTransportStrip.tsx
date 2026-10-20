@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChannelMedia } from "@overlaysys/core";
-import { Film } from "lucide-react";
+import { Film, Play } from "lucide-react";
 import { Button, colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -159,7 +159,7 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
 
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         {media.paused ? (
-          <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}>▶ Play</Button>
+          <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}><Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Play</Button>
         ) : (
           <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}>❚❚ Pause</Button>
         )}

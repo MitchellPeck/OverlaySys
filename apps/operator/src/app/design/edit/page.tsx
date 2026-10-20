@@ -1,5 +1,6 @@
 "use client";
 
+import { Eye } from "lucide-react";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -743,7 +744,7 @@ const selectStyle: React.CSSProperties = {
 function FieldsLink() {
   return (
     <span style={{ fontSize: 11, color: colors.textDim }}>
-      drag to reorder · 👁 to hide
+      drag to reorder · <Eye size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> to hide
     </span>
   );
 }

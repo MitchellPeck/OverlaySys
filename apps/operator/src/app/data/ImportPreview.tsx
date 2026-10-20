@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import {
   detectImport,
@@ -370,7 +371,7 @@ export function ImportPreview() {
                   <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                     {row.conflict ? (
                       <>
-                        <span style={{ color: colors.warn, fontSize: 11 }}>⚠ exists</span>
+                        <span style={{ color: colors.warn, fontSize: 11 }}><TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> exists</span>
                         <label style={{ fontSize: 11 }}>
                           <input
                             type="radio"
@@ -446,7 +447,7 @@ export function ImportPreview() {
           }}
         >
           <strong>
-            {result.ok ? "✓ Imported" : "Imported with errors"}: {result.counts.templates}{" "}
+            {result.ok ? <><Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Imported</> : "Imported with errors"}: {result.counts.templates}{" "}
             template(s), {result.counts.songs} song(s), {result.counts.hotcards} hotcard(s),{" "}
             {result.counts.shows} show(s), {result.counts.assets} asset(s)
           </strong>

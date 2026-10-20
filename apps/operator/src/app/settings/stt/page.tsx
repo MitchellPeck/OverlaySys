@@ -20,6 +20,7 @@ import {
   Textarea,
   colors,
   type PillTone,
+  StatusDot,
 } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -217,6 +218,9 @@ function SttControlPageLocal() {
     ? "warn"
     : STATE_TONES[state] ?? "dim";
 
+  const statusLabel =
+    pendingAction === "start" ? "starting" : pendingAction === "stop" ? "stopping" : state;
+
   const binaryPresent = presence?.binary.path != null;
   const modelPresent = presence?.selectedModel.present ?? false;
   const binaryJob = installJobs["binary"];
@@ -231,13 +235,11 @@ function SttControlPageLocal() {
         title="STT Spawner"
         actions={
           <>
-            <Pill tone={tone} uppercase>
-              {pendingAction === "start"
-                ? "starting"
-                : pendingAction === "stop"
-                ? "stopping"
-                : state}
-            </Pill>
+            {tone === "warn" || tone === "bad" || tone === "live" ? (
+              <Pill tone={tone}>{statusLabel}</Pill>
+            ) : (
+              <StatusDot tone={tone} label={statusLabel} />
+            )}
             {pendingAction === "start" ? (
               <Button disabled variant="primary" size="sm">
                 Starting…
@@ -722,9 +724,11 @@ function RequirementRow(props: {
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Pill tone={props.present ? "good" : "bad"}>
-            {props.present ? "Installed" : "Missing"}
-          </Pill>
+          {props.present ? (
+            <StatusDot tone="good" label="Installed" />
+          ) : (
+            <Pill tone="bad">Missing</Pill>
+          )}
           <span style={{ fontSize: 13, fontWeight: 500 }}>{props.label}</span>
         </div>
         <div
@@ -948,9 +952,7 @@ function InstalledModelsList(props: {
                 >
                   {m.filename}
                   {selected && (
-                    <Pill tone="good" style={{ marginLeft: 6 }}>
-                      Selected
-                    </Pill>
+                    <StatusDot tone="good" label="Selected" style={{ marginLeft: 6 }} />
                   )}
                 </div>
                 <div style={{ fontSize: 10, color: colors.textDim, marginTop: 2 }}>

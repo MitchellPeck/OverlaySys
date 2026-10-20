@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collectDependencies,
@@ -386,7 +387,7 @@ export function ExportBundle() {
             fontSize: 12,
           }}
         >
-          <strong>⚠ {preview.missing.length} reference(s) not found locally</strong>
+          <strong><TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {preview.missing.length} reference(s) not found locally</strong>
           <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
             {preview.missing.map((m, i) => (
               <li key={i}>

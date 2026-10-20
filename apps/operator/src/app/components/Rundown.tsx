@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { Field } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
 import { IconButton, Modal, colors, radius } from "@overlaysys/ui";
-import { BookOpen, Film, Music, Type } from "lucide-react";
+import { BookOpen, Film, Image, Music, Type } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
@@ -324,7 +324,7 @@ function renderFieldValue(
             fontStyle: "normal",
           }}
         >
-          🖼 view image
+          <Image size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> view image
         </button>
       );
     case "number":

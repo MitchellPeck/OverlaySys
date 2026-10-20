@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import { IconButton, Input, Pill, Select, colors } from "@overlaysys/ui";
 import type {
   FieldDescriptor,
@@ -230,7 +231,7 @@ export function FieldMappingTable({
                   title="Exact key match"
                   style={{ color: colors.green, fontWeight: 700 }}
                 >
-                  ✓
+                  <Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
                 </span>
               )}
               {showSuggestedPill && (
@@ -245,7 +246,7 @@ export function FieldMappingTable({
                     cursor: "pointer",
                   }}
                 >
-                  <Pill tone="warn" uppercase>
+                  <Pill tone="warn">
                     suggested
                   </Pill>
                 </button>

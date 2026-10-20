@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   type Song,
@@ -754,7 +755,7 @@ export function SongDraftEditor({
                     style={{ flex: 1 }}
                   />
                   <Button onClick={() => removeSlide(secIdx, slideIdx)} size="sm" disabled={sec.slides.length <= 1}>
-                    ✕
+                    <X size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
                   </Button>
                 </div>
               ))}

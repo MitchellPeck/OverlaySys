@@ -1,5 +1,6 @@
 "use client";
 
+import { Play } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Show, SongRow, SongSessionSummary } from "@overlaysys/core";
 import {
@@ -291,7 +292,7 @@ function SegmentButton({
     >
       {isHighlight && (
         <span aria-hidden style={{ marginRight: 6 }}>
-          ▶
+          <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
         </span>
       )}
       {label}

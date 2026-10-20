@@ -1,5 +1,6 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -199,7 +200,7 @@ export function ChannelWindowSettingsPopover({
           ))}
           {cachedConfigured && (
             <option value={cachedConfigured.id}>
-              {cachedConfigured.label} ⚠ not attached
+              {cachedConfigured.label} <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> not attached
             </option>
           )}
         </select>
@@ -241,7 +242,7 @@ export function ChannelWindowSettingsPopover({
               (d) => d.deviceId === prefs.audioOutput!.deviceId || d.label === prefs.audioOutput!.label,
             ) && (
               <option value={prefs.audioOutput.deviceId}>
-                {prefs.audioOutput.label} ⚠ not connected
+                {prefs.audioOutput.label} <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> not connected
               </option>
             )}
         </select>

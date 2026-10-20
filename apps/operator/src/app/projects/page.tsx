@@ -1,5 +1,6 @@
 "use client";
 
+import { Cloud } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, colors } from "@overlaysys/ui";
 import { DEFAULT_PROJECT_ID, type Project } from "@overlaysys/core";
@@ -246,7 +247,7 @@ export default function ProjectsIndexPage() {
                 size="sm"
                 style={{ width: 96 }}
               >
-                {publishing === p.id ? "Publishing…" : "☁ Publish"}
+                {publishing === p.id ? "Publishing…" : <><Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Publish</>}
               </Button>
             )}
             {p.id !== currentProjectId && (
