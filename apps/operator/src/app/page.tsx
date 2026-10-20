@@ -2,17 +2,18 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { colors } from "@overlaysys/ui";
+import { colors, PanelHeader } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { isCloudMode } from "@/lib/mode";
 import { ShowPicker } from "./components/ShowPicker";
 import { Rundown } from "./components/Rundown";
-import { TakePanel } from "./components/TakePanel";
-import { ChannelsList } from "./components/ChannelsList";
+import { Monitors } from "./components/Monitors";
+import { StageArea } from "./components/StageArea";
+import { TimersRail } from "./components/TimersRail";
+import { HotcardsPanel } from "./components/HotcardsPanel";
+import { ConsoleBottomBar } from "./components/ConsoleBottomBar";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
-import { SongModePanel } from "./components/SongModePanel";
-import { MediaTransportStrip } from "./components/MediaTransportStrip";
 import { PageChrome } from "./shell/PageChrome";
 
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
@@ -40,12 +41,6 @@ function ShowPageLocal() {
   const show = useStore((s) => s.show);
   const programSession = useStore((s) => s.songSessions["program"]);
   const previewSession = useStore((s) => s.songSessions["preview"]);
-  const activeSongChannel: "program" | "preview" | null = programSession
-    ? "program"
-    : previewSession
-    ? "preview"
-    : null;
-  const activeSongSession = programSession ?? previewSession ?? null;
   useEffect(() => {
     if (show || showMetas.length === 0) return;
     const saved =
@@ -69,135 +64,43 @@ function ShowPageLocal() {
 
   useGlobalShortcuts();
 
-  const songModeActive = activeSongSession !== null;
+  const songModeActive = !!(programSession ?? previewSession);
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        gridTemplateRows: songModeActive ? "minmax(0,1fr) auto" : "minmax(0,1fr)",
-        overflow: "hidden",
-      }}
-    >
-      <PageChrome title="Show" />
+    <div style={{ height: "100%", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", overflow: "hidden" }}>
+      <PageChrome title="Show" context={<ShowPicker />} />
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: songModeActive
-            ? "260px minmax(0, 1fr)"
-            : "minmax(360px, 1fr) 360px 320px",
+          gridTemplateColumns: "320px minmax(0, 1fr) 300px",
           gap: 1,
           background: colors.border,
           minHeight: 0,
         }}
       >
-        <ShellPanel title="Rundown" actions={<ShowPicker />}>
-          <Rundown />
-        </ShellPanel>
-
-        <ShellPanel
-          title={
-            activeSongChannel === "program"
-              ? "Song mode (PGM)"
-              : activeSongChannel === "preview"
-              ? "Song mode (PVW · cued)"
-              : "Take controls"
-          }
-        >
-          <MediaTransportStrip />
-          {activeSongSession && activeSongChannel ? (
-            <SongModePanel channel={activeSongChannel} session={activeSongSession} />
-          ) : (
-            <TakePanel />
-          )}
-        </ShellPanel>
-
-        {!songModeActive && (
-          <ShellPanel title="Channels">
-            <ChannelsList />
-          </ShellPanel>
-        )}
-      </div>
-
-      {songModeActive && (
-        <section
-          style={{
-            background: colors.panel,
-            borderTop: `1px solid ${colors.border}`,
-            padding: "10px 16px",
-            overflowX: "auto",
-            overflowY: "auto",
-            maxHeight: 380,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
-            <h3
-              style={{
-                margin: 0,
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                color: colors.textDim,
-              }}
-            >
-              Channels & Preview
-            </h3>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "stretch",
-              flexWrap: "nowrap",
-            }}
-          >
-            <ChannelsList orientation="horizontal" />
+        <section style={columnStyle}>
+          <PanelHeader title="Rundown" right={show ? `${show.rows.length} items` : undefined} />
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <Rundown />
           </div>
         </section>
-      )}
+        <section style={columnStyle}>
+          <Monitors compact={songModeActive} />
+          <StageArea />
+        </section>
+        <section style={columnStyle}>
+          <TimersRail />
+          <HotcardsPanel />
+        </section>
+      </div>
+      <ConsoleBottomBar />
     </div>
   );
 }
 
-/**
- * Operator shell pane — the fixed three-column layout's panel header style is
- * domain-specific (small uppercase letterspaced label) and distinct from the
- * bordered card primitive. Kept local so the operator hot-path layout doesn't
- * pull in @overlaysys/ui Panel's title typography.
- */
-function ShellPanel({
-  title,
-  actions,
-  children,
-}: {
-  title: string;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      style={{
-        background: colors.panel,
-        padding: 16,
-        overflow: "auto",
-        minHeight: 0,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 8 }}>
-        <h3
-          style={{
-            margin: 0,
-            fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 1.2,
-            color: colors.textDim,
-          }}
-        >
-          {title}
-        </h3>
-        <div style={{ marginLeft: "auto" }}>{actions}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
+const columnStyle: React.CSSProperties = {
+  background: colors.panel,
+  display: "flex",
+  flexDirection: "column",
+  minHeight: 0,
+  overflow: "hidden",
+};
