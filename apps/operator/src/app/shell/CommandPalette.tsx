@@ -5,8 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { colors, shadow } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { fuzzyMatch } from "./fuzzyMatch";
-import { enterWorkspace } from "./WorkspaceToggle";
-import { WORKSPACES, destinationsFor, otherWorkspace, routeToWorkspace, type WorkspaceId } from "./workspaces";
+import { enterArea } from "./TopBar";
+import { AREAS, LAST_NON_LIVE_KEY, areasFor, destinationsFor, liveToggleTarget, routeToArea } from "./areas";
 
 type Command = { label: string; run: () => void };
 
@@ -27,10 +27,10 @@ export function CommandPalette() {
         setOpen((v) => !v);
       } else if (meta && e.shiftKey && e.key.toLowerCase() === "l") {
         e.preventDefault();
-        // Cloud is Prep-only — no Live workspace to toggle into.
-        if (isCloudMode()) return;
         setOpen(false);
-        enterWorkspace(router, otherWorkspace(routeToWorkspace(pathname)));
+        const cloud = isCloudMode();
+        const last = typeof window !== "undefined" ? localStorage.getItem(LAST_NON_LIVE_KEY) : null;
+        router.push(liveToggleTarget(routeToArea(pathname), last, cloud));
       }
     }
     window.addEventListener("keydown", onKey);
@@ -49,21 +49,18 @@ export function CommandPalette() {
 
   const commands: Command[] = useMemo(() => {
     const cloud = isCloudMode();
-    const current = routeToWorkspace(pathname);
-    const nav: Command[] = (["live", "prep"] as const).flatMap((id: WorkspaceId) =>
+    const nav: Command[] = areasFor(cloud).flatMap((id) =>
       destinationsFor(id, cloud).map((d) => ({
-        label: `${WORKSPACES[id].label} · ${d.label}`,
+        label: `${AREAS[id].label} · ${d.label}`,
         run: () => router.push(d.route),
       })),
     );
-    const actions: Command[] = [];
-    if (!cloud) {
-      const other = otherWorkspace(current);
-      actions.push({ label: `Switch to ${WORKSPACES[other].label}`, run: () => enterWorkspace(router, other) });
-    }
-    actions.push({ label: "Open account", run: () => router.push("/account") });
+    const actions: Command[] = areasFor(cloud).map((id) => ({
+      label: `Go to ${AREAS[id].label}`,
+      run: () => enterArea(router, id, cloud),
+    }));
     return [...nav, ...actions];
-  }, [pathname, router]);
+  }, [router]);
 
   const filtered = useMemo(
     () => commands.filter((c) => fuzzyMatch(query, c.label)),

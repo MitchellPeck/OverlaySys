@@ -2,14 +2,11 @@
 
 import { useEffect, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { colors } from "@overlaysys/ui";
-import { isCloudMode } from "@/lib/mode";
-import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
-import { Sidebar } from "./Sidebar";
-import { StatusPills } from "./StatusPills";
 import { CommandPalette } from "./CommandPalette";
-import { ShellChromeProvider, useShellChrome } from "./ShellChromeContext";
-import { routeToWorkspace, lastRouteKey } from "./workspaces";
+import { ShellChromeProvider } from "./ShellChromeContext";
+import { SubNav } from "./SubNav";
+import { TopBar } from "./TopBar";
+import { LAST_NON_LIVE_KEY, LEGACY_REDIRECTS, lastRouteKey, routeToArea } from "./areas";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -21,46 +18,25 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function ShellFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
-  const workspace = routeToWorkspace(pathname);
-  const chrome = useShellChrome();
+  const area = routeToArea(pathname);
 
-  // Persist last-visited route per workspace so the toggle returns you where
-  // you were.
+  // Remember where you were in each area (tabs return there) and the last
+  // non-live route (⌘⇧L returns there from Live).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(lastRouteKey(workspace), pathname);
-    }
-  }, [workspace, pathname]);
+    if (typeof window === "undefined") return;
+    // Redirect-only routes resolve to "library" via the fallback; saving them
+    // would make the Library tab / ⌘⇧L bounce through a redirect page.
+    if (pathname in LEGACY_REDIRECTS || pathname === "/settings") return;
+    localStorage.setItem(lastRouteKey(area), pathname);
+    if (area !== "live") localStorage.setItem(LAST_NON_LIVE_KEY, pathname);
+  }, [area, pathname]);
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", overflow: "hidden" }}>
-      <Sidebar workspace={workspace} />
-      <div style={{ flex: 1, minWidth: 0, display: "grid", gridTemplateRows: "auto minmax(0,1fr)" }}>
-        <header
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "9px 14px",
-            borderBottom: `1px solid ${colors.border}`,
-            background: colors.surface,
-          }}
-        >
-          {chrome.title !== undefined && (
-            <h1 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{chrome.title}</h1>
-          )}
-          {chrome.context && (
-            <div style={{ color: colors.textDim, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-              {chrome.context}
-            </div>
-          )}
-          <ProjectSwitcher />
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-            {chrome.actions}
-            <StatusPills />
-          </div>
-        </header>
-        <div style={{ minHeight: 0, overflow: "hidden" }}>{children}</div>
+    <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateRows: "auto minmax(0,1fr)", overflow: "hidden" }}>
+      <TopBar />
+      <div style={{ display: "flex", minHeight: 0 }}>
+        {area !== "live" && <SubNav area={area} />}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>{children}</div>
       </div>
       <CommandPalette />
     </div>

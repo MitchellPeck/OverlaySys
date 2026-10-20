@@ -1,6 +1,6 @@
 "use client";
 
-import { Pill, type PillTone } from "@overlaysys/ui";
+import { Pill, StatusDot, type PillTone } from "@overlaysys/ui";
 import { useSyncStatus } from "@/lib/useSyncStatus";
 
 /**
@@ -76,11 +76,14 @@ export function SyncStatusPill() {
     label = "sync pending";
   }
 
-  return (
-    <Pill tone={tone} uppercase title={title}>
-      ⇅ {label}
-    </Pill>
-  );
+  if (tone === "warn" || tone === "bad") {
+    return (
+      <Pill tone={tone} title={title}>
+        {label}
+      </Pill>
+    );
+  }
+  return <StatusDot tone={tone} label={label} title={title} />;
 }
 
 /**
