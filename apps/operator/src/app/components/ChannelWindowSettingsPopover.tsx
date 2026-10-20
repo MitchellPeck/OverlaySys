@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type {
   CachedDisplay,
   ChannelWindowPrefs,
@@ -8,6 +9,7 @@ import type {
 } from "@overlaysys/core";
 import { colors, radius } from "@overlaysys/ui";
 import { getDesktopApi } from "@/lib/desktop";
+import { POPOVER_W, popoverPosition } from "@/lib/popoverPosition";
 
 const DEFAULT_PREFS: ChannelWindowPrefs = {
   autoOpen: false,
@@ -21,14 +23,41 @@ const DEFAULT_PREFS: ChannelWindowPrefs = {
 
 export function ChannelWindowSettingsPopover({
   channelId,
+  anchorEl,
   onClose,
   onSaved,
 }: {
   channelId: string;
+  /** Element the popover hangs from. The popover renders in a portal so
+   *  narrow, overflow-clipped panels can't cut it off. */
+  anchorEl: HTMLElement | null;
   onClose: () => void;
   onSaved?: () => void;
 }) {
   const api = getDesktopApi();
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const place = () => {
+      const r = anchorEl.getBoundingClientRect();
+      const h = popoverRef.current?.offsetHeight ?? 0;
+      setPos(popoverPosition(r, h, { width: window.innerWidth, height: window.innerHeight }));
+    };
+    place();
+    // Re-place when the content height changes (device list loads) or the
+    // layout moves under us.
+    const ro = new ResizeObserver(place);
+    if (popoverRef.current) ro.observe(popoverRef.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorEl]);
   const [displays, setDisplays] = useState<CachedDisplay[]>([]);
   const [prefs, setPrefs] = useState<ChannelWindowPrefs>(DEFAULT_PREFS);
   const [file, setFile] = useState<WindowPrefsFile | null>(null);
@@ -107,19 +136,23 @@ export function ChannelWindowSettingsPopover({
     onClose();
   };
 
-  return (
+  return createPortal(
     <div
+      ref={popoverRef}
       role="dialog"
       style={{
-        position: "absolute",
-        right: 0,
-        top: 28,
-        zIndex: 50,
+        position: "fixed",
+        left: pos?.left ?? 0,
+        top: pos?.top ?? 0,
+        // Hidden until measured so it never flashes at the wrong spot.
+        visibility: pos ? "visible" : "hidden",
+        zIndex: 1000,
+        boxSizing: "border-box",
         background: colors.panel2,
         border: `1px solid ${colors.border}`,
         borderRadius: radius.md,
         padding: 12,
-        width: 280,
+        width: POPOVER_W,
         boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
         fontSize: 12,
         color: colors.text,
@@ -252,6 +285,7 @@ export function ChannelWindowSettingsPopover({
           Save
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

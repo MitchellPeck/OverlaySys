@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { colors, radius } from "@overlaysys/ui";
 import { ChannelPreview } from "./ChannelPreview";
@@ -37,6 +37,7 @@ export function ChannelStatus({
   const active = state?.active ?? null;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsAnchorRef = useRef<HTMLDivElement | null>(null);
   const [hasPrefs, setHasPrefs] = useState(false);
   const [fallbackWarning, setFallbackWarning] = useState<{
     configuredLabel: string | null;
@@ -180,7 +181,7 @@ export function ChannelStatus({
                 ↗
               </button>
               {isElectron() && config && (
-                <div style={{ position: "relative" }}>
+                <div ref={settingsAnchorRef} style={{ position: "relative" }}>
                   <button
                     onClick={() => setSettingsOpen((v) => !v)}
                     title="Window settings"
@@ -202,6 +203,7 @@ export function ChannelStatus({
                   {settingsOpen && (
                     <ChannelWindowSettingsPopover
                       channelId={config.id}
+                      anchorEl={settingsAnchorRef.current}
                       onClose={() => setSettingsOpen(false)}
                       onSaved={() => void refreshPrefsState()}
                     />
