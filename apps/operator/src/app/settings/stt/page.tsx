@@ -23,6 +23,8 @@ import {
   StatusDot,
 } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { channelSelectProblem } from "@/lib/sttChannels";
+import { CaptureModeField, ChannelSelectFields } from "./ChannelSelect";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { isCloudMode } from "@/lib/mode";
@@ -62,6 +64,7 @@ function SttControlPageLocal() {
   const models = useStore((s) => s.sttModels);
   const modelsDir = useStore((s) => s.sttModelsDir);
   const captureDevices = useStore((s) => s.sttCaptureDevices);
+  const inputDevices = useStore((s) => s.sttInputDevices);
   const installJobs = useStore((s) => s.sttInstallJobs);
   const { confirm, dialog } = useDialog();
 
@@ -221,6 +224,12 @@ function SttControlPageLocal() {
   const statusLabel =
     pendingAction === "start" ? "starting" : pendingAction === "stop" ? "stopping" : state;
 
+  const channelMode = draft.captureMode === "channels";
+  // Channel select is macOS-only; the server sends an input-device list
+  // only there. Keep the controls visible if a saved config already uses it.
+  const showCaptureMode = inputDevices !== null || channelMode;
+  const channelProblem = channelSelectProblem(draft, inputDevices);
+  const serverBinaryMissing = channelMode && presence?.serverBinary?.path == null;
   const binaryPresent = presence?.binary.path != null;
   const modelPresent = presence?.selectedModel.present ?? false;
   const binaryJob = installJobs["binary"];
@@ -257,13 +266,17 @@ function SttControlPageLocal() {
                 onClick={start}
                 variant="primary"
                 size="sm"
-                disabled={!binaryPresent || !modelPresent}
+                disabled={
+                  !binaryPresent || !modelPresent || channelProblem !== null || serverBinaryMissing
+                }
                 title={
                   !binaryPresent
                     ? "whisper-stream is not installed"
                     : !modelPresent
                     ? "Selected model file is missing"
-                    : undefined
+                    : serverBinaryMissing
+                    ? "whisper-server is not installed"
+                    : channelProblem ?? undefined
                 }
               >
                 Start
@@ -444,56 +457,70 @@ function SttControlPageLocal() {
             </div>
           </div>
 
-          <Field
-            label={
-              <span>
-                Input device{" "}
-                <button
-                  onClick={() =>
-                    send({
-                      type: "stt_enumerate_capture_devices",
-                      force: true,
-                    })
-                  }
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: colors.textDim,
-                    cursor: "pointer",
-                    fontSize: 11,
-                    padding: 0,
-                    marginLeft: 6,
-                    textDecoration: "underline",
-                  }}
-                >
-                  rescan
-                </button>
-              </span>
-            }
-            hint={
-              captureDevices.length <= 1 && !binaryPresent
-                ? "Install whisper-stream to enumerate audio inputs."
-                : "Devices listed in the same order whisper-stream sees them."
-            }
-          >
-            <Select
-              value={String(draft.captureDevice)}
+          {showCaptureMode && (
+            <CaptureModeField draft={draft} setDraft={setDraft} disabled={usingCustom} />
+          )}
+
+          {channelMode ? (
+            <ChannelSelectFields
+              draft={draft}
+              setDraft={setDraft}
+              inputDevices={inputDevices}
               disabled={usingCustom}
-              onChange={(e) =>
-                setDraft({ ...draft, captureDevice: Number(e.target.value) })
+              serverBinaryMissing={serverBinaryMissing}
+            />
+          ) : (
+            <Field
+              label={
+                <span>
+                  Input device{" "}
+                  <button
+                    onClick={() =>
+                      send({
+                        type: "stt_enumerate_capture_devices",
+                        force: true,
+                      })
+                    }
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: colors.textDim,
+                      cursor: "pointer",
+                      fontSize: 11,
+                      padding: 0,
+                      marginLeft: 6,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    rescan
+                  </button>
+                </span>
+              }
+              hint={
+                captureDevices.length <= 1 && !binaryPresent
+                  ? "Install whisper-stream to enumerate audio inputs."
+                  : "Devices listed in the same order whisper-stream sees them."
               }
             >
-              {captureDevices.length === 0 ? (
-                <option value="-1">System default</option>
-              ) : (
-                captureDevices.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.id === -1 ? d.name : `#${d.id} — ${d.name}`}
-                  </option>
-                ))
-              )}
-            </Select>
-          </Field>
+              <Select
+                value={String(draft.captureDevice)}
+                disabled={usingCustom}
+                onChange={(e) =>
+                  setDraft({ ...draft, captureDevice: Number(e.target.value) })
+                }
+              >
+                {captureDevices.length === 0 ? (
+                  <option value="-1">System default</option>
+                ) : (
+                  captureDevices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.id === -1 ? d.name : `#${d.id} — ${d.name}`}
+                    </option>
+                  ))
+                )}
+              </Select>
+            </Field>
+          )}
 
           <details
             open={showAdvanced || usingCustom}
@@ -553,7 +580,12 @@ function SttControlPageLocal() {
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <Button onClick={() => save()} size="sm">
+            <Button
+              onClick={() => save()}
+              size="sm"
+              disabled={channelProblem !== null}
+              title={channelProblem ?? undefined}
+            >
               Save Config
             </Button>
           </div>

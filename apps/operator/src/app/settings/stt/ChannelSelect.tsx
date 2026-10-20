@@ -1,0 +1,203 @@
+"use client";
+
+import {
+  MAX_STT_CHANNELS,
+  type SttInputDevice,
+  type SttSpawnerConfig,
+} from "@overlaysys/core";
+import { Button, Field, Select, colors, radius } from "@overlaysys/ui";
+import { useStore } from "@/lib/store";
+import { channelSelectProblem, toggleChannel } from "@/lib/sttChannels";
+
+type Props = {
+  draft: SttSpawnerConfig;
+  setDraft: (next: SttSpawnerConfig) => void;
+  inputDevices: SttInputDevice[] | null;
+  disabled: boolean;
+  serverBinaryMissing: boolean;
+};
+
+/**
+ * Capture-mode switch plus, in channel-select mode, the device / channel
+ * pickers and a live level meter. macOS only — the page hides this when the
+ * server sends no input-device list.
+ */
+export function CaptureModeField({ draft, setDraft, disabled }: Pick<Props, "draft" | "setDraft" | "disabled">) {
+  const channelMode = draft.captureMode === "channels";
+  return (
+    <Field
+      label="Capture"
+      hint={
+        channelMode
+          ? "Records only the channels you pick and mixes them to mono — for multichannel interfaces."
+          : "whisper-stream on one input. Use Channel select if your vocals aren't on channel 1."
+      }
+    >
+      <div style={{ display: "flex", gap: 6 }}>
+        <Button
+          size="sm"
+          variant={channelMode ? "secondary" : "primary"}
+          disabled={disabled}
+          onClick={() => setDraft({ ...draft, captureMode: "default" })}
+        >
+          Default
+        </Button>
+        <Button
+          size="sm"
+          variant={channelMode ? "primary" : "secondary"}
+          disabled={disabled}
+          onClick={() => setDraft({ ...draft, captureMode: "channels" })}
+        >
+          Channel select
+        </Button>
+      </div>
+    </Field>
+  );
+}
+
+export function ChannelSelectFields({
+  draft,
+  setDraft,
+  inputDevices,
+  disabled,
+  serverBinaryMissing,
+}: Props) {
+  const devices = inputDevices ?? [];
+  const device = devices.find((d) => d.name === draft.channelDevice);
+  const problem = channelSelectProblem(draft, inputDevices);
+  const channelCount = device?.channels ?? 0;
+
+  return (
+    <>
+      {serverBinaryMissing && (
+        <div
+          style={{
+            padding: 8,
+            marginBottom: 8,
+            fontSize: 12,
+            border: `1px solid ${colors.border}`,
+            borderLeft: `3px solid ${colors.warn}`,
+            borderRadius: radius.md,
+          }}
+        >
+          Channel select needs whisper-server, which comes with the same Homebrew
+          package as whisper-stream (<code>brew install whisper-cpp</code>).
+        </div>
+      )}
+
+      <Field label="Input device" hint="Listed by name, with each device's input channel count.">
+        <Select
+          value={draft.channelDevice}
+          disabled={disabled}
+          onChange={(e) => {
+            const name = e.target.value;
+            const next = devices.find((d) => d.name === name);
+            // Drop channels the new device doesn't have.
+            const channels = next
+              ? draft.channels.filter((c) => c <= next.channels)
+              : draft.channels;
+            setDraft({ ...draft, channelDevice: name, channels });
+          }}
+        >
+          <option value="">Choose a device…</option>
+          {devices.map((d) => (
+            <option key={d.name} value={d.name}>
+              {d.name} — {d.channels} ch
+            </option>
+          ))}
+          {draft.channelDevice && !device && (
+            <option value={draft.channelDevice}>{draft.channelDevice} (not connected)</option>
+          )}
+        </Select>
+      </Field>
+
+      {channelCount > 0 && (
+        <Field
+          label={`Channels (${draft.channels.length} of up to ${MAX_STT_CHANNELS})`}
+          hint="Picked channels are averaged into one mono feed for transcription."
+          error={problem ?? undefined}
+        >
+          <div
+            role="group"
+            aria-label="Input channels"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(36px, 1fr))",
+              gap: 4,
+            }}
+          >
+            {Array.from({ length: channelCount }, (_, i) => i + 1).map((ch) => {
+              const on = draft.channels.includes(ch);
+              const full = !on && draft.channels.length >= MAX_STT_CHANNELS;
+              return (
+                <button
+                  key={ch}
+                  type="button"
+                  aria-pressed={on}
+                  disabled={disabled || full}
+                  onClick={() => setDraft({ ...draft, channels: toggleChannel(draft.channels, ch) })}
+                  style={{
+                    height: 30,
+                    borderRadius: radius.sm,
+                    border: `1px solid ${on ? colors.brand : colors.border}`,
+                    background: on ? colors.brandSubtle : colors.surface2,
+                    color: on ? colors.text : full ? colors.textMuted : colors.textDim,
+                    fontWeight: on ? 600 : 400,
+                    fontSize: 12,
+                    cursor: disabled || full ? "default" : "pointer",
+                  }}
+                >
+                  {ch}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+      {channelCount === 0 && problem && (
+        <div style={{ fontSize: 12, color: colors.textDim, marginTop: -4, marginBottom: 8 }}>{problem}</div>
+      )}
+
+      <LevelMeter channels={draft.channels} />
+    </>
+  );
+}
+
+/** One bar per picked channel, live while channel-select STT is running. */
+function LevelMeter({ channels }: { channels: number[] }) {
+  const levels = useStore((s) => s.sttLevels);
+  const live = levels.length > 0;
+  if (channels.length === 0) return null;
+  return (
+    <Field
+      label="Level"
+      hint={live ? "Peak level per picked channel." : "Shows live levels while STT is running."}
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {channels.map((ch, i) => {
+          const peak = live ? Math.min(1, levels[i] ?? 0) : 0;
+          // Square-root scale so quiet-but-present signal is still visible.
+          const width = `${Math.round(Math.sqrt(peak) * 100)}%`;
+          const color = peak > 0.9 ? colors.danger : peak > 0.5 ? colors.warn : colors.ok;
+          return (
+            <div key={ch} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ width: 44, fontSize: 11, color: colors.textDim }}>Ch {ch}</span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 8,
+                  borderRadius: 4,
+                  background: colors.surface2,
+                  border: `1px solid ${colors.border}`,
+                  overflow: "hidden",
+                }}
+              >
+                <div style={{ width, height: "100%", background: color, transition: "width 80ms linear" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Field>
+  );
+}

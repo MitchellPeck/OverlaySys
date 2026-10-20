@@ -136,6 +136,10 @@ function bootstrap(): void {
         break;
       case "stt_capture_devices":
         store.setSttCaptureDevices(msg.devices);
+        store.setSttInputDevices(msg.inputDevices ?? null);
+        break;
+      case "stt_levels":
+        store.setSttLevels(msg.levels);
         break;
       case "stt_install_progress":
         store.setSttInstallProgress(msg.progress);

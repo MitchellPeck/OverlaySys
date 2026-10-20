@@ -20,6 +20,7 @@ import type {
   SttPresence,
   SttModelFile,
   SttCaptureDevice,
+  SttInputDevice,
   SttInstallProgress,
 } from "@overlaysys/core";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
@@ -126,6 +127,11 @@ type StoreState = {
   sttModels: SttModelFile[];
   sttModelsDir: string | null;
   sttCaptureDevices: SttCaptureDevice[];
+  // macOS input devices with channel counts (channel select); null when the
+  // server didn't send any (other platforms / not yet enumerated).
+  sttInputDevices: SttInputDevice[] | null;
+  // Channel-select meter: latest peak per picked channel; [] when stopped.
+  sttLevels: number[];
   // Progress entries keyed by jobId. "binary" for the whisper-cpp install,
   // filename (e.g. "ggml-base.en.bin") for model downloads. Updated in
   // place by the install_progress handler; cleared when the job ends so
@@ -134,6 +140,8 @@ type StoreState = {
   setSttPresence: (p: SttPresence) => void;
   setSttModels: (models: SttModelFile[], modelsDir: string) => void;
   setSttCaptureDevices: (d: SttCaptureDevice[]) => void;
+  setSttInputDevices: (d: SttInputDevice[] | null) => void;
+  setSttLevels: (levels: number[]) => void;
   setSttInstallProgress: (p: SttInstallProgress) => void;
   // Drop a job entry from the install-jobs map. The page schedules this on
   // a short timer after a terminal state ("done"/"error"/"cancelled") so the
@@ -186,6 +194,8 @@ export const useStore = create<StoreState>((set) => ({
   sttModels: [],
   sttModelsDir: null,
   sttCaptureDevices: [],
+  sttInputDevices: null,
+  sttLevels: [],
   sttInstallJobs: {},
 
   setConn: (c) => set({ conn: c }),
@@ -313,6 +323,8 @@ export const useStore = create<StoreState>((set) => ({
   setSttPresence: (p) => set({ sttPresence: p }),
   setSttModels: (models, modelsDir) => set({ sttModels: models, sttModelsDir: modelsDir }),
   setSttCaptureDevices: (d) => set({ sttCaptureDevices: d }),
+  setSttInputDevices: (d) => set({ sttInputDevices: d }),
+  setSttLevels: (levels) => set({ sttLevels: levels }),
   setSttInstallProgress: (p) =>
     set((cur) => ({
       sttInstallJobs: { ...cur.sttInstallJobs, [p.jobId]: p },
