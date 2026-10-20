@@ -130,8 +130,9 @@ type StoreState = {
   // macOS input devices with channel counts (channel select); null when the
   // server didn't send any (other platforms / not yet enumerated).
   sttInputDevices: SttInputDevice[] | null;
-  // Channel-select meter: latest peak per picked channel; [] when stopped.
-  sttLevels: number[];
+  // Channel-select meter: latest peak per channel of the RUNNING capture,
+  // labelled by `channels`; both empty when stopped or disconnected.
+  sttLevels: { levels: number[]; channels: number[] };
   // Progress entries keyed by jobId. "binary" for the whisper-cpp install,
   // filename (e.g. "ggml-base.en.bin") for model downloads. Updated in
   // place by the install_progress handler; cleared when the job ends so
@@ -141,7 +142,7 @@ type StoreState = {
   setSttModels: (models: SttModelFile[], modelsDir: string) => void;
   setSttCaptureDevices: (d: SttCaptureDevice[]) => void;
   setSttInputDevices: (d: SttInputDevice[] | null) => void;
-  setSttLevels: (levels: number[]) => void;
+  setSttLevels: (levels: { levels: number[]; channels: number[] }) => void;
   setSttInstallProgress: (p: SttInstallProgress) => void;
   // Drop a job entry from the install-jobs map. The page schedules this on
   // a short timer after a terminal state ("done"/"error"/"cancelled") so the
@@ -195,10 +196,12 @@ export const useStore = create<StoreState>((set) => ({
   sttModelsDir: null,
   sttCaptureDevices: [],
   sttInputDevices: null,
-  sttLevels: [],
+  sttLevels: { levels: [], channels: [] },
   sttInstallJobs: {},
 
-  setConn: (c) => set({ conn: c }),
+  // A meter reading from before a disconnect is stale; drop it.
+  setConn: (c) =>
+    set(c === "open" ? { conn: c } : { conn: c, sttLevels: { levels: [], channels: [] } }),
   setTemplates: (t) => set({ templates: t }),
   setTemplate: (t) =>
     set((cur) => ({ templateCache: { ...cur.templateCache, [t.id]: t } })),

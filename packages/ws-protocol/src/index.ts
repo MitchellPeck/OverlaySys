@@ -204,6 +204,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     config: SttSpawnerConfigSchema.optional(),
   }),
   z.object({ type: z.literal("stt_spawner_stop") }),
+  // Opt in/out of `stt_levels` (channel-select meter, ~10/s). Only the
+  // settings page asks, so Companion and renderers never receive them.
+  z.object({ type: z.literal("stt_levels_subscribe"), on: z.boolean() }),
   // Presence / installer flows. The operator's /stt page sends these to
   // poll for whisper-stream binary availability, list installed models,
   // enumerate capture devices, and drive auto-install. Server responds
@@ -411,10 +414,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     inputDevices: z.array(SttInputDeviceSchema).optional(),
   }),
   z.object({
-    // Channel-select capture: one 0–1 peak per picked channel, in pick
-    // order, ~10x a second while running.
+    // Channel-select capture: one 0–1 peak per channel in `channels` (the
+    // running config's 1-based channel numbers), ~10x a second while
+    // running; both empty when stopped. Sent only to subscribed clients.
     type: z.literal("stt_levels"),
     levels: z.array(z.number()),
+    channels: z.array(z.number()),
   }),
   z.object({
     type: z.literal("stt_install_progress"),
@@ -435,6 +440,23 @@ export function decodeClient(raw: string): ClientMessage {
 
 export function decodeServer(raw: string): ServerMessage {
   return ServerMessageSchema.parse(JSON.parse(raw));
+}
+
+const KNOWN_SERVER_TYPES = new Set<string>(
+  ServerMessageSchema.options.map((o) => o.shape.type.value),
+);
+
+/**
+ * Like {@link decodeServer}, but returns null for a message type this build
+ * doesn't know — so a client older than the server (e.g. a separately
+ * installed Companion module) skips new messages instead of logging a decode
+ * error for each one. Malformed messages of a KNOWN type still throw.
+ */
+export function decodeServerTolerant(raw: string): ServerMessage | null {
+  const json: unknown = JSON.parse(raw);
+  const type = (json as { type?: unknown } | null)?.type;
+  if (typeof type !== "string" || !KNOWN_SERVER_TYPES.has(type)) return null;
+  return ServerMessageSchema.parse(json);
 }
 
 export type { TemplateMeta };

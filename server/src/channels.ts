@@ -273,6 +273,21 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // subTakeContext forward so identity-aware feedback (Companion) sees the
   // promoted intro/outro as belonging to its originating song row.
   const pgm = getOrInit(toChannel);
+  // The destination's queued song (e.g. an earlier intro that auto-outed)
+  // no longer applies. If what we're promoting IS an intro, its song moves
+  // with it so the section buttons that follow target program.
+  let carried: QueuedSong | null = null;
+  if (queued.subTakeContext?.sub === "intro") {
+    carried = songSession.moveQueued(fromChannel, toChannel);
+  } else {
+    songSession.dropQueued(toChannel);
+  }
+  if (carried) {
+    pgm.queuedSong = carried;
+    delete src.queuedSong;
+  } else {
+    delete pgm.queuedSong;
+  }
   pgm.active = {
     templateId: queued.templateId,
     data: queued.data,

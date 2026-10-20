@@ -53,8 +53,11 @@ sttListener.subscribe((listeners) => {
   broadcast({ type: "stt_listener_state", listeners });
 });
 
-sttSpawner.subscribeLevels((levels) => {
-  broadcast({ type: "stt_levels", levels });
+// Channel-select meter updates (~10/s) go only to clients that asked for
+// them (the STT settings page), never to Companion or renderers.
+const levelSubscribers = new Set<(msg: ServerMessage) => void>();
+sttSpawner.subscribeLevels((levels, channels) => {
+  for (const send of levelSubscribers) send({ type: "stt_levels", levels, channels });
 });
 
 sttSpawner.subscribe((status) => {
@@ -670,7 +673,17 @@ export function handleConnection(
               /* probe failure shouldn't block a start */
             }
           }
+          // Channel mode: know the device's channel count so the capture
+          // refuses out-of-range channels with a clear error.
+          if (cfg.captureMode === "channels") {
+            await sttInstaller.listInputDevices().catch(() => undefined);
+          }
           sttSpawner.start(cfg);
+          break;
+        }
+        case "stt_levels_subscribe": {
+          if (parsed.on) levelSubscribers.add(send);
+          else levelSubscribers.delete(send);
           break;
         }
         case "stt_spawner_stop": {
@@ -817,6 +830,7 @@ export function handleConnection(
     for (const unsub of subscriptions.values()) unsub();
     subscriptions.clear();
     offBroadcast();
+    levelSubscribers.delete(send);
     log.info("ws closed");
   });
 

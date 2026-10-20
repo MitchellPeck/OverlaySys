@@ -131,11 +131,15 @@ export class ChannelMixer {
  * window starts with the last `keepMs` of audio.
  */
 export class WindowScheduler {
-  /** @param {{ sampleRate: number; stepMs: number; lengthMs: number; keepMs: number }} o */
+  /**
+   * @param {{ sampleRate: number; stepMs: number; lengthMs: number; keepMs: number; maxMs?: number }} o
+   * `maxMs` caps any single window (whisper decodes at most 30 s).
+   */
   constructor(o) {
     this.step = Math.round((o.sampleRate * o.stepMs) / 1000);
     this.length = Math.round((o.sampleRate * o.lengthMs) / 1000);
     this.keep = Math.round((o.sampleRate * o.keepMs) / 1000);
+    this.max = Math.round((o.sampleRate * (o.maxMs ?? 28_000)) / 1000);
     /** @type {Float32Array[]} */
     this.parts = [];
     this.size = 0;
@@ -155,7 +159,10 @@ export class WindowScheduler {
     if (this.fresh < this.step) return null;
     const all = this.flatten();
     const isFinal = all.length >= this.length;
-    const samples = isFinal ? all.subarray(all.length - this.length) : all;
+    // A final covers EVERYTHING since the window began — when a slow request
+    // made us skip steps the window runs past `length`, and trimming it would
+    // drop words from the start that never get a final transcript.
+    const samples = all.length > this.max ? all.subarray(all.length - this.max) : all;
     this.fresh = 0;
     if (isFinal) {
       const kept = all.slice(all.length - this.keep);

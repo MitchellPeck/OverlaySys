@@ -455,4 +455,29 @@ describe("songSession queued song (intro → section buttons)", () => {
     songSession.jumpByKindOrdinal(CH, "chorus", 1);
     expect(channels.getState(CH).songSession).toBeUndefined();
   });
+
+  it("PVW→PGM of something else drops program's stale queued song", () => {
+    songSession.queue(CH, args, meta);
+    channels.take("preview", "scripture-tpl", { ref: "John 3:16" });
+    channels.takePvwToPgm("preview", CH);
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+    songSession.advance(CH, 1);
+    expect(channels.getState(CH).active?.templateId).toBe("scripture-tpl");
+  });
+
+  it("PVW→PGM of an intro carries its queued song to program", () => {
+    channels.take("preview", "intro-tpl", {}, { songRowId: "row-1", sub: "intro" });
+    songSession.queue("preview", args, meta);
+    channels.takePvwToPgm("preview", CH);
+    expect(channels.getState(CH).queuedSong?.songRowId).toBe("row-1");
+    expect(channels.getState("preview").queuedSong).toBeUndefined();
+    songSession.jumpByKindOrdinal(CH, "chorus", 1);
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 1, slideIdx: 0 });
+  });
+
+  it("promoteTo clears the destination's queued song", () => {
+    songSession.queue(CH, args, meta);
+    songSession.promoteTo("preview", CH, args);
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+  });
 });

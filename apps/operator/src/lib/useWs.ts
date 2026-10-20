@@ -139,7 +139,7 @@ function bootstrap(): void {
         store.setSttInputDevices(msg.inputDevices ?? null);
         break;
       case "stt_levels":
-        store.setSttLevels(msg.levels);
+        store.setSttLevels({ levels: msg.levels, channels: msg.channels });
         break;
       case "stt_install_progress":
         store.setSttInstallProgress(msg.progress);

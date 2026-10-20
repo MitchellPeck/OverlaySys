@@ -255,8 +255,11 @@ export async function listInputDevices(
   if (process.platform !== "darwin") return undefined;
   if (!opts.force && cachedInputDevices) return cachedInputDevices;
   const res = await runOnce("system_profiler", ["SPAudioDataType", "-json"], 15_000);
-  cachedInputDevices = parseSystemProfilerAudio(res.stdout);
-  return cachedInputDevices;
+  const devices = parseSystemProfilerAudio(res.stdout);
+  // Don't cache a failed / timed-out run — every Mac has at least one input,
+  // so an empty list means "try again next time", not "no devices".
+  if (devices.length > 0) cachedInputDevices = devices;
+  return devices;
 }
 
 /** Last known channel count for a device name (sync; for the spawner). */

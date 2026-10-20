@@ -50,6 +50,27 @@ export function dropQueued(channel: string): boolean {
   return queued.delete(channel);
 }
 
+/**
+ * Move a queued song from one channel to another without emitting — the
+ * caller (PVW→PGM promotion of an intro) publishes both channels. Returns the
+ * summary to set on the destination, or null when the source had none.
+ */
+export function moveQueued(
+  fromChannel: string,
+  toChannel: string,
+): { songId: string; songRowId: string; title: string } | null {
+  const entry = queued.get(fromChannel);
+  queued.delete(toChannel);
+  if (!entry) return null;
+  queued.delete(fromChannel);
+  queued.set(toChannel, entry);
+  return {
+    songId: entry.args.song.id,
+    songRowId: entry.songRowId,
+    title: entry.args.song.title,
+  };
+}
+
 /** Forget the queued song and publish the cleared channel state. */
 export function clearQueued(channel: string): void {
   if (dropQueued(channel)) channels.setQueuedSong(channel, null);
@@ -149,6 +170,8 @@ export function promoteTo(
   toChannel: string,
   args: StartArgs,
 ): void {
+  // A song going live on the destination replaces whatever it had queued.
+  if (dropQueued(toChannel)) channels.setQueuedSong(toChannel, null, { deferEmit: true });
   const src = sessions.get(fromChannel);
   // Copy cursor + arrangement only if the source is for the same song.
   const reuseFromSource = src && src.song.id === args.song.id;

@@ -70,3 +70,27 @@ describe("media messages", () => {
     expect(PROTOCOL_VERSION).toBe(2);
   });
 });
+
+describe("decodeServerTolerant", async () => {
+  const { decodeServerTolerant } = await import("./index");
+
+  it("returns null for a message type this client doesn't know", () => {
+    expect(decodeServerTolerant(JSON.stringify({ type: "some_future_message", x: 1 }))).toBeNull();
+  });
+
+  it("decodes known types and still rejects malformed known types", () => {
+    expect(decodeServerTolerant(encode({ type: "stt_levels", levels: [0.5], channels: [17] }))?.type).toBe(
+      "stt_levels",
+    );
+    expect(() => decodeServerTolerant(JSON.stringify({ type: "stt_levels", levels: "x" }))).toThrow();
+  });
+});
+
+describe("stt_levels_subscribe", () => {
+  it("decodes the operator's opt-in", () => {
+    expect(decodeClient(encode({ type: "stt_levels_subscribe", on: true }))).toEqual({
+      type: "stt_levels_subscribe",
+      on: true,
+    });
+  });
+});

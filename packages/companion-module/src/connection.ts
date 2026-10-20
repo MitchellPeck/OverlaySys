@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import {
-  decodeServer,
+  decodeServerTolerant,
   encode,
   type ClientMessage,
   type ServerMessage,
@@ -68,13 +68,15 @@ export class Connection {
     });
 
     ws.on("message", (raw) => {
-      let msg: ServerMessage;
+      let msg: ServerMessage | null;
       try {
-        msg = decodeServer(raw.toString());
+        msg = decodeServerTolerant(raw.toString());
       } catch (err) {
         this.cb.onLog("error", `decode failed: ${String(err)}`);
         return;
       }
+      // A message type newer than this module — nothing to do with it.
+      if (!msg) return;
       try {
         this.cb.onMessage(msg);
       } catch (err) {

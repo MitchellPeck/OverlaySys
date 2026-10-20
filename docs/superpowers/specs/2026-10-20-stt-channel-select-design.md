@@ -99,8 +99,9 @@ readiness and the lyric-listener path are all reused unchanged.
 Spawner (`server/src/sttSpawner.ts`) in channel mode runs
 `<node> channels.mjs --ffmpeg <path> --model <m> --device <name> --channels
 17,18 --step <ms> --length <ms> | <node> stdin.mjs`. It intercepts stderr lines
-starting `@@levels` (not logged; forwarded as `stt_levels { levels }`
-broadcasts) and `@@error` (used as `lastError`). Boot-time reaping also kills
+starting `@@levels` (not logged; forwarded as `stt_levels { levels, channels }`
+only to clients that sent `stt_levels_subscribe { on: true }` — the settings
+page — so Companion and renderers never receive them) and `@@error` (used as `lastError`). Boot-time reaping also kills
 `channels.mjs` and `overlaysys-inference` processes.
 
 Device list: `stt_capture_devices` gains

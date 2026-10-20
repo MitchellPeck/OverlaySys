@@ -6,7 +6,9 @@ import {
   type SttSpawnerConfig,
 } from "@overlaysys/core";
 import { Button, Field, Select, colors, radius } from "@overlaysys/ui";
+import { useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { useWs } from "@/lib/useWs";
 import { channelSelectProblem, toggleChannel } from "@/lib/sttChannels";
 
 type Props = {
@@ -158,20 +160,35 @@ export function ChannelSelectFields({
         <div style={{ fontSize: 12, color: colors.textDim, marginTop: -4, marginBottom: 8 }}>{problem}</div>
       )}
 
-      <LevelMeter channels={draft.channels} />
+      <LevelMeter picked={draft.channels} />
     </>
   );
 }
 
-/** One bar per picked channel, live while channel-select STT is running. */
-function LevelMeter({ channels }: { channels: number[] }) {
-  const levels = useStore((s) => s.sttLevels);
+/**
+ * One bar per channel, live while channel-select STT is running. While
+ * running, bars follow the RUNNING capture's channels (an unsaved edit to the
+ * picker doesn't relabel them); otherwise they preview the picked channels.
+ */
+function LevelMeter({ picked }: { picked: number[] }) {
+  const { send } = useWs();
+  const conn = useStore((s) => s.conn);
+  const { levels, channels: running } = useStore((s) => s.sttLevels);
+
+  // Ask for meter updates only while this is on screen.
+  useEffect(() => {
+    if (conn !== "open") return;
+    send({ type: "stt_levels_subscribe", on: true });
+    return () => send({ type: "stt_levels_subscribe", on: false });
+  }, [conn, send]);
+
   const live = levels.length > 0;
+  const channels = live ? running : picked;
   if (channels.length === 0) return null;
   return (
     <Field
       label="Level"
-      hint={live ? "Peak level per picked channel." : "Shows live levels while STT is running."}
+      hint={live ? "Peak level per channel of the running capture." : "Shows live levels while STT is running."}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {channels.map((ch, i) => {

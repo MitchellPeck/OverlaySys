@@ -10,6 +10,7 @@ import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import * as sttSpawner from "./sttSpawner";
+import * as sttInstaller from "./sttInstaller";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
 import { registerImportRoutes } from "./importRoute";
@@ -169,7 +170,7 @@ sttSpawner.setListenerWsUrl(`ws://127.0.0.1:${actualPort}/ws`);
 // ungracefully (SIGKILL/crash) — an orphan still holding the mic makes the
 // next start fail to open audio and revert. The graceful-exit handlers below
 // cover clean restarts; this covers the rest.
-sttSpawner.reapOrphans();
+const orphansReaped = sttSpawner.reapOrphans();
 
 // Tear down the STT child on server exit so it never orphans and holds the
 // capture device. Critical in dev, where `tsx watch` restarts the server on
@@ -216,7 +217,16 @@ if (process.env["OVERLAYSYS_HOST_PIPE"] === "1") {
 // Boot STT spawner: auto-start if configured (now that the listener URL is set).
 if (sttConfig.autoStart) {
   app.log.info("[stt] autoStart enabled — starting STT spawner");
-  sttSpawner.start(sttConfig);
+  // In the background, so boot isn't held up: wait for the orphan sweep (it
+  // would match our own new pipeline), and in channel mode learn the
+  // device's channel count so out-of-range channels are refused clearly.
+  void (async () => {
+    await orphansReaped;
+    if (sttConfig.captureMode === "channels") {
+      await sttInstaller.listInputDevices().catch(() => undefined);
+    }
+    sttSpawner.start(sttConfig);
+  })();
 }
 
 // 1 GB cap. Videos and (eventually large) fonts are embedded as data URLs

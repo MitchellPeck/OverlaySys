@@ -87,7 +87,8 @@ let readyTimer: ReturnType<typeof setTimeout> | null = null;
 let logEmitTimer: ReturnType<typeof setTimeout> | null = null;
 let cooldownTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<(s: SttSpawnerStatus) => void>();
-const levelListeners = new Set<(levels: number[]) => void>();
+type LevelsListener = (levels: number[], channels: number[]) => void;
+const levelListeners = new Set<LevelsListener>();
 // Reason a capture script gave for exiting (`@@error ...`), surfaced as
 // lastError instead of a bare "child exit 1".
 let reportedError: string | null = null;
@@ -119,15 +120,18 @@ export function classifyStderrLine(line: string): StderrLine {
   return { kind: "log" };
 }
 
-export function subscribeLevels(fn: (levels: number[]) => void): () => void {
+export function subscribeLevels(fn: LevelsListener): () => void {
   levelListeners.add(fn);
   return () => {
     levelListeners.delete(fn);
   };
 }
 
+// Levels are labelled with the RUNNING config's channels so the meter never
+// mislabels bars while the operator edits an unsaved draft.
 function emitLevels(levels: number[]): void {
-  for (const fn of levelListeners) fn(levels);
+  const channels = levels.length ? (activeConfig?.channels ?? []) : [];
+  for (const fn of levelListeners) fn(levels, channels);
 }
 
 function emit(): void {
@@ -299,7 +303,9 @@ function launch(config: SttSpawnerConfig): void {
       if (!line.trim()) continue;
       const kind = classifyStderrLine(line);
       if (kind.kind === "levels") {
-        emitLevels(kind.levels);
+        // Ignore stragglers printed while shutting down — they'd leave a
+        // stale bar on the meter after the "stopped" clear.
+        if (status.state !== "stopped") emitLevels(kind.levels);
         continue;
       }
       if (kind.kind === "error") {
@@ -431,22 +437,31 @@ export function getActiveConfig(): SttSpawnerConfig | null {
  * dies on its next write (SIGPIPE) and releases the device. Best-effort: if
  * `pkill` is absent this is a no-op. Run once at boot, before any start.
  */
-export function reapOrphans(): void {
-  try {
-    // The listener daemon, the channel-select capture script, and the
-    // whisper-server it runs (recognisable by its inference path).
-    for (const pattern of [
-      "lyric-listener/src/stdin.mjs",
-      "lyric-listener/src/channels.mjs",
-      "--inference-path /overlaysys-inference",
-    ]) {
-      const p = spawn("pkill", ["-f", "--", pattern], { stdio: "ignore" });
-      // pkill exits 1 when nothing matched — swallow so it never surfaces.
-      p.on("error", () => {});
-    }
-  } catch {
-    /* pkill unavailable — nothing we can do */
-  }
+export function reapOrphans(): Promise<void> {
+  // The listener daemon, the channel-select capture script, and the
+  // whisper-server it runs (recognisable by its inference path). Resolves
+  // once every pkill has exited, so boot can wait before auto-starting —
+  // otherwise a slow pkill could kill the pipeline we just launched.
+  const patterns = [
+    "lyric-listener/src/stdin.mjs",
+    "lyric-listener/src/channels.mjs",
+    "--inference-path /overlaysys-inference",
+  ];
+  return Promise.all(
+    patterns.map(
+      (pattern) =>
+        new Promise<void>((resolve) => {
+          try {
+            const p = spawn("pkill", ["-f", "--", pattern], { stdio: "ignore" });
+            // pkill exits 1 when nothing matched — swallow so it never surfaces.
+            p.on("error", () => resolve());
+            p.on("exit", () => resolve());
+          } catch {
+            resolve(); // pkill unavailable — nothing we can do
+          }
+        }),
+    ),
+  ).then(() => undefined);
 }
 
 /**

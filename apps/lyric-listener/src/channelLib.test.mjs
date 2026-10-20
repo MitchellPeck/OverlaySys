@@ -116,12 +116,20 @@ describe("WindowScheduler", () => {
     expect(s.next().samples.length).toBe(200);
   });
 
-  it("never sends more than the window length", () => {
+  it("a final after a slow request includes all the audio that piled up", () => {
     const s = mk();
-    feed(s, 1000);
+    feed(s, 100);
+    s.next();
+    feed(s, 350); // request in flight: no next() calls while audio arrives
     const w = s.next();
     expect(w.isFinal).toBe(true);
-    expect(w.samples.length).toBe(300);
+    expect(w.samples.length).toBe(450); // nothing dropped from the start
+  });
+
+  it("caps any window at the model's maximum", () => {
+    const s = new WindowScheduler({ sampleRate: 1000, stepMs: 100, lengthMs: 300, keepMs: 50, maxMs: 500 });
+    s.append(new Float32Array(2000).fill(0.1));
+    expect(s.next().samples.length).toBe(500);
   });
 });
 

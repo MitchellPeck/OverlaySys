@@ -38,6 +38,7 @@ const READY_TIMEOUT_MS = 120_000;
 const LEVELS_INTERVAL_MS = 100;
 const MAX_CONSECUTIVE_FAILURES = 10;
 const ERROR_LOG_INTERVAL_MS = 10_000;
+const NO_AUDIO_TIMEOUT_MS = 5_000;
 
 /** @type {import("node:child_process").ChildProcess[]} */
 const children = [];
@@ -94,15 +95,24 @@ function listAudioDevices(ffmpeg) {
   });
 }
 
-/** Forward a child's stderr as prefixed log lines, optionally filtered. */
+/**
+ * Forward a child's stderr as prefixed log lines, optionally filtered.
+ * Returns a getter for the last line it printed (for error messages).
+ */
 function pipeLogs(child, prefix, keep = () => true) {
   let buf = "";
+  let last = "";
   child.stderr.on("data", (d) => {
     buf += d.toString();
     const lines = buf.split(/\r?\n/);
     buf = lines.pop() ?? "";
-    for (const line of lines) if (line.trim() && keep(line)) log(`${prefix} ${line}`);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      last = line.trim();
+      if (keep(line)) log(`${prefix} ${line}`);
+    }
   });
+  return () => last;
 }
 
 async function waitForServer(port, child) {
@@ -189,22 +199,35 @@ async function main() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(ffmpeg);
-  pipeLogs(ffmpeg, "[ffmpeg]");
+  const ffmpegLastLine = pipeLogs(ffmpeg, "[ffmpeg]");
   let gotAudio = false;
+  let lastAudioAt = 0;
   ffmpeg.stdout.on("data", (chunk) => {
+    lastAudioAt = Date.now();
     if (!gotAudio) {
       gotAudio = true;
       log("[start speaking]");
     }
     windows.append(mixer.push(chunk));
   });
+  // An interface that drops off (USB unplugged, Dante restart) can leave
+  // ffmpeg running but silent forever. Surface it as an error instead of a
+  // green status that never transcribes.
+  setInterval(() => {
+    if (gotAudio && !exiting && Date.now() - lastAudioAt > NO_AUDIO_TIMEOUT_MS) {
+      fail(`No audio from '${args.device}' for ${NO_AUDIO_TIMEOUT_MS / 1000} s. Check the interface is connected and on.`);
+    }
+  }, 1000);
   ffmpeg.on("error", (err) => fail(`Couldn't start ffmpeg: ${err.message}`));
   ffmpeg.on("exit", (code, signal) => {
     if (exiting) return;
+    const detail = ffmpegLastLine();
     fail(
       gotAudio
-        ? `ffmpeg stopped (${signal ?? `exit ${code}`})`
-        : `Couldn't open '${args.device}'. Check Microphone permission in System Settings.`,
+        ? `ffmpeg stopped (${signal ?? `exit ${code}`})${detail ? `: ${detail}` : ""}`
+        : detail
+          ? `Couldn't capture '${args.device}': ${detail}`
+          : `Couldn't open '${args.device}'. Check Microphone permission in System Settings.`,
     );
   });
 
