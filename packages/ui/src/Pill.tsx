@@ -62,19 +62,59 @@ export function Pill({ tone = "neutral", uppercase = false, style, children, ...
   );
 }
 
-type DotProps = HTMLAttributes<HTMLSpanElement> & {
+type DotProps = {
   tone?: PillTone;
   size?: number;
+  /** Text shown after the dot. Without it the dot renders bare (legacy). */
+  label?: ReactNode;
+  title?: string;
+  /** Makes the dot+label a button (e.g. opens a status menu). */
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  style?: CSSProperties;
 };
 
-export function StatusDot({ tone = "neutral", size = 8, style, ...rest }: DotProps) {
-  const color = TONE[tone];
-  const base: CSSProperties = {
+export function StatusDot({ tone = "neutral", size = 8, label, title, onClick, style }: DotProps) {
+  const dot: CSSProperties = {
     display: "inline-block",
     width: size,
     height: size,
     borderRadius: radius.pill,
-    background: color,
+    background: TONE[tone],
+    flexShrink: 0,
   };
-  return <span {...rest} aria-hidden style={{ ...base, ...style }} />;
+  if (label === undefined && !onClick) {
+    return <span aria-hidden title={title} style={{ ...dot, ...style }} />;
+  }
+  const wrap: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: fontSize.sm,
+    color: colors.textDim,
+    whiteSpace: "nowrap",
+    ...style,
+  };
+  const inner = (
+    <>
+      <span aria-hidden style={dot} />
+      {label}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        title={title}
+        onClick={onClick}
+        style={{ ...wrap, background: "transparent", border: "none", padding: "2px 4px", borderRadius: radius.sm, cursor: "pointer" }}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <span title={title} style={wrap}>
+      {inner}
+    </span>
+  );
 }

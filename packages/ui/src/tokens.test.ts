@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { colors, radius, fontFamily } from "./tokens";
+import { colors, radius, fontFamily, space } from "./tokens";
 
 describe("token backward-compatibility contract", () => {
+  it("keeps the 4/8/12/16 spacing steps the console relies on", () => {
+    expect([space[1], space[2], space[3], space[4]]).toEqual([4, 8, 12, 16]);
+  });
+
   it("preserves every pre-overhaul color name as a CSS var", () => {
     const legacy = [
       "bg", "panel", "panel2", "border", "text", "textDim",
