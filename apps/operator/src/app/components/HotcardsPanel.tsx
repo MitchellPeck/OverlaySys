@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { HotcardMeta } from "@overlaysys/core";
-import { Button, colors } from "@overlaysys/ui";
+import { Button, PanelHeader, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 
@@ -59,89 +59,61 @@ export function HotcardsPanel() {
   }
 
   const header = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-      <h3
-        style={{
-          margin: 0,
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: 1.2,
-          color: colors.textDim,
-        }}
-      >
-        Hotcards
-      </h3>
-      <span style={{ color: colors.textDim, fontSize: 11 }}>
-        {hotcards.length}
-      </span>
-      <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-        <ViewToggleButton
-          active={view === "list"}
-          onClick={() => persistView("list")}
-          label="List"
-        />
-        <ViewToggleButton
-          active={view === "grid"}
-          onClick={() => persistView("grid")}
-          label="Grid"
-        />
-        <Link
-          href="/hotcards"
-          style={{
-            color: colors.textDim,
-            fontSize: 11,
-            textDecoration: "none",
-            padding: "2px 8px",
-            borderRadius: 4,
-            border: `1px solid ${colors.border}`,
-          }}
-        >
-          Manage
-        </Link>
-      </div>
-    </div>
+    <PanelHeader
+      title={`Hotcards · ${hotcards.length}`}
+      right={
+        <>
+          <ViewToggleButton active={view === "list"} onClick={() => persistView("list")} label="List" />
+          <ViewToggleButton active={view === "grid"} onClick={() => persistView("grid")} label="Grid" />
+          <Link href="/hotcards" style={{ color: colors.textDim, fontSize: 11, textDecoration: "none" }}>
+            Manage
+          </Link>
+        </>
+      }
+    />
   );
 
   if (hotcards.length === 0) {
     return (
-      <section style={{ paddingTop: 16, borderTop: `1px solid ${colors.border}`, marginTop: 16 }}>
+      <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
         {header}
-        <p style={{ color: colors.textDim, fontSize: 12 }}>
-          No hotcards yet.{" "}
-          <Link href="/hotcards" style={{ color: colors.accent2 }}>
-            Create one
-          </Link>
-          {" "}to keep reusable graphics at hand.
-        </p>
+        <div style={{ padding: 12, overflow: "auto" }}>
+          <p style={{ color: colors.textDim, fontSize: 12 }}>
+            No hotcards yet.{" "}
+            <Link href="/hotcards" style={{ color: colors.accent2 }}>
+              Create one
+            </Link>
+            {" "}to keep reusable graphics at hand.
+          </p>
+        </div>
       </section>
     );
   }
 
   return (
-    <section style={{ paddingTop: 16, borderTop: `1px solid ${colors.border}`, marginTop: 16 }}>
+    <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
       {header}
-      {view === "grid" ? (
-        <GridView
-          hotcards={hotcards}
-          templates={templates}
-          selectedId={selectedHotcardId}
-          onSelect={setSelectedHotcard}
-          onCue={(h) => fire(h, "preview")}
-          onTake={(h) => fire(h, "program")}
-        />
-      ) : (
-        <ListView
-          hotcards={hotcards}
-          templates={templates}
-          selectedId={selectedHotcardId}
-          onSelect={setSelectedHotcard}
-          onCue={(h) => fire(h, "preview")}
-          onTake={(h) => fire(h, "program")}
-        />
-      )}
-      <p style={{ marginTop: 8, fontSize: 11, color: colors.textDim }}>
-        Click to select · Enter to cue · Space to take · double-click to fire instantly
-      </p>
+      <div style={{ padding: 12, overflow: "auto" }}>
+        {view === "grid" ? (
+          <GridView
+            hotcards={hotcards}
+            templates={templates}
+            selectedId={selectedHotcardId}
+            onSelect={setSelectedHotcard}
+            onCue={(h) => fire(h, "preview")}
+            onTake={(h) => fire(h, "program")}
+          />
+        ) : (
+          <ListView
+            hotcards={hotcards}
+            templates={templates}
+            selectedId={selectedHotcardId}
+            onSelect={setSelectedHotcard}
+            onCue={(h) => fire(h, "preview")}
+            onTake={(h) => fire(h, "program")}
+          />
+        )}
+      </div>
     </section>
   );
 }
