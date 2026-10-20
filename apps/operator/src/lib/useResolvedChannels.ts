@@ -16,10 +16,10 @@ import { useStore } from "./store";
  * show/song/template/hotcard editors — should read through this hook so
  * a project override (e.g. "rename channel `program` to `Sunday PGM`
  * for this project") actually surfaces in the picker, not just on
- * `/channels`.
+ * `/settings/channels`.
  *
  * The base channel config list is the canonical source — only the
- * `/channels` page itself should read it directly, because that's the
+ * `/settings/channels` page itself should read it directly, because that's the
  * surface where you EDIT the base + per-project overrides separately.
  *
  * Resolution semantics live in `channelResolution.ts`; this hook is the
