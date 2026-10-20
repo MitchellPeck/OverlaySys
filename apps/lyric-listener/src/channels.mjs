@@ -29,6 +29,7 @@ import {
   levelsLine,
   parseArgs,
   parseAvfoundationAudioDevices,
+  parseInputStream,
 } from "./channelLib.mjs";
 
 // Distinctive so the server's boot-time orphan reaper can find a
@@ -199,7 +200,30 @@ async function main() {
     stdio: ["ignore", "pipe", "pipe"],
   });
   children.push(ffmpeg);
-  const ffmpegLastLine = pipeLogs(ffmpeg, "[ffmpeg]");
+  // ffmpeg runs at "info" so it reports the input format. Log just that
+  // (as "input: …") plus anything that looks like a problem, and check that
+  // macOS actually delivers the channels we picked — asking ffmpeg for a
+  // channel beyond what it receives doesn't error, it records silence.
+  let inputSeen = false;
+  const ffmpegLastLine = pipeLogs(ffmpeg, "[ffmpeg]", (line) => {
+    if (exiting) return false; // broken-pipe noise while we shut down
+    // The first stream line is the input; a later one describes our output.
+    const input = inputSeen ? null : parseInputStream(line);
+    if (input) {
+      inputSeen = true;
+      log(`[ffmpeg] input: ${input.sampleRate} Hz, ${input.channels} channel${input.channels === 1 ? "" : "s"} delivered by macOS`);
+      const missing = args.channels.filter((c) => c > input.channels);
+      if (missing.length) {
+        fail(
+          `macOS delivers only ${input.channels} channel${input.channels === 1 ? "" : "s"} of '${args.device}' to the capture, ` +
+            `so channel ${missing.join(", ")} can't be recorded (it would be silent).`,
+        );
+      }
+      return false;
+    }
+    if (parseInputStream(line)) return false;
+    return /error|fail|denied|not permitted|invalid|cannot|could not/i.test(line);
+  });
   let gotAudio = false;
   let lastAudioAt = 0;
   ffmpeg.stdout.on("data", (chunk) => {

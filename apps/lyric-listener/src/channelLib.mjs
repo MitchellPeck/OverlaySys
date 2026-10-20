@@ -28,7 +28,10 @@ export function panFilter(channels) {
 export function ffmpegCaptureArgs(device, channels) {
   return [
     "-hide_banner",
-    "-loglevel", "error",
+    // "info" so ffmpeg prints the input stream line (how many channels macOS
+    // actually delivers); -nostats keeps it from logging progress forever.
+    "-loglevel", "info",
+    "-nostats",
     "-f", "avfoundation",
     "-i", `:${device}`,
     "-af", panFilter(channels),
@@ -251,4 +254,27 @@ export function parseAvfoundationAudioDevices(text) {
     if (m) names.push(m[2].trim());
   }
   return names;
+}
+
+// Channel counts for ffmpeg's named layouts.
+const LAYOUT_CHANNELS = {
+  mono: 1, stereo: 2, "2.1": 3, "3.0": 3, quad: 4, "4.0": 4, "4.1": 5,
+  "5.0": 5, "5.1": 6, "6.0": 6, "6.1": 7, "7.0": 7, "7.1": 8, octagonal: 8,
+};
+
+/**
+ * Sample rate and channel count from ffmpeg's input stream line, e.g.
+ * "Stream #0:0: Audio: pcm_f32le, 48000 Hz, 32 channels, flt". This is what
+ * macOS actually hands ffmpeg — which can be fewer channels than the device
+ * has. Null for any other line.
+ * @param {string} line
+ */
+export function parseInputStream(line) {
+  const m = line.match(/Stream #0:0[^:]*: Audio: [^,]+, (\d+) Hz, ([^,]+)/);
+  if (!m) return null;
+  const layout = m[2].trim();
+  const n = layout.match(/^(\d+) channels/);
+  const channels = n ? Number(n[1]) : LAYOUT_CHANNELS[layout.replace(/\(.*\)$/, "")];
+  if (!channels) return null;
+  return { sampleRate: Number(m[1]), channels };
 }

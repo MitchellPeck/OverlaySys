@@ -175,3 +175,17 @@ describe("parseAvfoundationAudioDevices", () => {
     ]);
   });
 });
+
+describe("parseInputStream", async () => {
+  const { parseInputStream } = await import("./channelLib.mjs");
+  it("reads rate and channel count from ffmpeg's input stream line", () => {
+    expect(parseInputStream("  Stream #0:0: Audio: pcm_f32le, 44100 Hz, stereo, flt, 2822 kb/s")).toEqual({ sampleRate: 44100, channels: 2 });
+    expect(parseInputStream("  Stream #0:0: Audio: pcm_f32le, 48000 Hz, 32 channels, flt, 49152 kb/s")).toEqual({ sampleRate: 48000, channels: 32 });
+    expect(parseInputStream("  Stream #0:0: Audio: pcm_s16le, 48000 Hz, mono, s16")).toEqual({ sampleRate: 48000, channels: 1 });
+    expect(parseInputStream("  Stream #0:0: Audio: pcm_f32le, 48000 Hz, 7.1, flt")).toEqual({ sampleRate: 48000, channels: 8 });
+  });
+  it("ignores other lines (including the output stream)", () => {
+    expect(parseInputStream("Input #0, avfoundation, from ':NDI Audio':")).toBeNull();
+    expect(parseInputStream("  Stream #0:0 -> #0:0 (pcm_f32le (native) -> pcm_s16le (native))")).toBeNull();
+  });
+});
