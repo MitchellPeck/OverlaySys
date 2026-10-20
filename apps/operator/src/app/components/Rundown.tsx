@@ -1,25 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Field, ScriptureRow, SongRow, VideoRow } from "@overlaysys/core";
-import { resolveArrangement, resolveSongChannel } from "@overlaysys/core";
-import { Button, IconButton, Modal, colors, fontSize as ts, radius } from "@overlaysys/ui";
+import type { Field } from "@overlaysys/core";
+import { resolveArrangement } from "@overlaysys/core";
+import { IconButton, Modal, colors, radius } from "@overlaysys/ui";
+import { BookOpen, Film, Music, Type } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { rowAirState, type AirState } from "@/lib/rowAirState";
 import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
-import { HotcardsPanel } from "./HotcardsPanel";
-import { SongTakeStrip } from "./SongTakeStrip";
-import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
 
 type ImagePreview = { src: string; label: string };
 
-interface RundownProps {
-  onEditScriptureRow?: (row: ScriptureRow) => void;
-}
-
-export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
+export function Rundown() {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const templates = useStore((s) => s.templates);
@@ -27,10 +22,9 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
   const conn = useStore((s) => s.conn);
   const selectedRowId = useStore((s) => s.selectedRowId);
   const setSelectedRow = useStore((s) => s.setSelectedRow);
-  const selectedHotcardId = useStore((s) => s.selectedHotcardId);
-  const hotcardCache = useStore((s) => s.hotcardCache);
   const songs = useStore((s) => s.songs);
   const songCache = useStore((s) => s.songCache);
+  const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
@@ -55,331 +49,111 @@ export function Rundown({ onEditScriptureRow }: RundownProps = {}) {
 
   if (!show) {
     return (
-      <div>
-        <p style={{ color: colors.textDim }}>
-          No show loaded. Pick one above to get started.
-        </p>
-        <HotcardsPanel />
-      </div>
+      <p style={{ color: colors.textDim, padding: 12, margin: 0 }}>
+        No show loaded. Pick one from the top bar.
+      </p>
     );
   }
 
-  function cueSelected() {
-    if (selectedRowId && show) {
-      const row = show.rows.find((r) => r.id === selectedRowId);
-      if (!row) return;
-      if (row.kind === "song") {
-        send({
-          type: "song_take",
-          channel: row.channelHint ?? "preview",
-          showId: show.id,
-          songRowId: row.id,
-        });
-        return;
-      }
-      if (row.kind === "scripture") {
-        // No cue semantics for scripture rows; see takeSelected.
-        return;
-      }
-      if (row.kind === "video") {
-        // No cue for video — previewing would double the audio.
-        return;
-      }
-      send({
-        type: "cue",
-        channel: row.channelHint ?? "preview",
-        templateId: row.templateId,
-        data: row.data,
-      });
-      return;
-    }
-    if (selectedHotcardId) {
-      const h = hotcardCache[selectedHotcardId];
-      if (!h) {
-        send({ type: "get_hotcard", hotcardId: selectedHotcardId });
-        return;
-      }
-      send({
-        type: "cue",
-        channel: h.channelHint ?? "preview",
-        templateId: h.templateId,
-        data: h.data,
-      });
-    }
-  }
-
-  function takeSelected() {
-    if (selectedRowId && show) {
-      const row = show.rows.find((r) => r.id === selectedRowId);
-      if (!row) return;
-      if (row.kind === "song") {
-        send({
-          type: "song_take_pvw_to_pgm",
-          showId: show.id,
-          songRowId: row.id,
-          fromChannel: "preview",
-          toChannel: row.channelHint ?? "program",
-        });
-        return;
-      }
-      if (row.kind === "scripture") {
-        // Scripture rows are taken per-slide via ScriptureTakeStrip — there's
-        // no "take whole row" semantics. Selecting the row swaps the Cue/Take
-        // bar out for the slide strip below.
-        return;
-      }
-      if (row.kind === "video") {
-        // Already on air: Restart lives in the transport strip.
-        if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-        send(videoRowTakeMessage(row));
-        return;
-      }
-      send({
-        type: "take",
-        channel: row.channelHint ?? "program",
-        templateId: row.templateId,
-        data: row.data,
-      });
-      return;
-    }
-    if (selectedHotcardId) {
-      const h = hotcardCache[selectedHotcardId];
-      if (!h) {
-        send({ type: "get_hotcard", hotcardId: selectedHotcardId });
-        return;
-      }
-      send({
-        type: "take",
-        channel: h.channelHint ?? "program",
-        templateId: h.templateId,
-        data: h.data,
-      });
-    }
-  }
-
-  // When the selected row is a song row, render the three-segment
-  // SongTakeStrip in place of the generic Cue/Take buttons. The strip handles
-  // its own dispatch (intro/outro fire `take`, lyrics fires `song_take` or
-  // `song_advance`) using the resolved channel. Graphic rows and the
-  // no-selection / hotcard-only states keep the original Cue/Take buttons.
-  const selectedRow = selectedRowId
-    ? show.rows.find((r) => r.id === selectedRowId)
-    : null;
-  const selectedSongRow: SongRow | null =
-    selectedRow && selectedRow.kind === "song" ? selectedRow : null;
-  let songStripChannel: string | null = null;
-  if (selectedSongRow) {
-    const cachedSong = songCache[selectedSongRow.songId];
-    const showSong = show.songs.find((s) => s.songId === selectedSongRow.songId);
-    const lyricTemplate = templateCache[selectedSongRow.lyricTemplateId];
-    // resolveSongChannel needs the full Song body, so fall through to
-    // the safe `"program"` default until the song lands in the cache.
-    const resolved = cachedSong
-      ? resolveSongChannel(selectedSongRow, showSong, cachedSong, lyricTemplate)
-      : undefined;
-    songStripChannel = resolved ?? "program";
-  }
-
-  const selectedScriptureRow: ScriptureRow | null =
-    selectedRow && selectedRow.kind === "scripture" ? selectedRow : null;
-  const scriptureChannel = selectedScriptureRow?.channelHint ?? "program";
-
   return (
     <div>
-      {selectedSongRow && songStripChannel ? (
-        <SongTakeStrip
-          show={show}
-          row={selectedSongRow}
-          channel={songStripChannel}
-          liveSession={songSessions[songStripChannel] ?? null}
-        />
-      ) : selectedScriptureRow ? (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onEditScriptureRow?.(selectedScriptureRow)}
-            >
-              Edit slides…
-            </Button>
-          </div>
-          <ScriptureTakeStrip row={selectedScriptureRow} channel={scriptureChannel} />
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <Button onClick={cueSelected} size="md" style={{ flex: 1 }}>Cue ▶ PVW (Enter)</Button>
-          <Button onClick={takeSelected} variant="primary" size="md" style={{ flex: 1 }}>Take ▶ PGM</Button>
-        </div>
-      )}
-
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-        <thead>
-          <tr style={{ color: colors.textDim, textAlign: "left" }}>
-            <th style={th()}>#</th>
-            <th style={th()}>Template</th>
-            <th style={th()}>Data</th>
-          </tr>
-        </thead>
-        <tbody>
-          {show.rows.map((row, i) => {
-            const selected = row.id === selectedRowId;
-            if (row.kind === "song") {
-              const song = songs.find((s) => s.id === row.songId);
-              const cachedSong = songCache[row.songId];
-              const showSong = show.songs.find((s) => s.songId === row.songId);
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => setSelectedRow(row.id)}
-                  onDoubleClick={() => {
-                    setSelectedRow(row.id);
-                    send({
-                      type: "song_take_pvw_to_pgm",
-                      showId: show.id,
-                      songRowId: row.id,
-                      fromChannel: "preview",
-                      toChannel: row.channelHint ?? "program",
-                    });
-                  }}
-                  style={{
-                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
-                    borderLeft: selected
-                      ? `3px solid ${colors.accent}`
-                      : "3px solid transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td style={td()}>{i + 1}</td>
-                  <td style={td()}>
-                    <div style={{ fontWeight: 600 }}>
-                      <span aria-hidden style={{ marginRight: 6 }}>♪</span>
-                      {song?.title ?? row.songId}
-                    </div>
-                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
-                      song · {row.lyricTemplateId}
-                    </div>
-                  </td>
-                  <td style={td()}>
-                    <span style={{ color: colors.textDim, fontSize: 11 }}>
-                      arrangement: {cachedSong
-                        ? arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)
-                        : (row.arrangement ?? showSong?.arrangement ?? []).join(" · ") || "(default)"}
-                    </span>
-                  </td>
-                </tr>
-              );
-            }
-            if (row.kind === "scripture") {
-              // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => setSelectedRow(row.id)}
-                  style={{
-                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
-                    borderLeft: selected
-                      ? `3px solid ${colors.accent}`
-                      : "3px solid transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td style={td()}>{i + 1}</td>
-                  <td style={td()} colSpan={2}>
-                    <div style={{ fontWeight: 600 }}>
-                      <span aria-hidden style={{ marginRight: 6 }}>📖</span>
-                      {row.reference}
-                    </div>
-                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
-                      scripture · {row.translation}
-                    </div>
-                  </td>
-                </tr>
-              );
-            }
-            if (row.kind === "video") {
-              return (
-                <tr
-                  key={row.id}
-                  onClick={() => setSelectedRow(row.id)}
-                  onDoubleClick={() => {
-                    setSelectedRow(row.id);
-                    if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-                    send(videoRowTakeMessage(row));
-                  }}
-                  style={{
-                    background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
-                    borderLeft: selected
-                      ? `3px solid ${colors.accent}`
-                      : "3px solid transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  <td style={td()}>{i + 1}</td>
-                  <td style={td()} colSpan={2}>
-                    <div style={{ fontWeight: 600 }}>
-                      <span aria-hidden style={{ marginRight: 6 }}>🎬</span>
-                      {row.label || "Video"}
-                    </div>
-                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
-                      video{row.durationSec ? ` · ${formatClock(row.durationSec)}` : ""} ·{" "}
-                      {row.endAction === "clear" ? "clears at end" : "holds at end"}
-                    </div>
-                  </td>
-                </tr>
-              );
-            }
-            const tplMeta = templates.find((t) => t.id === row.templateId);
-            const tpl = templateCache[row.templateId] ?? null;
-            const tplName = tplMeta?.name ?? row.templateId;
+      <div role="list" style={{ display: "flex", flexDirection: "column", gap: 2, padding: 6 }}>
+        {show.rows.map((row, i) => {
+          const selected = row.id === selectedRowId;
+          const air = rowAirState(row, channelStates, songSessions);
+          if (row.kind === "song") {
+            const song = songs.find((s) => s.id === row.songId);
+            const cachedSong = songCache[row.songId];
+            const showSong = show.songs.find((s) => s.songId === row.songId);
             return (
-              <tr
+              <RundownItem
                 key={row.id}
+                index={i + 1}
+                icon={<Music size={14} />}
+                title={song?.title ?? row.songId}
+                typeLabel="song"
+                detail={
+                  cachedSong
+                    ? arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)
+                    : (row.arrangement ?? showSong?.arrangement ?? []).join(" · ") || "Default arrangement"
+                }
+                selected={selected}
+                air={air}
                 onClick={() => setSelectedRow(row.id)}
                 onDoubleClick={() => {
                   setSelectedRow(row.id);
                   send({
-                    type: "take",
-                    channel: row.channelHint ?? "program",
-                    templateId: row.templateId,
-                    data: row.data,
+                    type: "song_take_pvw_to_pgm",
+                    showId: show.id,
+                    songRowId: row.id,
+                    fromChannel: "preview",
+                    toChannel: row.channelHint ?? "program",
                   });
                 }}
-                style={{
-                  background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
-                  borderLeft: selected
-                    ? `3px solid ${colors.accent}`
-                    : "3px solid transparent",
-                  cursor: "pointer",
-                }}
-              >
-                <td style={td()}>{i + 1}</td>
-                <td style={td()}>
-                  <div style={{ fontWeight: 600 }}>{tplName}</div>
-                  {tplMeta && tplMeta.id !== tplName && (
-                    <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 1 }}>
-                      {tplMeta.id}
-                    </div>
-                  )}
-                </td>
-                <td style={td()}>
-                  <DataSummary
-                    data={row.data}
-                    fields={tpl?.fields ?? null}
-                    onPreviewImage={setPreview}
-                  />
-                </td>
-              </tr>
+              />
             );
-          })}
-        </tbody>
-      </table>
-
-      <p style={{ marginTop: 12, fontSize: 11, color: colors.textDim }}>
-        ↑/↓ to navigate · Enter to cue · Space to take · Esc to clear · double-click row to fire instantly
-      </p>
-
-      <HotcardsPanel />
+          }
+          if (row.kind === "scripture") {
+            return (
+              <RundownItem
+                key={row.id}
+                index={i + 1}
+                icon={<BookOpen size={14} />}
+                title={row.reference}
+                typeLabel="scripture"
+                detail={row.translation}
+                selected={selected}
+                air={air}
+                onClick={() => setSelectedRow(row.id)}
+              />
+            );
+          }
+          if (row.kind === "video") {
+            return (
+              <RundownItem
+                key={row.id}
+                index={i + 1}
+                icon={<Film size={14} />}
+                title={row.label || "Video"}
+                typeLabel="video"
+                detail={`${row.durationSec ? `${formatClock(row.durationSec)} · ` : ""}${row.endAction === "clear" ? "clears at end" : "holds at end"}`}
+                selected={selected}
+                air={air}
+                onClick={() => setSelectedRow(row.id)}
+                onDoubleClick={() => {
+                  setSelectedRow(row.id);
+                  if (onAirMediaFor(row, useStore.getState().channelStates)) return;
+                  send(videoRowTakeMessage(row));
+                }}
+              />
+            );
+          }
+          const tplMeta = templates.find((t) => t.id === row.templateId);
+          const tpl = templateCache[row.templateId] ?? null;
+          return (
+            <RundownItem
+              key={row.id}
+              index={i + 1}
+              icon={<Type size={14} />}
+              title={tplMeta?.name ?? row.templateId}
+              typeLabel="graphic"
+              detail={<DataSummary data={row.data} fields={tpl?.fields ?? null} onPreviewImage={setPreview} />}
+              selected={selected}
+              air={air}
+              onClick={() => setSelectedRow(row.id)}
+              onDoubleClick={() => {
+                setSelectedRow(row.id);
+                send({
+                  type: "take",
+                  channel: row.channelHint ?? "program",
+                  templateId: row.templateId,
+                  data: row.data,
+                });
+              }}
+            />
+          );
+        })}
+      </div>
 
       {preview && <ImagePreviewModal preview={preview} onClose={() => setPreview(null)} />}
     </div>
@@ -565,9 +339,58 @@ function truncate(s: string, max = 40): string {
   return s.slice(0, max - 1) + "…";
 }
 
-function th(): React.CSSProperties {
-  return { padding: "6px 8px", borderBottom: `1px solid ${colors.border}`, fontWeight: 500, fontSize: ts.xs };
-}
-function td(): React.CSSProperties {
-  return { padding: "8px", borderBottom: `1px solid ${colors.border}` };
+function RundownItem({
+  index,
+  icon,
+  title,
+  typeLabel,
+  detail,
+  selected,
+  air,
+  onClick,
+  onDoubleClick,
+}: {
+  index: number;
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  typeLabel: string;
+  detail?: React.ReactNode;
+  selected: boolean;
+  air: AirState;
+  onClick: () => void;
+  onDoubleClick?: () => void;
+}) {
+  const bar = air === "program" ? colors.onair : air === "preview" ? colors.ok : "transparent";
+  const tint =
+    air === "program" ? "rgba(255,51,65,0.12)" : air === "preview" ? "rgba(16,185,129,0.10)" : "transparent";
+  return (
+    <div
+      role="listitem"
+      aria-selected={selected}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        padding: "7px 8px",
+        borderRadius: radius.md,
+        cursor: "pointer",
+        background: tint,
+        boxShadow: `inset 3px 0 0 ${bar}`,
+        outline: selected ? `1px solid ${colors.brand}` : "none",
+        outlineOffset: -1,
+      }}
+    >
+      <span style={{ width: 18, textAlign: "right", color: colors.textMuted, fontSize: 11, paddingTop: 1 }}>{index}</span>
+      <span style={{ color: colors.textDim, paddingTop: 1 }}>{icon}</span>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ color: colors.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {title}
+        </div>
+        {detail && <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>{detail}</div>}
+      </div>
+      <span style={{ fontSize: 10, color: colors.textMuted, paddingTop: 2 }}>{typeLabel}</span>
+    </div>
+  );
 }
