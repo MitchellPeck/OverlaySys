@@ -8,8 +8,15 @@ import { useShellChrome } from "./ShellChromeContext";
 import { StatusBar } from "./StatusBar";
 import { AREAS, areasFor, defaultRouteFor, lastRouteKey, routeToArea, type AreaId } from "./areas";
 
-/** Navigate to an area's last-visited route, falling back to its default. */
+/**
+ * Navigate to an area's last-visited route, falling back to its default.
+ * Live has a single route, so it always goes to "/".
+ */
 export function enterArea(router: { push: (r: string) => void }, id: AreaId, cloud: boolean): void {
+  if (id === "live") {
+    router.push("/");
+    return;
+  }
   const saved = typeof window !== "undefined" ? localStorage.getItem(lastRouteKey(id)) : null;
   router.push(saved || defaultRouteFor(id, cloud));
 }

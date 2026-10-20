@@ -179,14 +179,16 @@ function headingFor(mode: StageMode): string {
 }
 
 function TakeButtons({ onCue, onTake }: { onCue?: () => void; onTake: () => void }) {
+  const disconnected = useStore((s) => s.conn) !== "open";
+  const title = disconnected ? "Disconnected from server" : undefined;
   return (
     <div style={{ display: "flex", gap: 8 }}>
       {onCue && (
-        <Button size="lg" onClick={onCue}>
+        <Button size="lg" onClick={onCue} disabled={disconnected} title={title}>
           Cue → PVW
         </Button>
       )}
-      <Button size="lg" variant="onair" onClick={onTake} style={{ minWidth: 140 }}>
+      <Button size="lg" variant="onair" onClick={onTake} disabled={disconnected} title={title} style={{ minWidth: 140 }}>
         Take
       </Button>
     </div>

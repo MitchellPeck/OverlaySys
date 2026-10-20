@@ -63,8 +63,9 @@ describe("areas model", () => {
     expect(liveToggleTarget("live", null, false)).toBe("/shows");
   });
 
-  it("⌘⇧L does nothing useful in cloud (stays put on the current area's default)", () => {
+  it("⌘⇧L in cloud returns to the last non-live route", () => {
     expect(liveToggleTarget("library", "/songs", true)).toBe("/songs");
+    expect(liveToggleTarget("library", null, true)).toBe("/shows");
   });
 
   it("lists areas in tab order", () => {

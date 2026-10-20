@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Pencil } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 
@@ -35,7 +36,7 @@ export function ShowPicker() {
       </select>
       {show && (
         <Link href={`/shows/edit?id=${encodeURIComponent(show.id)}`} title="Edit show" style={iconLink}>
-          ✎
+          <Pencil size={14} aria-hidden />
         </Link>
       )}
       <Link href="/shows" title="Manage shows" style={iconLink}>

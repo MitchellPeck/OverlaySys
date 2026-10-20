@@ -12,7 +12,7 @@ import { useStore } from "./store";
  * Channel-list reader with the active project's overrides applied.
  *
  * Every operator component that needs to display channels — TakePanel's
- * channel dropdown, ChannelsList in the show page, channel selectors in
+ * channel dropdown, ChannelDots in the console bottom bar, channel selectors in
  * show/song/template/hotcard editors — should read through this hook so
  * a project override (e.g. "rename channel `program` to `Sunday PGM`
  * for this project") actually surfaces in the picker, not just on

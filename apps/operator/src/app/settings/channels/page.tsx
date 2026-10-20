@@ -490,10 +490,10 @@ function ChannelRow({
           )}
           {override && (
             <span style={{ color: colors.accent2 }}>
-              ● overridden in {currentProjectName}
+              <span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />overridden in {currentProjectName}
             </span>
           )}
-          {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}>● unsaved</span>}
+          {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}><span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved</span>}
         </div>
         {showOverride && (
           <ProjectOverrideEditor

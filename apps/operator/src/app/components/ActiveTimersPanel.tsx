@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, RotateCcw } from "lucide-react";
 import { Button, colors, radius } from "@overlaysys/ui";
 import type { ChannelState, Field, Template } from "@overlaysys/core";
 import {
@@ -288,7 +288,7 @@ function ActiveTimerRow({
           +1m
         </Button>
         <Button onClick={reset} variant="ghost" size="sm" title="Restart from the original duration">
-          ↻ Reset
+          <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
       </div>
     </div>

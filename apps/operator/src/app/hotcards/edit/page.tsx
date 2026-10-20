@@ -263,7 +263,7 @@ function HotcardEditPageInner() {
             <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
             {dirty && (
               <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>
-                ● unsaved
+                <span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved
               </span>
             )}
           </>

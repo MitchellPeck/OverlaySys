@@ -34,7 +34,7 @@ export function Rundown() {
     for (const r of show.rows) {
       if (r.kind === "scripture") {
         // Scripture rows don't use a single templateId for lookup here;
-        // they dispatch per-slide via ScriptureTakeStrip.
+        // they dispatch per-slide via ScriptureTakeStrip in the stage area.
         continue;
       }
       if (r.kind === "video") continue;

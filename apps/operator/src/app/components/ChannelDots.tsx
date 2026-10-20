@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import type { ChannelConfig } from "@overlaysys/core";
 import { Button, StatusDot, colors } from "@overlaysys/ui";
 import { ExternalLink, RotateCw, Settings2, X } from "lucide-react";
@@ -16,7 +17,14 @@ import { ChannelWindowSettingsPopover } from "./ChannelWindowSettingsPopover";
 export function ChannelDots() {
   const channels = useResolvedChannelConfigs();
   if (channels.length === 0) {
-    return <span style={{ color: colors.textMuted, fontSize: 12 }}>No channels configured</span>;
+    return (
+      <span style={{ color: colors.textMuted, fontSize: 12 }}>
+        No channels configured ·{" "}
+        <Link href="/settings/channels" style={{ color: colors.textDim }}>
+          Set up channels
+        </Link>
+      </span>
+    );
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
