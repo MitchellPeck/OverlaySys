@@ -5,6 +5,7 @@ import type { SongSessionSummary } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
+import { graphicRowMessage } from "@/lib/rowData";
 
 /**
  * Global keyboard shortcuts for the show page.
@@ -82,12 +83,7 @@ export function useGlobalShortcuts(): void {
       } else if (e.code === "Enter") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send({
-            type: "cue",
-            channel: row.channelHint ?? "preview",
-            templateId: row.templateId,
-            data: row.data,
-          });
+          client.send(graphicRowMessage(row, "cue", store.rowDataOverrides));
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",
@@ -106,12 +102,7 @@ export function useGlobalShortcuts(): void {
       } else if (e.code === "Space") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send({
-            type: "take",
-            channel: row.channelHint ?? "program",
-            templateId: row.templateId,
-            data: row.data,
-          });
+          client.send(graphicRowMessage(row, "take", store.rowDataOverrides));
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",

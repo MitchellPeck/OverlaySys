@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import type { Field } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
 import { IconButton, Modal, colors, radius } from "@overlaysys/ui";
-import { BookOpen, Film, Image, Music, Type } from "lucide-react";
+import { BookOpen, Film, Image, Music, Pencil, Type } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { rowAirState, type AirState } from "@/lib/rowAirState";
+import { editedFieldKeys, effectiveRowData, graphicRowMessage, withEffectiveData } from "@/lib/rowData";
 import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
 
 type ImagePreview = { src: string; label: string };
@@ -26,6 +27,7 @@ export function Rundown() {
   const songCache = useStore((s) => s.songCache);
   const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
+  const overrides = useStore((s) => s.rowDataOverrides);
   const [preview, setPreview] = useState<ImagePreview | null>(null);
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function Rundown() {
       <div role="list" style={{ display: "flex", flexDirection: "column", gap: 2, padding: 6 }}>
         {show.rows.map((row, i) => {
           const selected = row.id === selectedRowId;
-          const air = rowAirState(row, channelStates, songSessions);
+          const air = rowAirState(withEffectiveData(row, overrides), channelStates, songSessions);
           if (row.kind === "song") {
             const song = songs.find((s) => s.id === row.songId);
             const cachedSong = songCache[row.songId];
@@ -135,20 +137,26 @@ export function Rundown() {
               key={row.id}
               index={i + 1}
               icon={<Type size={14} />}
-              title={tplMeta?.name ?? row.templateId}
+              title={
+                editedFieldKeys(row, overrides).length > 0 ? (
+                  <>
+                    {tplMeta?.name ?? row.templateId}{" "}
+                    <span title="Edited for this session" style={{ display: "inline-flex", verticalAlign: "-1px" }}>
+                      <Pencil size={12} color={colors.warn} aria-label="Edited for this session" />
+                    </span>
+                  </>
+                ) : (
+                  tplMeta?.name ?? row.templateId
+                )
+              }
               typeLabel="graphic"
-              detail={<DataSummary data={row.data} fields={tpl?.fields ?? null} onPreviewImage={setPreview} />}
+              detail={<DataSummary data={effectiveRowData(row, overrides)} fields={tpl?.fields ?? null} onPreviewImage={setPreview} />}
               selected={selected}
               air={air}
               onClick={() => setSelectedRow(row.id)}
               onDoubleClick={() => {
                 setSelectedRow(row.id);
-                send({
-                  type: "take",
-                  channel: row.channelHint ?? "program",
-                  templateId: row.templateId,
-                  data: row.data,
-                });
+                send(graphicRowMessage(row, "take", overrides));
               }}
             />
           );
