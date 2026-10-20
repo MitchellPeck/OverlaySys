@@ -75,9 +75,9 @@ export function HotcardsPanel() {
 
   if (hotcards.length === 0) {
     return (
-      <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {header}
-        <div style={{ padding: 12, overflow: "auto" }}>
+        <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
           <p style={{ color: colors.textDim, fontSize: 12 }}>
             No hotcards yet.{" "}
             <Link href="/hotcards" style={{ color: colors.accent2 }}>
@@ -91,9 +91,9 @@ export function HotcardsPanel() {
   }
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {header}
-      <div style={{ padding: 12, overflow: "auto" }}>
+      <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
         {view === "grid" ? (
           <GridView
             hotcards={hotcards}

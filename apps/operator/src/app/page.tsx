@@ -88,8 +88,12 @@ function ShowPageLocal() {
           <StageArea />
         </section>
         <section style={columnStyle}>
-          <TimersRail />
-          <HotcardsPanel />
+          <div style={{ flex: "0 1 auto", maxHeight: "45%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <TimersRail />
+          </div>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <HotcardsPanel />
+          </div>
         </section>
       </div>
       <ConsoleBottomBar />

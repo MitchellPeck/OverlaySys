@@ -11,7 +11,7 @@ export function TimersRail() {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <PanelHeader
         title="Timers"
         right={
@@ -22,7 +22,7 @@ export function TimersRail() {
           </span>
         }
       />
-      <div style={{ padding: 12, overflow: "auto" }}>
+      <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
         <ActiveTimersPanel />
       </div>
       {open && (
