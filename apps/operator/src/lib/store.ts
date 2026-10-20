@@ -36,8 +36,9 @@ export type ShowMeta = {
 export type SttMatchStrategy = "coverage" | "neighborhood" | "audible";
 
 type SttMatchSummary = {
-  sectionIdx: number;
-  slideIdx: number;
+  // Null when the server heard something but it matched no slide. The
+  // hypothesis is still kept so the operator can see what STT is hearing.
+  suggestedSlide: { sectionIdx: number; slideIdx: number } | null;
   confidence: number;
   hypothesis: string;
   strategy: SttMatchStrategy | null;

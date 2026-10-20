@@ -106,9 +106,10 @@ function bootstrap(): void {
         }
         break;
       case "stt_match":
-        store.setSttMatch(msg.channel, msg.suggestedSlide ? {
-          sectionIdx: msg.suggestedSlide.sectionIdx,
-          slideIdx: msg.suggestedSlide.slideIdx,
+        store.setSttMatch(msg.channel, {
+          suggestedSlide: msg.suggestedSlide
+            ? { sectionIdx: msg.suggestedSlide.sectionIdx, slideIdx: msg.suggestedSlide.slideIdx }
+            : null,
           confidence: msg.confidence,
           hypothesis: msg.hypothesis,
           strategy: msg.strategy,
@@ -116,7 +117,7 @@ function bootstrap(): void {
           coverage: msg.coverage,
           latencyMs: msg.latencyMs,
           isFinal: msg.isFinal,
-        } : null);
+        });
         break;
       case "stt_listener_state":
         store.setSttListeners(msg.listeners);

@@ -16,6 +16,7 @@ export function SongModePanel({ channel, session }: Props) {
   const { send } = useWs();
   const song = useStore((s) => s.songCache[session.songId]);
   const sttMatch = useStore((s) => s.sttMatches[channel]);
+  const sttOnline = useStore((s) => s.sttListeners.some((l) => l.online));
 
   useEffect(() => {
     if (!song) {
@@ -31,14 +32,20 @@ export function SongModePanel({ channel, session }: Props) {
   const currentSection = song.sections.find((s) => s.id === currentSectionId);
 
   const suggestedSlideIdx = (
-    sttMatch &&
-    sttMatch.sectionIdx === session.cursor.sectionIdx
-  ) ? sttMatch.slideIdx : undefined;
+    sttMatch?.suggestedSlide &&
+    sttMatch.suggestedSlide.sectionIdx === session.cursor.sectionIdx
+  ) ? sttMatch.suggestedSlide.slideIdx : undefined;
 
   return (
     <div style={panelStyle()}>
       <Header channel={channel} song={song} session={session} />
-      {sttMatch && <SttDebugStrip match={sttMatch} />}
+      {sttMatch ? (
+        <SttDebugStrip match={sttMatch} />
+      ) : sttOnline ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim }}>
+          STT listening — nothing heard yet
+        </div>
+      ) : null}
       <div style={{
         display: "grid",
         gridTemplateColumns: "minmax(150px, 200px) minmax(0, 1fr) minmax(180px, 240px)",
@@ -105,12 +112,18 @@ function SttDebugStrip({ match }: { match: SttMatchView }) {
         <span style={{ fontFamily: "ui-monospace, monospace", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           &ldquo;{match.hypothesis}&rdquo;
         </span>
-        <span>&rarr; sec {match.sectionIdx + 1}, slide {match.slideIdx + 1}</span>
-        <span title="Coverage of cursor slide">cov {(match.coverage * 100).toFixed(0)}%</span>
-        <span title="Audio→suggestion latency">{match.latencyMs}ms</span>
-        <span style={{ fontWeight: 600, color: aboveTake ? colors.green : colors.textDim }}>
-          {(match.confidence * 100).toFixed(0)}%
-        </span>
+        {match.suggestedSlide ? (
+          <>
+            <span>&rarr; sec {match.suggestedSlide.sectionIdx + 1}, slide {match.suggestedSlide.slideIdx + 1}</span>
+            <span title="Coverage of cursor slide">cov {(match.coverage * 100).toFixed(0)}%</span>
+            <span title="Audio→suggestion latency">{match.latencyMs}ms</span>
+            <span style={{ fontWeight: 600, color: aboveTake ? colors.green : colors.textDim }}>
+              {(match.confidence * 100).toFixed(0)}%
+            </span>
+          </>
+        ) : (
+          <span title="STT heard this, but it matched no slide in this song">no match</span>
+        )}
         <button
           onClick={() => setShowDetails((v) => !v)}
           title="Toggle matched-token detail"
