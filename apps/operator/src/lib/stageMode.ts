@@ -1,7 +1,7 @@
 import type { GraphicRow, ScriptureRow, Show, SongRow, SongSessionSummary, VideoRow } from "@overlaysys/core";
 
 export type StageMode =
-  | { kind: "song-live"; channel: "program" | "preview"; session: SongSessionSummary }
+  | { kind: "song-live"; channel: "program" | "preview"; session: SongSessionSummary; selection: StageMode }
   | { kind: "quick-take" }
   | { kind: "song"; row: SongRow }
   | { kind: "scripture"; row: ScriptureRow }
@@ -10,23 +10,33 @@ export type StageMode =
   | { kind: "hotcard"; hotcardId: string }
   | { kind: "empty" };
 
-/**
- * What the console's stage area shows. Precedence: a live song session
- * (program before preview) > quick take > selected row > selected hotcard >
- * empty. Mirrors the old Show page, where song mode replaced the take column.
- */
-export function stageModeFor(input: {
+type StageInput = {
   show: Show | null;
   selectedRowId: string | null;
   selectedHotcardId: string | null;
   songSessions: Record<string, SongSessionSummary | null>;
   quickTake: boolean;
-}): StageMode {
-  const { show, selectedRowId, selectedHotcardId, songSessions, quickTake } = input;
+};
+
+/**
+ * What the console's stage area shows. Precedence: a live song session
+ * (program before preview) > quick take > selected row > selected hotcard >
+ * empty. A live song session still carries the underlying selection so the
+ * selected row's controls stay reachable below the song panel (as the old
+ * Rundown kept them while song mode replaced only the take column).
+ */
+export function stageModeFor(input: StageInput): StageMode {
   for (const channel of ["program", "preview"] as const) {
-    const session = songSessions[channel];
-    if (session) return { kind: "song-live", channel, session };
+    const session = input.songSessions[channel];
+    // The Quick take toggle is hidden in song mode, so the selection ignores it.
+    if (session) return { kind: "song-live", channel, session, selection: selectionModeFor({ ...input, quickTake: false }) };
   }
+  return selectionModeFor(input);
+}
+
+/** The stage mode ignoring song sessions. */
+function selectionModeFor(input: StageInput): StageMode {
+  const { show, selectedRowId, selectedHotcardId, quickTake } = input;
   if (quickTake) return { kind: "quick-take" };
   const row = selectedRowId && show ? show.rows.find((r) => r.id === selectedRowId) : undefined;
   if (row) {
@@ -47,9 +57,16 @@ export function stageModeFor(input: {
 
 /** One-line keyboard hint for the stage area. Text only; bindings live in useGlobalShortcuts. */
 export function shortcutHint(mode: StageMode): string {
-  if (mode.kind === "song-live") {
-    return "Space next · Shift+Space previous · C/B/T chorus/bridge/tag · 1–9 verse · . blank · Esc end song";
+  switch (mode.kind) {
+    case "song-live":
+      return "Space next · Shift+Space previous · C/B/T chorus/bridge/tag · 1–9, 0 verse · . blank · Esc end song";
+    case "quick-take":
+      return "Keys act on the rundown selection · use the buttons above for Quick take";
+    case "scripture":
+      return "↑/↓ select · Use the slide strip to take · ⌘Enter PVW → PGM · Esc clear program";
+    default: {
+      const space = mode.kind === "video" ? "Space take / play-pause" : "Space take";
+      return `↑/↓ select · Enter cue · ${space} · ⌘Enter PVW → PGM · Esc clear program`;
+    }
   }
-  const space = mode.kind === "video" ? "Space take / play-pause" : "Space take";
-  return `↑/↓ select · Enter cue · ${space} · ⌘Enter PVW → PGM · Esc clear program`;
 }
