@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
 import { colors, radius } from "@overlaysys/ui";
 import { ChannelPreview } from "./ChannelPreview";
 import { ChannelWindowSettingsPopover } from "./ChannelWindowSettingsPopover";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
+import { useChannelWindowPrefs } from "@/lib/useChannelWindowPrefs";
 
 export function ChannelStatus({
   label,
@@ -38,41 +39,7 @@ export function ChannelStatus({
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [hasPrefs, setHasPrefs] = useState(false);
-  const [fallbackWarning, setFallbackWarning] = useState<{
-    configuredLabel: string | null;
-    actualLabel: string;
-  } | null>(null);
-
-  const refreshPrefsState = useCallback(async () => {
-    if (!isElectron() || !config) return;
-    const api = getDesktopApi();
-    if (!api) return;
-    const [prefsFile, resolutions] = await Promise.all([
-      api.getChannelWindowPrefs(),
-      api.getChannelWindowResolutions(),
-    ]);
-    setHasPrefs(!!prefsFile.channels[config.id]);
-    const r = resolutions[config.id];
-    setFallbackWarning(
-      r && r.matchedBy === "fallback" && r.configuredLabel
-        ? { configuredLabel: r.configuredLabel, actualLabel: r.actualLabel }
-        : null,
-    );
-  }, [config]);
-
-  useEffect(() => {
-    if (!isElectron() || !config) return;
-    const api = getDesktopApi();
-    if (!api) return;
-    void refreshPrefsState();
-    const offOpened = api.onChannelWindowOpened(() => void refreshPrefsState());
-    const offClosed = api.onChannelWindowClosed(() => void refreshPrefsState());
-    return () => {
-      offOpened();
-      offClosed();
-    };
-  }, [config, refreshPrefsState]);
+  const { hasPrefs, fallbackWarning, refresh } = useChannelWindowPrefs(config);
 
   return (
     <div
@@ -205,7 +172,7 @@ export function ChannelStatus({
                       channelId={config.id}
                       anchorEl={settingsAnchorRef.current}
                       onClose={() => setSettingsOpen(false)}
-                      onSaved={() => void refreshPrefsState()}
+                      onSaved={() => void refresh()}
                     />
                   )}
                 </div>

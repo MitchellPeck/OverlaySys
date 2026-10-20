@@ -58,6 +58,18 @@ export function ChannelWindowSettingsPopover({
       window.removeEventListener("scroll", place, true);
     };
   }, [anchorEl]);
+  // Esc closes the popover and must not reach the window-level "clear
+  // program" shortcut, so intercept it in the capture phase.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      onClose();
+    }
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
   const [displays, setDisplays] = useState<CachedDisplay[]>([]);
   const [prefs, setPrefs] = useState<ChannelWindowPrefs>(DEFAULT_PREFS);
   const [file, setFile] = useState<WindowPrefsFile | null>(null);

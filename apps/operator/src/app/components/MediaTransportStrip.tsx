@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChannelMedia } from "@overlaysys/core";
+import { Film } from "lucide-react";
 import { Button, colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -32,16 +33,24 @@ const STATUS_COLOR: Record<MediaDisplayStatus, string> = {
  * channel present in `channelStates`, so media on a non-default channel shows
  * up as soon as the operator is subscribed to it.
  */
-export function MediaTransportStrip() {
+export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {}) {
   const channelStates = useStore((s) => s.channelStates);
   const entries = Object.values(channelStates).filter(
     (s): s is typeof s & { media: ChannelMedia } => !!s.media,
   );
   if (entries.length === 0) return null;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+    <div
+      style={
+        inline
+          ? { display: "flex", gap: 8, alignItems: "stretch", minWidth: 0 }
+          : { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }
+      }
+    >
       {entries.map((s) => (
-        <ChannelTransport key={s.channel} channel={s.channel} media={s.media} />
+        <div key={s.channel} style={inline ? { width: 360, flexShrink: 0 } : undefined}>
+          <ChannelTransport channel={s.channel} media={s.media} />
+        </div>
       ))}
     </div>
   );
@@ -82,7 +91,7 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <span aria-hidden>🎬</span>
+        <Film size={14} aria-hidden />
         <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {media.label || "Video"}
         </span>
