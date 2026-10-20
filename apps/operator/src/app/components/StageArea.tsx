@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { resolveSongChannel } from "@overlaysys/core";
-import { Button, PanelHeader, colors } from "@overlaysys/ui";
+import { useMemo, useState } from "react";
+import { RotateCcw } from "lucide-react";
+import { resolveSongChannel, type ChannelConfig, type ChannelState, type GraphicRow, type VideoRow } from "@overlaysys/core";
+import { Button, IconButton, PanelHeader, colors, space } from "@overlaysys/ui";
+import { FieldInput } from "@/lib/FieldInput";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
+import { formatClock, onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
+import { editedFieldKeys, effectiveRowData, graphicRowMessage } from "@/lib/rowData";
 import { shortcutHint, stageModeFor, type StageMode } from "@/lib/stageMode";
 import { SongModePanel } from "./SongModePanel";
 import { SongTakeStrip } from "./SongTakeStrip";
 import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
 import { TakePanel } from "./TakePanel";
+import { ChannelPreview } from "./ChannelPreview";
 
 /**
  * Centre-bottom of the Live console: controls for whatever is selected.
@@ -106,34 +110,181 @@ function SelectionControls({ mode }: { mode: StageMode }) {
     case "scripture":
       return <ScriptureTakeStrip row={mode.row} channel={mode.row.channelHint ?? "program"} />;
     case "graphic":
-      return (
-        <TakeButtons
-          onCue={() =>
-            send({ type: "cue", channel: mode.row.channelHint ?? "preview", templateId: mode.row.templateId, data: mode.row.data })
-          }
-          onTake={() =>
-            send({ type: "take", channel: mode.row.channelHint ?? "program", templateId: mode.row.templateId, data: mode.row.data })
-          }
-        />
-      );
+      return <GraphicStage row={mode.row} />;
     case "video":
-      return onAirMediaFor(mode.row, channelStates) ? (
-        <p style={{ color: colors.textDim, margin: 0 }}>On air. Use the transport in the bottom bar.</p>
-      ) : (
-        <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row))} />
+      return (
+        <>
+          {onAirMediaFor(mode.row, channelStates) ? (
+            <p style={{ color: colors.textDim, margin: 0 }}>On air. Use the transport in the bottom bar.</p>
+          ) : (
+            <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row))} />
+          )}
+          <VideoDetails row={mode.row} />
+        </>
       );
-    case "hotcard":
+    case "hotcard": {
+      const h = hotcardCache[mode.hotcardId];
+      const fields = h ? templateCache[h.templateId]?.fields : undefined;
+      const entries: [string, string][] = h
+        ? fields
+          ? fields.filter((f) => h.data[f.key] !== undefined).map((f) => [f.label, h.data[f.key]!])
+          : Object.entries(h.data)
+        : [];
       return (
         <>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>
             {hotcards.find((h) => h.id === mode.hotcardId)?.name ?? "Hotcard"}
           </div>
-          <TakeButtons onCue={() => fireHotcard(mode.hotcardId, "preview")} onTake={() => fireHotcard(mode.hotcardId, "program")} />
+          <div style={stageColumns}>
+            <div style={previewColumn}>
+              {h && <StagePreview rowId={`hotcard:${h.id}`} templateId={h.templateId} data={h.data} />}
+              <TakeButtons onCue={() => fireHotcard(mode.hotcardId, "preview")} onTake={() => fireHotcard(mode.hotcardId, "program")} />
+            </div>
+            {entries.length > 0 && (
+              <dl style={{ ...fieldsColumn, margin: 0, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 12px", alignContent: "start", fontSize: 12 }}>
+                {entries.map(([label, value], i) => (
+                  <div key={i} style={{ display: "contents" }}>
+                    <dt style={{ color: colors.textDim }}>{label}</dt>
+                    <dd style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={value}>
+                      {value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </div>
         </>
       );
+    }
     case "empty":
       return <p style={{ color: colors.textDim, margin: 0 }}>Select a rundown item, or use Quick take.</p>;
   }
+}
+
+// Preview left (260–360px), fields right; wraps to one column below ~640px of container width.
+const stageColumns: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: space[4], alignItems: "flex-start" };
+const previewColumn: React.CSSProperties = {
+  flex: "1 1 300px",
+  minWidth: 260,
+  maxWidth: 360,
+  display: "flex",
+  flexDirection: "column",
+  gap: space[3],
+};
+const fieldsColumn: React.CSSProperties = { flex: "999 1 320px", minWidth: 0 };
+
+/** Selected graphic row: preview + Cue/Take on the left, session-only field edits on the right. */
+function GraphicStage({ row }: { row: GraphicRow }) {
+  const { send } = useWs();
+  const templateCache = useStore((s) => s.templateCache);
+  const overrides = useStore((s) => s.rowDataOverrides);
+  const setRowFieldOverride = useStore((s) => s.setRowFieldOverride);
+  const clearRowOverrides = useStore((s) => s.clearRowOverrides);
+  const data = useMemo(() => effectiveRowData(row, overrides), [row, overrides]);
+  const edited = editedFieldKeys(row, overrides);
+  const fields = templateCache[row.templateId]?.fields;
+
+  return (
+    <div style={stageColumns}>
+      <div style={previewColumn}>
+        <StagePreview rowId={row.id} templateId={row.templateId} data={data} />
+        <TakeButtons
+          onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides))}
+          onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides))}
+        />
+      </div>
+      <div style={fieldsColumn}>
+        {!fields ? (
+          <p style={{ fontSize: 12, color: colors.textDim, margin: 0 }}>Loading fields…</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: space[2] }}>
+            {fields.map((f) => {
+              const isEdited = edited.includes(f.key);
+              return (
+                <div key={f.key} style={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr) 24px", gap: space[2], alignItems: "center" }}>
+                  <label style={{ fontSize: 12, color: colors.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.label}>
+                    {f.label}
+                  </label>
+                  <div style={{ borderLeft: `2px solid ${isEdited ? colors.warn : "transparent"}`, paddingLeft: 6, minWidth: 0 }}>
+                    <FieldInput
+                      field={f}
+                      value={data[f.key]}
+                      onChange={(v) => setRowFieldOverride(row.id, f.key, v, row.data[f.key])}
+                    />
+                  </div>
+                  {isEdited ? (
+                    <IconButton
+                      size={24}
+                      title="Reset to saved value"
+                      aria-label={`Reset ${f.label} to saved value`}
+                      onClick={() => setRowFieldOverride(row.id, f.key, row.data[f.key] ?? "", row.data[f.key] ?? "")}
+                    >
+                      <RotateCcw size={12} />
+                    </IconButton>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: space[2], marginTop: space[3], minHeight: 28 }}>
+          <span style={{ fontSize: 12, color: colors.textDim }}>→ {row.channelHint ?? "program"}</span>
+          {edited.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => clearRowOverrides(row.id)} style={{ marginLeft: "auto" }}>
+              Reset edits
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VideoDetails({ row }: { row: VideoRow }) {
+  const items: [string, string][] = [
+    ["Label", row.label || "Video"],
+    ...(row.durationSec ? ([["Duration", formatClock(row.durationSec)]] as [string, string][]) : []),
+    ["At end", row.endAction === "clear" ? "clears at end" : "holds at end"],
+  ];
+  return (
+    <dl style={{ margin: `${space[3]}px 0 0`, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 12px", fontSize: 12 }}>
+      {items.map(([k, v]) => (
+        <div key={k} style={{ display: "contents" }}>
+          <dt style={{ color: colors.textDim }}>{k}</dt>
+          <dd style={{ margin: 0 }}>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+const STAGE_PREVIEW_CONFIG: ChannelConfig = {
+  id: "__stage-preview",
+  name: "Selected",
+  renderMode: "normal",
+  background: "transparent",
+};
+
+/**
+ * Display-only render of the selected item, via the sidebar's ChannelPreview
+ * fed a synthetic channel. `takenAt` is fixed per row so field edits update
+ * the mount in place; selecting another row replays the in animation.
+ */
+function StagePreview({ rowId, templateId, data }: { rowId: string; templateId: string; data: Record<string, string> }) {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const takenAt = useMemo(() => Date.now(), [rowId]);
+  const state = useMemo<ChannelState>(
+    () => ({ channel: STAGE_PREVIEW_CONFIG.id, active: { templateId, data, phase: "on", takenAt } }),
+    [templateId, data, takenAt],
+  );
+  return (
+    <div style={{ width: "100%", maxWidth: 360 }}>
+      <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>Selected</div>
+      <ChannelPreview config={STAGE_PREVIEW_CONFIG} state={state} />
+    </div>
+  );
 }
 
 /** Short title for the selection shown under song mode: the row's title, else its kind. */
