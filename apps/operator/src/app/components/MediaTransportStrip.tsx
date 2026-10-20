@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ChannelMedia } from "@overlaysys/core";
-import { Film, Pause, Play, RotateCcw } from "lucide-react";
-import { Button, colors, radius } from "@overlaysys/ui";
+import { Film, Pause, Play, RotateCcw, Square } from "lucide-react";
+import { Button, StatusDot, colors, radius, type PillTone } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock } from "@/lib/mediaTake";
@@ -18,20 +18,25 @@ const STATUS_LABEL: Record<MediaDisplayStatus, string> = {
   "no-renderer": "No renderer reporting",
 };
 
-const STATUS_COLOR: Record<MediaDisplayStatus, string> = {
-  loading: colors.textDim,
-  playing: "#3ccf6e",
-  paused: "#f0b429",
-  ended: colors.textDim,
-  error: colors.red,
-  "no-renderer": colors.red,
+const STATUS_TONE: Record<MediaDisplayStatus, PillTone> = {
+  loading: "dim",
+  playing: "good",
+  paused: "warn",
+  ended: "dim",
+  error: "bad",
+  "no-renderer": "bad",
 };
+
+const ICON_STYLE: CSSProperties = { verticalAlign: "-2px" };
 
 /**
  * Transport for every channel currently holding media. Shown regardless of
  * the selected rundown row so Stop is always one click away. Lists every
  * channel present in `channelStates`, so media on a non-default channel shows
  * up as soon as the operator is subscribed to it.
+ *
+ * `inline` renders each channel as a compact single row (≤ 32px tall) so the
+ * console's bottom bar stays one stable 40px row while a video plays.
  */
 export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {}) {
   const channelStates = useStore((s) => s.channelStates);
@@ -39,16 +44,19 @@ export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {
     (s): s is typeof s & { media: ChannelMedia } => !!s.media,
   );
   if (entries.length === 0) return null;
+  if (inline) {
+    return (
+      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, overflowX: "auto" }}>
+        {entries.map((s) => (
+          <CompactTransport key={s.channel} channel={s.channel} media={s.media} />
+        ))}
+      </div>
+    );
+  }
   return (
-    <div
-      style={
-        inline
-          ? { display: "flex", gap: 8, alignItems: "stretch", minWidth: 0 }
-          : { display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }
-      }
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
       {entries.map((s) => (
-        <div key={s.channel} style={inline ? { width: 360, flexShrink: 0 } : undefined}>
+        <div key={s.channel}>
           <ChannelTransport channel={s.channel} media={s.media} />
         </div>
       ))}
@@ -56,12 +64,12 @@ export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {
   );
 }
 
-function ChannelTransport({ channel, media }: { channel: string; media: ChannelMedia }) {
+/** Clock, status and media_control/media_clear sends shared by both renderings. */
+function useChannelTransport(channel: string, media: ChannelMedia) {
   const { send } = useWs();
   const heardAt = useStore((s) => s.mediaHeardAt[channel] ?? 0);
   const [now, setNow] = useState(() => Date.now());
   const [scrub, setScrub] = useState<number | null>(null);
-  const barRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 100);
@@ -74,12 +82,111 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
   const fraction = scrub ?? t.fraction;
   const control = (action: "play" | "pause" | "restart" | "seek", time?: number) =>
     send({ type: "media_control", channel, takenAt: media.takenAt, action, ...(time !== undefined ? { time } : {}) });
+  const stop = () => send({ type: "media_clear", channel });
 
+  return { status, t, duration, fraction, scrub, setScrub, control, stop };
+}
+
+type Transport = ReturnType<typeof useChannelTransport>;
+
+function SeekBar({ tr, height, style }: { tr: Transport; height: number; style?: CSSProperties }) {
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const { duration, scrub, setScrub, control, t, fraction } = tr;
   const fractionAt = (clientX: number) => {
     const r = barRef.current?.getBoundingClientRect();
     if (!r || r.width === 0) return 0;
     return Math.min(1, Math.max(0, (clientX - r.left) / r.width));
   };
+  return (
+    <div
+      ref={barRef}
+      role="slider"
+      aria-label="Seek"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(duration)}
+      aria-valuenow={Math.round(t.elapsed)}
+      onPointerDown={(e) => {
+        if (duration <= 0) return;
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        setScrub(fractionAt(e.clientX));
+      }}
+      onPointerMove={(e) => {
+        if (scrub !== null) setScrub(fractionAt(e.clientX));
+      }}
+      onPointerUp={(e) => {
+        if (scrub === null) return;
+        control("seek", fractionAt(e.clientX) * duration);
+        setScrub(null);
+      }}
+      style={{
+        height,
+        borderRadius: height / 2,
+        background: colors.border,
+        cursor: duration > 0 ? "pointer" : "default",
+        position: "relative",
+        touchAction: "none",
+        ...style,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: `${fraction * 100}%`,
+          borderRadius: height / 2,
+          background: colors.accent,
+        }}
+      />
+    </div>
+  );
+}
+
+function elapsedLabel(tr: Transport): string {
+  const { scrub, duration, t } = tr;
+  return `${formatClock(scrub !== null ? scrub * duration : t.elapsed)} / ${duration > 0 ? formatClock(duration) : "–:––"}`;
+}
+
+/** Bottom-bar row: icon + label, status, time, slim scrub bar, icon buttons. */
+function CompactTransport({ channel, media }: { channel: string; media: ChannelMedia }) {
+  const tr = useChannelTransport(channel, media);
+  const iconBtn: CSSProperties = { padding: "4px 6px", lineHeight: 0 };
+  return (
+    <div
+      title={media.playback.error ?? undefined}
+      style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flexShrink: 0, whiteSpace: "nowrap" }}
+    >
+      <Film size={14} aria-hidden />
+      <span
+        title={`${media.label || "Video"} · ${channel}`}
+        style={{ fontWeight: 600, fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}
+      >
+        {media.label || "Video"}
+      </span>
+      <StatusDot tone={STATUS_TONE[tr.status]} label={STATUS_LABEL[tr.status]} />
+      <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
+      <SeekBar tr={tr} height={6} style={{ width: 140, flexShrink: 0 }} />
+      {media.paused ? (
+        <Button size="sm" onClick={() => tr.control("play")} title="Play" aria-label="Play" style={iconBtn}>
+          <Play size={14} aria-hidden />
+        </Button>
+      ) : (
+        <Button size="sm" onClick={() => tr.control("pause")} title="Pause" aria-label="Pause" style={iconBtn}>
+          <Pause size={14} aria-hidden />
+        </Button>
+      )}
+      <Button size="sm" onClick={() => tr.control("restart")} title="Restart" aria-label="Restart" style={iconBtn}>
+        <RotateCcw size={14} aria-hidden />
+      </Button>
+      <Button size="sm" variant="danger" onClick={tr.stop} title="Stop" aria-label="Stop" style={iconBtn}>
+        <Square size={14} aria-hidden />
+      </Button>
+    </div>
+  );
+}
+
+function ChannelTransport({ channel, media }: { channel: string; media: ChannelMedia }) {
+  const tr = useChannelTransport(channel, media);
+  const { status, t, control } = tr;
 
   return (
     <div
@@ -96,55 +203,13 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
           {media.label || "Video"}
         </span>
         <span style={{ fontSize: 11, color: colors.textDim }}>{channel}</span>
-        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: STATUS_COLOR[status] }}>
-          ● {STATUS_LABEL[status]}
-        </span>
+        <StatusDot tone={STATUS_TONE[status]} label={STATUS_LABEL[status]} style={{ marginLeft: "auto", fontSize: 11 }} />
       </div>
 
-      <div
-        ref={barRef}
-        role="slider"
-        aria-label="Seek"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(t.elapsed)}
-        onPointerDown={(e) => {
-          if (duration <= 0) return;
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          setScrub(fractionAt(e.clientX));
-        }}
-        onPointerMove={(e) => {
-          if (scrub !== null) setScrub(fractionAt(e.clientX));
-        }}
-        onPointerUp={(e) => {
-          if (scrub === null) return;
-          control("seek", fractionAt(e.clientX) * duration);
-          setScrub(null);
-        }}
-        style={{
-          height: 10,
-          borderRadius: 5,
-          background: colors.border,
-          cursor: duration > 0 ? "pointer" : "default",
-          position: "relative",
-          touchAction: "none",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: `${fraction * 100}%`,
-            borderRadius: 5,
-            background: colors.accent,
-          }}
-        />
-      </div>
+      <SeekBar tr={tr} height={10} />
 
       <div style={{ display: "flex", alignItems: "baseline", marginTop: 6, gap: 8 }}>
-        <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>
-          {formatClock(scrub !== null ? scrub * duration : t.elapsed)} / {duration > 0 ? formatClock(duration) : "–:––"}
-        </span>
+        <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
         <span
           style={{ marginLeft: "auto", fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}
           title="Time remaining"
@@ -159,18 +224,13 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
 
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         {media.paused ? (
-          <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}><Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Play</Button>
+          <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}><Play size={14} aria-hidden style={ICON_STYLE} /> Play</Button>
         ) : (
-          <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}><Pause size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pause</Button>
+          <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}><Pause size={14} aria-hidden style={ICON_STYLE} /> Pause</Button>
         )}
-        <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}><RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Restart</Button>
-        <Button
-          size="sm"
-          variant="danger"
-          onClick={() => send({ type: "media_clear", channel })}
-          style={{ flex: 1 }}
-        >
-          ■ Stop
+        <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}><RotateCcw size={14} aria-hidden style={ICON_STYLE} /> Restart</Button>
+        <Button size="sm" variant="danger" onClick={tr.stop} style={{ flex: 1 }}>
+          <Square size={14} aria-hidden style={ICON_STYLE} /> Stop
         </Button>
       </div>
     </div>
