@@ -59,7 +59,10 @@ export function ChannelWindowSettingsPopover({
     };
   }, [anchorEl]);
   // Esc closes the popover and must not reach the window-level "clear
-  // program" shortcut, so intercept it in the capture phase.
+  // program" shortcut, so intercept it in the capture phase. Other keys
+  // pressed inside the popover are stopped in the document bubble phase so
+  // Enter/Space on a focused control don't cue/take the rundown selection
+  // (no preventDefault, so the control itself still activates).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
@@ -67,8 +70,15 @@ export function ChannelWindowSettingsPopover({
       e.preventDefault();
       onClose();
     }
+    function onKeyInside(e: KeyboardEvent) {
+      if (popoverRef.current?.contains(e.target as Node)) e.stopPropagation();
+    }
     document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKeyInside);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onKeyInside);
+    };
   }, [onClose]);
   const [displays, setDisplays] = useState<CachedDisplay[]>([]);
   const [prefs, setPrefs] = useState<ChannelWindowPrefs>(DEFAULT_PREFS);

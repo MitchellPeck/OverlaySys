@@ -7,8 +7,12 @@ import { POPOVER_W, popoverPosition } from "@/lib/popoverPosition";
 
 /**
  * Portal popover hung from an anchor element. Esc is swallowed in the capture
- * phase so the Show page's global Esc ("clear program") never fires while a
- * popover is open.
+ * phase so the console's global Esc ("clear program") never fires while a
+ * popover is open. Every other key pressed inside the popover is stopped in
+ * the document bubble phase (after React's handlers, before the window-level
+ * shortcuts), so Enter/Space on a focused button activate that button rather
+ * than cueing/taking the rundown selection. No preventDefault, so native
+ * button activation still happens.
  */
 export function AnchoredPopover({
   anchorEl,
@@ -55,11 +59,16 @@ export function AnchoredPopover({
       e.preventDefault();
       onClose();
     }
+    function onKeyInside(e: KeyboardEvent) {
+      if (ref.current?.contains(e.target as Node)) e.stopPropagation();
+    }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKeyInside);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onKeyInside);
     };
   }, [anchorEl, onClose]);
 
