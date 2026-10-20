@@ -63,3 +63,21 @@ describe("setShow and overrides", () => {
     expect(overrides()).toEqual({ r1: { title: "Edited" } });
   });
 });
+
+describe("review fixes", () => {
+  it("treats an empty value as equal to an undefined original", () => {
+    useStore.getState().setRowFieldOverride("r1", "sub", "", undefined);
+    expect(overrides()).toEqual({});
+    useStore.getState().setRowFieldOverride("r1", "sub", "x", undefined);
+    useStore.getState().setRowFieldOverride("r1", "sub", "", undefined);
+    expect(overrides()).toEqual({});
+  });
+
+  it("prunes overrides for rows missing from a re-broadcast of the same show", () => {
+    useStore.getState().setShow(show("a"));
+    useStore.getState().setRowFieldOverride("r1", "title", "Edited", "Hi");
+    useStore.getState().setRowFieldOverride("gone", "title", "Edited", "Hi");
+    useStore.getState().setShow(show("a"));
+    expect(overrides()).toEqual({ r1: { title: "Edited" } });
+  });
+});

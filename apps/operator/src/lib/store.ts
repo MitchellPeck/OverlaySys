@@ -141,6 +141,18 @@ type StoreState = {
   clearSttInstallJob: (jobId: string) => void;
 };
 
+function pruneOverrides(
+  overrides: Record<string, Record<string, string>>,
+  show: Show,
+): Record<string, Record<string, string>> {
+  const ids = new Set(show.rows.map((r) => r.id));
+  const stale = Object.keys(overrides).filter((id) => !ids.has(id));
+  if (stale.length === 0) return overrides;
+  const next = { ...overrides };
+  for (const id of stale) delete next[id];
+  return next;
+}
+
 export const useStore = create<StoreState>((set) => ({
   conn: "connecting",
   templates: [],
@@ -195,13 +207,15 @@ export const useStore = create<StoreState>((set) => ({
         // selection so the mutually-exclusive contract holds.
         selectedHotcardId: nextRowId != null ? null : cur.selectedHotcardId,
         // Edits belong to one show; a re-broadcast of the same show keeps them.
-        rowDataOverrides: s && cur.show && s.id === cur.show.id ? cur.rowDataOverrides : {},
+        // Edits for rows no longer in the show are dropped.
+        rowDataOverrides: s && cur.show && s.id === cur.show.id ? pruneOverrides(cur.rowDataOverrides, s) : {},
       };
     }),
   setRowFieldOverride: (rowId, key, value, original) =>
     set((cur) => {
       const row = { ...cur.rowDataOverrides[rowId] };
-      if (value === original) delete row[key];
+      // An empty value over a missing original is no edit either.
+      if (value === (original ?? "")) delete row[key];
       else row[key] = value;
       const next = { ...cur.rowDataOverrides };
       if (Object.keys(row).length === 0) delete next[rowId];
