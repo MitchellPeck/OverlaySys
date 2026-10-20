@@ -270,7 +270,7 @@ export function SongsInShowPanel({
           </option>
           {availableSongs.map((s) => (
             <option key={s.id} value={s.id}>
-              ♪ {s.title}
+              {s.title}
             </option>
           ))}
         </Select>

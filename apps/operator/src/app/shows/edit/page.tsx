@@ -1037,7 +1037,7 @@ function SongRowEditor({
             <option value={row.songId}>{row.songId} (missing)</option>
           )}
           {songs.map((s) => (
-            <option key={s.id} value={s.id}>♪ {s.title}</option>
+            <option key={s.id} value={s.id}>{s.title}</option>
           ))}
         </Select>
         {songMeta && (

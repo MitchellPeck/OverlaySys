@@ -306,7 +306,7 @@ export function TimerPanel() {
           disabled={takesDisabled || !templateId}
           title={disabledTitle}
         >
-          Start ▶ {channelLabel(pgmChannel)}
+          Start {channelLabel(pgmChannel)}
         </Button>
         <Button
           onClick={() => clear(pgmChannel)}
@@ -328,7 +328,7 @@ export function TimerPanel() {
           disabled={takesDisabled || !templateId}
           title={disabledTitle}
         >
-          Cue ▶ {channelLabel(pvwChannel)}
+          Cue {channelLabel(pvwChannel)}
         </Button>
         <Button
           onClick={() => clear(pvwChannel)}

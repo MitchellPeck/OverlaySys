@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Pause, Play } from "lucide-react";
 import { Button, colors, radius } from "@overlaysys/ui";
 import type { ChannelState, Field, Template } from "@overlaysys/core";
 import {
@@ -272,7 +273,7 @@ function ActiveTimerRow({
           variant={allPaused ? "primary" : "ghost"}
           size="sm"
         >
-          {allPaused ? "▶ Resume" : "⏸ Pause"}
+          {allPaused ? <><Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Resume</> : <><Pause size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pause</>}
         </Button>
         <Button onClick={() => nudge(-60)} variant="ghost" size="sm">
           −1m
