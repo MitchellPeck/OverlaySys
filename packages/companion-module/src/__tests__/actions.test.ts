@@ -403,3 +403,150 @@ describe("selectNextShowResult", () => {
     expect(localEvents).toEqual([]);
   });
 });
+
+describe("dispatchAction — take_row_song_aware", () => {
+  function state() {
+    let s = apply(initialState(), { type: "local_load_show", showId: "show-1" });
+    s = apply(s, {
+      type: "show",
+      show: {
+        id: "show-1",
+        name: "S",
+        rows: [
+          {
+            kind: "graphic",
+            id: "r1",
+            templateId: "tpl-1",
+            data: { title: "Hi" },
+            channelHint: "lower",
+          },
+          { kind: "song", id: "r2", songId: "s1", lyricTemplateId: "lt" },
+          {
+            kind: "video",
+            id: "r3",
+            assetUrl: "/assets/v.mp4",
+            volume: 1,
+            endAction: "clear",
+          },
+        ],
+      },
+    });
+    return s;
+  }
+
+  it("cursor on a song row sends take_song_sub with the chosen sub", () => {
+    const s = apply(state(), { type: "local_cursor_set", rowId: "r2" });
+    const r = dispatchAction(s, "take_row_song_aware", {
+      target: "cursor",
+      sub: "intro",
+      channel: "",
+    });
+    expect(r.messages).toEqual([
+      { type: "take_song_sub", showId: "show-1", songRowId: "r2", sub: "intro" },
+    ]);
+  });
+
+  it("cursor on a graphic row sends the same take as take_row", () => {
+    const s = state(); // cursor starts at row 1
+    const r = dispatchAction(s, "take_row_song_aware", {
+      target: "cursor",
+      sub: "outro",
+      channel: "",
+    });
+    expect(r.messages).toEqual(
+      dispatchAction(s, "take_row", { rowId: "r1", channel: "" }).messages,
+    );
+    expect(r.messages).toEqual([
+      { type: "take", channel: "lower", templateId: "tpl-1", data: { title: "Hi" } },
+    ]);
+  });
+
+  it("by index on a video row sends media_take", () => {
+    const r = dispatchAction(state(), "take_row_song_aware", {
+      target: "index",
+      rowIndex: 3,
+      sub: "lyrics",
+      channel: "program",
+    });
+    expect(r.messages).toEqual(
+      dispatchAction(state(), "take_row_by_index", { rowIndex: 3, channel: "program" }).messages,
+    );
+    expect(r.messages[0]?.type).toBe("media_take");
+  });
+
+  it("by row id on a song passes an explicit channel override", () => {
+    const r = dispatchAction(state(), "take_row_song_aware", {
+      target: "id",
+      rowId: "r2",
+      sub: "lyrics",
+      channel: "program",
+    });
+    expect(r.messages).toEqual([
+      {
+        type: "take_song_sub",
+        showId: "show-1",
+        songRowId: "r2",
+        sub: "lyrics",
+        channel: "program",
+      },
+    ]);
+  });
+
+  it("PVW → PGM: graphic cues then takes; song lyrics uses song_take_pvw_to_pgm", () => {
+    const g = dispatchAction(state(), "take_row_song_aware", {
+      target: "index",
+      rowIndex: 1,
+      sub: "lyrics",
+      pvwPgm: true,
+      fromChannel: "preview",
+      toChannel: "program",
+    });
+    expect(g.messages.map((m) => m.type)).toEqual(["cue", "take_pvw_to_pgm"]);
+    const sng = dispatchAction(state(), "take_row_song_aware", {
+      target: "index",
+      rowIndex: 2,
+      sub: "lyrics",
+      pvwPgm: true,
+      fromChannel: "preview",
+      toChannel: "program",
+    });
+    expect(sng.messages).toEqual([
+      {
+        type: "song_take_pvw_to_pgm",
+        showId: "show-1",
+        songRowId: "r2",
+        fromChannel: "preview",
+        toChannel: "program",
+      },
+    ]);
+  });
+
+  it("PVW → PGM: song intro/outro has no preview stage, so it takes the sub directly to the To channel", () => {
+    const r = dispatchAction(state(), "take_row_song_aware", {
+      target: "index",
+      rowIndex: 2,
+      sub: "outro",
+      pvwPgm: true,
+      fromChannel: "preview",
+      toChannel: "program",
+    });
+    expect(r.messages).toEqual([
+      {
+        type: "take_song_sub",
+        showId: "show-1",
+        songRowId: "r2",
+        sub: "outro",
+        channel: "program",
+      },
+    ]);
+  });
+
+  it("is a no-op with no show loaded or a missing row", () => {
+    expect(
+      dispatchAction(initialState(), "take_row_song_aware", { target: "cursor", sub: "lyrics" }).messages,
+    ).toEqual([]);
+    expect(
+      dispatchAction(state(), "take_row_song_aware", { target: "index", rowIndex: 9, sub: "lyrics" }).messages,
+    ).toEqual([]);
+  });
+});

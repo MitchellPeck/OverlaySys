@@ -110,7 +110,8 @@ export function variableDefinitions(
     { variableId: "loaded_show_row_count", name: "Loaded show row count" },
     { variableId: "cursor_row_idx", name: "Cursor row index (1-based)" },
     { variableId: "cursor_row_name", name: "Cursor row display label" },
-    { variableId: "cursor_row_kind", name: "Cursor row kind (song/graphic)" },
+    { variableId: "cursor_row_kind", name: "Cursor row kind (song/graphic/video/scripture)" },
+    { variableId: "cursor_row_is_song", name: "Cursor row is a song (yes/no)" },
   );
 
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
@@ -224,6 +225,7 @@ export function projectVariables(
   out.cursor_row_idx = cursor != null ? String(cursor + 1) : "";
   out.cursor_row_name = cursorRow ? rowDisplayLabel(state, cursorRow) : "";
   out.cursor_row_kind = cursorRow?.kind ?? "";
+  out.cursor_row_is_song = cursorRow ? (cursorRow.kind === "song" ? "yes" : "no") : "";
 
   const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
   const pgmActive = state.channelStates.get("program")?.active ?? null;

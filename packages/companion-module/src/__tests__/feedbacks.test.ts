@@ -298,3 +298,40 @@ describe("feedbacks", () => {
     ).toBe(false);
   });
 });
+
+describe("row kind feedbacks", () => {
+  function loaded() {
+    let s = apply(initialState(), { type: "local_load_show", showId: "show-1" });
+    s = apply(s, {
+      type: "show",
+      show: {
+        id: "show-1",
+        name: "S",
+        rows: [
+          { kind: "graphic", id: "r1", templateId: "t", data: {} },
+          { kind: "song", id: "r2", songId: "s1", lyricTemplateId: "lt" },
+        ],
+      },
+    });
+    return s;
+  }
+
+  it("cursor_row_kind_is follows the cursor row's kind", () => {
+    let s = loaded();
+    expect(feedbackPredicate(s, "cursor_row_kind_is", { kind: "graphic" })).toBe(true);
+    expect(feedbackPredicate(s, "cursor_row_kind_is", { kind: "song" })).toBe(false);
+    s = apply(s, { type: "local_cursor_set", rowId: "r2" });
+    expect(feedbackPredicate(s, "cursor_row_kind_is", { kind: "song" })).toBe(true);
+  });
+
+  it("cursor_row_kind_is is false with no show loaded", () => {
+    expect(feedbackPredicate(initialState(), "cursor_row_kind_is", { kind: "song" })).toBe(false);
+  });
+
+  it("row_at_index_kind_is checks the row at a 1-based index", () => {
+    const s = loaded();
+    expect(feedbackPredicate(s, "row_at_index_kind_is", { rowIndex: 2, kind: "song" })).toBe(true);
+    expect(feedbackPredicate(s, "row_at_index_kind_is", { rowIndex: 1, kind: "song" })).toBe(false);
+    expect(feedbackPredicate(s, "row_at_index_kind_is", { rowIndex: 5, kind: "song" })).toBe(false);
+  });
+});

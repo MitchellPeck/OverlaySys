@@ -309,3 +309,27 @@ describe("rundown field variables", () => {
     expect(defs.some((d) => d.variableId === "rundown_1_field_title")).toBe(true);
   });
 });
+
+describe("cursor_row_is_song", () => {
+  it("is yes on a song row, no on other rows, empty with no show", () => {
+    expect(projectVariables(initialState(), CHANNELS).cursor_row_is_song).toBe("");
+    let s = apply(initialState(), { type: "local_load_show", showId: "show-1" });
+    s = apply(s, {
+      type: "show",
+      show: {
+        id: "show-1",
+        name: "S",
+        rows: [
+          { kind: "graphic", id: "r1", templateId: "t", data: {} },
+          { kind: "song", id: "r2", songId: "s1", lyricTemplateId: "lt" },
+        ],
+      },
+    });
+    expect(projectVariables(s, CHANNELS).cursor_row_is_song).toBe("no");
+    s = apply(s, { type: "local_cursor_set", rowId: "r2" });
+    expect(projectVariables(s, CHANNELS).cursor_row_is_song).toBe("yes");
+    expect(
+      variableDefinitions(CHANNELS).some((d) => d.variableId === "cursor_row_is_song"),
+    ).toBe(true);
+  });
+});

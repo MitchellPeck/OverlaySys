@@ -34,6 +34,7 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 | Take row PVW → PGM (by row ID) | row, from, to | Cue then promote, or song_take_pvw_to_pgm for song rows |
 | Take row PVW → PGM (by index) | rowIndex, from, to | Same as above but addressed by position |
 | Take row at cursor | channel | Take whichever row the cursor is on |
+| Take row (song-aware) | row (cursor / index / ID), song part, channel or PVW → PGM | One action for a line that may be a song or a regular item: a song row fires the chosen sub-take (intro / lyrics / outro, like **Song: take sub-take**); any other row takes exactly like **Take row**. Channel blank = the song's cascade channel or the row's channel hint. With PVW → PGM on, graphics cue then promote and song lyrics use song PVW → PGM; song intro/outro have no preview stage and go straight to the To channel |
 | Cursor: advance | delta | Move the cursor ±N rows (clamped) |
 | Cursor: set to row (by row ID) | row | Jump the cursor to a specific row by UUID |
 | Cursor: set to row (by index) | rowIndex | Jump the cursor to the Nth row of the loaded show |
@@ -77,7 +78,7 @@ Global:
 - `last_error`
 - `stt_running`, `stt_listener_count`
 - `loaded_show_id`, `loaded_show_name`, `loaded_show_row_count`
-- `cursor_row_idx`, `cursor_row_name`, `cursor_row_kind`
+- `cursor_row_idx`, `cursor_row_name`, `cursor_row_kind` (song / graphic / video / scripture), `cursor_row_is_song` (yes / no)
 - `rundown_<n>_name` / `rundown_<n>_kind` / `rundown_<n>_is_active` for n=1..40
 
 ## Rundown row content fields
@@ -96,7 +97,16 @@ changes. If two field keys sanitize to the same id, the later one wins.
 
 ## Feedbacks
 
-`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same).
+`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same), `cursor_row_kind_is` (true when the cursor row is the chosen type), `row_at_index_kind_is` (same, for the Nth row).
+
+### Doing something extra when the current line is a song
+
+Use **Take row (song-aware)** for the take itself. To run additional actions
+only for songs, either add the **Cursor row is type → Song** feedback to the
+button's logic/condition, or test the variable in an expression, e.g.
+`$(overlaysys:cursor_row_is_song) == 'yes'` (or
+`$(overlaysys:cursor_row_kind) == 'song'`). The **Take at cursor (song-aware)**
+preset shows the row type on the button and tints it purple for songs.
 
 ### Choosing row-ID vs row-index actions/feedbacks
 

@@ -25,6 +25,7 @@ export type ActionId =
   | "take_row_pvw_pgm"
   | "take_row_pvw_pgm_by_index"
   | "take_row_at_cursor"
+  | "take_row_song_aware"
   | "cursor_advance"
   | "cursor_set"
   | "cursor_set_by_index"
@@ -289,6 +290,66 @@ export function dispatchAction(
       if (!row) break;
       const channel =
         str("channel") || row.channelHint || "program";
+      messages.push(...rowMessages(state, row, channel));
+      break;
+    }
+    case "take_row_song_aware": {
+      // One button for a rundown line that may be a song or a regular item:
+      // songs fire the chosen sub-take (intro / lyrics / outro), everything
+      // else takes exactly as take_row would.
+      const show = state.loadedShowId
+        ? state.showCache.get(state.loadedShowId)
+        : undefined;
+      if (!show) break;
+      const target = str("target", "cursor");
+      const row =
+        target === "id"
+          ? show.rows.find((r) => r.id === str("rowId"))
+          : target === "index"
+            ? show.rows[num("rowIndex", 1) - 1]
+            : state.loadedShowRowCursor != null
+              ? show.rows[state.loadedShowRowCursor]
+              : undefined;
+      if (!row) break;
+      const pvwPgm = bool("pvwPgm");
+      if (row.kind === "song") {
+        const sub = str("sub", "lyrics");
+        if (sub !== "intro" && sub !== "lyrics" && sub !== "outro") break;
+        if (pvwPgm && sub === "lyrics") {
+          messages.push(
+            ...rowPvwPgmMessages(
+              state,
+              row,
+              str("fromChannel", "preview"),
+              str("toChannel", "program"),
+            ),
+          );
+          break;
+        }
+        // Intro/outro have no preview stage; in PVW → PGM mode they go
+        // straight to the To channel.
+        const channel = pvwPgm ? str("toChannel", "program") : str("channel");
+        messages.push({
+          type: "take_song_sub",
+          showId: show.id,
+          songRowId: row.id,
+          sub,
+          ...(channel ? { channel } : {}),
+        });
+        break;
+      }
+      if (pvwPgm) {
+        messages.push(
+          ...rowPvwPgmMessages(
+            state,
+            row,
+            str("fromChannel", "preview"),
+            str("toChannel", "program"),
+          ),
+        );
+        break;
+      }
+      const channel = str("channel") || row.channelHint || "program";
       messages.push(...rowMessages(state, row, channel));
       break;
     }
@@ -705,6 +766,45 @@ export function actionDefinitions(
       name: "Take row at cursor",
       options: [channelDropdown(state)],
       callback: wrap("take_row_at_cursor"),
+    },
+    take_row_song_aware: {
+      name: "Take row (song-aware: songs take a sub-take, other rows take normally)",
+      options: [
+        {
+          id: "target",
+          type: "dropdown",
+          label: "Row",
+          default: "cursor",
+          choices: [
+            { id: "cursor", label: "Row at cursor" },
+            { id: "index", label: "Row by index" },
+            { id: "id", label: "Row by ID" },
+          ],
+        },
+        { ...rowIndexInput, isVisibleExpression: "$(options:target) == 'index'" },
+        { ...rowDropdown(state), isVisibleExpression: "$(options:target) == 'id'" },
+        { ...subTakeInput, label: "Song part (used only when the row is a song)" },
+        {
+          id: "pvwPgm",
+          type: "checkbox",
+          label: "Take via PVW → PGM",
+          default: false,
+        },
+        {
+          ...channelDropdown(state, "channel", "Channel (optional; blank = row/song default)"),
+          default: "",
+          isVisibleExpression: "!$(options:pvwPgm)",
+        },
+        {
+          ...channelDropdown(state, "fromChannel", "From", "preview"),
+          isVisibleExpression: "$(options:pvwPgm)",
+        },
+        {
+          ...channelDropdown(state, "toChannel", "To", "program"),
+          isVisibleExpression: "$(options:pvwPgm)",
+        },
+      ],
+      callback: wrap("take_row_song_aware"),
     },
     cursor_advance: {
       name: "Cursor: advance",

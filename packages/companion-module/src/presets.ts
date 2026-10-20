@@ -180,6 +180,39 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     feedbacks: [],
   };
 
+  // One take button for a line that may be a song or a regular item: songs
+  // fire the chosen sub-take, other rows take normally. The button tints when
+  // the cursor row is a song so the operator can see which path will fire.
+  presets["take_at_cursor_song_aware"] = {
+    type: "button",
+    category: "Rundown",
+    name: "Take at cursor (song-aware)",
+    style: {
+      text: "TAKE\\n$(overlaysys:cursor_row_kind)",
+      size: "14",
+      color: white,
+      bgcolor: dark,
+    },
+    steps: [
+      {
+        down: [
+          {
+            actionId: "take_row_song_aware",
+            options: { target: "cursor", sub: "lyrics", pvwPgm: false, channel: "" },
+          },
+        ],
+        up: [],
+      },
+    ],
+    feedbacks: [
+      {
+        feedbackId: "cursor_row_kind_is",
+        options: { kind: "song" },
+        style: { bgcolor: 0x5522aa },
+      },
+    ],
+  };
+
   // Rundown row buttons (rows 1..8). The user picks the specific row after
   // dragging the preset onto a button — `rowId` is left empty here because
   // Companion presets cannot reference dynamic row IDs at preset-creation

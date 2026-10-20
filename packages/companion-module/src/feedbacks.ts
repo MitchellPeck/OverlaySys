@@ -22,7 +22,9 @@ export type FeedbackId =
   | "row_is_cursor"
   | "row_is_active"
   | "row_at_index_is_cursor"
-  | "row_at_index_is_active";
+  | "row_at_index_is_active"
+  | "cursor_row_kind_is"
+  | "row_at_index_kind_is";
 
 export type FeedbackOptions = Record<
   string,
@@ -35,7 +37,14 @@ export interface FeedbackDefinition {
   description: string;
   options: {
     id: string;
-    type: "channel" | "hotcard" | "row" | "row_index" | "kind_ordinal" | "sub_take";
+    type:
+      | "channel"
+      | "hotcard"
+      | "row"
+      | "row_index"
+      | "kind_ordinal"
+      | "sub_take"
+      | "row_kind";
   }[];
 }
 
@@ -155,6 +164,26 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     description:
       "True when the row at the given 1-based index currently matches PGM — survives show changes.",
     options: [{ id: "rowIndex", type: "row_index" }],
+  },
+  {
+    id: "cursor_row_kind_is",
+    name: "Cursor row is type",
+    description:
+      "True when the row at the cursor is the chosen type (song, graphic, " +
+      "video, scripture). Use it to style a button or branch a button's " +
+      "actions when the current line is a song.",
+    options: [{ id: "kind", type: "row_kind" }],
+  },
+  {
+    id: "row_at_index_kind_is",
+    name: "Row at index is type",
+    description:
+      "True when the row at the given 1-based index is the chosen type — " +
+      "survives show changes.",
+    options: [
+      { id: "rowIndex", type: "row_index" },
+      { id: "kind", type: "row_kind" },
+    ],
   },
 ];
 
@@ -361,6 +390,19 @@ export function feedbackPredicate(
       const pgm = state.channelStates.get("program");
       return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
     }
+    case "cursor_row_kind_is": {
+      if (state.loadedShowId == null || state.loadedShowRowCursor == null)
+        return false;
+      const show = state.showCache.get(state.loadedShowId);
+      const row = show?.rows[state.loadedShowRowCursor];
+      return row?.kind === String(options.kind ?? "");
+    }
+    case "row_at_index_kind_is": {
+      if (state.loadedShowId == null) return false;
+      const show = state.showCache.get(state.loadedShowId);
+      const row = show?.rows[Number(options.rowIndex ?? 1) - 1];
+      return row?.kind === String(options.kind ?? "");
+    }
   }
 }
 
@@ -445,6 +487,19 @@ const subTakeInputF: CompanionInputFieldDropdown = {
   ],
 };
 
+const rowKindInputF: CompanionInputFieldDropdown = {
+  id: "kind",
+  type: "dropdown",
+  label: "Row type",
+  default: "song",
+  choices: [
+    { id: "song", label: "Song" },
+    { id: "graphic", label: "Graphic" },
+    { id: "video", label: "Video" },
+    { id: "scripture", label: "Scripture" },
+  ],
+};
+
 export type FeedbackChecker = (
   id: FeedbackId,
   options: FeedbackOptions,
@@ -471,6 +526,8 @@ export function feedbackDefinitionsForSDK(
           return kindOrdinalInput;
         case "sub_take":
           return subTakeInputF;
+        case "row_kind":
+          return rowKindInputF;
       }
     });
     defs[d.id] = {
