@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { Song, SongSessionSummary } from "@overlaysys/core";
-import { Button, Pill, colors, radius } from "@overlaysys/ui";
+import { Mic, Music } from "lucide-react";
+import { Button, Pill, StatusDot, colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 
@@ -163,21 +164,25 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
   const onlineCount = sttListeners.filter((l) => l.online).length;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ fontWeight: 700, fontSize: 16 }}>♪ {song.title}</div>
+      <div style={{ fontWeight: 700, fontSize: 16 }}><Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {song.title}</div>
       <div style={{ color: colors.textDim, fontSize: 12 }}>
         {song.author} · {channel}
       </div>
       <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-        <Pill
+        <StatusDot
           tone={onlineCount > 0 ? "good" : "dim"}
+          label={
+            <>
+              <Mic size={14} aria-hidden style={{ verticalAlign: "-2px" }} />{" "}
+              {onlineCount > 0 ? `STT × ${onlineCount}` : "STT off"}
+            </>
+          }
           title={
             sttListeners.length === 0
               ? "No STT listeners connected"
               : sttListeners.map((l) => `${l.label ?? l.audioSourceId} ${l.online ? "online" : "offline"}`).join("\n")
           }
-        >
-          {onlineCount > 0 ? `🎤 STT × ${onlineCount}` : "🎤 STT off"}
-        </Pill>
+        />
         <label
           style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}
           title="When on, high-confidence STT matches auto-advance the current slide"
@@ -271,7 +276,7 @@ function SlideGrid({
               outlineOffset: isSuggested ? "1px" : undefined,
             }}
           >
-            <div style={{ fontSize: 11, color: colors.textDim, marginBottom: 8, letterSpacing: 1, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 11, color: colors.textDim, marginBottom: 8, fontWeight: 600 }}>
               Slide {i + 1}
             </div>
             <div style={{ fontSize: 17, lineHeight: 1.45 }}>
@@ -300,8 +305,8 @@ function UpNext({ song, session }: { song: Song; session: SongSessionSummary }) 
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 11, color: colors.textDim, textTransform: "uppercase", letterSpacing: 1.2 }}>
-        Up Next
+      <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim }}>
+        Up next
       </div>
       {items.map((item, i) => (
         <div

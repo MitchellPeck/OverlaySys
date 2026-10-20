@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Music } from "lucide-react";
 import {
   type ChannelConfig,
   type Show,
@@ -10,7 +11,7 @@ import {
   type Template,
   type TemplateMeta,
 } from "@overlaysys/core";
-import { Button, Panel, Pill, Select, colors } from "@overlaysys/ui";
+import { Button, Panel, Pill, Select, StatusDot, colors } from "@overlaysys/ui";
 import { SongOverrideEditor } from "./SongOverrideEditor";
 
 interface SongsInShowPanelProps {
@@ -170,9 +171,9 @@ export function SongsInShowPanel({
                     padding: 0,
                   }}
                 >
-                  {isExpanded ? "▾" : "▸"}
+                  {isExpanded ? <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> : <ChevronRight size={14} aria-hidden style={{ verticalAlign: "-2px" }} />}
                 </button>
-                <span style={{ fontWeight: 600, fontSize: 13 }}>♪ {title}</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}><Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {title}</span>
                 <span
                   style={{
                     fontFamily: "ui-monospace, monospace",
@@ -188,7 +189,7 @@ export function SongsInShowPanel({
                   <OverrideChip label="Outro" overridden={entry.outroTemplateId !== undefined} />
                   <OverrideChip label="Channel" overridden={entry.channelOverride !== undefined} />
                   {customOverrideCount > 0 && (
-                    <Pill tone="accent" uppercase>
+                    <Pill tone="accent">
                       Custom fields ({customOverrideCount})
                     </Pill>
                   )}
@@ -293,8 +294,9 @@ function OverrideChip({
   overridden: boolean;
 }) {
   return (
-    <Pill tone={overridden ? "good" : "dim"} uppercase>
-      {label}: {overridden ? "✓ override" : "default"}
-    </Pill>
+    <StatusDot
+      tone={overridden ? "good" : "dim"}
+      label={`${label}: ${overridden ? "override" : "default"}`}
+    />
   );
 }

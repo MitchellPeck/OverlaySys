@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Cloud } from "lucide-react";
 import {
   getDesktopApi as getElectronApi,
   isElectron as isInElectron,
@@ -83,14 +84,14 @@ export function CloudSignInButton() {
         style={pillStyle}
         title="Open apps.mitchellpeck.com in your browser to sign in"
       >
-        {busy ? "Signing in…" : "☁ Sign in to cloud"}
+        {busy ? "Signing in…" : <><Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Sign in to cloud</>}
       </button>
     );
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span style={{ ...pillStyle, cursor: "default" }} title={orgId ?? ""}>
-        ☁ Signed in
+        <Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Signed in
       </span>
       <button
         onClick={async () => {

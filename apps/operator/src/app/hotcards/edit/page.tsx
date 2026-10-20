@@ -330,8 +330,7 @@ function HotcardEditPageInner() {
                 margin: 0,
                 marginBottom: 8,
                 fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
+                fontWeight: 600,
                 color: colors.textDim,
               }}
             >
@@ -362,8 +361,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
           width: 110,
           flexShrink: 0,
           fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: 1.2,
+          fontWeight: 600,
           color: colors.textDim,
         }}
       >

@@ -327,8 +327,7 @@ export default function ChannelsPage() {
               margin: 0,
               marginBottom: 8,
               fontSize: 11,
-              letterSpacing: 1.2,
-              textTransform: "uppercase",
+              fontWeight: 600,
               color: colors.textDim,
             }}
           >
@@ -665,8 +664,7 @@ function ProjectOverrideEditor({
         style={{
           fontSize: 11,
           color: colors.textDim,
-          textTransform: "uppercase",
-          letterSpacing: 1,
+          fontWeight: 600,
           marginBottom: 8,
         }}
       >

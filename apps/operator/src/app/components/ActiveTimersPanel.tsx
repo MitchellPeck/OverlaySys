@@ -222,12 +222,11 @@ function ActiveTimerRow({
             style={{
               marginLeft: "auto",
               fontSize: 10,
+              fontWeight: 600,
               color: colors.accent2,
-              letterSpacing: 1.2,
-              textTransform: "uppercase",
             }}
           >
-            paused
+            Paused
           </span>
         )}
       </div>

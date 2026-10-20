@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
+import { Music } from "lucide-react";
 import { type Song } from "@overlaysys/core";
 import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
@@ -112,7 +113,7 @@ function SongEditorPageInner() {
       <PageChrome
         context={
           <h1 style={{ margin: 0, fontSize: 16 }}>
-            ♪ {draft.title || <span style={{ color: colors.textDim, fontStyle: "italic" }}>(untitled)</span>}
+            <Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {draft.title || <span style={{ color: colors.textDim, fontStyle: "italic" }}>(untitled)</span>}
           </h1>
         }
         actions={

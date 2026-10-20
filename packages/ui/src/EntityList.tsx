@@ -87,6 +87,7 @@ export function EntityRow({
 
   return (
     <li
+      role="listitem"
       style={{
         marginBottom: space[1],
         display: "flex",
@@ -107,7 +108,7 @@ export function EntityRow({
         <div style={cardStyle}>{card}</div>
       )}
       {actions !== undefined && (
-        <div style={{ display: "flex", gap: space[1], flexShrink: 0 }}>
+        <div className="row-actions" style={{ display: "flex", gap: space[1], flexShrink: 0 }}>
           {actions}
         </div>
       )}

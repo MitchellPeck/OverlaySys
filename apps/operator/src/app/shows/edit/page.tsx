@@ -6,6 +6,7 @@ import { v4 as uuid } from "uuid";
 import { produce } from "immer";
 import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, VideoRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
+import { BookOpen, ChevronDown, ChevronRight, Film } from "lucide-react";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -663,7 +664,7 @@ function RundownTable({
               <tr key={row.id}>
                 <td colSpan={10} style={{ padding: "6px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>📖 {row.reference} ({row.translation})</span>
+                    <span><BookOpen size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.reference} ({row.translation})</span>
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
                       {row.slides.length} slide{row.slides.length !== 1 ? "s" : ""}
                     </span>
@@ -701,7 +702,7 @@ function RundownTable({
               <tr key={row.id}>
                 <td colSpan={10} style={{ padding: "6px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>🎬 {row.label || "Video"}</span>
+                    <span><Film size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.label || "Video"}</span>
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
                       {row.channelHint ?? "program"} · {row.endAction === "clear" ? "clears at end" : "holds at end"}
                     </span>
@@ -1093,7 +1094,7 @@ function SongRowEditor({
             }}
             aria-expanded={overridesOpen}
           >
-            {overridesOpen ? "▾ Hide overrides" : "▸ Per-row overrides"}
+            {overridesOpen ? <><ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Hide overrides</> : <><ChevronRight size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Per-row overrides</>}
           </button>
         </div>
         {cachedSong && (
@@ -1418,10 +1419,9 @@ function ChannelHintSelect({
 const th: React.CSSProperties = {
   padding: "8px 8px",
   borderBottom: `1px solid ${colors.border}`,
-  fontWeight: 500,
+  fontWeight: 600,
   fontSize: 11,
-  textTransform: "uppercase",
-  letterSpacing: 1.2,
+  color: colors.textDim,
 };
 const td: React.CSSProperties = {
   padding: "8px",

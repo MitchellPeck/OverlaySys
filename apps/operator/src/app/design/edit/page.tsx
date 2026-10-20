@@ -409,9 +409,8 @@ function TemplateSettings({
       <div
         style={{
           fontSize: 11,
+          fontWeight: 600,
           color: colors.textDim,
-          textTransform: "uppercase",
-          letterSpacing: 1.2,
           marginBottom: 8,
         }}
       >
@@ -668,13 +667,12 @@ function ClipBySection({
       <div
         style={{
           fontSize: 11,
+          fontWeight: 600,
           color: colors.textDim,
-          textTransform: "uppercase",
-          letterSpacing: 1.2,
           marginBottom: 8,
         }}
       >
-        Clip By
+        Clip by
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <select
@@ -773,8 +771,7 @@ function EditorSection({
           style={{
             margin: 0,
             fontSize: 11,
-            textTransform: "uppercase",
-            letterSpacing: 1.2,
+            fontWeight: 600,
             color: colors.textDim,
           }}
         >

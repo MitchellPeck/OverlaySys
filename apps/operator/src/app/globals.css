@@ -77,3 +77,11 @@ input, textarea {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-subtle);
 }
+
+/* Row actions in list views: visible on hover and keyboard focus only. */
+[role="listitem"] .row-actions,
+tr .row-actions { opacity: 0; transition: opacity 120ms; }
+[role="listitem"]:hover .row-actions,
+[role="listitem"]:focus-within .row-actions,
+tr:hover .row-actions,
+tr:focus-within .row-actions { opacity: 1; }

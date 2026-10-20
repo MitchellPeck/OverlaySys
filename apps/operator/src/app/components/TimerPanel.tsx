@@ -484,8 +484,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <div
       style={{
         fontSize: 11,
-        textTransform: "uppercase",
-        letterSpacing: 1.2,
+        fontWeight: 600,
         color: colors.textDim,
         marginBottom: 6,
       }}

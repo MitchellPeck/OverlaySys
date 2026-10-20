@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown, Cloud } from "lucide-react";
 import { useAuthStore } from "@/lib/useAuth";
 import { isCloudMode } from "@/lib/mode";
 import { isElectron, getDesktopApi } from "@/lib/desktop";
@@ -126,7 +127,7 @@ export function AccountMenu() {
         style={pillStyle}
         title="Open apps.mitchellpeck.com in your browser to sign in"
       >
-        {busy ? "Signing in…" : "☁ Sign in"}
+        {busy ? "Signing in…" : <><Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Sign in</>}
       </button>
     );
   }
@@ -153,7 +154,7 @@ export function AccountMenu() {
         style={pillStyle}
         title={orgId ? `Signed in (org: ${orgId})` : "Signed in"}
       >
-        ☁ {truncate(label, 24)} ▾
+        <Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {truncate(label, 24)} <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
       </button>
       {open && (
         <div
