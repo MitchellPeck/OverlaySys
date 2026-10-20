@@ -9,7 +9,7 @@ import { isCloudMode } from "@/lib/mode";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
 /**
- * Manual take panel — fires arbitrary template + data on the selected program
+ * Quick take — fires arbitrary template + data on the selected program
  * or preview channel, independent of the rundown. Renders one input per field
  * declared by the selected template (so an image field gets a file picker, a
  * color field gets a color picker, etc.).
@@ -131,15 +131,6 @@ export function TakePanel() {
     if (takesDisabled) return;
     send({ type: "update", channel, data });
   }
-  function clear(channel: string) {
-    if (takesDisabled) return;
-    send({ type: "clear", channel });
-  }
-  function swap() {
-    if (takesDisabled) return;
-    send({ type: "take_pvw_to_pgm", fromChannel: pvwChannel, toChannel: pgmChannel });
-  }
-
   function channelLabel(id: string): string {
     const cfg = channelConfigs.find((c) => c.id === id);
     return cfg?.name ?? id;
@@ -219,76 +210,17 @@ export function TakePanel() {
         </Field>
       ))}
 
-      <div style={row}>
-        <Button
-          onClick={() => take(pgmChannel)}
-          variant="primary"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Take ▶ {channelLabel(pgmChannel)}
-        </Button>
-        <Button
-          onClick={() => clear(pgmChannel)}
-          variant="danger"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Clear PGM
-        </Button>
-      </div>
-
-      <div style={row}>
-        <Button
-          onClick={() => take(pvwChannel)}
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Cue ▶ {channelLabel(pvwChannel)}
-        </Button>
-        <Button
-          onClick={() => clear(pvwChannel)}
-          variant="danger"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Clear PVW
-        </Button>
-      </div>
-
       <div style={{ ...row, marginTop: 12 }}>
-        <Button
-          onClick={swap}
-          variant="primary"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          ⏎ TAKE  (PVW → PGM)
+        <Button onClick={() => take(pvwChannel)} size="lg" disabled={takesDisabled} title={disabledTitle}>
+          Cue → {channelLabel(pvwChannel)}
         </Button>
-        <Button
-          onClick={() => update(pgmChannel)}
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Update PGM
+        <Button onClick={() => take(pgmChannel)} variant="onair" size="lg" disabled={takesDisabled} title={disabledTitle}>
+          Take → {channelLabel(pgmChannel)}
+        </Button>
+        <Button onClick={() => update(pgmChannel)} size="lg" disabled={takesDisabled} title={disabledTitle}>
+          Update {channelLabel(pgmChannel)}
         </Button>
       </div>
-
-      <p style={{ marginTop: 16, fontSize: 11, color: colors.textDim }}>
-        Space = take program · Esc = clear program · Enter = PVW→PGM swap
-      </p>
     </div>
   );
 }
