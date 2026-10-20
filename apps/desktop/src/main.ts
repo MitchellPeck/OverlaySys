@@ -17,7 +17,7 @@
 //
 // IPC channels are unchanged from the dev-only version — see preload.ts.
 
-import { app, BrowserWindow, ipcMain, Menu, screen, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, screen, shell, systemPreferences } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import http from "node:http";
@@ -1106,11 +1106,34 @@ function registerIpc(): void {
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
+/**
+ * STT runs whisper-stream as a grandchild of this app, and macOS attributes
+ * its microphone use to us. Under the hardened runtime that needs the
+ * audio-input entitlement (entitlements.mac.plist) AND a granted TCC
+ * permission; without either, the mic opens but delivers silence, so STT
+ * shows a connected listener and never transcribes anything. Ask once, up
+ * front, before the server can auto-start STT. No-op once the user has
+ * answered, and on other platforms.
+ */
+async function ensureMicrophoneAccess(): Promise<void> {
+  if (process.platform !== "darwin") return;
+  const status = systemPreferences.getMediaAccessStatus("microphone");
+  console.log(`[desktop] microphone access: ${status}`);
+  if (status !== "not-determined") return;
+  try {
+    const granted = await systemPreferences.askForMediaAccess("microphone");
+    console.log(`[desktop] microphone access ${granted ? "granted" : "denied"}`);
+  } catch (err) {
+    console.error("[desktop] microphone access request failed:", err);
+  }
+}
+
 async function boot(): Promise<void> {
   initBootLog();
   console.log(
     `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
   );
+  await ensureMicrophoneAccess();
   if (!isDev) {
     try {
       const { port } = await spawnServer();
