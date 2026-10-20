@@ -41,7 +41,7 @@ export function SongModePanel({ channel, session }: Props) {
       {sttMatch && <SttDebugStrip match={sttMatch} />}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "240px minmax(0, 1fr) 320px",
+        gridTemplateColumns: "minmax(150px, 200px) minmax(0, 1fr) minmax(180px, 240px)",
         gap: 16,
         marginTop: 16,
       }}>
@@ -163,7 +163,7 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
   const sttListeners = useStore((s) => s.sttListeners);
   const onlineCount = sttListeners.filter((l) => l.online).length;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, rowGap: 8 }}>
       <div style={{ fontWeight: 700, fontSize: 16 }}><Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {song.title}</div>
       <div style={{ color: colors.textDim, fontSize: 12 }}>
         {song.author} · {channel}
@@ -255,7 +255,7 @@ function SlideGrid({
 }) {
   if (!section) return <div style={{ color: colors.textDim }}>—</div>;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))", gap: 12 }}>
       {section.slides.map((slide, i) => {
         const active = i === currentSlideIdx;
         const isSuggested = suggestedSlideIdx === i && currentSlideIdx !== i;
@@ -279,7 +279,7 @@ function SlideGrid({
             <div style={{ fontSize: 11, color: colors.textDim, marginBottom: 8, fontWeight: 600 }}>
               Slide {i + 1}
             </div>
-            <div style={{ fontSize: 17, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 17, lineHeight: 1.45, overflowWrap: "anywhere" }}>
               {slide.lines.map((line, j) => (
                 <div key={j}>{line}</div>
               ))}
