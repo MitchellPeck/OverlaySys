@@ -68,45 +68,45 @@ Settings → STT (`apps/operator/src/app/settings/stt/page.tsx`), macOS only
   - **Level meter**: one bar per picked channel, live while STT runs.
 - Model, step and length controls are shared by both modes.
 
-### 2. Capture pipeline (server)
+### 2. Capture pipeline
 
-New module `server/src/sttChannelCapture.ts`, started by `sttSpawner` when
-`captureMode === "channels"` (default mode keeps the current
-`whisper-stream | lyric-listener` pipeline verbatim).
+Implementation note (refined after reading the spawner): rather than a second
+lifecycle inside the server, channel mode is a **capture script** run by the
+existing spawner, so process-group kill, orphan reaping, stderr logs,
+readiness and the lyric-listener path are all reused unchanged.
 
-1. **whisper-server**: spawn
-   `whisper-server -m <model> --host 127.0.0.1 --port <free port> -nt`.
-   State stays `starting` until an HTTP probe of the port succeeds.
-2. **ffmpeg**: spawn the bundled ffmpeg capturing the device by name, using
-   `pan` to keep only the picked channels as K separate channels
-   (`pan=<K>c|c0=c<a-1>|c1=c<b-1>...`), resampled to 16 kHz, raw `s16le` on
-   stdout.
-3. **Mix + window**: the server de-interleaves the K channels, averages them
-   to mono into a ring buffer, and computes per-channel peak levels.
-   Every `stepMs` it takes the last `lengthMs` of mono audio (or less, early
-   in a window), wraps it as a WAV in memory, and POSTs it to
-   `/inference`. Each result is a **partial**; once a full `lengthMs` window
-   has elapsed the result is **final** and a new window starts keeping the
-   last ~200 ms (mirrors `whisper-stream`'s step/length/keep behaviour).
-   If the previous request is still in flight, the step is skipped (never
-   queued).
-4. **Hypotheses**: non-empty text is fed straight into the same path the WS
-   `stt_hypothesis` handler uses (`sttListener.markHypothesisReceived` +
-   `songSession.processSttHypothesis` for every channel with a session),
-   with `isFinal` from step 3. No lyric-listener process in this mode.
-5. **Listener**: registers as one listener, `audioSourceId`
-   `channels-<device>`, label `<device> ch <list>`, so the song header shows
-   STT × 1. Marked offline on stop.
-6. **Levels**: new server message `stt_levels { levels: number[] }` (0–1
-   peak per picked channel, in pick order) broadcast at ~10 Hz while
-   running.
-7. **Device list**: `stt_capture_devices` gains
-   `inputDevices: { name: string; channels: number }[]` from
-   `system_profiler SPAudioDataType -json`, served by the existing
-   `stt_enumerate_capture_devices` request and cache.
-8. **Lifecycle**: both children's stderr go to the spawner log prefixed
-   `[whisper]` / `[ffmpeg]`. Stop terminates both. If either exits
-   unexpectedly, the other is stopped and state becomes `error`.
+`apps/lyric-listener/src/channels.mjs` (pure helpers in
+`apps/lyric-listener/src/channelLib.mjs`):
+
+1. Checks the device exists (ffmpeg `-list_devices`); if not, prints
+   `@@error Input device '<name>' not found` to stderr and exits 1.
+2. Spawns `whisper-server -m <model> --host 127.0.0.1 --port <free port> -nt
+   --inference-path /overlaysys-inference` (the distinctive path lets boot-time
+   orphan reaping find it) and waits until it answers HTTP.
+3. Spawns the bundled ffmpeg capturing the device by name with
+   `pan=<K>c|c0=c<a-1>|...` to keep only the picked channels, 16 kHz,
+   raw `s16le` on stdout.
+4. De-interleaves the K channels, averages to mono into a ring buffer, and
+   every ~100 ms prints `@@levels <l1> <l2> ...` (0–1 peaks) to stderr.
+5. Every `stepMs` POSTs the last `lengthMs` (WAV) to whisper-server. Results
+   are written to stdout in whisper-stream's convention: `text\r` for a
+   partial, `text\n` for the final at the end of each `lengthMs` window
+   (new window keeps the last 200 ms). A step is skipped while a request is in
+   flight.
+6. Prints `[start speaking]` once whisper-server is ready and audio flows
+   (the spawner's existing readiness marker).
+
+Spawner (`server/src/sttSpawner.ts`) in channel mode runs
+`<node> channels.mjs --ffmpeg <path> --model <m> --device <name> --channels
+17,18 --step <ms> --length <ms> | <node> stdin.mjs`. It intercepts stderr lines
+starting `@@levels` (not logged; forwarded as `stt_levels { levels }`
+broadcasts) and `@@error` (used as `lastError`). Boot-time reaping also kills
+`channels.mjs` and `overlaysys-inference` processes.
+
+Device list: `stt_capture_devices` gains
+`inputDevices: { name: string; channels: number }[]` from
+`system_profiler SPAudioDataType -json` (macOS), served by the existing
+`stt_enumerate_capture_devices` request and cache.
 
 ### 3. Errors
 
@@ -138,3 +138,39 @@ Pipeline (vitest with fake child processes / fake HTTP):
 Smoke script `server/scripts/stt-channels-smoke.mjs` (needs `whisper-server`
 installed): runs the real pipeline for a few seconds against a named device
 and channel list and prints hypotheses and levels.
+
+---
+
+# Part B — Taking a song intro queues the song
+
+## Problem
+
+A Stream Deck button takes a song's intro, then a page of section buttons
+("Verse 1", "Chorus") sends `song_jump_kind` / `song_jump` / `song_advance`.
+Those only act on a live song session, and an intro take starts none, so the
+presses do nothing.
+
+## Design
+
+- `take_song_sub` with `sub: "intro"` (after taking the intro graphic as
+  today) **queues** the song on the resolved channel: song, lyric template,
+  arrangement, trust mode, row id.
+- With no live session but a queued song on the channel:
+  - `song_jump_kind` → start the session at that section;
+  - `song_jump` → start at that section/slide;
+  - `song_advance` with delta > 0 → start at the first slide.
+  The session starts directly at the target (no slide-1 flash); lyrics replace
+  the intro like a lyrics take does.
+  - `song_blank` / `song_end` → just cancel the queue.
+- The queue clears when: the session starts; any other external take or an
+  operator clear on that channel (an intro's own auto-out does **not** clear
+  it); the outro is taken; another song's intro queues instead.
+- `ChannelState` gains optional `queuedSong: { songId, songRowId, title }`.
+- Companion: feedback **Song queued** (channel) and variable
+  `<channel>_song_queued_title`.
+
+## Testing
+
+Server: queue on intro; start-on-jump for each command (correct cursor,
+single take); cancel cases; auto-out keeps the queue. Companion: feedback and
+variable.
