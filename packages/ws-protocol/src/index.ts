@@ -15,6 +15,7 @@ import {
   SttPresenceSchema,
   SttModelFileSchema,
   SttCaptureDeviceSchema,
+  SttInputDeviceSchema,
   SttInstallProgressSchema,
   type TemplateMeta,
 } from "@overlaysys/core";
@@ -405,6 +406,15 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("stt_capture_devices"),
     devices: z.array(SttCaptureDeviceSchema),
+    // macOS input devices with channel counts, for channel select. Absent
+    // on other platforms.
+    inputDevices: z.array(SttInputDeviceSchema).optional(),
+  }),
+  z.object({
+    // Channel-select capture: one 0–1 peak per picked channel, in pick
+    // order, ~10x a second while running.
+    type: z.literal("stt_levels"),
+    levels: z.array(z.number()),
   }),
   z.object({
     type: z.literal("stt_install_progress"),

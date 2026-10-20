@@ -31,6 +31,7 @@ import {
   expandHome,
   type SttBinaryPresence,
   type SttCaptureDevice,
+  type SttInputDevice,
   type SttInstallProgress,
   type SttModelFile,
   type SttPresence,
@@ -150,13 +151,15 @@ async function statModel(modelPath: string): Promise<SttModelFile> {
  * device. `which` plus a direct file-existence check on the common Homebrew
  * paths is enough; the UI only needs "is it there?" not "what version?"
  */
-export async function checkBinary(): Promise<SttBinaryPresence> {
+export async function checkBinary(
+  name: "whisper-stream" | "whisper-server" = "whisper-stream",
+): Promise<SttBinaryPresence> {
   // Fast path: probe a known set of canonical install locations directly.
   // Saves the whole `which` subprocess on the common case (Homebrew).
   const candidates = [
-    "/opt/homebrew/bin/whisper-stream",
-    "/usr/local/bin/whisper-stream",
-    "/usr/bin/whisper-stream",
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    `/usr/bin/${name}`,
   ];
   for (const candidate of candidates) {
     try {
@@ -168,7 +171,7 @@ export async function checkBinary(): Promise<SttBinaryPresence> {
   }
   // Fallback: ask the system. Augmented PATH includes Homebrew dirs so this
   // catches non-canonical installs (e.g. /opt/local on MacPorts).
-  const which = await runOnce("which", ["whisper-stream"], 2000);
+  const which = await runOnce("which", [name], 2000);
   const raw = which.stdout.trim().split("\n")[0] ?? "";
   if (!raw) return { path: null, version: null };
   return { path: raw, version: null };
@@ -196,15 +199,69 @@ async function detectPackageManager(): Promise<SttPresence["packageManager"]> {
  * completes so the status banner stays accurate.
  */
 export async function checkPresence(modelPath: string): Promise<SttPresence> {
-  const [binary, selectedModel, packageManager] = await Promise.all([
+  const [binary, serverBinary, selectedModel, packageManager] = await Promise.all([
     checkBinary(),
+    checkBinary("whisper-server"),
     statModel(modelPath),
     detectPackageManager(),
   ]);
   const plat = process.platform;
   const platform: SttPresence["platform"] =
     plat === "darwin" || plat === "linux" || plat === "win32" ? plat : "other";
-  return { binary, selectedModel, platform, packageManager };
+  return { binary, serverBinary, selectedModel, platform, packageManager };
+}
+
+// ── Input devices with channel counts (channel select, macOS) ─────────────
+
+/**
+ * Input devices and their channel counts from
+ * `system_profiler SPAudioDataType -json`. A device that is both input and
+ * output appears once per direction; keep the input entry, once per name.
+ */
+export function parseSystemProfilerAudio(json: string): SttInputDevice[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  const groups = (parsed as { SPAudioDataType?: { _items?: unknown[] }[] })
+    ?.SPAudioDataType;
+  if (!Array.isArray(groups)) return [];
+  const out: SttInputDevice[] = [];
+  for (const g of groups) {
+    for (const item of g?._items ?? []) {
+      const it = item as { _name?: unknown; coreaudio_device_input?: unknown };
+      const name = typeof it._name === "string" ? it._name : "";
+      const channels = Number(it.coreaudio_device_input ?? 0);
+      if (!name || !Number.isInteger(channels) || channels < 1) continue;
+      if (out.some((d) => d.name === name)) continue;
+      out.push({ name, channels });
+    }
+  }
+  return out;
+}
+
+let cachedInputDevices: SttInputDevice[] | null = null;
+
+/**
+ * macOS input devices with channel counts; undefined on other platforms.
+ * Cached like the whisper-stream probe; `force` refreshes. Unlike that probe
+ * this never opens an audio device, so it's safe while STT is running.
+ */
+export async function listInputDevices(
+  opts: { force?: boolean } = {},
+): Promise<SttInputDevice[] | undefined> {
+  if (process.platform !== "darwin") return undefined;
+  if (!opts.force && cachedInputDevices) return cachedInputDevices;
+  const res = await runOnce("system_profiler", ["SPAudioDataType", "-json"], 15_000);
+  cachedInputDevices = parseSystemProfilerAudio(res.stdout);
+  return cachedInputDevices;
+}
+
+/** Last known channel count for a device name (sync; for the spawner). */
+export function knownInputChannels(name: string): number | undefined {
+  return cachedInputDevices?.find((d) => d.name === name)?.channels;
 }
 
 // ── Capture device enumeration ──────────────────────────────────────────

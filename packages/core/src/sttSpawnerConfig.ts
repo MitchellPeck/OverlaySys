@@ -77,6 +77,8 @@ export const PRESET_MODELS: ReadonlyArray<{
 export const STEP_OPTIONS_MS = [200, 500, 700, 1000, 2000, 3000];
 export const LENGTH_OPTIONS_MS = [3000, 5000, 7000, 10_000, 15_000, 20_000];
 
+export const MAX_STT_CHANNELS = 4;
+
 export const SttSpawnerConfigSchema = z.object({
   // When true, the server starts the spawner automatically on boot.
   autoStart: z.boolean().default(false),
@@ -104,6 +106,29 @@ export const SttSpawnerConfigSchema = z.object({
   // shell command is used verbatim instead. Lets advanced users wire in
   // cloud STT or any other pipeline that emits transcribed text on stdout.
   customCommand: z.string().default(""),
+
+  // "default" runs whisper-stream on `captureDevice`. "channels" (macOS)
+  // records only `channels` of `channelDevice` with ffmpeg, averages them to
+  // mono and transcribes with whisper-server — for multichannel interfaces
+  // where the vocals aren't on channel 1.
+  captureMode: z.enum(["default", "channels"]).default("default"),
+  // Input device name as macOS lists it. Saved by name so it survives
+  // devices being added, removed or reordered.
+  channelDevice: z.string().default(""),
+  // 1-based channel numbers to mix, 1–4 of them.
+  channels: z
+    .array(z.number().int().min(1))
+    .max(MAX_STT_CHANNELS)
+    .refine((cs) => new Set(cs).size === cs.length, "channels must be unique")
+    .default([]),
+}).superRefine((cfg, ctx) => {
+  if (cfg.captureMode !== "channels") return;
+  if (cfg.channelDevice.trim() === "") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["channelDevice"], message: "pick an input device" });
+  }
+  if (cfg.channels.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["channels"], message: "pick at least one channel" });
+  }
 });
 export type SttSpawnerConfig = z.infer<typeof SttSpawnerConfigSchema>;
 
@@ -114,6 +139,9 @@ export const DEFAULT_STT_SPAWNER_CONFIG: SttSpawnerConfig = {
   lengthMs: 5000,
   captureDevice: -1,
   customCommand: "",
+  captureMode: "default",
+  channelDevice: "",
+  channels: [],
 };
 
 /**
@@ -177,9 +205,39 @@ export function buildAugmentedPath(currentPath: string, delimiter: string): stri
  * customCommand is set it wins; otherwise we compose a whisper-stream
  * invocation from the structured fields.
  */
-export function buildSttCommand(cfg: SttSpawnerConfig): string {
+/**
+ * Where the channel-select capture pieces live. The spawner passes real
+ * paths; the settings page preview omits them and gets readable placeholders.
+ */
+export interface ChannelCaptureRuntime {
+  nodeBin?: string;
+  channelsScript?: string;
+  ffmpeg?: string;
+  // Input channel count of the chosen device, when known — the capture
+  // script refuses channels beyond it instead of recording silence.
+  maxChannel?: number;
+}
+
+export function buildSttCommand(
+  cfg: SttSpawnerConfig,
+  runtime: ChannelCaptureRuntime = {},
+): string {
   if (cfg.customCommand.trim().length > 0) return cfg.customCommand;
   const modelArg = shellQuote(expandHome(cfg.modelPath));
+  if (cfg.captureMode === "channels") {
+    const parts = [
+      runtime.nodeBin ? shellQuote(runtime.nodeBin) : "node",
+      runtime.channelsScript ? shellQuote(runtime.channelsScript) : "channels.mjs",
+      "--ffmpeg", runtime.ffmpeg ? shellQuote(runtime.ffmpeg) : "ffmpeg",
+      "--model", modelArg,
+      "--device", shellQuote(cfg.channelDevice),
+      "--channels", cfg.channels.join(","),
+      "--step", String(cfg.stepMs),
+      "--length", String(cfg.lengthMs),
+    ];
+    if (runtime.maxChannel) parts.push("--max-channel", String(runtime.maxChannel));
+    return parts.join(" ");
+  }
   return `whisper-stream -m ${modelArg} --step ${cfg.stepMs} --length ${cfg.lengthMs} -c ${cfg.captureDevice}`;
 }
 
@@ -226,6 +284,8 @@ export type SttModelFile = z.infer<typeof SttModelFileSchema>;
 
 export const SttPresenceSchema = z.object({
   binary: SttBinaryPresenceSchema,
+  // whisper-server (same Homebrew package) — needed by channel select.
+  serverBinary: SttBinaryPresenceSchema.optional(),
   selectedModel: SttModelFileSchema,
   // OS hint so the UI can show install instructions for the current platform.
   platform: z.enum(["darwin", "linux", "win32", "other"]),
@@ -242,6 +302,13 @@ export const SttCaptureDeviceSchema = z.object({
   name: z.string(),
 });
 export type SttCaptureDevice = z.infer<typeof SttCaptureDeviceSchema>;
+
+/** A macOS audio input device with its input channel count (channel select). */
+export const SttInputDeviceSchema = z.object({
+  name: z.string(),
+  channels: z.number().int().min(1),
+});
+export type SttInputDevice = z.infer<typeof SttInputDeviceSchema>;
 
 export const SttInstallProgressSchema = z.object({
   // Stable identifier for the install/download job so the UI can track

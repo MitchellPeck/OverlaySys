@@ -8,6 +8,7 @@ export default defineConfig({
       "apps/desktop/src/**/*.test.ts",
       "apps/operator/src/**/*.test.ts",
       "apps/renderer/src/**/*.test.ts",
+      "apps/lyric-listener/src/**/*.test.mjs",
     ],
     environment: "node",
     passWithNoTests: false,

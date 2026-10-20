@@ -1,12 +1,14 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ffmpegPath from "ffmpeg-static";
 import {
   buildAugmentedPath as buildAugmentedPathCore,
   buildSttCommand,
   type SttSpawnerConfig,
   type SttSpawnerStatus,
 } from "@overlaysys/core";
+import { knownInputChannels } from "./sttInstaller";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
@@ -16,6 +18,9 @@ const REPO_ROOT = path.resolve(path.dirname(__filename), "..", "..");
 const LISTENER_PATH = process.env["OVERLAYSYS_LISTENER_PATH"]
   ? path.resolve(process.env["OVERLAYSYS_LISTENER_PATH"])
   : path.resolve(REPO_ROOT, "apps", "lyric-listener", "src", "stdin.mjs");
+
+// Channel-select capture script; shipped next to the listener daemon.
+const CHANNELS_SCRIPT_PATH = path.join(path.dirname(LISTENER_PATH), "channels.mjs");
 
 // The set of PATH augments (Homebrew dirs etc.) lives in @overlaysys/core so
 // the installer/presence checker resolves whisper-stream identically. See
@@ -82,6 +87,48 @@ let readyTimer: ReturnType<typeof setTimeout> | null = null;
 let logEmitTimer: ReturnType<typeof setTimeout> | null = null;
 let cooldownTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<(s: SttSpawnerStatus) => void>();
+const levelListeners = new Set<(levels: number[]) => void>();
+// Reason a capture script gave for exiting (`@@error ...`), surfaced as
+// lastError instead of a bare "child exit 1".
+let reportedError: string | null = null;
+
+export type StderrLine =
+  | { kind: "levels"; levels: number[] }
+  | { kind: "error"; message: string }
+  | { kind: "log" };
+
+/**
+ * The channel-select capture script talks to us over stderr: `@@levels` lines
+ * feed the operator's meter (too frequent to log) and `@@error` names the
+ * reason for a fatal exit. Everything else is an ordinary log line.
+ */
+export function classifyStderrLine(line: string): StderrLine {
+  if (line.startsWith("@@levels")) {
+    const levels = line
+      .slice("@@levels".length)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(Number)
+      .filter((n) => Number.isFinite(n));
+    return { kind: "levels", levels };
+  }
+  if (line.startsWith("@@error")) {
+    return { kind: "error", message: line.slice("@@error".length).trim() };
+  }
+  return { kind: "log" };
+}
+
+export function subscribeLevels(fn: (levels: number[]) => void): () => void {
+  levelListeners.add(fn);
+  return () => {
+    levelListeners.delete(fn);
+  };
+}
+
+function emitLevels(levels: number[]): void {
+  for (const fn of levelListeners) fn(levels);
+}
 
 function emit(): void {
   // A state transition supersedes any queued log-only emit.
@@ -179,8 +226,19 @@ function launch(config: SttSpawnerConfig): void {
   // The listener side uses NODE_BIN (the calling process's binary) instead
   // of relying on `node` being on PATH — important for packaged Electron
   // where there's no system node, only Electron-as-node.
-  const userCommand = buildSttCommand(config);
-  const fullCommand = `${userCommand} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
+  const channelMode =
+    config.captureMode === "channels" && config.customCommand.trim() === "";
+  const userCommand = buildSttCommand(config, {
+    nodeBin: NODE_BIN,
+    channelsScript: CHANNELS_SCRIPT_PATH,
+    ffmpeg: (ffmpegPath as unknown as string | null) ?? "ffmpeg",
+    maxChannel: knownInputChannels(config.channelDevice),
+  });
+  reportedError = null;
+  // pipefail: when the producer dies (e.g. the channel capture script can't
+  // open its device), report ITS failure — otherwise the pipeline's status is
+  // the listener's clean exit and STT reads "stopped" instead of "error".
+  const fullCommand = `set -o pipefail; ${userCommand} | ${JSON.stringify(NODE_BIN)} ${JSON.stringify(LISTENER_PATH)}`;
   appendLog(`spawn: ${fullCommand}`);
 
   const augmentedPath = buildAugmentedPath();
@@ -225,8 +283,12 @@ function launch(config: SttSpawnerConfig): void {
 
   // Fallback: if no readiness marker arrives (custom command, format drift)
   // but the child is still alive, treat it as running.
+  // The channel capture script always prints the readiness marker (once
+  // whisper-server has loaded the model and audio flows — which can take
+  // longer than the fallback), so only arm the fallback for whisper-stream
+  // and custom commands.
   clearReadyTimer();
-  readyTimer = setTimeout(markReady, READY_FALLBACK_MS);
+  if (!channelMode) readyTimer = setTimeout(markReady, READY_FALLBACK_MS);
 
   // Capture stderr for logs (whisper init prints there; our daemon also
   // logs to stderr) and watch for the readiness marker.
@@ -235,6 +297,16 @@ function launch(config: SttSpawnerConfig): void {
     let ready = false;
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
+      const kind = classifyStderrLine(line);
+      if (kind.kind === "levels") {
+        emitLevels(kind.levels);
+        continue;
+      }
+      if (kind.kind === "error") {
+        reportedError = kind.message;
+        appendLog(`error: ${kind.message}`);
+        continue;
+      }
       appendLog(line);
       if (!ready && READY_RE.test(line)) ready = true;
     }
@@ -293,8 +365,9 @@ function launch(config: SttSpawnerConfig): void {
       state: wasIntentional ? "stopped" : cleanExit ? "stopped" : "error",
       pid: null,
       lastError:
-        wasIntentional || cleanExit ? null : `child ${reason}`,
+        wasIntentional || cleanExit ? null : reportedError ?? `child ${reason}`,
     };
+    emitLevels([]);
     emit();
   };
 
@@ -327,6 +400,7 @@ export function stop(): void {
   appendLog("stop requested");
   // Set state BEFORE killing so the exit handler treats it as intentional.
   status = { ...status, state: "stopped" };
+  emitLevels([]);
   emit();
   // Kill the whole process group so bash AND whisper-stream both receive SIGTERM.
   try {
@@ -359,11 +433,17 @@ export function getActiveConfig(): SttSpawnerConfig | null {
  */
 export function reapOrphans(): void {
   try {
-    const p = spawn("pkill", ["-f", "lyric-listener/src/stdin.mjs"], {
-      stdio: "ignore",
-    });
-    // pkill exits 1 when nothing matched — swallow so it never surfaces.
-    p.on("error", () => {});
+    // The listener daemon, the channel-select capture script, and the
+    // whisper-server it runs (recognisable by its inference path).
+    for (const pattern of [
+      "lyric-listener/src/stdin.mjs",
+      "lyric-listener/src/channels.mjs",
+      "--inference-path /overlaysys-inference",
+    ]) {
+      const p = spawn("pkill", ["-f", "--", pattern], { stdio: "ignore" });
+      // pkill exits 1 when nothing matched — swallow so it never surfaces.
+      p.on("error", () => {});
+    }
   } catch {
     /* pkill unavailable — nothing we can do */
   }

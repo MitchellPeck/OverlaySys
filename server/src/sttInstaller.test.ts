@@ -75,3 +75,31 @@ init: attempt to open default capture device ...
     expect(enumerationInFlight()).toBeNull();
   });
 });
+
+describe("parseSystemProfilerAudio", () => {
+  it("lists input devices with their channel counts, once per name", async () => {
+    const { parseSystemProfilerAudio } = await import("./sttInstaller");
+    const json = JSON.stringify({
+      SPAudioDataType: [
+        {
+          _items: [
+            { _name: "NDI Audio", coreaudio_device_input: 2 },
+            { _name: "MacBook Pro Speakers", coreaudio_device_output: 2 },
+            { _name: "Dante Virtual Soundcard", coreaudio_device_input: 32, coreaudio_device_output: 32 },
+            { _name: "NDI Audio", coreaudio_device_output: 6 },
+          ],
+        },
+      ],
+    });
+    expect(parseSystemProfilerAudio(json)).toEqual([
+      { name: "NDI Audio", channels: 2 },
+      { name: "Dante Virtual Soundcard", channels: 32 },
+    ]);
+  });
+
+  it("returns [] for unexpected output", async () => {
+    const { parseSystemProfilerAudio } = await import("./sttInstaller");
+    expect(parseSystemProfilerAudio("not json")).toEqual([]);
+    expect(parseSystemProfilerAudio("{}")).toEqual([]);
+  });
+});

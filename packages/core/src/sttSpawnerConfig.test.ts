@@ -143,3 +143,70 @@ describe("buildAugmentedPath", () => {
     expect(result.startsWith(STT_PATH_AUGMENTS[0]!)).toBe(true);
   });
 });
+
+describe("sttSpawnerConfig channel select", () => {
+  it("old configs load as default capture mode with no channels", () => {
+    const parsed = SttSpawnerConfigSchema.parse({ captureDevice: 2 });
+    expect(parsed.captureMode).toBe("default");
+    expect(parsed.channelDevice).toBe("");
+    expect(parsed.channels).toEqual([]);
+  });
+
+  it("accepts 1–4 unique 1-based channels in channel mode", () => {
+    const parsed = SttSpawnerConfigSchema.parse({
+      captureMode: "channels",
+      channelDevice: "Dante Virtual Soundcard",
+      channels: [17, 18],
+    });
+    expect(parsed.channels).toEqual([17, 18]);
+  });
+
+  it("rejects more than 4, duplicates, and channel 0", () => {
+    const base = { captureMode: "channels", channelDevice: "X" };
+    expect(() => SttSpawnerConfigSchema.parse({ ...base, channels: [1, 2, 3, 4, 5] })).toThrow();
+    expect(() => SttSpawnerConfigSchema.parse({ ...base, channels: [3, 3] })).toThrow();
+    expect(() => SttSpawnerConfigSchema.parse({ ...base, channels: [0] })).toThrow();
+  });
+
+  it("channel mode needs a device and at least one channel", () => {
+    expect(() =>
+      SttSpawnerConfigSchema.parse({ captureMode: "channels", channelDevice: "", channels: [1] }),
+    ).toThrow();
+    expect(() =>
+      SttSpawnerConfigSchema.parse({ captureMode: "channels", channelDevice: "X", channels: [] }),
+    ).toThrow();
+  });
+});
+
+describe("buildSttCommand — channel select", () => {
+  const cfg = {
+    ...DEFAULT_STT_SPAWNER_CONFIG,
+    modelPath: "/m/ggml-base.en.bin",
+    captureMode: "channels" as const,
+    channelDevice: "Dante Virtual Soundcard",
+    channels: [17, 18],
+  };
+
+  it("runs the channels capture script with the picked device and channels", () => {
+    const cmd = buildSttCommand(cfg, {
+      nodeBin: "/app/node",
+      channelsScript: "/app/channels.mjs",
+      ffmpeg: "/app/ffmpeg",
+      maxChannel: 32,
+    });
+    expect(cmd).toBe(
+      "'/app/node' '/app/channels.mjs' --ffmpeg '/app/ffmpeg' --model '/m/ggml-base.en.bin'" +
+        " --device 'Dante Virtual Soundcard' --channels 17,18 --step 500 --length 5000 --max-channel 32",
+    );
+  });
+
+  it("uses readable placeholders for the preview and omits an unknown channel count", () => {
+    const cmd = buildSttCommand(cfg);
+    expect(cmd.startsWith("node channels.mjs --ffmpeg ffmpeg")).toBe(true);
+    expect(cmd).not.toContain("--max-channel");
+  });
+
+  it("a custom command still wins", () => {
+    expect(buildSttCommand({ ...cfg, customCommand: "my-stt" })).toBe("my-stt");
+  });
+});

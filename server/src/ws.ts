@@ -53,6 +53,10 @@ sttListener.subscribe((listeners) => {
   broadcast({ type: "stt_listener_state", listeners });
 });
 
+sttSpawner.subscribeLevels((levels) => {
+  broadcast({ type: "stt_levels", levels });
+});
+
 sttSpawner.subscribe((status) => {
   broadcast({ type: "stt_spawner_status", status });
 });
@@ -700,11 +704,18 @@ export function handleConnection(
           const spawnerState = sttSpawner.getStatus().state;
           const spawnerLive =
             spawnerState === "running" || spawnerState === "starting";
-          const devices = await sttInstaller.enumerateCaptureDevices({
-            force: parsed.force,
-            probe: spawnerLive ? false : undefined,
+          const [devices, inputDevices] = await Promise.all([
+            sttInstaller.enumerateCaptureDevices({
+              force: parsed.force,
+              probe: spawnerLive ? false : undefined,
+            }),
+            sttInstaller.listInputDevices({ force: parsed.force }),
+          ]);
+          send({
+            type: "stt_capture_devices",
+            devices,
+            ...(inputDevices ? { inputDevices } : {}),
           });
-          send({ type: "stt_capture_devices", devices });
           break;
         }
         case "stt_install_binary": {
