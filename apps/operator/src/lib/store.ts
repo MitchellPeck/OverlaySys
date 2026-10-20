@@ -62,6 +62,11 @@ type StoreState = {
   show: Show | null;
   selectedRowId: string | null;
   selectedHotcardId: string | null;
+  /** Session-only field edits for graphic rows (rowId → key → value). Cleared when a different show loads. */
+  rowDataOverrides: Record<string, Record<string, string>>;
+  /** Set one field's session edit; removes it when it matches the row's saved value. */
+  setRowFieldOverride: (rowId: string, key: string, value: string, original: string | undefined) => void;
+  clearRowOverrides: (rowId: string) => void;
   channelStates: Record<string, ChannelState>;
   /** Local ms when each channel's media playback was last heard (for interpolation / staleness). */
   mediaHeardAt: Record<string, number>;
@@ -144,6 +149,7 @@ export const useStore = create<StoreState>((set) => ({
   show: null,
   selectedRowId: null,
   selectedHotcardId: null,
+  rowDataOverrides: {},
   channelStates: {},
   mediaHeardAt: {},
   channelConfigs: [],
@@ -188,7 +194,26 @@ export const useStore = create<StoreState>((set) => ({
         // Auto-promoting a row to selected should clear any prior hotcard
         // selection so the mutually-exclusive contract holds.
         selectedHotcardId: nextRowId != null ? null : cur.selectedHotcardId,
+        // Edits belong to one show; a re-broadcast of the same show keeps them.
+        rowDataOverrides: s && cur.show && s.id === cur.show.id ? cur.rowDataOverrides : {},
       };
+    }),
+  setRowFieldOverride: (rowId, key, value, original) =>
+    set((cur) => {
+      const row = { ...cur.rowDataOverrides[rowId] };
+      if (value === original) delete row[key];
+      else row[key] = value;
+      const next = { ...cur.rowDataOverrides };
+      if (Object.keys(row).length === 0) delete next[rowId];
+      else next[rowId] = row;
+      return { rowDataOverrides: next };
+    }),
+  clearRowOverrides: (rowId) =>
+    set((cur) => {
+      if (!(rowId in cur.rowDataOverrides)) return {};
+      const next = { ...cur.rowDataOverrides };
+      delete next[rowId];
+      return { rowDataOverrides: next };
     }),
   setSelectedRow: (id) =>
     set((s) => ({
