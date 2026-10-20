@@ -23,6 +23,38 @@ interface InternalSession {
 
 const sessions = new Map<string, InternalSession>();
 
+// Songs armed by an intro take, per channel. Song commands that arrive with
+// no live session start the queued song instead of being dropped — so an
+// intro button followed by a "Verse 1" button just works.
+interface QueuedEntry {
+  args: StartArgs;
+  songRowId: string;
+}
+const queued = new Map<string, QueuedEntry>();
+
+export function queue(
+  channel: string,
+  args: StartArgs,
+  meta: { songRowId: string },
+): void {
+  queued.set(channel, { args, songRowId: meta.songRowId });
+  channels.setQueuedSong(channel, {
+    songId: args.song.id,
+    songRowId: meta.songRowId,
+    title: args.song.title,
+  });
+}
+
+/** Forget the queued song without touching channel state. True if one existed. */
+export function dropQueued(channel: string): boolean {
+  return queued.delete(channel);
+}
+
+/** Forget the queued song and publish the cleared channel state. */
+export function clearQueued(channel: string): void {
+  if (dropQueued(channel)) channels.setQueuedSong(channel, null);
+}
+
 function summarize(s: InternalSession): SongSessionSummary {
   return {
     songId: s.song.id,
@@ -80,13 +112,20 @@ function render(s: InternalSession, forceMount: boolean = false): void {
   channels.takeInternal(s.channel, s.lyricTemplateId, { text });
 }
 
-export function start(channel: string, args: StartArgs): void {
+export function start(
+  channel: string,
+  args: StartArgs,
+  cursor: { sectionIdx: number; slideIdx: number } = { sectionIdx: 0, slideIdx: 0 },
+): void {
+  // Starting any song consumes the queue; the cleared field rides along with
+  // the session's first render emit.
+  if (dropQueued(channel)) channels.setQueuedSong(channel, null, { deferEmit: true });
   const internal: InternalSession = {
     channel,
     song: args.song,
     lyricTemplateId: args.lyricTemplateId,
     arrangement: args.arrangement.slice(),
-    cursor: { sectionIdx: 0, slideIdx: 0 },
+    cursor: { ...cursor },
     blanked: false,
     trustMode: args.trustMode,
     startedAt: Date.now(),
@@ -140,7 +179,12 @@ export function getSession(channel: string): SongSessionSummary | null {
 
 export function advance(channel: string, delta: number): void {
   const s = sessions.get(channel);
-  if (!s) return;
+  if (!s) {
+    // "Next" after an intro starts the queued song at its first slide.
+    const q = queued.get(channel);
+    if (q && delta > 0) start(channel, q.args);
+    return;
+  }
   const startSection = s.cursor.sectionIdx;
   const startSlide = s.cursor.slideIdx;
   let sectionIdx = startSection;
@@ -178,7 +222,20 @@ export function jump(
   slideIdx: number = 0,
 ): void {
   const s = sessions.get(channel);
-  if (!s) return;
+  if (!s) {
+    const q = queued.get(channel);
+    if (!q) return;
+    // Start the queued song directly at the target so slide 1 never flashes.
+    const arrangement = q.args.arrangement.slice();
+    let idx = arrangement.indexOf(sectionId);
+    if (idx < 0) {
+      if (!q.args.song.sections.some((sec) => sec.id === sectionId)) return;
+      arrangement.push(sectionId);
+      idx = arrangement.length - 1;
+    }
+    start(channel, { ...q.args, arrangement }, { sectionIdx: idx, slideIdx });
+    return;
+  }
   // If the section already exists in the arrangement, jump there. Otherwise
   // append it (handles "drop to bridge" audibles).
   let sectionIdx = s.arrangement.indexOf(sectionId);
@@ -202,10 +259,10 @@ export function jumpByKindOrdinal(
   kind: string,
   ordinal: number,
 ): void {
-  const s = sessions.get(channel);
-  if (!s) return;
+  const song = sessions.get(channel)?.song ?? queued.get(channel)?.args.song;
+  if (!song) return;
   let n = 0;
-  for (const sec of s.song.sections) {
+  for (const sec of song.sections) {
     if (sec.kind === kind) {
       n += 1;
       if (n === ordinal) {
@@ -218,7 +275,10 @@ export function jumpByKindOrdinal(
 
 export function blank(channel: string): void {
   const s = sessions.get(channel);
-  if (!s) return;
+  if (!s) {
+    clearQueued(channel);
+    return;
+  }
   s.blanked = !s.blanked;
   render(s);
 }
@@ -231,6 +291,11 @@ export function setTrust(channel: string, trustMode: boolean): void {
 }
 
 export function end(channel: string): void {
+  if (!sessions.has(channel)) {
+    // Nothing live — "end" just cancels a queued song (the intro stays up).
+    clearQueued(channel);
+    return;
+  }
   if (!tearDownSession(channel)) return;
   // Defer the songSession-cleared emit so it coalesces with the phase=out
   // emit from channels.clear. That single combined state event lets the
@@ -285,6 +350,7 @@ export function endSessionOnly(channel: string): boolean {
  */
 export function endAll(): void {
   for (const ch of Array.from(sessions.keys())) end(ch);
+  for (const ch of Array.from(queued.keys())) clearQueued(ch);
 }
 
 // ───── STT match integration ─────────────────────────────────────────────────

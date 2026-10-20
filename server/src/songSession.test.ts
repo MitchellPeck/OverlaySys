@@ -369,3 +369,90 @@ describe("songSession trust mode", () => {
     nowSpy.mockRestore();
   });
 });
+
+describe("songSession queued song (intro → section buttons)", () => {
+  const args = {
+    song,
+    lyricTemplateId: "lyric-default",
+    arrangement: song.defaultArrangement,
+    trustMode: false,
+  };
+  const meta = { songRowId: "row-1" };
+
+  beforeEach(() => {
+    songSession.endAll();
+    songSession.clearQueued(CH);
+    channels.take(CH, "intro-tpl", { title: "Test Song" });
+  });
+
+  it("queue publishes queuedSong on the channel and leaves the intro on air", () => {
+    songSession.queue(CH, args, meta);
+    const s = channels.getState(CH);
+    expect(s.queuedSong).toEqual({ songId: "test-song", songRowId: "row-1", title: "Test Song" });
+    expect(s.active?.templateId).toBe("intro-tpl");
+    expect(s.songSession).toBeUndefined();
+  });
+
+  it("jumpByKindOrdinal starts the queued song directly at that section", () => {
+    songSession.queue(CH, args, meta);
+    const takes = vi.spyOn(channels, "takeInternal");
+    songSession.jumpByKindOrdinal(CH, "chorus", 1);
+    const s = channels.getState(CH);
+    expect(s.songSession?.cursor).toEqual({ sectionIdx: 1, slideIdx: 0 });
+    expect(s.active?.data.text).toBe("Chorus 1\nChorus 2");
+    expect(takes).toHaveBeenCalledTimes(1); // no slide-1 flash first
+    expect(s.queuedSong).toBeUndefined();
+    takes.mockRestore();
+  });
+
+  it("jump starts the queued song at the given section and slide", () => {
+    songSession.queue(CH, args, meta);
+    songSession.jump(CH, "v1", 1);
+    expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 1 });
+  });
+
+  it("advance(+1) starts the queued song at its first slide", () => {
+    songSession.queue(CH, args, meta);
+    songSession.advance(CH, 1);
+    const s = channels.getState(CH);
+    expect(s.songSession?.cursor).toEqual({ sectionIdx: 0, slideIdx: 0 });
+    expect(s.active?.data.text).toBe("Line A1\nLine A2");
+  });
+
+  it("advance(-1) with only a queued song does nothing", () => {
+    songSession.queue(CH, args, meta);
+    songSession.advance(CH, -1);
+    expect(channels.getState(CH).songSession).toBeUndefined();
+    expect(channels.getState(CH).queuedSong).toBeDefined();
+  });
+
+  it("blank and end cancel the queue without touching the intro", () => {
+    songSession.queue(CH, args, meta);
+    songSession.blank(CH);
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+    expect(channels.getState(CH).active?.templateId).toBe("intro-tpl");
+    songSession.queue(CH, args, meta);
+    songSession.end(CH);
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+  });
+
+  it("an external take or operator clear on the channel cancels the queue", () => {
+    songSession.queue(CH, args, meta);
+    channels.take(CH, "other", {});
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+    songSession.queue(CH, args, meta);
+    channels.clear(CH);
+    expect(channels.getState(CH).queuedSong).toBeUndefined();
+  });
+
+  it("an auto-out clear keeps the queue", () => {
+    songSession.queue(CH, args, meta);
+    channels.clear(CH, { keepQueuedSong: true });
+    expect(channels.getState(CH).queuedSong).toBeDefined();
+  });
+
+  it("jump with no session and nothing queued stays a no-op", () => {
+    songSession.jumpByKindOrdinal(CH, "chorus", 1);
+    expect(channels.getState(CH).songSession).toBeUndefined();
+  });
+});

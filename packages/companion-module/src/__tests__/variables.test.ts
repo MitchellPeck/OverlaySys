@@ -333,3 +333,27 @@ describe("cursor_row_is_song", () => {
     ).toBe(true);
   });
 });
+
+describe("<channel>_song_queued_title", () => {
+  it("shows the queued song's title, empty otherwise", () => {
+    let s = apply(initialState(), {
+      type: "state",
+      channel: "program",
+      state: { channel: "program", active: null },
+    });
+    expect(projectVariables(s, CHANNELS).program_song_queued_title).toBe("");
+    s = apply(s, {
+      type: "state",
+      channel: "program",
+      state: {
+        channel: "program",
+        active: null,
+        queuedSong: { songId: "s1", songRowId: "r2", title: "Amazing Grace" },
+      },
+    });
+    expect(projectVariables(s, CHANNELS).program_song_queued_title).toBe("Amazing Grace");
+    expect(
+      variableDefinitions(CHANNELS).some((d) => d.variableId === "program_song_queued_title"),
+    ).toBe(true);
+  });
+});

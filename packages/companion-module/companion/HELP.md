@@ -70,6 +70,7 @@ Per configured channel `<c>` (e.g. `program`, `preview`):
 
 - `<c>_template_id`, `<c>_template_name`, `<c>_is_live`, `<c>_phase`
 - `<c>_data_<n>_key` / `<c>_data_<n>_value` for n=1..10 (first 10 keys of the active template's data, sorted alphabetically by key)
+- `<c>_song_queued_title` — the song armed by its intro on that channel (empty when none)
 - `<c>_song_title`, `<c>_song_section`, `<c>_song_slide_idx`, `<c>_song_slide_text`, `<c>_song_blanked`, `<c>_song_trust_mode`
 
 Global:
@@ -97,7 +98,17 @@ changes. If two field keys sanitize to the same id, the later one wins.
 
 ## Feedbacks
 
-`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same), `cursor_row_kind_is` (true when the cursor row is the chosen type), `row_at_index_kind_is` (same, for the Nth row).
+`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_queued`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same), `cursor_row_kind_is` (true when the cursor row is the chosen type), `row_at_index_kind_is` (same, for the Nth row).
+
+### Intro, then section buttons
+
+Taking a song's **intro** (song sub-take → Intro) queues that song on the
+channel the intro went to. Song actions on that channel — **Song: jump by
+kind + ordinal** (Verse 1, Chorus…), **Song: jump to section**, and **Song:
+advance +1** — then start the song right at that point, replacing the intro.
+**Song: blank** / **Song: end** cancel the queue. Point your section buttons at
+the same channel as the intro. The **Song queued** feedback and
+`<c>_song_queued_title` variable show which song is armed.
 
 ### Doing something extra when the current line is a song
 

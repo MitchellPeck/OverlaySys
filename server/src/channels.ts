@@ -3,6 +3,7 @@ import type {
   MediaEndAction,
   MediaPlayback,
   MediaStatus,
+  QueuedSong,
   SongSessionSummary,
   SubTakeContext,
 } from "@overlaysys/core";
@@ -60,7 +61,9 @@ async function maybeScheduleAutoOut(
       cur.active.templateId === templateId &&
       cur.active.takenAt === takenAt
     ) {
-      clear(channel);
+      // An intro fading out on its own still leaves its song queued for the
+      // section buttons that follow.
+      clear(channel, { keepQueuedSong: true });
     }
   }, ms);
   autoOutTimers.set(channel, timer);
@@ -124,6 +127,11 @@ export function take(
     if (songSession.tearDownSession(channel)) {
       delete s.songSession;
     }
+    // Any external take replaces whatever an intro had queued. (An intro
+    // take re-queues its own song right after this.)
+    if (songSession.dropQueued(channel)) {
+      delete s.queuedSong;
+    }
   }
   s.active = {
     templateId,
@@ -151,7 +159,10 @@ export function takeInternal(channel: string, templateId: string, data: Record<s
   }
 }
 
-export function clear(channel: string): void {
+export function clear(
+  channel: string,
+  options?: { keepQueuedSong?: boolean },
+): void {
   if (!clearIsInternal) {
     // External clear ends any live song session on this channel; without this
     // the session summary persists in ChannelState and the operator UI stays
@@ -161,6 +172,11 @@ export function clear(channel: string): void {
   }
   cancelAutoOut(channel);
   const s = getOrInit(channel);
+  if (!clearIsInternal && !options?.keepQueuedSong && songSession.dropQueued(channel)) {
+    delete s.queuedSong;
+    states.set(channel, s);
+    if (!s.active) emit(channel);
+  }
   if (!s.active) return;
   s.active = { ...s.active, phase: "out" };
   states.set(channel, s);
@@ -213,6 +229,18 @@ export function setSongSessionSummary(
   // state mutation (e.g. songSession.end → channels.clear, where we want one
   // event carrying both "hasSession=false" and "active.phase=out" so the
   // renderer can tell a true end from a take-replaces-session).
+  if (!options?.deferEmit) emit(channel);
+}
+
+export function setQueuedSong(
+  channel: string,
+  queued: QueuedSong | null,
+  options?: { deferEmit?: boolean },
+): void {
+  const s = getOrInit(channel);
+  if (queued === null) delete s.queuedSong;
+  else s.queuedSong = queued;
+  states.set(channel, s);
   if (!options?.deferEmit) emit(channel);
 }
 

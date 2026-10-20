@@ -12,6 +12,7 @@ export type FeedbackId =
   | "channel_is_blank"
   | "hotcard_on_air"
   | "song_active"
+  | "song_queued"
   | "song_trust_on"
   | "song_section_is"
   | "song_sub_take_on_channel"
@@ -75,6 +76,14 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     id: "song_active",
     name: "Song session active",
     description: "True when the chosen channel has a live song session.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "song_queued",
+    name: "Song queued (intro taken)",
+    description:
+      "True when the chosen channel has a song armed by its intro take. Song " +
+      "section / slide / advance actions on that channel will start it.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
@@ -313,6 +322,10 @@ export function feedbackPredicate(
     case "song_active": {
       const c = String(options.channel ?? "");
       return Boolean(state.channelStates.get(c)?.songSession);
+    }
+    case "song_queued": {
+      const c = String(options.channel ?? "");
+      return Boolean(state.channelStates.get(c)?.queuedSong);
     }
     case "song_trust_on": {
       const c = String(options.channel ?? "");

@@ -525,6 +525,20 @@ export function handleConnection(
               songRowId: row.id,
               sub: parsed.sub,
             });
+            if (parsed.sub === "intro") {
+              // Arm the song on this channel so the section / slide buttons
+              // that follow an intro start it instead of being dropped.
+              songSession.queue(
+                resolvedChannel,
+                {
+                  song,
+                  lyricTemplateId: row.lyricTemplateId,
+                  arrangement: resolveArrangement(row, showSong, song),
+                  trustMode: row.trustMode ?? false,
+                },
+                { songRowId: row.id },
+              );
+            }
             break;
           }
           // sub === "lyrics": advance an existing same-song session, else start.

@@ -87,6 +87,7 @@ export function variableDefinitions(
       { variableId: `${c}_song_slide_text`, name: `${c} song slide first line` },
       { variableId: `${c}_song_blanked`, name: `${c} song is blanked (yes/no)` },
       { variableId: `${c}_song_trust_mode`, name: `${c} song trust mode (yes/no)` },
+      { variableId: `${c}_song_queued_title`, name: `${c} song queued by its intro (title)` },
     );
     for (let i = 1; i <= 10; i++) {
       defs.push({
@@ -181,6 +182,7 @@ export function projectVariables(
 
     const sess = ch?.songSession;
     out[`${c}_song_title`] = songTitleForChannel(state, c);
+    out[`${c}_song_queued_title`] = ch?.queuedSong?.title ?? "";
     if (sess) {
       const song = state.songCache.get(sess.songId);
       out[`${c}_song_section`] = song

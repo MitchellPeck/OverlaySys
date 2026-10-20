@@ -62,10 +62,23 @@ export const ChannelMediaSchema = z.object({
 });
 export type ChannelMedia = z.infer<typeof ChannelMediaSchema>;
 
+/**
+ * A song armed by its intro take. Song commands (jump / jump by kind /
+ * advance) on a channel with no live session start this song instead of
+ * being dropped.
+ */
+export const QueuedSongSchema = z.object({
+  songId: z.string(),
+  songRowId: z.string(),
+  title: z.string(),
+});
+export type QueuedSong = z.infer<typeof QueuedSongSchema>;
+
 export const ChannelStateSchema = z.object({
   channel: z.string(),
   active: ActiveGraphicSchema.nullable(),
   songSession: SongSessionSummarySchema.optional(),
+  queuedSong: QueuedSongSchema.optional(),
   media: ChannelMediaSchema.nullable().optional(),
 });
 export type ChannelState = z.infer<typeof ChannelStateSchema>;

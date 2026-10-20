@@ -335,3 +335,24 @@ describe("row kind feedbacks", () => {
     expect(feedbackPredicate(s, "row_at_index_kind_is", { rowIndex: 5, kind: "song" })).toBe(false);
   });
 });
+
+describe("song_queued feedback", () => {
+  it("is true while the channel has a queued song", () => {
+    let s = apply(initialState(), {
+      type: "state",
+      channel: "program",
+      state: { channel: "program", active: null },
+    });
+    expect(feedbackPredicate(s, "song_queued", { channel: "program" })).toBe(false);
+    s = apply(s, {
+      type: "state",
+      channel: "program",
+      state: {
+        channel: "program",
+        active: null,
+        queuedSong: { songId: "s1", songRowId: "r2", title: "Amazing Grace" },
+      },
+    });
+    expect(feedbackPredicate(s, "song_queued", { channel: "program" })).toBe(true);
+  });
+});
