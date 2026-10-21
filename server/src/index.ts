@@ -19,6 +19,9 @@ import { defaultDevEnvFiles, loadDevEnvFiles } from "./devEnv";
 import { registerPcoRoutes } from "./pco/routes";
 import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
+import { initApiBible } from "./apiBible/config";
+import { registerApiBibleRoutes } from "./apiBible/routes";
+import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
 import {
   clearCloudTokens,
@@ -101,6 +104,7 @@ await registerPcoRoutes(app);
 // PCO_APP_ID + PCO_SECRET) so a PAT connects without any UI or OAuth flow.
 initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
+await registerApiBibleRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };
@@ -159,6 +163,11 @@ app.post("/api/cloud/sync", async () => {
 // the resolved port from the magic stdout line below and builds every window
 // URL from it, so a fallback is transparent to the app's own windows.
 const actualPort = await listenWithFallback(app, HOST, PORT);
+// Not awaited: API.Bible lookups must never delay boot. The refresh job
+// starts once the key has been resolved.
+void initApiBible()
+  .catch((e) => console.warn("[api-bible] init failed", e instanceof Error ? e.message : e))
+  .finally(() => startApiBibleRefresh());
 
 // Point the STT listener daemon at THIS server's real port over loopback.
 // Must happen before any spawner start — otherwise the daemon dials its

@@ -133,6 +133,18 @@ export const ScriptureRowSchema = z.object({
   channelHint: z.string().optional(),
   notes: z.string().optional(),
   sourceRef: RowSourceRefSchema.optional(),
+  /**
+   * Set for rows fetched from a licensed API (NIV via API.Bible). The server
+   * refreshes such rows' text every 14 days and reports usage with the tokens.
+   */
+  source: z
+    .object({
+      provider: z.literal("api.bible"),
+      bibleId: z.string(),
+      fetchedAt: z.string(),
+      usageTokens: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
 

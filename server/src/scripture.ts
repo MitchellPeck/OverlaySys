@@ -5,34 +5,44 @@ import {
   parseReference,
   ProviderRegistry,
   ScriptureRefError,
+  ScriptureProviderError,
   BOOKS,
   type ParsedReference,
 } from "@overlaysys/scripture";
+import { reportViews } from "./apiBible/fums";
+import { ensureApiBible } from "./apiBible/config";
 
 let registry: ProviderRegistry | null = null;
 
+/** The live registry (bundled translations always present; NIV added by apiBible/config). */
+export function getScriptureRegistry(): ProviderRegistry {
+  if (!registry) {
+    registry = new ProviderRegistry();
+    registry.register(new BundledProvider(ALL_BUNDLES));
+  }
+  return registry;
+}
+
+/** Rebuild the registry from scratch (bundled only). Call initApiBible() after to re-add NIV. */
 export async function initScripture(): Promise<void> {
-  const r = new ProviderRegistry();
-  r.register(new BundledProvider(ALL_BUNDLES));
-  registry = r;
+  registry = null;
+  getScriptureRegistry();
 }
 
 /** @internal test access */
 export function _getRegistryForTest(): ProviderRegistry {
-  if (!registry) throw new Error("scripture not initialized");
-  return registry;
+  return getScriptureRegistry();
 }
 
 export async function registerScriptureRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/scripture/translations", async () => {
-    if (!registry) await initScripture();
-    return { translations: registry!.listTranslations() };
+    await ensureApiBible();
+    return { translations: getScriptureRegistry().listTranslations() };
   });
 
   app.get<{ Querystring: { ref?: string; translation?: string } }>(
     "/api/scripture/passage",
     async (req, reply) => {
-      if (!registry) await initScripture();
       const ref = (req.query.ref ?? "").trim();
       const translation = (req.query.translation ?? "").trim();
       if (!ref) {
@@ -65,7 +75,7 @@ export async function registerScriptureRoutes(app: FastifyInstance): Promise<voi
         throw e;
       }
 
-      const provider = registry!.providerFor(translation);
+      const provider = getScriptureRegistry().providerFor(translation);
       if (!provider) {
         return reply.code(404).send({
           code: "unknown_translation",
@@ -76,13 +86,21 @@ export async function registerScriptureRoutes(app: FastifyInstance): Promise<voi
 
       try {
         const passage = await provider.fetchPassage(parsed, translation);
+        if (passage.source) void reportViews(passage.source.usageTokens);
         return {
           reference: formatNormalizedReference(parsed),
           translation,
           verses: passage.verses,
           attribution: passage.attribution,
+          ...(passage.source
+            ? { source: { ...passage.source, fetchedAt: new Date().toISOString() } }
+            : {}),
         };
       } catch (e) {
+        if (e instanceof ScriptureProviderError) {
+          const status = { offline: 503, rejected: 502, out_of_range: 400, upstream: 502 }[e.code];
+          return reply.code(status).send({ code: e.code, message: e.message, hint: e.message });
+        }
         const msg = e instanceof Error ? e.message : String(e);
         // Provider errors for chapter/verse not present surface as 400 so
         // the operator sees a typed hint rather than an opaque 500.

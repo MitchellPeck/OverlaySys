@@ -24,12 +24,6 @@ export interface ScriptureVerse {
   text: string;
 }
 
-/** Provider response for one or more parsed references. */
-export interface ScripturePassage {
-  verses: ScriptureVerse[];
-  /** License/attribution text. Pinned into the row at fetch time. */
-  attribution: string;
-}
 
 export interface TranslationMeta {
   /** Stable id used in row data and on the wire. */
@@ -64,5 +58,34 @@ export class ScriptureRefError extends Error {
     this.name = "ScriptureRefError";
     this.hint = hint;
     this.position = position;
+  }
+}
+
+/** Where a passage came from, when it isn't bundled. Copied onto saved rows. */
+export interface ScripturePassageSource {
+  provider: "api.bible";
+  bibleId: string;
+  /** API.Bible FUMS tokens — one per request that produced this passage. */
+  usageTokens: string[];
+}
+
+/** Provider response for one or more parsed references. */
+export interface ScripturePassage {
+  verses: ScriptureVerse[];
+  /** License/attribution text. Pinned into the row at fetch time. */
+  attribution: string;
+  source?: ScripturePassageSource;
+}
+
+export type ScriptureProviderErrorCode = "offline" | "rejected" | "out_of_range" | "upstream";
+
+/** Thrown by network-backed providers; `message` is operator-facing. */
+export class ScriptureProviderError extends Error {
+  code: ScriptureProviderErrorCode;
+
+  constructor(code: ScriptureProviderErrorCode, message: string) {
+    super(message);
+    this.name = "ScriptureProviderError";
+    this.code = code;
   }
 }
