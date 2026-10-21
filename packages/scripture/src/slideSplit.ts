@@ -22,23 +22,29 @@ export interface AutoSlide {
 }
 
 /**
- * Break text into pieces of at most maxChars. Prefer cutting after clause
- * punctuation in the second half of the window (so fragments aren't tiny),
- * else at the last space. A run with no spaces is left whole.
+ * Break text into pieces of at most maxChars, sized as evenly as the text
+ * allows so a long verse doesn't leave a tiny trailing fragment. Prefer a
+ * clause-punctuation cut near the even-split target, else the whitespace
+ * closest to it. A run with no whitespace is left whole.
  */
 export function splitLongText(text: string, maxChars: number): string[] {
   const pieces: string[] = [];
   let rest = text.trim();
   while (rest.length > maxChars) {
+    const target = rest.length / Math.ceil(rest.length / maxChars);
     const window = rest.slice(0, maxChars + 1);
-    let cut = -1;
-    const punct = /[.;:,?!]["'”’)]?(?=\s)/g;
-    let m: RegExpExecArray | null;
-    while ((m = punct.exec(window))) {
-      const end = m.index + m[0].length;
-      if (end <= maxChars && end >= maxChars / 2) cut = end;
-    }
-    if (cut < 0) cut = window.lastIndexOf(" ");
+    const closest = (candidates: number[], tolerance: number) => {
+      let best = -1;
+      for (const c of candidates) {
+        const dist = Math.abs(c - target);
+        if (c > 0 && c <= maxChars && dist <= tolerance && (best < 0 || dist < Math.abs(best - target))) best = c;
+      }
+      return best;
+    };
+    const punctEnds = [...window.matchAll(/[.;:,?!]["'”’)]?(?=\s)/g)].map((m) => m.index + m[0].length);
+    const spaces = [...window.matchAll(/\s/g)].map((m) => m.index);
+    let cut = closest(punctEnds, target * 0.3);
+    if (cut < 0) cut = closest(spaces, Infinity);
     if (cut <= 0) break;
     pieces.push(rest.slice(0, cut).trimEnd());
     rest = rest.slice(cut).trimStart();
@@ -73,13 +79,15 @@ export function splitIntoSlides(
   for (const v of verses) {
     const pieces = v.text.length > budget.maxChars ? splitLongText(v.text, budget.maxChars) : [v.text];
     pieces.forEach((text, pieceIdx) => {
-      const wouldExceedChars = currentChars + text.length > budget.maxChars;
+      // Entries render joined by a space; count it so the editor's char count agrees.
+      const sep = current.length > 0 ? 1 : 0;
+      const wouldExceedChars = currentChars + sep + text.length > budget.maxChars;
       const wouldExceedLines = budget.maxLines !== undefined && current.length + 1 > budget.maxLines;
       if (current.length > 0 && (pieceIdx > 0 || wouldExceedChars || wouldExceedLines)) {
         flush();
       }
+      currentChars += (current.length > 0 ? 1 : 0) + text.length;
       current.push({ ...v, text });
-      currentChars += text.length;
     });
   }
   flush();

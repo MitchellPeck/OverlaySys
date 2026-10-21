@@ -18,6 +18,7 @@ import { Button, Field, Input, Modal, Select, colors } from "@overlaysys/ui";
 import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
 import { useStore } from "@/lib/store";
 import {
+  budgetChanged,
   budgetForPref,
   clampCustomChars,
   loadSlideSizePref,
@@ -363,14 +364,29 @@ function Step2({
     seedTemplateId || templates[0]?.id || "",
   );
 
-  function applySize(next: SlideSizePref) {
-    if (manualEdits && !window.confirm("Re-split and discard your manual breaks?")) return;
+  /** Switch slide size, re-splitting only if the budget actually changes. Returns false if the operator cancels. */
+  function applySize(next: SlideSizePref): boolean {
+    const nextBudget = budgetForPref(next);
+    const resplit = budgetChanged(budget, nextBudget);
+    if (resplit && manualEdits && !window.confirm("Re-split and discard your manual breaks?")) return false;
     setSizePref(next);
     saveSlideSizePref(next);
-    setSlides(
-      splitIntoSlides(passage.verses, budgetForPref(next)).map((s) => ({ id: s.id, verses: s.verses })),
-    );
-    setManualEdits(false);
+    if (next.kind === "custom") setCustomDraft(String(nextBudget.maxChars));
+    if (resplit) {
+      setSlides(
+        splitIntoSlides(passage.verses, nextBudget).map((s) => ({ id: s.id, verses: s.verses })),
+      );
+      setManualEdits(false);
+    }
+    return true;
+  }
+
+  const customDraftChars = clampCustomChars(Number(customDraft));
+  const customPending = sizePref.kind === "custom" && customDraftChars !== budget.maxChars;
+  function applyCustomDraft() {
+    if (!applySize({ kind: "custom", maxChars: customDraftChars })) {
+      setCustomDraft(String(budget.maxChars));
+    }
   }
 
   return (
@@ -392,9 +408,8 @@ function Step2({
             onChange={(e) => {
               const kind = e.target.value as SlideSizePref["kind"];
               if (kind === "custom") {
-                const maxChars = clampCustomChars(Number(customDraft) || budget.maxChars);
-                setCustomDraft(String(maxChars));
-                applySize({ kind: "custom", maxChars });
+                // Start Custom at the current size: reveals the input without re-splitting.
+                applySize({ kind: "custom", maxChars: budget.maxChars });
               } else {
                 applySize({ kind });
               }
@@ -413,16 +428,16 @@ function Step2({
               aria-label="Max characters per slide"
               value={customDraft}
               onChange={(e) => setCustomDraft(e.target.value)}
-              onBlur={() => {
-                const maxChars = clampCustomChars(Number(customDraft));
-                setCustomDraft(String(maxChars));
-                if (maxChars !== budget.maxChars) applySize({ kind: "custom", maxChars });
-              }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Enter" && customPending) applyCustomDraft();
               }}
               style={{ width: 100 }}
             />
+          )}
+          {customPending && (
+            <Button size="sm" variant="primary" onClick={applyCustomDraft}>
+              Apply
+            </Button>
           )}
         </div>
       </Field>

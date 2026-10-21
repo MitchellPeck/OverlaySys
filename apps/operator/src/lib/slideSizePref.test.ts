@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  budgetForPref, clampCustomChars, parseSlideSizePref, loadSlideSizePref, DEFAULT_SLIDE_SIZE_PREF,
+  budgetForPref, budgetChanged, clampCustomChars, parseSlideSizePref, loadSlideSizePref, DEFAULT_SLIDE_SIZE_PREF,
 } from "./slideSizePref";
 
 describe("slideSizePref", () => {
@@ -32,5 +32,11 @@ describe("slideSizePref", () => {
 
   it("load returns the default when localStorage is unavailable (node)", () => {
     expect(loadSlideSizePref()).toEqual(DEFAULT_SLIDE_SIZE_PREF);
+  });
+
+  it("budgetChanged is false when switching to Custom at the same size", () => {
+    expect(budgetChanged(budgetForPref({ kind: "medium" }), budgetForPref({ kind: "custom", maxChars: 240 }))).toBe(false);
+    expect(budgetChanged(budgetForPref({ kind: "medium" }), budgetForPref({ kind: "short" }))).toBe(true);
+    expect(budgetChanged({ maxChars: 240 }, { maxChars: 240, maxLines: 2 })).toBe(true);
   });
 });

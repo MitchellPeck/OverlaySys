@@ -30,6 +30,11 @@ export function budgetForPref(pref: SlideSizePref): SlideBudget {
     : SLIDE_SIZE_PRESETS[pref.kind];
 }
 
+/** Whether switching budgets would change how the passage splits. */
+export function budgetChanged(prev: SlideBudget, next: SlideBudget): boolean {
+  return prev.maxChars !== next.maxChars || prev.maxLines !== next.maxLines;
+}
+
 export function loadSlideSizePref(): SlideSizePref {
   try {
     return parseSlideSizePref(window.localStorage.getItem(STORAGE_KEY));

@@ -159,9 +159,25 @@ describe("splitLongText", () => {
     expect(splitLongText("aaa bbb ccc ddd", 8)).toEqual(["aaa bbb", "ccc ddd"]);
   });
 
-  it("ignores punctuation in the first half of the window (no tiny fragments)", () => {
-    // comma at index 1 is < maxChars/2, so cut at the last space instead
-    expect(splitLongText("a, bbbbbb cccccc dddddd", 16)).toEqual(["a, bbbbbb cccccc", "dddddd"]);
+  it("balances pieces instead of leaving a tiny remainder", () => {
+    // 23 chars into 2 pieces → aim for ~11 each, not 16 + 6
+    expect(splitLongText("a, bbbbbb cccccc dddddd", 16)).toEqual(["a, bbbbbb", "cccccc dddddd"]);
+  });
+
+  it("John 3:16 on the Short preset has no tiny fragment", () => {
+    const text =
+      "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.";
+    const pieces = splitLongText(text, 120);
+    expect(pieces).toHaveLength(2);
+    for (const p of pieces) expect(p.length).toBeGreaterThanOrEqual(40);
+    expect(pieces[0]).toBe("For God so loved the world, that he gave his only begotten Son,");
+  });
+
+  it("falls back on any whitespace, not just spaces", () => {
+    const text = Array.from({ length: 20 }, () => "word").join("\n");
+    const pieces = splitLongText(text, 40);
+    expect(pieces.length).toBeGreaterThan(1);
+    for (const p of pieces) expect(p.length).toBeLessThanOrEqual(40);
   });
 
   it("keeps a word with no spaces whole", () => {
@@ -211,5 +227,16 @@ describe("splitIntoSlides (mid-verse)", () => {
     expect(n("short")).toBeGreaterThan(n("medium"));
     expect(n("medium")).toBeGreaterThan(n("long"));
     expect(SLIDE_SIZE_PRESETS.medium).toEqual(DEFAULT_SLIDE_BUDGET);
+  });
+});
+
+describe("splitIntoSlides (separator-aware budget)", () => {
+  it("counts the space between verses so a fresh split never exceeds the budget", () => {
+    const verses = Array.from({ length: 3 }, (_, i) => V("JHN", 3, 16 + i, "x".repeat(80)));
+    const slides = splitIntoSlides(verses, { maxChars: 240 });
+    for (const s of slides) {
+      expect(s.verses.map((v) => v.text).join(" ").length).toBeLessThanOrEqual(240);
+    }
+    expect(slides).toHaveLength(2);
   });
 });
