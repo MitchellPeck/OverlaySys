@@ -4,6 +4,7 @@ import type { ScriptureRow } from "@overlaysys/core";
 import { Button } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { slideReference } from "@/lib/scriptureReference";
+import { reportScriptureUsage } from "@/lib/scriptureClient";
 
 interface Props {
   row: ScriptureRow;
@@ -22,6 +23,7 @@ export function ScriptureTakeStrip({ row, channel }: Props) {
       attribution: row.attribution ?? "",
     };
     send({ type: "take", channel, templateId: row.templateId, data });
+    if (row.source) reportScriptureUsage(row.source.usageTokens);
   }
 
   return (

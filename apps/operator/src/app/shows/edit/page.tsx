@@ -365,6 +365,7 @@ function ShowEditPageInner() {
         ? { translationAbbreviation: args.translationAbbreviation }
         : {}),
       attribution: args.attribution,
+      ...(args.passage.source ? { source: args.passage.source } : {}),
       slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
       templateId: args.templateId,
     };
