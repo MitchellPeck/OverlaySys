@@ -44,3 +44,18 @@ describe("ProviderRegistry", () => {
     expect(() => r.register(fakeProvider([KJV]))).toThrow(/duplicate/i);
   });
 });
+
+describe("ProviderRegistry.unregister", () => {
+  it("removes a provider's translations", () => {
+    const r = new ProviderRegistry();
+    const p: ScriptureProvider = {
+      translations: [{ id: "X", name: "X", abbreviation: "X", language: "en", copyright: "", isPublicDomain: true }],
+      fetchPassage: async () => ({ verses: [], attribution: "" }),
+    };
+    r.register(p);
+    r.unregister(p);
+    expect(r.providerFor("X")).toBeNull();
+    expect(r.listTranslations()).toEqual([]);
+    r.register(p); // re-registering after unregister must not throw
+  });
+});

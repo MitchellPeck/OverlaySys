@@ -16,6 +16,15 @@ export class ProviderRegistry {
     this.providers.push(provider);
   }
 
+  unregister(provider: ScriptureProvider): void {
+    const idx = this.providers.indexOf(provider);
+    if (idx < 0) return;
+    this.providers.splice(idx, 1);
+    for (const t of provider.translations) {
+      if (this.byTranslation.get(t.id) === provider) this.byTranslation.delete(t.id);
+    }
+  }
+
   providerFor(translationId: string): ScriptureProvider | null {
     return this.byTranslation.get(translationId) ?? null;
   }

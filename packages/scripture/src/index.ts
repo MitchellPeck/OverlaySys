@@ -4,4 +4,5 @@ export * from "./reference";
 export * from "./slideSplit";
 export * from "./providers/registry";
 export * from "./providers/bundled";
+export * from "./providers/apiBible";
 export * from "./bundles";
