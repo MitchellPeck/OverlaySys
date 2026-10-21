@@ -39,6 +39,8 @@ import {
   loadPrefs,
   savePrefs,
   resolveDisplay,
+  shouldAutoOpen,
+  channelsToOpenOnDisplayChange,
   updateDisplayCache,
   fingerprintDisplay,
   type MatchedBy,
@@ -752,6 +754,27 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   return win;
 }
 
+/** Where a channel's saved display is right now (or the primary as fallback). */
+function resolveChannelDisplay(prefs: Pick<ChannelWindowPrefs, "displayId">) {
+  const file = loadPrefs(prefsFilePath());
+  const primary = screen.getPrimaryDisplay();
+  return resolveDisplay(prefs, {
+    displays: currentDisplaysSnapshot(),
+    cached: file.displays,
+    primary: {
+      id: primary.id,
+      label: primary.label,
+      bounds: { ...primary.bounds },
+      internal: primary.internal,
+    },
+  });
+}
+
+function isChannelWindowOpen(channelId: string): boolean {
+  const w = channelWindows.get(channelId);
+  return !!w && !w.isDestroyed();
+}
+
 /**
  * Resolve the target display for a channel and open its renderer
  * window. Records the resolution result so the operator UI can
@@ -1193,13 +1216,32 @@ async function boot(): Promise<void> {
   try {
     const file = loadPrefs(prefsFilePath());
     for (const [channelId, prefs] of Object.entries(file.channels)) {
-      if (prefs.autoOpen) {
+      if (!prefs.autoOpen) continue;
+      if (shouldAutoOpen(prefs, resolveChannelDisplay(prefs).matchedBy)) {
         openConfiguredChannelWindow(channelId, prefs, {}, false);
+      } else {
+        console.info(`[desktop] channel ${channelId}: saved display not connected — not opening`);
       }
     }
   } catch (err) {
     console.error("[desktop] auto-open failed:", err);
   }
+
+  // A pinned display connected after launch (TV switched on late): open the
+  // channels that were waiting for it.
+  screen.on("display-added", () => {
+    try {
+      const file = loadPrefs(prefsFilePath());
+      const ids = channelsToOpenOnDisplayChange(
+        file.channels,
+        (prefs) => resolveChannelDisplay(prefs).matchedBy,
+        isChannelWindowOpen,
+      );
+      for (const id of ids) openConfiguredChannelWindow(id, file.channels[id]!, {}, false);
+    } catch (err) {
+      console.error("[desktop] display-added auto-open failed:", err);
+    }
+  });
 }
 
 app.whenReady().then(boot);
