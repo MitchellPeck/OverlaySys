@@ -38,6 +38,7 @@
 
 import { WebSocket } from "ws";
 import os from "node:os";
+import { cleanTranscript } from "./transcript.mjs";
 
 const URL = process.env.WS_URL ?? "ws://localhost:4000/ws";
 const AUDIO_SOURCE_ID = process.env.AUDIO_SOURCE_ID ?? `stdin-${os.hostname()}`;
@@ -119,7 +120,7 @@ let buffer = "";
 let lastSent = ""; // last (text + ":" + isFinal flag) we emitted
 
 function emit(segment, isFinal) {
-  const cleaned = segment.replace(ANSI_RE, "").trim();
+  const cleaned = cleanTranscript(segment.replace(ANSI_RE, ""));
   if (!cleaned) return;
   // Dedupe consecutive identical (text, isFinal) pairs, but allow the same
   // text through if the finality flag changes — the final is semantically

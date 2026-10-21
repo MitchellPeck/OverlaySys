@@ -26,6 +26,7 @@ import {
   encodeWav,
   ffmpegCaptureArgs,
   formatTranscript,
+  levelWindow,
   levelsLine,
   parseArgs,
   parseAvfoundationAudioDevices,
@@ -267,10 +268,12 @@ async function main() {
     if (inFlight || exiting) return; // skip the step; audio keeps accumulating
     const w = windows.next();
     if (!w) return;
+    const samples = levelWindow(w.samples);
+    if (!samples) return; // silence — nothing to transcribe
     inFlight = true;
     try {
       const form = new FormData();
-      form.append("file", new Blob([encodeWav(w.samples, SAMPLE_RATE)], { type: "audio/wav" }), "audio.wav");
+      form.append("file", new Blob([encodeWav(samples, SAMPLE_RATE)], { type: "audio/wav" }), "audio.wav");
       form.append("response_format", "json");
       form.append("temperature", "0.0");
       const res = await fetch(`http://127.0.0.1:${port}${INFERENCE_PATH}`, {

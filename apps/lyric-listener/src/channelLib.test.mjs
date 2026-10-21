@@ -154,8 +154,8 @@ describe("formatTranscript / levelsLine", () => {
     expect(formatTranscript("   ", true)).toBe("");
   });
 
-  it("formats levels with two decimals", () => {
-    expect(levelsLine([0.123, 1])).toBe("@@levels 0.12 1.00");
+  it("formats levels with enough decimals for quiet mics (-60 dB = 0.001)", () => {
+    expect(levelsLine([0.12345, 1, 0.001])).toBe("@@levels 0.1235 1.0000 0.0010");
   });
 });
 
@@ -187,5 +187,30 @@ describe("parseInputStream", async () => {
   it("ignores other lines (including the output stream)", () => {
     expect(parseInputStream("Input #0, avfoundation, from ':NDI Audio':")).toBeNull();
     expect(parseInputStream("  Stream #0:0 -> #0:0 (pcm_f32le (native) -> pcm_s16le (native))")).toBeNull();
+  });
+});
+
+describe("levelWindow", async () => {
+  const { levelWindow } = await import("./channelLib.mjs");
+  const at = (db) => 10 ** (db / 20);
+
+  it("treats windows below the gate as silence", () => {
+    expect(levelWindow(new Float32Array(100))).toBeNull();
+    expect(levelWindow(new Float32Array(100).fill(at(-70)))).toBeNull();
+  });
+
+  it("boosts a quiet window to the target peak", () => {
+    const out = levelWindow(new Float32Array([at(-34), -at(-40)]));
+    expect(20 * Math.log10(out[0])).toBeCloseTo(-6, 5);
+  });
+
+  it("caps the boost so faint noise isn't pushed to full scale", () => {
+    const out = levelWindow(new Float32Array([at(-50)]));
+    expect(20 * Math.log10(out[0])).toBeCloseTo(-20, 5); // -50 + 30
+  });
+
+  it("leaves loud windows alone", () => {
+    const loud = new Float32Array([0.9, -0.5]);
+    expect(levelWindow(loud)).toBe(loud);
   });
 });

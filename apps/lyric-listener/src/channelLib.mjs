@@ -188,6 +188,37 @@ export class WindowScheduler {
   }
 }
 
+// A window whose peak is below this (dBFS) is silence: it isn't transcribed,
+// because whisper turns near-silence into "you" / "Thank you.".
+export const SILENCE_GATE_DB = -55;
+// Quiet-but-real windows (distant choir mics, low card sends) are boosted so
+// their peak reaches TARGET_PEAK_DB, by at most MAX_GAIN_DB so room noise
+// isn't pushed to full scale.
+export const TARGET_PEAK_DB = -6;
+export const MAX_GAIN_DB = 30;
+
+const dbToGain = (db) => 10 ** (db / 20);
+
+/**
+ * The window brought up to a level whisper transcribes well, or null when
+ * it's silence and shouldn't be sent at all.
+ * @param {Float32Array} samples
+ * @returns {Float32Array | null}
+ */
+export function levelWindow(samples) {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]);
+    if (a > peak) peak = a;
+  }
+  if (peak < dbToGain(SILENCE_GATE_DB)) return null;
+  const gain = Math.min(dbToGain(TARGET_PEAK_DB) / peak, dbToGain(MAX_GAIN_DB));
+  if (gain <= 1) return samples; // already loud enough; never turn it down
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) out[i] = samples[i] * gain;
+  return out;
+}
+
 /**
  * 16-bit mono PCM WAV for whisper-server's /inference endpoint.
  * @param {Float32Array} samples
@@ -230,7 +261,7 @@ export function formatTranscript(text, isFinal) {
 
 /** @param {number[]} peaks */
 export function levelsLine(peaks) {
-  return `@@levels ${peaks.map((p) => p.toFixed(2)).join(" ")}`;
+  return `@@levels ${peaks.map((p) => p.toFixed(4)).join(" ")}`;
 }
 
 /**

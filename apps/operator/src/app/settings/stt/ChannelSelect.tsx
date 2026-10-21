@@ -165,6 +165,8 @@ export function ChannelSelectFields({
   );
 }
 
+const METER_RANGE_DB = 60;
+
 /**
  * One bar per channel, live while channel-select STT is running. While
  * running, bars follow the RUNNING capture's channels (an unsaved edit to the
@@ -193,12 +195,18 @@ function LevelMeter({ picked }: { picked: number[] }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {channels.map((ch, i) => {
           const peak = live ? Math.min(1, levels[i] ?? 0) : 0;
-          // Square-root scale so quiet-but-present signal is still visible.
-          const width = `${Math.round(Math.sqrt(peak) * 100)}%`;
-          const color = peak > 0.9 ? colors.danger : peak > 0.5 ? colors.warn : colors.ok;
+          // dB scale over the bottom 60 dB, like a mixer meter, so a quiet
+          // mic (-35 dB) reads as signal rather than an empty bar.
+          const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+          const fill = Math.max(0, Math.min(1, (db + METER_RANGE_DB) / METER_RANGE_DB));
+          const width = `${Math.round(fill * 100)}%`;
+          const color = db > -3 ? colors.danger : db > -12 ? colors.warn : colors.ok;
           return (
             <div key={ch} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 44, fontSize: 11, color: colors.textDim }}>Ch {ch}</span>
+              <span style={{ width: 52, fontSize: 11, color: colors.textDim, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                {live ? (db > -METER_RANGE_DB ? `${db.toFixed(0)} dB` : "—") : ""}
+              </span>
               <div
                 style={{
                   flex: 1,
