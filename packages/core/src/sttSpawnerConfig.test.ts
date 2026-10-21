@@ -206,6 +206,11 @@ describe("buildSttCommand — channel select", () => {
     expect(cmd).not.toContain("--max-channel");
   });
 
+  it("passes the boost only when it's set", () => {
+    expect(buildSttCommand({ ...cfg, channelGainDb: 18 })).toContain(" --length 5000 --gain 18");
+    expect(buildSttCommand(cfg)).not.toContain("--gain");
+  });
+
   it("a custom command still wins", () => {
     expect(buildSttCommand({ ...cfg, customCommand: "my-stt" })).toBe("my-stt");
   });

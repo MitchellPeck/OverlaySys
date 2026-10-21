@@ -151,7 +151,7 @@ async function main() {
     }
   }
 
-  log(`capturing '${args.device}' channels ${args.channels.join(", ")}`);
+  log(`capturing '${args.device}' channels ${args.channels.join(", ")}${args.gainDb ? ` with +${args.gainDb} dB boost` : ""}`);
   const devices = await listAudioDevices(args.ffmpeg);
   if (devices === null) {
     fail(`Couldn't run ffmpeg at ${args.ffmpeg}`);
@@ -192,7 +192,7 @@ async function main() {
   log("[whisper] ready");
 
   // ── ffmpeg capture ──
-  const mixer = new ChannelMixer(args.channels.length);
+  const mixer = new ChannelMixer(args.channels.length, args.gainDb);
   const windows = new WindowScheduler({
     sampleRate: SAMPLE_RATE,
     stepMs: args.stepMs,

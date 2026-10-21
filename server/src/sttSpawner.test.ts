@@ -59,6 +59,7 @@ describe("sttSpawner stderr protocol", () => {
       captureMode: "default",
       channelDevice: "",
       channels: [],
+      channelGainDb: 0,
     });
     await done;
     offLevels();

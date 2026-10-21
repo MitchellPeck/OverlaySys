@@ -42,7 +42,10 @@ describe("parseArgs", () => {
       channels: [17, 18],
       stepMs: 500,
       lengthMs: 5000,
+      gainDb: 0,
     });
+    expect(parseArgs(["--model", "/m", "--device", "D", "--channels", "1", "--gain", "18"]).gainDb).toBe(18);
+    expect(parseArgs(["--model", "/m", "--device", "D", "--channels", "1", "--gain", "99"]).gainDb).toBe(40);
   });
 
   it("rejects a missing device or bad channel list", () => {
@@ -67,6 +70,14 @@ describe("ChannelMixer", () => {
     expect(Array.from(out)).toEqual([0.25, -0.25]);
     expect(m.takePeaks()).toEqual([1, 0.5]);
     expect(m.takePeaks()).toEqual([0, 0]); // reset after read
+  });
+
+  it("applies the boost before mixing and metering, clipping at full scale", () => {
+    const m = new ChannelMixer(1, 20); // x10
+    const out = m.push(interleave([[328], [8192]]));
+    expect(out[0]).toBeCloseTo(0.1, 3);
+    expect(out[1]).toBe(1);
+    expect(m.takePeaks()).toEqual([1]);
   });
 
   it("carries a split frame across chunks", () => {

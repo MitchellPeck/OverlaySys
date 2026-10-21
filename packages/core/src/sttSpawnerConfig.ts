@@ -78,6 +78,9 @@ export const STEP_OPTIONS_MS = [200, 500, 700, 1000, 2000, 3000];
 export const LENGTH_OPTIONS_MS = [3000, 5000, 7000, 10_000, 15_000, 20_000];
 
 export const MAX_STT_CHANNELS = 4;
+// Upper bound for channel-select boost — enough to lift a distant choir mic
+// on a card send that carries no channel gain.
+export const MAX_STT_GAIN_DB = 40;
 
 export const SttSpawnerConfigSchema = z.object({
   // When true, the server starts the spawner automatically on boot.
@@ -121,6 +124,9 @@ export const SttSpawnerConfigSchema = z.object({
     .max(MAX_STT_CHANNELS)
     .refine((cs) => new Set(cs).size === cs.length, "channels must be unique")
     .default([]),
+  // Digital boost (dB) applied to the picked channels before metering and
+  // transcription, for card sends that arrive too quiet.
+  channelGainDb: z.number().min(0).max(MAX_STT_GAIN_DB).default(0),
 }).superRefine((cfg, ctx) => {
   if (cfg.captureMode !== "channels") return;
   if (cfg.channelDevice.trim() === "") {
@@ -142,6 +148,7 @@ export const DEFAULT_STT_SPAWNER_CONFIG: SttSpawnerConfig = {
   captureMode: "default",
   channelDevice: "",
   channels: [],
+  channelGainDb: 0,
 };
 
 /**
@@ -235,6 +242,7 @@ export function buildSttCommand(
       "--step", String(cfg.stepMs),
       "--length", String(cfg.lengthMs),
     ];
+    if (cfg.channelGainDb > 0) parts.push("--gain", String(cfg.channelGainDb));
     if (runtime.maxChannel) parts.push("--max-channel", String(runtime.maxChannel));
     return parts.join(" ");
   }

@@ -2,6 +2,7 @@
 
 import {
   MAX_STT_CHANNELS,
+  MAX_STT_GAIN_DB,
   type SttInputDevice,
   type SttSpawnerConfig,
 } from "@overlaysys/core";
@@ -160,12 +161,33 @@ export function ChannelSelectFields({
         <div style={{ fontSize: 12, color: colors.textDim, marginTop: -4, marginBottom: 8 }}>{problem}</div>
       )}
 
+      <Field
+        label={`Boost (+${draft.channelGainDb} dB)`}
+        hint="Raise until normal talking from where people stand fills the meter past the gate mark. Save, then restart STT."
+      >
+        <input
+          type="range"
+          min={0}
+          max={MAX_STT_GAIN_DB}
+          step={1}
+          value={draft.channelGainDb}
+          disabled={disabled}
+          aria-label="Boost in dB"
+          onChange={(e) => setDraft({ ...draft, channelGainDb: Number(e.target.value) })}
+          style={{ width: "100%" }}
+        />
+      </Field>
+
       <LevelMeter picked={draft.channels} />
     </>
   );
 }
 
 const METER_RANGE_DB = 60;
+// Mirrors SILENCE_GATE_DB in apps/lyric-listener/src/channelLib.mjs: audio
+// that never gets past this isn't transcribed.
+const GATE_DB = -55;
+const GATE_FILL = `${((GATE_DB + METER_RANGE_DB) / METER_RANGE_DB) * 100}%`;
 
 /**
  * One bar per channel, live while channel-select STT is running. While
@@ -215,9 +237,14 @@ function LevelMeter({ picked }: { picked: number[] }) {
                   background: colors.surface2,
                   border: `1px solid ${colors.border}`,
                   overflow: "hidden",
+                  position: "relative",
                 }}
               >
                 <div style={{ width, height: "100%", background: color, transition: "width 80ms linear" }} />
+                <div
+                  title={`Gate: quieter than ${GATE_DB} dB is ignored`}
+                  style={{ position: "absolute", top: 0, bottom: 0, left: GATE_FILL, width: 1, background: colors.textDim }}
+                />
               </div>
             </div>
           );

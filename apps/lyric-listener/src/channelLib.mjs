@@ -78,6 +78,8 @@ export function parseArgs(argv) {
     model,
     device,
     channels,
+    // Boost in dB, 0–40; anything else is ignored rather than fatal.
+    gainDb: Math.min(40, Math.max(0, Number(raw["gain"] ?? 0) || 0)),
     stepMs: Number(raw["step"] ?? 500) || 500,
     lengthMs: Number(raw["length"] ?? 5000) || 5000,
   };
@@ -86,11 +88,17 @@ export function parseArgs(argv) {
 /**
  * Turns interleaved s16le frames of K channels into mono float samples (the
  * average of the K channels) and tracks each channel's peak for the meter.
+ * `gainDb` boosts every channel first (clipped at full scale), so the meter
+ * shows what transcription will get.
  */
 export class ChannelMixer {
-  /** @param {number} channelCount */
-  constructor(channelCount) {
+  /**
+   * @param {number} channelCount
+   * @param {number} [gainDb]
+   */
+  constructor(channelCount, gainDb = 0) {
     this.k = channelCount;
+    this.gain = 10 ** (gainDb / 20);
     this.frameBytes = channelCount * 2;
     /** @type {Buffer} */
     this.carry = Buffer.alloc(0);
@@ -108,7 +116,7 @@ export class ChannelMixer {
     for (let f = 0; f < frames; f++) {
       let sum = 0;
       for (let c = 0; c < this.k; c++) {
-        const v = buf.readInt16LE((f * this.k + c) * 2) / 32768;
+        const v = Math.max(-1, Math.min(1, (buf.readInt16LE((f * this.k + c) * 2) / 32768) * this.gain));
         sum += v;
         const a = Math.abs(v);
         if (a > this.peaks[c]) this.peaks[c] = a;
