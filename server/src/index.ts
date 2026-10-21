@@ -19,6 +19,9 @@ import { defaultDevEnvFiles, loadDevEnvFiles } from "./devEnv";
 import { registerPcoRoutes } from "./pco/routes";
 import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
+import { initApiBible } from "./apiBible/config";
+import { registerApiBibleRoutes } from "./apiBible/routes";
+import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
 import {
   clearCloudTokens,
@@ -83,6 +86,7 @@ await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();
 await initScripture();
+await initApiBible();
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
@@ -101,6 +105,7 @@ await registerPcoRoutes(app);
 // PCO_APP_ID + PCO_SECRET) so a PAT connects without any UI or OAuth flow.
 initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
+await registerApiBibleRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };
@@ -159,6 +164,7 @@ app.post("/api/cloud/sync", async () => {
 // the resolved port from the magic stdout line below and builds every window
 // URL from it, so a fallback is transparent to the app's own windows.
 const actualPort = await listenWithFallback(app, HOST, PORT);
+startApiBibleRefresh();
 
 // Point the STT listener daemon at THIS server's real port over loopback.
 // Must happen before any spawner start — otherwise the daemon dials its
