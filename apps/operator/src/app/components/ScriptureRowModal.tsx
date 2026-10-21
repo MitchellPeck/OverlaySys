@@ -6,7 +6,7 @@ import {
   parseReference,
   ScriptureRefError,
   splitIntoSlides,
-  DEFAULT_SLIDE_BUDGET,
+  slidesToBreaks,
   type TranslationMeta,
 } from "@overlaysys/scripture";
 import {
@@ -17,6 +17,13 @@ import {
 import { Button, Field, Input, Modal, Select, colors } from "@overlaysys/ui";
 import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
 import { useStore } from "@/lib/store";
+import {
+  budgetForPref,
+  clampCustomChars,
+  loadSlideSizePref,
+  saveSlideSizePref,
+  type SlideSizePref,
+} from "@/lib/slideSizePref";
 import type { ScriptureRow } from "@overlaysys/core";
 
 interface Props {
@@ -68,7 +75,8 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
             reference: editingRow.reference,
             translation: editingRow.translation,
             attribution: editingRow.attribution ?? "",
-            verses: editingRow.slides.flatMap((s) => s.verses),
+            // Merge mid-verse portions back into whole verses.
+            verses: slidesToBreaks(editingRow.slides).verses,
           };
           setPassage(synthesized);
         } else {
@@ -339,17 +347,31 @@ function Step2({
   onSave: (slides: EditableSlide[], templateId: string) => void;
 }) {
   const templates = useStore((s) => s.templates);
+  const [sizePref, setSizePref] = useState<SlideSizePref>(() => loadSlideSizePref());
+  const [customDraft, setCustomDraft] = useState<string>(() =>
+    sizePref.kind === "custom" ? String(sizePref.maxChars) : "",
+  );
+  const budget = budgetForPref(sizePref);
   const [slides, setSlides] = useState<EditableSlide[]>(() =>
     seedSlides && seedSlides.length > 0
       ? seedSlides
-      : splitIntoSlides(passage.verses, DEFAULT_SLIDE_BUDGET).map((s) => ({
-          id: s.id,
-          verses: s.verses,
-        })),
+      : splitIntoSlides(passage.verses, budget).map((s) => ({ id: s.id, verses: s.verses })),
   );
+  // Saved rows count as hand-edited: their breaks may have been placed manually.
+  const [manualEdits, setManualEdits] = useState<boolean>(!!seedSlides && seedSlides.length > 0);
   const [templateId, setTemplateId] = useState<string>(
     seedTemplateId || templates[0]?.id || "",
   );
+
+  function applySize(next: SlideSizePref) {
+    if (manualEdits && !window.confirm("Re-split and discard your manual breaks?")) return;
+    setSizePref(next);
+    saveSlideSizePref(next);
+    setSlides(
+      splitIntoSlides(passage.verses, budgetForPref(next)).map((s) => ({ id: s.id, verses: s.verses })),
+    );
+    setManualEdits(false);
+  }
 
   return (
     <>
@@ -363,8 +385,59 @@ function Step2({
           ))}
         </Select>
       </Field>
-      <div style={{ marginTop: 12 }}>
-        <ScriptureSlideEditor slides={slides} onChange={setSlides} />
+      <Field label="Text per slide" style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Select
+            value={sizePref.kind}
+            onChange={(e) => {
+              const kind = e.target.value as SlideSizePref["kind"];
+              if (kind === "custom") {
+                const maxChars = clampCustomChars(Number(customDraft) || budget.maxChars);
+                setCustomDraft(String(maxChars));
+                applySize({ kind: "custom", maxChars });
+              } else {
+                applySize({ kind });
+              }
+            }}
+          >
+            <option value="short">Short (~120 chars)</option>
+            <option value="medium">Medium (~240 chars)</option>
+            <option value="long">Long (~360 chars)</option>
+            <option value="custom">Custom…</option>
+          </Select>
+          {sizePref.kind === "custom" && (
+            <Input
+              type="number"
+              min={40}
+              max={2000}
+              aria-label="Max characters per slide"
+              value={customDraft}
+              onChange={(e) => setCustomDraft(e.target.value)}
+              onBlur={() => {
+                const maxChars = clampCustomChars(Number(customDraft));
+                setCustomDraft(String(maxChars));
+                if (maxChars !== budget.maxChars) applySize({ kind: "custom", maxChars });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              style={{ width: 100 }}
+            />
+          )}
+        </div>
+      </Field>
+      <p style={{ fontSize: 12, color: colors.textDim, marginTop: 8 }}>
+        Click between words to add a slide break; drag a break to move it.
+      </p>
+      <div style={{ marginTop: 8 }}>
+        <ScriptureSlideEditor
+          slides={slides}
+          budget={budget}
+          onChange={(next) => {
+            setSlides(next);
+            setManualEdits(true);
+          }}
+        />
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
         <Button variant="ghost" onClick={onCancel}>{backLabel}</Button>
