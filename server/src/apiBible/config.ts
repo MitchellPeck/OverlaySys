@@ -46,8 +46,9 @@ async function probe(key: string): Promise<{ state: ApiBibleState; bibleId?: str
     const hit = await findNivBible(key, fetchImpl);
     return hit ? { state: "ok", bibleId: hit.bibleId } : { state: "no_niv" };
   } catch (e) {
-    if (e instanceof ScriptureProviderError) return { state: e.code === "rejected" ? "rejected" : "offline" };
-    throw e;
+    if (e instanceof ScriptureProviderError && e.code === "rejected") return { state: "rejected" };
+    // Anything else (network, odd responses) — treat as unreachable and retry later.
+    return { state: "offline" };
   }
 }
 

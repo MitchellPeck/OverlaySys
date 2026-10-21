@@ -86,7 +86,6 @@ await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();
 await initScripture();
-await initApiBible();
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
@@ -164,7 +163,11 @@ app.post("/api/cloud/sync", async () => {
 // the resolved port from the magic stdout line below and builds every window
 // URL from it, so a fallback is transparent to the app's own windows.
 const actualPort = await listenWithFallback(app, HOST, PORT);
-startApiBibleRefresh();
+// Not awaited: API.Bible lookups must never delay boot. The refresh job
+// starts once the key has been resolved.
+void initApiBible()
+  .catch((e) => console.warn("[api-bible] init failed", e instanceof Error ? e.message : e))
+  .finally(() => startApiBibleRefresh());
 
 // Point the STT listener daemon at THIS server's real port over loopback.
 // Must happen before any spawner start — otherwise the daemon dials its

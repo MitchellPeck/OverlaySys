@@ -1,4 +1,4 @@
-import type { ScriptureRow, Show } from "@overlaysys/core";
+import { ShowSchema, type ScriptureRow, type Show } from "@overlaysys/core";
 import {
   breaksToSlides,
   parseReference,
@@ -7,7 +7,6 @@ import {
   type ScripturePassageSource,
   type ScriptureVerse,
 } from "@overlaysys/scripture";
-import { broadcast } from "../broadcast";
 import { getShow, listShowMetas, saveShow } from "../shows";
 import { getApiBibleProvider, getApiBibleStatus, initApiBible } from "./config";
 
@@ -44,6 +43,8 @@ async function refreshRow(row: ScriptureRow, deps: RefreshDeps): Promise<Scriptu
   };
   const old = slidesToBreaks(row.slides);
   const words = tokenize(fresh.verses);
+  // Never replace stored text with nothing — a row needs at least one slide.
+  if (words.length === 0) return null;
   const same =
     words.length === old.words.length && words.every((w, i) => w.text === old.words[i]!.text);
   if (same) return { ...row, source };
@@ -78,9 +79,60 @@ export async function refreshShow(show: Show, deps: RefreshDeps): Promise<Show |
   return changed ? { ...show, rows } : null;
 }
 
+export interface RefreshIo {
+  listShowIds(): Promise<string[]>;
+  getShow(id: string): Promise<Show | null>;
+  saveShow(show: Show): Promise<void>;
+}
+
+/**
+ * Apply refreshed rows onto the show as it is *now* (the fetch can take a
+ * while). A row is only replaced if nobody changed it meanwhile; other rows
+ * and show fields keep their current values. Null = nothing to save.
+ */
+export function mergeRefreshed(snapshot: Show, refreshed: Show, current: Show | null): Show | null {
+  if (!current) return null;
+  const refreshedById = new Map(refreshed.rows.map((r) => [r.id, r]));
+  const snapshotById = new Map(snapshot.rows.map((r) => [r.id, r]));
+  let applied = false;
+  const rows = current.rows.map((cur) => {
+    const next = refreshedById.get(cur.id);
+    const snap = snapshotById.get(cur.id);
+    if (!next || !snap || next === snap) return cur;
+    if (JSON.stringify(cur) !== JSON.stringify(snap)) return cur;
+    applied = true;
+    return next;
+  });
+  return applied ? { ...current, rows } : null;
+}
+
+/** Refresh every show once. Returns the number of shows saved. */
+export async function refreshAllShows(io: RefreshIo, deps: RefreshDeps): Promise<number> {
+  let saved = 0;
+  for (const id of await io.listShowIds()) {
+    const snapshot = await io.getShow(id);
+    if (!snapshot) continue;
+    const refreshed = await refreshShow(snapshot, deps);
+    if (!refreshed) continue;
+    const merged = mergeRefreshed(snapshot, refreshed, await io.getShow(id));
+    if (!merged) continue;
+    if (!ShowSchema.safeParse(merged).success) {
+      console.warn(`[api-bible] refresh produced an invalid show ${id}; not saved`);
+      continue;
+    }
+    await io.saveShow(merged);
+    saved++;
+  }
+  return saved;
+}
+
 let running = false;
 
-/** Refresh every saved show once. Returns the number of shows saved. */
+/**
+ * Refresh saved shows using the live provider. Saves quietly: no `show`
+ * broadcast, so open Live/edit pages are never switched or reset — they pick
+ * up refreshed text on their next load.
+ */
 export async function runApiBibleRefresh(now: Date = new Date()): Promise<number> {
   if (running) return 0;
   running = true;
@@ -96,17 +148,14 @@ export async function runApiBibleRefresh(now: Date = new Date()): Promise<number
         return { verses: p.verses, source: p.source! };
       },
     };
-    let saved = 0;
-    for (const meta of await listShowMetas()) {
-      const show = await getShow(meta.id);
-      if (!show) continue;
-      const updated = await refreshShow(show, deps);
-      if (!updated) continue;
-      const stored = await saveShow(updated);
-      broadcast({ type: "show", show: stored });
-      saved++;
-    }
-    return saved;
+    const io: RefreshIo = {
+      listShowIds: async () => (await listShowMetas()).map((m) => m.id),
+      getShow,
+      saveShow: async (show) => {
+        await saveShow(show);
+      },
+    };
+    return await refreshAllShows(io, deps);
   } catch (e) {
     console.warn("[api-bible] refresh failed", e instanceof Error ? e.message : e);
     return 0;

@@ -13,11 +13,12 @@ const KEY = "secret-key-123";
 let tmp: string;
 let prevDir: string | undefined;
 let prevKey: string | undefined;
-let mode: "ok" | "rejected" | "offline" | "no_niv" = "ok";
+let mode: "ok" | "rejected" | "offline" | "no_niv" | "portal" = "ok";
 const fumsCalls: string[] = [];
 
 const fake: FetchLike = async (url, init) => {
   if (mode === "offline") throw new TypeError("fetch failed");
+  if (mode === "portal") return { status: 200, ok: true, json: async () => { throw new SyntaxError("Unexpected token '<'"); } };
   if (mode === "rejected" || init?.headers?.["api-key"] !== KEY) return { status: 401, ok: false, json: async () => ({}) };
   if (url.includes("/bibles?abbreviation=NIV")) {
     const data = mode === "no_niv" ? [] : [{ id: "B", abbreviation: "NIV11", abbreviationLocal: "NIV" }];
@@ -161,6 +162,18 @@ describe("API.Bible config", () => {
     expect(fumsCalls).toHaveLength(1);
     expect(fumsCalls[0]).toContain("t=x");
     expect(fumsCalls[0]).not.toContain("t=5");
+    await a.close();
+  });
+
+  it("a captive-portal response at startup leaves state offline instead of throwing", async () => {
+    await fs.mkdir(path.join(tmp, "settings"), { recursive: true });
+    await fs.writeFile(path.join(tmp, "settings", "api-bible.json"), JSON.stringify({ apiKey: KEY }));
+    mode = "portal";
+    await expect(initApiBible()).resolves.toMatchObject({ state: "offline" });
+    const a = await app();
+    const t = await a.inject({ method: "GET", url: "/api/scripture/translations" });
+    expect(t.statusCode).toBe(200);
+    expect(t.json().translations.map((x: { id: string }) => x.id)).toEqual(["KJV", "WEB"]);
     await a.close();
   });
 });

@@ -11,7 +11,7 @@ import {
 /** Minimal fetch shape so the package doesn't depend on DOM/Node fetch typings. */
 export type FetchLike = (
   url: string,
-  init?: { headers?: Record<string, string> },
+  init?: { headers?: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{ status: number; ok: boolean; json(): Promise<unknown> }>;
 
 export const API_BIBLE_BASE_URL = "https://rest.api.bible/v1";
@@ -20,6 +20,9 @@ const PASSAGE_QUERY =
   "content-type=text&include-notes=false&include-titles=false&include-chapter-numbers=false&include-verse-numbers=true&include-verse-spans=false&fums-version=3";
 
 const MAX_VERSES_PER_REQUEST = 200;
+
+/** A request that hasn't answered by now is treated as offline (hung Wi-Fi, proxies). */
+export const API_BIBLE_TIMEOUT_MS = 8_000;
 
 export const NIV_TRANSLATION: TranslationMeta = {
   id: "NIV",
@@ -69,13 +72,22 @@ export async function apiBibleGet(
   path: string,
   fetchImpl?: FetchLike,
   baseUrl: string = API_BIBLE_BASE_URL,
+  timeoutMs: number = API_BIBLE_TIMEOUT_MS,
 ): Promise<unknown> {
+  const offline = () => new ScriptureProviderError("offline", "Couldn't reach API.Bible");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Awaited<ReturnType<FetchLike>>;
   try {
-    res = await (fetchImpl ?? defaultFetch())(`${baseUrl}${path}`, { headers: { "api-key": apiKey } });
+    res = await (fetchImpl ?? defaultFetch())(`${baseUrl}${path}`, {
+      headers: { "api-key": apiKey },
+      signal: controller.signal,
+    });
   } catch (e) {
     if (e instanceof ScriptureProviderError) throw e;
-    throw new ScriptureProviderError("offline", "Couldn't reach API.Bible");
+    throw offline();
+  } finally {
+    clearTimeout(timer);
   }
   if (res.status === 401 || res.status === 403) {
     throw new ScriptureProviderError("rejected", "API.Bible key rejected — check Settings");
@@ -84,14 +96,19 @@ export async function apiBibleGet(
     throw new ScriptureProviderError("out_of_range", "That passage isn't available in this translation");
   }
   if (!res.ok) throw new ScriptureProviderError("upstream", `API.Bible error ${res.status}`);
-  return res.json();
+  try {
+    return await res.json();
+  } catch {
+    // A 200 that isn't JSON is almost always a captive portal or proxy page.
+    throw offline();
+  }
 }
 
 export async function findNivBible(apiKey: string, fetchImpl?: FetchLike): Promise<{ bibleId: string } | null> {
   const body = (await apiBibleGet(apiKey, "/bibles?abbreviation=NIV", fetchImpl)) as {
     data?: { id: string; abbreviation?: string; abbreviationLocal?: string }[];
-  };
-  const list = body.data ?? [];
+  } | null;
+  const list = Array.isArray(body?.data) ? body.data : [];
   const hit =
     list.find((b) => b.abbreviationLocal === "NIV") ?? list.find((b) => (b.abbreviation ?? "").startsWith("NIV"));
   return hit ? { bibleId: hit.id } : null;

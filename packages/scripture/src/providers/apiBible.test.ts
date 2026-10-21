@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ApiBibleProvider, NIV_TRANSLATION, findNivBible, parseApiBibleText, passageId, type FetchLike,
+  ApiBibleProvider, NIV_TRANSLATION, apiBibleGet, findNivBible, parseApiBibleText, passageId, type FetchLike,
 } from "./apiBible";
 import { ScriptureProviderError } from "../types";
 import { parseReference } from "../reference";
@@ -122,5 +122,36 @@ describe("ApiBibleProvider", () => {
       p.fetchPassage([{ book: "PSA", ranges: [{ chapter: 119, startVerse: 1, endChapter: 119, endVerse: 201 }] }], "NIV"),
     ).rejects.toMatchObject({ code: "out_of_range" });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("apiBibleGet hardening", () => {
+  it("treats a non-JSON 200 (captive portal page) as offline", async () => {
+    const f: FetchLike = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("Unexpected token '<'");
+      },
+    });
+    await expect(apiBibleGet("k", "/bibles", f)).rejects.toMatchObject({
+      code: "offline",
+      message: "Couldn't reach API.Bible",
+    });
+  });
+
+  it("aborts a request that never answers", async () => {
+    const f: FetchLike = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    const t0 = Date.now();
+    await expect(apiBibleGet("k", "/bibles", f, undefined, 30)).rejects.toMatchObject({ code: "offline" });
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it("findNivBible survives an unexpected body shape", async () => {
+    const f: FetchLike = async () => ({ status: 200, ok: true, json: async () => null });
+    await expect(findNivBible("k", f)).resolves.toBeNull();
   });
 });

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Show, ScriptureRow } from "@overlaysys/core";
 import type { ScriptureVerse } from "@overlaysys/scripture";
-import { refreshShow, runApiBibleRefresh, STALE_MS, type RefreshDeps } from "./refresh";
+import { ShowSchema } from "@overlaysys/core";
+import { refreshAllShows, refreshShow, runApiBibleRefresh, STALE_MS, type RefreshDeps, type RefreshIo } from "./refresh";
 
 const NOW = new Date("2026-10-21T12:00:00.000Z");
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 86_400_000).toISOString();
@@ -84,5 +85,76 @@ describe("refreshShow", () => {
   it("unparseable fetchedAt counts as stale", async () => {
     const d = deps([v(16, "For God so loved the world"), v(17, "For God did not")]);
     expect(await refreshShow(show(row("garbage")), d)).not.toBeNull();
+  });
+});
+
+describe("refreshShow (empty response)", () => {
+  it("an empty fetch leaves the row untouched instead of saving zero slides", async () => {
+    expect(await refreshShow(show(row(daysAgo(15))), deps([]))).toBeNull();
+  });
+});
+
+describe("refreshAllShows", () => {
+  const valid = (rows: Show["rows"], id = "show1"): Show => ShowSchema.parse({ id, name: id, rows });
+  const changedText = [v(16, "For God so greatly loved the world"), v(17, "For God did not")];
+
+  function io(initial: Show[], duringFetch?: (store: Map<string, Show | null>) => void) {
+    const store = new Map<string, Show | null>(initial.map((s) => [s.id, s]));
+    const saved: Show[] = [];
+    let fetched = false;
+    const api: RefreshIo = {
+      listShowIds: async () => [...store.keys()],
+      getShow: async (id) => store.get(id) ?? null,
+      saveShow: async (s) => {
+        saved.push(s);
+        store.set(s.id, s);
+      },
+    };
+    const d: RefreshDeps = {
+      now: NOW,
+      staleMs: STALE_MS,
+      fetchPassage: async () => {
+        if (!fetched && duringFetch) duringFetch(store);
+        fetched = true;
+        return { verses: changedText, source: { provider: "api.bible", bibleId: "B", usageTokens: ["new"] } };
+      },
+    };
+    return { api, d, saved, store };
+  }
+
+  it("saves a schema-valid refreshed show", async () => {
+    const t = io([valid([row(daysAgo(15))])]);
+    expect(await refreshAllShows(t.api, t.d)).toBe(1);
+    expect(ShowSchema.safeParse(t.saved[0]).success).toBe(true);
+    expect((t.saved[0]!.rows[0] as ScriptureRow).source!.fetchedAt).toBe(NOW.toISOString());
+  });
+
+  it("keeps operator edits to other rows saved during the fetch", async () => {
+    const other = { kind: "graphic", id: "g1", templateId: "t", data: { name: "A" } } as unknown as Show["rows"][number];
+    const t = io([valid([row(daysAgo(15)), other])], (store) => {
+      const cur = store.get("show1")!;
+      store.set("show1", { ...cur, name: "Renamed", rows: [cur.rows[0]!, { ...other, data: { name: "B" } } as Show["rows"][number]] });
+    });
+    expect(await refreshAllShows(t.api, t.d)).toBe(1);
+    const out = t.saved[0]!;
+    expect(out.name).toBe("Renamed");
+    expect((out.rows[1] as unknown as { data: { name: string } }).data.name).toBe("B");
+    expect((out.rows[0] as ScriptureRow).source!.fetchedAt).toBe(NOW.toISOString());
+  });
+
+  it("does not overwrite a scripture row the operator changed during the fetch", async () => {
+    const t = io([valid([row(daysAgo(15))])], (store) => {
+      const cur = store.get("show1")!;
+      const r = cur.rows[0] as ScriptureRow;
+      store.set("show1", { ...cur, rows: [{ ...r, slides: [{ id: "only", verses: [v(16, "edited")] }] }] });
+    });
+    expect(await refreshAllShows(t.api, t.d)).toBe(0);
+    expect(t.saved).toHaveLength(0);
+  });
+
+  it("does not resurrect a show deleted during the fetch", async () => {
+    const t = io([valid([row(daysAgo(15))])], (store) => store.set("show1", null));
+    expect(await refreshAllShows(t.api, t.d)).toBe(0);
+    expect(t.saved).toHaveLength(0);
   });
 });
