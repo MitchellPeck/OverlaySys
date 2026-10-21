@@ -225,6 +225,38 @@ describe("ScriptureSlideSchema", () => {
 });
 
 describe("ScriptureRowSchema", () => {
+  const base = {
+    kind: "scripture" as const,
+    id: "s1",
+    reference: "John 3:16",
+    translation: "NIV",
+    slides: [{ id: "slide-0", verses: [{ book: "JHN", chapter: 3, verse: 16, text: "For God" }] }],
+    templateId: "t",
+  };
+
+  it("accepts an api.bible source", () => {
+    const row = ScriptureRowSchema.parse({
+      ...base,
+      source: { provider: "api.bible", bibleId: "B", fetchedAt: "2026-10-21T00:00:00.000Z", usageTokens: ["t1"] },
+    });
+    expect(row.source?.bibleId).toBe("B");
+  });
+
+  it("defaults usageTokens and leaves source optional", () => {
+    const row = ScriptureRowSchema.parse({
+      ...base,
+      source: { provider: "api.bible", bibleId: "B", fetchedAt: "2026-10-21T00:00:00.000Z" },
+    });
+    expect(row.source?.usageTokens).toEqual([]);
+    expect(ScriptureRowSchema.parse(base).source).toBeUndefined();
+  });
+
+  it("rejects unknown providers", () => {
+    expect(() =>
+      ScriptureRowSchema.parse({ ...base, source: { provider: "other", bibleId: "B", fetchedAt: "x" } }),
+    ).toThrow();
+  });
+
   const minimal = {
     kind: "scripture" as const,
     id: "row-1",
