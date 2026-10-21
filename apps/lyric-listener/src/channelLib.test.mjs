@@ -214,3 +214,10 @@ describe("levelWindow", async () => {
     expect(levelWindow(loud)).toBe(loud);
   });
 });
+
+describe("describeLevels", async () => {
+  const { describeLevels } = await import("./channelLib.mjs");
+  it("reports dB per channel and calls out exact zero", () => {
+    expect(describeLevels([3, 4], [10 ** (-34 / 20), 0])).toBe("ch 3 -34 dB, ch 4 digital silence");
+  });
+});

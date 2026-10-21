@@ -259,6 +259,23 @@ export function formatTranscript(text, isFinal) {
   return t + (isFinal ? "\n" : "\r");
 }
 
+/**
+ * Human-readable peak per picked channel for the log, e.g.
+ * "ch 3 -34 dB, ch 4 digital silence". Exactly zero is called out on its
+ * own: a live mic always has some noise, so a channel that is precisely
+ * zero has nothing routed to it — or macOS is muting the capture.
+ * @param {number[]} channels
+ * @param {number[]} peaks
+ */
+export function describeLevels(channels, peaks) {
+  return channels
+    .map((ch, i) => {
+      const p = peaks[i] ?? 0;
+      return p === 0 ? `ch ${ch} digital silence` : `ch ${ch} ${Math.round(20 * Math.log10(p))} dB`;
+    })
+    .join(", ");
+}
+
 /** @param {number[]} peaks */
 export function levelsLine(peaks) {
   return `@@levels ${peaks.map((p) => p.toFixed(4)).join(" ")}`;

@@ -23,6 +23,7 @@ import {
   KEEP_MS,
   SAMPLE_RATE,
   WindowScheduler,
+  describeLevels,
   encodeWav,
   ffmpegCaptureArgs,
   formatTranscript,
@@ -41,6 +42,7 @@ const LEVELS_INTERVAL_MS = 100;
 const MAX_CONSECUTIVE_FAILURES = 10;
 const ERROR_LOG_INTERVAL_MS = 10_000;
 const NO_AUDIO_TIMEOUT_MS = 5_000;
+const LEVEL_SUMMARY_MS = 5_000;
 
 /** @type {import("node:child_process").ChildProcess[]} */
 const children = [];
@@ -256,8 +258,30 @@ async function main() {
     );
   });
 
+  // The meter gets peaks ~10x/s; the log gets a summary every few seconds
+  // so what the capture actually hears is visible in Recent logs too.
+  let summaryPeaks = new Array(args.channels.length).fill(0);
+  let summaryStartedAt = 0;
+  let everHeard = false;
   setInterval(() => {
-    if (gotAudio) log(levelsLine(mixer.takePeaks()));
+    if (!gotAudio || exiting) return;
+    const peaks = mixer.takePeaks();
+    log(levelsLine(peaks));
+    peaks.forEach((p, i) => (summaryPeaks[i] = Math.max(summaryPeaks[i], p)));
+    if (!summaryStartedAt) summaryStartedAt = Date.now();
+    if (Date.now() - summaryStartedAt < LEVEL_SUMMARY_MS) return;
+    log(`[levels] ${describeLevels(args.channels, summaryPeaks)}`);
+    if (summaryPeaks.some((p) => p > 0)) everHeard = true;
+    if (!everHeard) {
+      fail(
+        `Every picked channel (${args.channels.join(", ")}) of '${args.device}' is digital silence. ` +
+          "Either nothing is routed to those channels on the console, or macOS is blocking the microphone " +
+          "for OverlaySys — check System Settings → Privacy & Security → Microphone.",
+      );
+      return;
+    }
+    summaryPeaks = summaryPeaks.fill(0);
+    summaryStartedAt = Date.now();
   }, LEVELS_INTERVAL_MS);
 
   // ── transcription loop ──
