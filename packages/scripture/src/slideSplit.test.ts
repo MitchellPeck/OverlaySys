@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitIntoSlides, DEFAULT_SLIDE_BUDGET } from "./slideSplit";
+import { splitIntoSlides, DEFAULT_SLIDE_BUDGET, tokenize, breaksToSlides, slidesToBreaks } from "./slideSplit";
 import type { ScriptureVerse } from "./types";
 
 const V = (book: string, chapter: number, verse: number, text: string): ScriptureVerse =>
@@ -75,5 +75,76 @@ describe("splitIntoSlides", () => {
     const slides = splitIntoSlides(verses, { maxChars: 200, maxLines: 4 });
     const ids = new Set(slides.map((s) => s.id));
     expect(ids.size).toBe(slides.length);
+  });
+});
+
+describe("word/break model", () => {
+  const verses = [
+    V("JHN", 3, 16, "For God so loved the world"),
+    V("JHN", 3, 17, "For God sent not his Son"),
+  ];
+
+  it("tokenize tags each word with its verse index and drops empty words", () => {
+    const words = tokenize([V("JHN", 3, 16, "  a\n b  "), V("JHN", 3, 17, "c")]);
+    expect(words).toEqual([
+      { verseIdx: 0, text: "a" },
+      { verseIdx: 0, text: "b" },
+      { verseIdx: 1, text: "c" },
+    ]);
+  });
+
+  it("breaksToSlides with no breaks yields one slide of whole verses", () => {
+    const words = tokenize(verses);
+    const slides = breaksToSlides(verses, words, new Set());
+    expect(slides).toHaveLength(1);
+    expect(slides[0]!.verses).toEqual(verses);
+  });
+
+  it("breaksToSlides splits mid-verse into two portions of the same verse", () => {
+    const words = tokenize(verses);
+    const slides = breaksToSlides(verses, words, new Set([3])); // after "For God so"
+    expect(slides).toHaveLength(2);
+    expect(slides[0]!.verses).toEqual([V("JHN", 3, 16, "For God so")]);
+    expect(slides[1]!.verses).toEqual([
+      V("JHN", 3, 16, "loved the world"),
+      V("JHN", 3, 17, "For God sent not his Son"),
+    ]);
+  });
+
+  it("breaksToSlides ignores out-of-range breaks and never emits empty slides", () => {
+    const words = tokenize(verses);
+    const slides = breaksToSlides(verses, words, new Set([0, words.length, 99]));
+    expect(slides).toHaveLength(1);
+  });
+
+  it("slidesToBreaks merges portions of a verse back into one verse", () => {
+    const model = slidesToBreaks([
+      { verses: [V("JHN", 3, 16, "For God so")] },
+      { verses: [V("JHN", 3, 16, "loved the world"), V("JHN", 3, 17, "For God sent not his Son")] },
+    ]);
+    expect(model.verses).toEqual(verses);
+    expect([...model.breaks]).toEqual([3]);
+  });
+
+  it("round-trips slides → breaks → slides", () => {
+    const original = [
+      { verses: [V("JHN", 3, 16, "For God so")] },
+      { verses: [V("JHN", 3, 16, "loved the world")] },
+      { verses: [V("JHN", 3, 17, "For God sent not his Son")] },
+    ];
+    const m = slidesToBreaks(original);
+    const back = breaksToSlides(m.verses, m.words, m.breaks);
+    expect(back.map((s) => s.verses)).toEqual(original.map((s) => s.verses));
+  });
+
+  it("slidesToBreaks collapses whitespace-only entries without creating empty slides", () => {
+    const m = slidesToBreaks([
+      { verses: [V("JHN", 3, 16, "a b")] },
+      { verses: [V("JHN", 3, 17, "   ")] },
+      { verses: [V("JHN", 3, 18, "c")] },
+    ]);
+    const back = breaksToSlides(m.verses, m.words, m.breaks);
+    expect(back.every((s) => s.verses.length > 0)).toBe(true);
+    expect(back.flatMap((s) => s.verses.map((v) => v.text))).toEqual(["a b", "c"]);
   });
 });
