@@ -356,3 +356,34 @@ describe("song_queued feedback", () => {
     expect(feedbackPredicate(s, "song_queued", { channel: "program" })).toBe(true);
   });
 });
+
+describe("video feedbacks", () => {
+  const withMedia = (media: Record<string, unknown> | null) =>
+    apply(initialState(), {
+      type: "state",
+      channel: "program",
+      state: {
+        channel: "program",
+        active: null,
+        media: media && {
+          rowId: "v", assetUrl: "/assets/v.mp4", volume: 1, endAction: "hold",
+          transitionIn: { style: "fade", durationMs: 500 }, transitionOut: { style: "fade", durationMs: 500 },
+          takenAt: 1, paused: false,
+          playback: { status: "playing", currentTime: 3, duration: 30, updatedAt: 0 },
+          ...media,
+        },
+      } as never,
+    });
+
+  it("video_on_air tracks whether the channel has a video", () => {
+    expect(feedbackPredicate(withMedia({}), "video_on_air", { channel: "program" })).toBe(true);
+    expect(feedbackPredicate(withMedia(null), "video_on_air", { channel: "program" })).toBe(false);
+    expect(feedbackPredicate(withMedia({}), "video_on_air", { channel: "preview" })).toBe(false);
+  });
+
+  it("video_paused is true only for a paused video", () => {
+    expect(feedbackPredicate(withMedia({ paused: true }), "video_paused", { channel: "program" })).toBe(true);
+    expect(feedbackPredicate(withMedia({}), "video_paused", { channel: "program" })).toBe(false);
+    expect(feedbackPredicate(withMedia(null), "video_paused", { channel: "program" })).toBe(false);
+  });
+});

@@ -51,6 +51,29 @@ describe("mediaTake", () => {
     expect(states).toHaveLength(1);
   });
 
+  it("defaults transitions to a 500 ms fade when the take omits them", () => {
+    channels.mediaTake(ch, ARGS, 1000);
+    expect(media()?.transitionIn).toEqual({ style: "fade", durationMs: 500 });
+    expect(media()?.transitionOut).toEqual({ style: "fade", durationMs: 500 });
+  });
+
+  it("carries the take's transitions", () => {
+    channels.mediaTake(ch, {
+      ...ARGS,
+      transitionIn: { style: "zoom", durationMs: 800 },
+      transitionOut: { style: "slide", durationMs: 300 },
+    }, 1000);
+    expect(media()?.transitionIn).toEqual({ style: "zoom", durationMs: 800 });
+    expect(media()?.transitionOut).toEqual({ style: "slide", durationMs: 300 });
+  });
+
+  it("resets a previous cut clear", () => {
+    channels.mediaTake(ch, ARGS, 1000);
+    channels.mediaClear(ch, { cut: true });
+    channels.mediaTake(ch, ARGS, 2000);
+    expect(channels.getState(ch).mediaClearCut).toBeUndefined();
+  });
+
   it("gives strictly increasing takenAt for takes in the same ms", () => {
     channels.mediaTake(ch, ARGS, 1000);
     channels.mediaTake(ch, ARGS, 1000);
@@ -85,6 +108,18 @@ describe("mediaClear", () => {
     expect(media()).toBeNull();
     expect(channels.getState(ch).active?.templateId).toBe("lower-third");
     expect(states).toHaveLength(1);
+  });
+
+  it("marks a cut clear so renderers skip the Out transition", () => {
+    channels.mediaTake(ch, ARGS, 1000);
+    channels.mediaClear(ch, { cut: true });
+    expect(channels.getState(ch).mediaClearCut).toBe(true);
+  });
+
+  it("a plain clear is not a cut", () => {
+    channels.mediaTake(ch, ARGS, 1000);
+    channels.mediaClear(ch);
+    expect(channels.getState(ch).mediaClearCut).toBeUndefined();
   });
 
   it("is a no-op without media", () => {

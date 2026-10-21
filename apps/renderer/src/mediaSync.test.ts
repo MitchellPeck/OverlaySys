@@ -9,7 +9,7 @@ import {
 } from "./mediaSync";
 
 const base: ChannelMedia = {
-  rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear",
+  rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const,
   takenAt: 100, paused: false,
   playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: 0 },
 };

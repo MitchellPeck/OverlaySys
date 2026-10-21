@@ -66,8 +66,30 @@ describe("media messages", () => {
     expect(msg.playback.currentTime).toBe(2);
   });
 
-  it("is protocol version 2", () => {
-    expect(PROTOCOL_VERSION).toBe(2);
+  it("decodes media_take transitions and media_clear cut", () => {
+    const take = decodeClient(encode({
+      type: "media_take", channel: "program", rowId: "r1",
+      assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear",
+      transitionIn: { style: "zoom", durationMs: 800 },
+      transitionOut: { style: "slide", durationMs: 300 },
+    }));
+    if (take.type !== "media_take") throw new Error("wrong type");
+    expect(take.transitionIn).toEqual({ style: "zoom", durationMs: 800 });
+    const clear = decodeClient(encode({ type: "media_clear", channel: "program", cut: true }));
+    if (clear.type !== "media_clear") throw new Error("wrong type");
+    expect(clear.cut).toBe(true);
+  });
+
+  it("rejects an unknown transition style", () => {
+    expect(() => decodeClient(JSON.stringify({
+      type: "media_take", channel: "program", rowId: "r1",
+      assetUrl: "/a.mp4", volume: 1, endAction: "clear",
+      transitionIn: { style: "spin", durationMs: 500 },
+    }))).toThrow();
+  });
+
+  it("is protocol version 3", () => {
+    expect(PROTOCOL_VERSION).toBe(3);
   });
 });
 

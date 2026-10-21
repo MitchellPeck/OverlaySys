@@ -3,6 +3,7 @@ import {
   ChannelStateSchema,
   ChannelConfigSchema,
   MediaEndActionSchema,
+  MediaTransitionSchema,
   MediaStatusSchema,
   MediaPlaybackSchema,
   TemplateSchema,
@@ -20,7 +21,7 @@ import {
   type TemplateMeta,
 } from "@overlaysys/core";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 const DataPayload = z.record(z.string(), z.string());
 
@@ -151,8 +152,12 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     label: z.string().optional(),
     volume: z.number().min(0).max(1),
     endAction: MediaEndActionSchema,
+    /** Omitted by older senders; the server falls back to a 500 ms fade. */
+    transitionIn: MediaTransitionSchema.optional(),
+    transitionOut: MediaTransitionSchema.optional(),
   }),
-  z.object({ type: z.literal("media_clear"), channel: z.string() }),
+  /** `cut: true` skips the take's Out transition (instant clear). */
+  z.object({ type: z.literal("media_clear"), channel: z.string(), cut: z.boolean().optional() }),
   z.object({
     type: z.literal("media_control"),
     channel: z.string(),

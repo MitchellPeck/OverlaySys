@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DEFAULT_PROJECT_ID } from "./project";
-import { MediaEndActionSchema } from "./channel";
+import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema } from "./channel";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -148,6 +148,8 @@ export const VideoRowSchema = z.object({
   durationSec: z.number().optional(),
   volume: z.number().min(0).max(1).default(1),
   endAction: MediaEndActionSchema.default("clear"),
+  transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
+  transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
   sourceRef: RowSourceRefSchema.optional(),

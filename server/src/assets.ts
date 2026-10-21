@@ -5,7 +5,7 @@ import type { FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
 import staticPlugin from "@fastify/static";
 import { dataRoot } from "./storage";
-import { planTranscode, transcodeToMp4, transcodeToWebmAlpha } from "./transcode";
+import { extractPoster, planTranscode, transcodeToMp4, transcodeToWebmAlpha } from "./transcode";
 
 /**
  * Content-addressed binary asset store.
@@ -233,6 +233,57 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
       size,
       mime: file.mimetype ?? "",
     };
+  });
+
+  /**
+   * JPEG frame of a stored video, for rundown thumbnails. Generated on first
+   * request into `.posters/` (a dot-dir, so the listing and bundle export
+   * skip it) and cached there; content-hashed names mean it never goes stale.
+   */
+  const posterJobs = new Map<string, Promise<void>>();
+  app.get<{ Params: { filename: string } }>("/api/assets/poster/:filename", async (req, reply) => {
+    const filename = req.params.filename;
+    if (!isSafeAssetFilename(filename) || !/\.(mp4|webm)$/i.test(filename)) {
+      reply.code(400);
+      return { error: "invalid filename" };
+    }
+    const src = path.join(ASSETS_DIR(), filename);
+    const dir = path.join(ASSETS_DIR(), ".posters");
+    const dst = path.join(dir, `${filename}.jpg`);
+    const cached = await fs.readFile(dst).catch(() => null);
+    if (!cached) {
+      const exists = await fs.stat(src).then(() => true, () => false);
+      if (!exists) {
+        reply.code(404);
+        return { error: "not found" };
+      }
+      // Rundowns request every row's poster at once; one ffmpeg per file.
+      let job = posterJobs.get(filename);
+      if (!job) {
+        job = (async () => {
+          await fs.mkdir(dir, { recursive: true });
+          const tmp = path.join(dir, `.tmp-${crypto.randomBytes(8).toString("hex")}.jpg`);
+          try {
+            await extractPoster(src, tmp);
+            await fs.rename(tmp, dst);
+          } finally {
+            await fs.unlink(tmp).catch(() => {});
+          }
+        })().finally(() => posterJobs.delete(filename));
+        posterJobs.set(filename, job);
+      }
+      try {
+        await job;
+      } catch (err) {
+        req.log.warn({ err, filename }, "poster extraction failed");
+        reply.code(500);
+        return { error: "poster extraction failed" };
+      }
+    }
+    const buf = cached ?? (await fs.readFile(dst));
+    reply.header("Content-Type", "image/jpeg");
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    return reply.send(buf);
   });
 
   // GET helper: list known assets. Useful for a future asset browser; for

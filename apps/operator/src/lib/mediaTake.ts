@@ -11,6 +11,8 @@ export function videoRowTakeMessage(row: VideoRow): ClientMessage {
     ...(row.label !== undefined ? { label: row.label } : {}),
     volume: row.volume,
     endAction: row.endAction,
+    transitionIn: row.transitionIn,
+    transitionOut: row.transitionOut,
   };
 }
 
@@ -27,6 +29,15 @@ export function onAirMediaFor(
   if (!media || media.rowId !== row.id) return null;
   if (media.playback.status === "ended" || media.playback.status === "error") return null;
   return media;
+}
+
+/**
+ * Server route that serves a JPEG frame of a stored video (rundown
+ * thumbnails). Null for URLs the local asset server didn't store.
+ */
+export function posterPathFor(assetUrl: string): string | null {
+  const m = /^\/assets\/([A-Za-z0-9]+\.(?:mp4|webm))$/i.exec(assetUrl);
+  return m ? `/api/assets/poster/${m[1]}` : null;
 }
 
 export function formatClock(sec: number): string {

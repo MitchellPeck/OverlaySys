@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
 import ffmpegPath from "ffmpeg-static";
 
 /**
@@ -176,6 +177,22 @@ export function transcodeToMp4(
     ],
     timeoutMs,
   );
+}
+
+/**
+ * Grab one frame of `srcPath` as a small JPEG at `dstPath` (rundown
+ * thumbnails). Seeks 1 s in to skip fade-from-black openings; a clip shorter
+ * than that yields no frame, so retry from the start.
+ */
+export async function extractPoster(srcPath: string, dstPath: string, timeoutMs = 30_000): Promise<void> {
+  const grab = (seek: string) =>
+    runFfmpeg(
+      ["-y", "-ss", seek, "-i", srcPath, "-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "5", dstPath],
+      timeoutMs,
+    );
+  await grab("1");
+  const size = await fs.stat(dstPath).then((s) => s.size).catch(() => 0);
+  if (size === 0) await grab("0");
 }
 
 /**

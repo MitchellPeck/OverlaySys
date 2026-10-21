@@ -18,6 +18,12 @@ describe("ChannelMediaSchema", () => {
     expect(m.playback.status).toBe("loading");
   });
 
+  it("defaults missing transitions to a 500 ms fade", () => {
+    const m = ChannelMediaSchema.parse(media);
+    expect(m.transitionIn).toEqual({ style: "fade", durationMs: 500 });
+    expect(m.transitionOut).toEqual({ style: "fade", durationMs: 500 });
+  });
+
   it("parses seek and error", () => {
     const m = ChannelMediaSchema.parse({
       ...media,

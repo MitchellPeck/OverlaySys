@@ -188,11 +188,13 @@ export function handleConnection(
             ...(parsed.label !== undefined ? { label: parsed.label } : {}),
             volume: parsed.volume,
             endAction: parsed.endAction,
+            ...(parsed.transitionIn ? { transitionIn: parsed.transitionIn } : {}),
+            ...(parsed.transitionOut ? { transitionOut: parsed.transitionOut } : {}),
           });
           break;
         }
         case "media_clear": {
-          channels.mediaClear(parsed.channel);
+          channels.mediaClear(parsed.channel, { cut: parsed.cut === true });
           break;
         }
         case "media_control": {

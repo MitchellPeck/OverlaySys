@@ -379,6 +379,7 @@ export function Renderer({ channel, debug = false }: Props) {
       />
       <MediaLayer
         media={latestState?.media ?? null}
+        clearCut={latestState?.mediaClearCut === true}
         channel={channel}
         isMirror={subscriptionRef.current.source !== channel}
         matte={matte}

@@ -14,6 +14,10 @@ import type { CompanionState } from "./types";
 export type ActionId =
   | "take_template"
   | "clear"
+  | "clear_all"
+  | "video_stop"
+  | "video_play_pause"
+  | "video_restart"
   | "cue_template"
   | "take_pvw_to_pgm"
   | "fire_hotcard"
@@ -97,6 +101,8 @@ function rowMessages(
         ...(row.label !== undefined ? { label: row.label } : {}),
         volume: row.volume,
         endAction: row.endAction,
+        transitionIn: row.transitionIn,
+        transitionOut: row.transitionOut,
       },
     ];
   }
@@ -192,6 +198,25 @@ export function dispatchAction(
     case "clear":
       messages.push({ type: "clear", channel: str("channel") });
       break;
+    case "clear_all":
+      // Graphics and video together, video hard-cut — the panic button.
+      messages.push({ type: "clear", channel: str("channel") });
+      messages.push({ type: "media_clear", channel: str("channel"), cut: true });
+      break;
+    case "video_stop":
+      // Plays the video row's Out transition (fade/zoom/slide).
+      messages.push({ type: "media_clear", channel: str("channel") });
+      break;
+    case "video_play_pause":
+    case "video_restart": {
+      // Transport targets the current take; no video on the channel → no-op.
+      const channel = str("channel");
+      const media = state.channelStates.get(channel)?.media;
+      if (!media) break;
+      const action = id === "video_restart" ? "restart" : media.paused ? "play" : "pause";
+      messages.push({ type: "media_control", channel, takenAt: media.takenAt, action });
+      break;
+    }
     case "cue_template":
       messages.push({
         type: "cue",
@@ -693,9 +718,29 @@ export function actionDefinitions(
       callback: wrap("take_template"),
     },
     clear: {
-      name: "Clear channel",
+      name: "Clear channel (graphics only)",
       options: [channelDropdown(state)],
       callback: wrap("clear"),
+    },
+    clear_all: {
+      name: "Clear all on channel (graphics + cut video)",
+      options: [channelDropdown(state)],
+      callback: wrap("clear_all"),
+    },
+    video_stop: {
+      name: "Video: stop (animate out)",
+      options: [channelDropdown(state)],
+      callback: wrap("video_stop"),
+    },
+    video_play_pause: {
+      name: "Video: play / pause",
+      options: [channelDropdown(state)],
+      callback: wrap("video_play_pause"),
+    },
+    video_restart: {
+      name: "Video: restart",
+      options: [channelDropdown(state)],
+      callback: wrap("video_restart"),
     },
     cue_template: {
       name: "Cue template",

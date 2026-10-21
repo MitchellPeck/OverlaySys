@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { VideoThumb } from "./VideoThumb";
 import { rowAirState, type AirState } from "@/lib/rowAirState";
 import { editedFieldKeys, effectiveRowData, graphicRowMessage, withEffectiveData } from "@/lib/rowData";
 import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
@@ -116,6 +117,7 @@ export function Rundown() {
                 key={row.id}
                 index={i + 1}
                 icon={<Film size={14} />}
+                thumbnail={<VideoThumb assetUrl={row.assetUrl} />}
                 title={row.label || "Video"}
                 typeLabel="video"
                 detail={`${row.durationSec ? `${formatClock(row.durationSec)} · ` : ""}${row.endAction === "clear" ? "clears at end" : "holds at end"}`}
@@ -355,11 +357,13 @@ function RundownItem({
   detail,
   selected,
   air,
+  thumbnail,
   onClick,
   onDoubleClick,
 }: {
   index: number;
   icon: React.ReactNode;
+  thumbnail?: React.ReactNode;
   title: React.ReactNode;
   typeLabel: string;
   detail?: React.ReactNode;
@@ -392,6 +396,7 @@ function RundownItem({
     >
       <span style={{ width: 18, textAlign: "right", color: colors.textMuted, fontSize: 11, paddingTop: 1 }}>{index}</span>
       <span style={{ color: colors.textDim, paddingTop: 1 }}>{icon}</span>
+      {thumbnail}
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ color: colors.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {title}

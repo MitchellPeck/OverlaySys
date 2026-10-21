@@ -30,6 +30,21 @@ export type ActiveGraphic = z.infer<typeof ActiveGraphicSchema>;
 export const MediaEndActionSchema = z.enum(["clear", "hold"]);
 export type MediaEndAction = z.infer<typeof MediaEndActionSchema>;
 
+/**
+ * How a video enters/leaves the output. Audio ramps over the same duration
+ * as the picture. `cut` ignores durationMs.
+ */
+export const MediaTransitionStyleSchema = z.enum(["cut", "fade", "zoom", "slide"]);
+export type MediaTransitionStyle = z.infer<typeof MediaTransitionStyleSchema>;
+
+export const MediaTransitionSchema = z.object({
+  style: MediaTransitionStyleSchema,
+  durationMs: z.number().int().min(0).max(5000),
+});
+export type MediaTransition = z.infer<typeof MediaTransitionSchema>;
+
+export const DEFAULT_MEDIA_TRANSITION: MediaTransition = { style: "fade", durationMs: 500 };
+
 export const MediaStatusSchema = z.enum(["loading", "playing", "paused", "ended", "error"]);
 export type MediaStatus = z.infer<typeof MediaStatusSchema>;
 
@@ -55,6 +70,9 @@ export const ChannelMediaSchema = z.object({
   label: z.string().optional(),
   volume: z.number().min(0).max(1),
   endAction: MediaEndActionSchema,
+  // Defaulted so state from a pre-transition server still parses.
+  transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
+  transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   takenAt: z.number(),
   paused: z.boolean(),
   seek: z.object({ time: z.number(), seq: z.number() }).optional(),
@@ -80,5 +98,10 @@ export const ChannelStateSchema = z.object({
   songSession: SongSessionSummarySchema.optional(),
   queuedSong: QueuedSongSchema.optional(),
   media: ChannelMediaSchema.nullable().optional(),
+  /**
+   * True when the last media_clear asked for a hard cut, so renderers skip
+   * the take's Out transition. Reset by the next media_take.
+   */
+  mediaClearCut: z.boolean().optional(),
 });
 export type ChannelState = z.infer<typeof ChannelStateSchema>;

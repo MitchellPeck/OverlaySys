@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type Song } from "./song";
 import { type Template } from "./template";
 import { type Show } from "./show";
+import { DEFAULT_MEDIA_TRANSITION } from "./channel";
 import {
   BundleSchema,
   collectDependencies,
@@ -456,7 +457,10 @@ describe("collectReferencedChannelIds", () => {
 describe("video rows in bundles", () => {
   const show: Show = {
     id: "s1", name: "Sun", projectId: "p1", songs: [],
-    rows: [{ kind: "video", id: "v1", assetUrl: "/assets/abc123.mp4", volume: 1, endAction: "clear" }],
+    rows: [{
+      kind: "video", id: "v1", assetUrl: "/assets/abc123.mp4", volume: 1, endAction: "clear",
+      transitionIn: DEFAULT_MEDIA_TRANSITION, transitionOut: DEFAULT_MEDIA_TRANSITION,
+    }],
   } as Show;
 
   it("collects the video asset", () => {

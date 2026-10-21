@@ -3,7 +3,7 @@ import type { ChannelMedia, ChannelState } from "@overlaysys/core";
 import { useStore } from "./store";
 
 const media = (over: Partial<ChannelMedia> = {}, updatedAt = 100): ChannelMedia => ({
-  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", takenAt: 1, paused: false,
+  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
   playback: { status: "playing", currentTime: 5, duration: 60, updatedAt },
   ...over,
 });

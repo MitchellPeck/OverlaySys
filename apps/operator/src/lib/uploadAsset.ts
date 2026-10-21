@@ -3,6 +3,7 @@
 import { defaultServerUrl } from "./wsClient";
 import { isCloudMode } from "./mode";
 import { resolveAssetUrlCloud, uploadAssetCloud } from "./cloudData";
+import { posterPathFor } from "./mediaTake";
 
 /**
  * Derive the HTTP base for asset uploads from the WS URL the operator is
@@ -92,4 +93,14 @@ export function resolveAssetUrl(stored: string): string {
   }
   if (stored.startsWith("/assets/")) return `${httpBase()}${stored}`;
   return stored;
+}
+
+/**
+ * Thumbnail for a video row, from the local server's poster route. Null in
+ * cloud mode (no ffmpeg there) or for videos the server didn't store.
+ */
+export function videoPosterUrl(assetUrl: string): string | null {
+  if (isCloudMode()) return null;
+  const p = posterPathFor(assetUrl);
+  return p ? `${httpBase()}${p}` : null;
 }

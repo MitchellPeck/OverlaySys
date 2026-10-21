@@ -3,6 +3,7 @@ import { RUNDOWN_LIMIT } from "./variables";
 
 const green = 0x00aa00;
 const red = 0xaa0000;
+const amber = 0xcc8800;
 const dark = 0x222222;
 const white = 0xffffff;
 
@@ -22,6 +23,67 @@ export function presetDefinitions(): CompanionPresetDefinitions {
         style: { bgcolor: green },
       },
     ],
+  };
+
+  presets["clear_all_pgm"] = {
+    type: "button",
+    category: "Master",
+    name: "Clear all PGM (graphics + cut video)",
+    style: { text: "CLEAR\\nALL PGM", size: "14", color: white, bgcolor: dark },
+    steps: [
+      { down: [{ actionId: "clear_all", options: { channel: "program" } }], up: [] },
+    ],
+    feedbacks: [],
+  };
+
+  presets["video_stop_pgm"] = {
+    type: "button",
+    category: "Video",
+    name: "Stop PGM video (animate out)",
+    style: { text: "STOP\\nVIDEO", size: "14", color: white, bgcolor: dark },
+    steps: [
+      { down: [{ actionId: "video_stop", options: { channel: "program" } }], up: [] },
+    ],
+    feedbacks: [
+      {
+        feedbackId: "video_on_air",
+        options: { channel: "program" },
+        style: { bgcolor: red },
+      },
+    ],
+  };
+
+  presets["video_play_pause_pgm"] = {
+    type: "button",
+    category: "Video",
+    name: "Play / pause PGM video",
+    style: { text: "PLAY\\nPAUSE", size: "14", color: white, bgcolor: dark },
+    steps: [
+      { down: [{ actionId: "video_play_pause", options: { channel: "program" } }], up: [] },
+    ],
+    feedbacks: [
+      {
+        feedbackId: "video_on_air",
+        options: { channel: "program" },
+        style: { bgcolor: green },
+      },
+      {
+        feedbackId: "video_paused",
+        options: { channel: "program" },
+        style: { bgcolor: amber },
+      },
+    ],
+  };
+
+  presets["video_restart_pgm"] = {
+    type: "button",
+    category: "Video",
+    name: "Restart PGM video",
+    style: { text: "RESTART\\nVIDEO", size: "14", color: white, bgcolor: dark },
+    steps: [
+      { down: [{ actionId: "video_restart", options: { channel: "program" } }], up: [] },
+    ],
+    feedbacks: [],
   };
 
   presets["clear_pgm"] = {

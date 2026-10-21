@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ChannelMedia } from "@overlaysys/core";
-import { Film, Pause, Play, RotateCcw, Square } from "lucide-react";
+import { Film, Pause, Play, RotateCcw, Scissors, Square } from "lucide-react";
 import { Button, StatusDot, colors, radius, type PillTone } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock } from "@/lib/mediaTake";
-import { displayStatus, displayTime, type MediaDisplayStatus } from "@/lib/mediaTime";
+import { displayStatus, displayTime, remainingTone, type MediaDisplayStatus, type RemainingTone } from "@/lib/mediaTime";
 
 const STATUS_LABEL: Record<MediaDisplayStatus, string> = {
   loading: "Loading",
@@ -82,12 +82,30 @@ function useChannelTransport(channel: string, media: ChannelMedia) {
   const fraction = scrub ?? t.fraction;
   const control = (action: "play" | "pause" | "restart" | "seek", time?: number) =>
     send({ type: "media_control", channel, takenAt: media.takenAt, action, ...(time !== undefined ? { time } : {}) });
+  // Stop plays the row's Out transition; Cut clears instantly. A row whose
+  // Out is already a cut has no separate Cut button.
   const stop = () => send({ type: "media_clear", channel });
+  const cut = () => send({ type: "media_clear", channel, cut: true });
+  const hasOutTransition = media.transitionOut.style !== "cut";
+  const stopTitle = hasOutTransition ? `Stop (${media.transitionOut.style} out)` : "Stop";
 
-  return { status, t, duration, fraction, scrub, setScrub, control, stop };
+  return { status, t, duration, fraction, scrub, setScrub, control, stop, cut, hasOutTransition, stopTitle };
 }
 
 type Transport = ReturnType<typeof useChannelTransport>;
+
+/** Amber in the last 15 s, red in the last 5 s, so the next cue isn't a surprise. */
+const REMAINING_COLOR: Record<RemainingTone, string | undefined> = {
+  normal: undefined,
+  warn: colors.warn,
+  urgent: colors.danger,
+};
+
+function remainingColor(tr: Transport): string | undefined {
+  // A paused or held video isn't counting down.
+  if (tr.status !== "playing") return undefined;
+  return REMAINING_COLOR[remainingTone(tr.t.remaining, tr.duration)];
+}
 
 function SeekBar({ tr, height, style }: { tr: Transport; height: number; style?: CSSProperties }) {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -163,7 +181,7 @@ function CompactTransport({ channel, media }: { channel: string; media: ChannelM
         {media.label || "Video"}
       </span>
       <StatusDot tone={STATUS_TONE[tr.status]} label={STATUS_LABEL[tr.status]} />
-      <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
+      <span style={{ fontSize: 12, color: remainingColor(tr) ?? colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
       <SeekBar tr={tr} height={6} style={{ width: 140, flexShrink: 0 }} />
       {media.paused ? (
         <Button size="sm" onClick={() => tr.control("play")} title="Play" aria-label="Play" style={iconBtn}>
@@ -177,9 +195,14 @@ function CompactTransport({ channel, media }: { channel: string; media: ChannelM
       <Button size="sm" onClick={() => tr.control("restart")} title="Restart" aria-label="Restart" style={iconBtn}>
         <RotateCcw size={14} aria-hidden />
       </Button>
-      <Button size="sm" variant="danger" onClick={tr.stop} title="Stop" aria-label="Stop" style={iconBtn}>
+      <Button size="sm" variant="danger" onClick={tr.stop} title={tr.stopTitle} aria-label="Stop" style={iconBtn}>
         <Square size={14} aria-hidden />
       </Button>
+      {tr.hasOutTransition && (
+        <Button size="sm" variant="danger" onClick={tr.cut} title="Cut (clear instantly)" aria-label="Cut" style={iconBtn}>
+          <Scissors size={14} aria-hidden />
+        </Button>
+      )}
     </div>
   );
 }
@@ -211,7 +234,7 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
       <div style={{ display: "flex", alignItems: "baseline", marginTop: 6, gap: 8 }}>
         <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
         <span
-          style={{ marginLeft: "auto", fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}
+          style={{ marginLeft: "auto", fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: remainingColor(tr) }}
           title="Time remaining"
         >
           -{formatClock(t.remaining)}
@@ -229,9 +252,14 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
           <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}><Pause size={14} aria-hidden style={ICON_STYLE} /> Pause</Button>
         )}
         <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}><RotateCcw size={14} aria-hidden style={ICON_STYLE} /> Restart</Button>
-        <Button size="sm" variant="danger" onClick={tr.stop} style={{ flex: 1 }}>
+        <Button size="sm" variant="danger" onClick={tr.stop} title={tr.stopTitle} style={{ flex: 1 }}>
           <Square size={14} aria-hidden style={ICON_STYLE} /> Stop
         </Button>
+        {tr.hasOutTransition && (
+          <Button size="sm" variant="danger" onClick={tr.cut} title="Clear instantly" style={{ flex: 1 }}>
+            <Scissors size={14} aria-hidden style={ICON_STYLE} /> Cut
+          </Button>
+        )}
       </div>
     </div>
   );

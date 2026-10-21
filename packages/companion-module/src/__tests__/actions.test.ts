@@ -9,6 +9,55 @@ describe("dispatchAction — basic channel ops", () => {
     expect(r.messages).toEqual([{ type: "clear", channel: "program" }]);
   });
 
+  it("clear_all clears graphics and cuts the video", () => {
+    const r = dispatchAction(initialState(), "clear_all", { channel: "program" });
+    expect(r.messages).toEqual([
+      { type: "clear", channel: "program" },
+      { type: "media_clear", channel: "program", cut: true },
+    ]);
+  });
+
+  it("video_stop clears the video with its Out transition", () => {
+    const r = dispatchAction(initialState(), "video_stop", { channel: "program" });
+    expect(r.messages).toEqual([{ type: "media_clear", channel: "program" }]);
+  });
+
+  const withMedia = (paused: boolean) =>
+    apply(initialState(), {
+      type: "state",
+      channel: "program",
+      state: {
+        channel: "program",
+        active: null,
+        media: {
+          rowId: "v", assetUrl: "/assets/v.mp4", volume: 1, endAction: "clear",
+          transitionIn: { style: "fade", durationMs: 500 }, transitionOut: { style: "fade", durationMs: 500 },
+          takenAt: 42, paused,
+          playback: { status: paused ? "paused" : "playing", currentTime: 3, duration: 30, updatedAt: 0 },
+        },
+      },
+    });
+
+  it("video_play_pause pauses a playing video and plays a paused one", () => {
+    expect(dispatchAction(withMedia(false), "video_play_pause", { channel: "program" }).messages).toEqual([
+      { type: "media_control", channel: "program", takenAt: 42, action: "pause" },
+    ]);
+    expect(dispatchAction(withMedia(true), "video_play_pause", { channel: "program" }).messages).toEqual([
+      { type: "media_control", channel: "program", takenAt: 42, action: "play" },
+    ]);
+  });
+
+  it("video_restart restarts the current take", () => {
+    expect(dispatchAction(withMedia(true), "video_restart", { channel: "program" }).messages).toEqual([
+      { type: "media_control", channel: "program", takenAt: 42, action: "restart" },
+    ]);
+  });
+
+  it("video transport does nothing with no video on the channel", () => {
+    expect(dispatchAction(initialState(), "video_play_pause", { channel: "program" }).messages).toEqual([]);
+    expect(dispatchAction(initialState(), "video_restart", { channel: "program" }).messages).toEqual([]);
+  });
+
   it("take_pvw_to_pgm with defaults", () => {
     const r = dispatchAction(initialState(), "take_pvw_to_pgm", {});
     expect(r.messages).toEqual([

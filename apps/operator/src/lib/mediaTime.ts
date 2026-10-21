@@ -35,3 +35,16 @@ export function displayStatus(m: ChannelMedia, heardAtLocal: number, nowLocal: n
   }
   return s;
 }
+
+/** Seconds left at which the remaining clock turns amber, then red. */
+export const END_WARN_S = 15;
+export const END_URGENT_S = 5;
+
+export type RemainingTone = "normal" | "warn" | "urgent";
+
+export function remainingTone(remaining: number, duration: number): RemainingTone {
+  if (duration <= 0) return "normal";
+  if (remaining <= END_URGENT_S) return "urgent";
+  if (remaining <= END_WARN_S) return "warn";
+  return "normal";
+}

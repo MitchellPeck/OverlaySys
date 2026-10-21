@@ -11,6 +11,8 @@ export type FeedbackId =
   | "channel_is_live"
   | "channel_is_blank"
   | "hotcard_on_air"
+  | "video_on_air"
+  | "video_paused"
   | "song_active"
   | "song_queued"
   | "song_trust_on"
@@ -60,6 +62,18 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     id: "channel_is_blank",
     name: "Channel is blank",
     description: "True when the chosen channel is cleared.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "video_on_air",
+    name: "Video is on air",
+    description: "True while the chosen channel has a video up (playing, paused or held on its last frame).",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "video_paused",
+    name: "Video is paused",
+    description: "True when the chosen channel's video is paused or holding at its end.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
@@ -303,6 +317,14 @@ export function feedbackPredicate(
     case "channel_is_blank": {
       const c = String(options.channel ?? "");
       return state.channelStates.get(c)?.active == null;
+    }
+    case "video_on_air": {
+      const c = String(options.channel ?? "");
+      return state.channelStates.get(c)?.media != null;
+    }
+    case "video_paused": {
+      const c = String(options.channel ?? "");
+      return state.channelStates.get(c)?.media?.paused === true;
     }
     case "hotcard_on_air": {
       const hc = state.hotcardCache.get(String(options.hotcardId ?? ""));

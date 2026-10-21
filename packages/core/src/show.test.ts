@@ -357,6 +357,24 @@ describe("VideoRow", () => {
     expect(row.volume).toBe(1);
     expect(row.endAction).toBe("clear");
     expect(row.label).toBeUndefined();
+    // Rows saved before transitions existed fade in and out.
+    expect(row.transitionIn).toEqual({ style: "fade", durationMs: 500 });
+    expect(row.transitionOut).toEqual({ style: "fade", durationMs: 500 });
+  });
+
+  it("keeps zoom/slide transitions and rejects out-of-range durations", () => {
+    const row = RundownRowSchema.parse({
+      kind: "video", id: "v1", assetUrl: "/a.mp4",
+      transitionIn: { style: "zoom", durationMs: 1200 }, transitionOut: { style: "slide", durationMs: 0 },
+    });
+    if (row.kind !== "video") throw new Error("expected video");
+    expect(row.transitionIn.style).toBe("zoom");
+    expect(row.transitionOut).toEqual({ style: "slide", durationMs: 0 });
+    expect(() =>
+      RundownRowSchema.parse({
+        kind: "video", id: "v1", assetUrl: "/a.mp4", transitionIn: { style: "fade", durationMs: 9000 },
+      }),
+    ).toThrow();
   });
 
   it("keeps label, duration, hold and channel", () => {

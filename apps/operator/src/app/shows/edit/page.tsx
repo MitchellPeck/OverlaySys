@@ -19,6 +19,7 @@ import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
+import { VideoThumb } from "@/app/components/VideoThumb";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import {
   deleteShowCloud,
@@ -381,6 +382,8 @@ function ShowEditPageInner() {
       ...(args.durationSec !== undefined ? { durationSec: args.durationSec } : {}),
       volume: args.volume,
       endAction: args.endAction,
+      transitionIn: args.transitionIn,
+      transitionOut: args.transitionOut,
       channelHint: args.channelHint,
     };
     if (editingVideoRow) {
@@ -702,6 +705,7 @@ function RundownTable({
               <tr key={row.id}>
                 <td colSpan={10} style={{ padding: "6px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <VideoThumb assetUrl={row.assetUrl} width={40} />
                     <span><Film size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.label || "Video"}</span>
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
                       {row.channelHint ?? "program"} · {row.endAction === "clear" ? "clears at end" : "holds at end"}

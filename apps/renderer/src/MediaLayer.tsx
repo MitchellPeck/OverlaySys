@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import type { ChannelMedia, MediaStatus } from "@overlaysys/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChannelMedia, MediaStatus, MediaTransition } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { defaultServerUrl } from "./wsClient";
 import {
@@ -10,10 +10,21 @@ import {
   resolveMediaUrl,
   type AppliedSeek,
 } from "./mediaSync";
+import {
+  endFadeStartsAt,
+  nextLayers,
+  rampGain,
+  shouldAnimateIn,
+  transitionEasing,
+  transitionKeyframes,
+  type MediaLayerEntry,
+  type TransitionDirection,
+} from "./mediaTransition";
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
 const TICK_MS = 250;
+const RAMP_STEP_MS = 16;
 
 type Props = {
   media: ChannelMedia | null;
@@ -24,20 +35,51 @@ type Props = {
   matte: boolean;
   scale: number;
   send: (msg: ClientMessage) => void;
+  /** The last media_clear asked for a hard cut (skip the Out transition). */
+  clearCut: boolean;
 };
 
 /**
- * Full-frame video slot beneath the template stage. Keyed by takenAt by the
- * parent, so a new take is a fresh element (hard cut) and this component
- * only handles one take's lifetime.
+ * Full-frame video slot beneath the template stage. Each take is its own
+ * keyed element; an outgoing take stays mounted while its Out transition
+ * plays, so a clear fades and a new take crossfades over the old one.
  */
 export function MediaLayer(props: Props) {
-  if (!props.media) return null;
-  return <MediaVideo key={props.media.takenAt} {...props} media={props.media} />;
+  const [layers, setLayers] = useState<MediaLayerEntry[]>([]);
+  const { media, clearCut } = props;
+
+  useEffect(() => {
+    setLayers((prev) => nextLayers(prev, media, clearCut));
+  }, [media, clearCut]);
+
+  const remove = useCallback((takenAt: number) => {
+    setLayers((prev) => prev.filter((l) => !(l.leaving && l.media.takenAt === takenAt)));
+  }, []);
+
+  return (
+    <>
+      {layers.map((l) => (
+        <MediaVideo
+          key={l.media.takenAt}
+          {...props}
+          media={l.media}
+          leaving={l.leaving}
+          onGone={remove}
+        />
+      ))}
+    </>
+  );
 }
 
-function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { media: ChannelMedia }) {
+type VideoProps = Omit<Props, "media" | "clearCut"> & {
+  media: ChannelMedia;
+  leaving: MediaLayerEntry["leaving"];
+  onGone: (takenAt: number) => void;
+};
+
+function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onGone }: VideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const animRef = useRef<HTMLDivElement | null>(null);
   const appliedRef = useRef<AppliedSeek>(initialMountPlan(media).applied);
   const warningRef = useRef<string | undefined>(undefined);
   const mediaRef = useRef(media);
@@ -45,9 +87,78 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
   const unmountedRef = useRef(false);
   const sinkReadyRef = useRef(false);
   const takenAt = media.takenAt;
+  const animateIn = useRef(shouldAnimateIn(media)).current;
+  // Transition gain multiplies the row volume; 0 until the In transition runs.
+  const gainRef = useRef(animateIn ? 0 : 1);
+  const leavingRef = useRef(false);
+  // Out transition started early so it lands on the last frame (endAction clear).
+  const endFadeRef = useRef<Promise<void> | null>(null);
+  const stopTransitionRef = useRef<() => void>(() => {});
+
+  function applyVolume() {
+    const v = videoRef.current;
+    if (v) v.volume = isMirror ? 0 : mediaRef.current.volume * gainRef.current;
+  }
+
+  /**
+   * Animate the picture and ramp the audio together. Cancels any transition
+   * already running (e.g. an In interrupted by a quick clear) and starts
+   * from wherever it left off. Resolves when both finish.
+   */
+  function runTransition(dir: TransitionDirection, t: MediaTransition, durationMs = t.durationMs): Promise<void> {
+    stopTransitionRef.current();
+    const el = animRef.current;
+    const frames = transitionKeyframes(t.style, dir);
+    const target = dir === "in" ? 1 : 0;
+    if (!el || !frames || durationMs <= 0) {
+      gainRef.current = target;
+      applyVolume();
+      if (el) {
+        el.style.opacity = String(target);
+        el.style.transform = "";
+      }
+      return Promise.resolve();
+    }
+    // An In starts off-stage; an Out starts from wherever the picture is now
+    // (implicit first keyframe), so interrupting a half-done In doesn't pop.
+    if (dir === "in") el.style.opacity = "";
+    const anim = el.animate(dir === "in" ? frames : frames.slice(-1), {
+      duration: durationMs,
+      easing: transitionEasing(t.style, dir),
+      fill: "forwards",
+    });
+    const from = gainRef.current;
+    const started = performance.now();
+    let finish: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    // Interval, not rAF: audio must keep ramping even when nothing repaints.
+    const ramp = setInterval(() => {
+      const elapsed = performance.now() - started;
+      gainRef.current = rampGain(from, target, elapsed, durationMs);
+      applyVolume();
+      if (elapsed >= durationMs) {
+        clearInterval(ramp);
+        finish();
+      }
+    }, RAMP_STEP_MS);
+    stopTransitionRef.current = () => {
+      clearInterval(ramp);
+      // Freeze the current pose into inline style before dropping the animation.
+      try {
+        anim.commitStyles();
+      } catch {
+        // commitStyles throws if the element isn't rendered; nothing to keep then.
+      }
+      anim.cancel();
+      finish();
+    };
+    return done;
+  }
 
   function report(status: MediaStatus, error?: string) {
-    if (isMirror) return;
+    if (isMirror || leavingRef.current) return;
     const v = videoRef.current;
     const err = error ?? warningRef.current;
     send({
@@ -107,6 +218,11 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       report(v.paused ? "loading" : "playing");
     };
     const onError = () => report("error", v.error?.message || `media error ${v.error?.code ?? ""}`.trim());
+    // Start the In once there's a frame to show, so a slow load doesn't fade in a black box.
+    const onLoadedData = () => {
+      if (animateIn && !leavingRef.current) void runTransition("in", mediaRef.current.transitionIn);
+    };
+    v.addEventListener("loadeddata", onLoadedData, { once: true });
     v.addEventListener("playing", onPlaying);
     v.addEventListener("pause", onPause);
     v.addEventListener("ended", onEnded);
@@ -118,6 +234,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
 
     const tick = setInterval(() => {
       if (!v.paused && !v.ended) report("playing");
+      checkEndFade(v);
     }, TICK_MS);
 
     // Route audio before the first play so the aux port gets the first frame of sound.
@@ -147,6 +264,8 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
       disposed = true;
       unmountedRef.current = true;
       clearInterval(tick);
+      stopTransitionRef.current();
+      v.removeEventListener("loadeddata", onLoadedData);
       v.removeEventListener("playing", onPlaying);
       v.removeEventListener("pause", onPause);
       v.removeEventListener("ended", onEnded);
@@ -162,11 +281,65 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Begin the Out early so it finishes on the last frame. The tick is coarse
+   * (250 ms), so fade over whatever time is actually left. A pause or a seek
+   * back before the end cancels it.
+   */
+  function checkEndFade(v: HTMLVideoElement) {
+    if (leavingRef.current) return;
+    const m = mediaRef.current;
+    const startAt = endFadeStartsAt(m, v.duration);
+    if (startAt === null) return;
+    if (endFadeRef.current) {
+      if (v.paused && !v.ended) cancelEndFade();
+      else if (v.currentTime < startAt - TICK_MS / 1000) cancelEndFade();
+      return;
+    }
+    if (v.paused || v.ended || m.paused) return;
+    if (v.currentTime < startAt - TICK_MS / 1000) return;
+    const remainingMs = ((v.duration - v.currentTime) / (v.playbackRate || 1)) * 1000;
+    endFadeRef.current = runTransition("out", m.transitionOut, Math.max(0, remainingMs));
+  }
+
+  function cancelEndFade() {
+    endFadeRef.current = null;
+    stopTransitionRef.current();
+    gainRef.current = 1;
+    applyVolume();
+    if (animRef.current) {
+      animRef.current.style.opacity = "";
+      animRef.current.style.transform = "";
+    }
+  }
+
+  // On the way out: stop reporting, play the Out (or finish the end fade
+  // already running), then ask the parent to unmount.
+  useEffect(() => {
+    if (!leaving || leavingRef.current) return;
+    leavingRef.current = true;
+    let cancelled = false;
+    const out = leaving.cut
+      ? Promise.resolve()
+      : (endFadeRef.current ?? runTransition("out", mediaRef.current.transitionOut));
+    if (leaving.cut) {
+      stopTransitionRef.current();
+      videoRef.current?.pause();
+    }
+    void out.then(() => {
+      if (!cancelled) onGone(takenAt);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaving]);
+
   // Converge on declarative transport state.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    v.volume = isMirror ? 0 : media.volume;
+    applyVolume();
     const seekTo = pendingSeek(media, appliedRef.current);
     if (seekTo !== null) {
       appliedRef.current = { takenAt: media.takenAt, seq: media.seek!.seq };
@@ -195,13 +368,18 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send }: Props & { 
         pointerEvents: "none",
       }}
     >
-      <video
-        ref={videoRef}
-        playsInline
-        preload="auto"
-        disablePictureInPicture
-        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
-      />
+      <div
+        ref={animRef}
+        style={{ width: "100%", height: "100%", opacity: animateIn ? 0 : 1, willChange: "opacity, transform" }}
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          preload="auto"
+          disablePictureInPicture
+          style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+        />
+      </div>
     </div>
   );
 }

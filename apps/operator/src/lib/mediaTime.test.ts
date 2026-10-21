@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelMedia } from "@overlaysys/core";
-import { displayStatus, displayTime, NO_RENDERER_MS } from "./mediaTime";
+import { displayStatus, displayTime, NO_RENDERER_MS, remainingTone } from "./mediaTime";
 
 const m = (over: Partial<ChannelMedia["playback"]> = {}, rest: Partial<ChannelMedia> = {}): ChannelMedia => ({
-  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", takenAt: 1, paused: false,
+  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
   playback: { status: "playing", currentTime: 10, duration: 300, updatedAt: 999_999, ...over },
   ...rest,
 });
@@ -44,5 +44,20 @@ describe("displayStatus", () => {
 
   it("keeps error visible", () => {
     expect(displayStatus(m({ status: "error", error: "x" }), 0, 99_999)).toBe("error");
+  });
+});
+
+describe("remainingTone", () => {
+  it("warns in the last 15 s and goes urgent in the last 5 s", () => {
+    expect(remainingTone(120, 300)).toBe("normal");
+    expect(remainingTone(15.1, 300)).toBe("normal");
+    expect(remainingTone(15, 300)).toBe("warn");
+    expect(remainingTone(5.1, 300)).toBe("warn");
+    expect(remainingTone(5, 300)).toBe("urgent");
+    expect(remainingTone(0.2, 300)).toBe("urgent");
+  });
+
+  it("stays normal while the duration is unknown", () => {
+    expect(remainingTone(0, 0)).toBe("normal");
   });
 });

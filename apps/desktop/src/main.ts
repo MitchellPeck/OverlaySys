@@ -656,6 +656,9 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
       nodeIntegration: false,
       // Media rows play with sound; Chromium blocks unmuted autoplay by default.
       autoplayPolicy: "no-user-gesture-required",
+      // Outputs are often covered by the operator window; occluded windows
+      // would otherwise throttle timers and stall video fades / audio ramps.
+      backgroundThrottling: false,
     },
   });
 

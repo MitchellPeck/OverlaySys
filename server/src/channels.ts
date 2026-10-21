@@ -3,10 +3,12 @@ import type {
   MediaEndAction,
   MediaPlayback,
   MediaStatus,
+  MediaTransition,
   QueuedSong,
   SongSessionSummary,
   SubTakeContext,
 } from "@overlaysys/core";
+import { DEFAULT_MEDIA_TRANSITION } from "@overlaysys/core";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
 
@@ -349,6 +351,8 @@ export type MediaTakeArgs = {
   label?: string;
   volume: number;
   endAction: MediaEndAction;
+  transitionIn?: MediaTransition;
+  transitionOut?: MediaTransition;
 };
 
 export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()): void {
@@ -363,17 +367,22 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     ...(args.label !== undefined ? { label: args.label } : {}),
     volume: args.volume,
     endAction: args.endAction,
+    transitionIn: args.transitionIn ?? DEFAULT_MEDIA_TRANSITION,
+    transitionOut: args.transitionOut ?? DEFAULT_MEDIA_TRANSITION,
     takenAt,
     paused: false,
     playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: now },
   };
+  delete s.mediaClearCut;
   emit(channel);
 }
 
-export function mediaClear(channel: string): void {
+export function mediaClear(channel: string, opts: { cut?: boolean } = {}): void {
   const s = getOrInit(channel);
   if (!s.media) return;
   s.media = null;
+  if (opts.cut) s.mediaClearCut = true;
+  else delete s.mediaClearCut;
   emit(channel);
 }
 
