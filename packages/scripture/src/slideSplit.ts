@@ -2,10 +2,19 @@ import type { ScriptureVerse } from "./types";
 
 export interface SlideBudget {
   maxChars: number;
-  maxLines: number;
+  /** Optional cap on entries (verses or verse portions) per slide. Off when omitted. */
+  maxLines?: number;
 }
 
-export const DEFAULT_SLIDE_BUDGET: SlideBudget = { maxChars: 240, maxLines: 4 };
+export const DEFAULT_SLIDE_BUDGET: SlideBudget = { maxChars: 240 };
+
+export type SlideSizePreset = "short" | "medium" | "long";
+
+export const SLIDE_SIZE_PRESETS: Record<SlideSizePreset, SlideBudget> = {
+  short: { maxChars: 120 },
+  medium: DEFAULT_SLIDE_BUDGET,
+  long: { maxChars: 360 },
+};
 
 export interface AutoSlide {
   id: string;
@@ -13,12 +22,35 @@ export interface AutoSlide {
 }
 
 /**
- * Greedy fill: append verses to the current slide until adding one would
- * exceed either budget. A single verse longer than the budget gets its own
- * slide (verse boundaries are preserved in v1 — never split mid-verse).
- *
- * Each verse counts as one line for line-budget purposes. Char count is
- * the sum of verse texts on the slide (separators ignored).
+ * Break text into pieces of at most maxChars. Prefer cutting after clause
+ * punctuation in the second half of the window (so fragments aren't tiny),
+ * else at the last space. A run with no spaces is left whole.
+ */
+export function splitLongText(text: string, maxChars: number): string[] {
+  const pieces: string[] = [];
+  let rest = text.trim();
+  while (rest.length > maxChars) {
+    const window = rest.slice(0, maxChars + 1);
+    let cut = -1;
+    const punct = /[.;:,?!]["'”’)]?(?=\s)/g;
+    let m: RegExpExecArray | null;
+    while ((m = punct.exec(window))) {
+      const end = m.index + m[0].length;
+      if (end <= maxChars && end >= maxChars / 2) cut = end;
+    }
+    if (cut < 0) cut = window.lastIndexOf(" ");
+    if (cut <= 0) break;
+    pieces.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) pieces.push(rest);
+  return pieces;
+}
+
+/**
+ * Greedy fill by characters, whole verses preferred. A verse longer than
+ * maxChars is split with splitLongText; consecutive fragments of one verse
+ * always land on separate slides.
  */
 export function splitIntoSlides(
   verses: ScriptureVerse[],
@@ -39,18 +71,20 @@ export function splitIntoSlides(
   };
 
   for (const v of verses) {
-    const wouldExceedChars = currentChars + v.text.length > budget.maxChars;
-    const wouldExceedLines = current.length + 1 > budget.maxLines;
-    if (current.length > 0 && (wouldExceedChars || wouldExceedLines)) {
-      flush();
-    }
-    current.push(v);
-    currentChars += v.text.length;
+    const pieces = v.text.length > budget.maxChars ? splitLongText(v.text, budget.maxChars) : [v.text];
+    pieces.forEach((text, pieceIdx) => {
+      const wouldExceedChars = currentChars + text.length > budget.maxChars;
+      const wouldExceedLines = budget.maxLines !== undefined && current.length + 1 > budget.maxLines;
+      if (current.length > 0 && (pieceIdx > 0 || wouldExceedChars || wouldExceedLines)) {
+        flush();
+      }
+      current.push({ ...v, text });
+      currentChars += text.length;
+    });
   }
   flush();
   return slides;
 }
-
 /** One whitespace-delimited word of a passage, tagged with its source verse. */
 export interface PassageWord {
   verseIdx: number;

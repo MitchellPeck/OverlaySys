@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitIntoSlides, DEFAULT_SLIDE_BUDGET, tokenize, breaksToSlides, slidesToBreaks } from "./slideSplit";
+import { splitIntoSlides, DEFAULT_SLIDE_BUDGET, tokenize, breaksToSlides, slidesToBreaks, splitLongText, SLIDE_SIZE_PRESETS } from "./slideSplit";
 import type { ScriptureVerse } from "./types";
 
 const V = (book: string, chapter: number, verse: number, text: string): ScriptureVerse =>
@@ -146,5 +146,70 @@ describe("word/break model", () => {
     const back = breaksToSlides(m.verses, m.words, m.breaks);
     expect(back.every((s) => s.verses.length > 0)).toBe(true);
     expect(back.flatMap((s) => s.verses.map((v) => v.text))).toEqual(["a b", "c"]);
+  });
+});
+
+describe("splitLongText", () => {
+  it("cuts at the last clause punctuation within the budget", () => {
+    const text = "aaaa aaaa aaaa, bbbb bbbb; cccc cccc cccc cccc";
+    expect(splitLongText(text, 26)).toEqual(["aaaa aaaa aaaa, bbbb bbbb;", "cccc cccc cccc cccc"]);
+  });
+
+  it("falls back to the last space when there is no usable punctuation", () => {
+    expect(splitLongText("aaa bbb ccc ddd", 8)).toEqual(["aaa bbb", "ccc ddd"]);
+  });
+
+  it("ignores punctuation in the first half of the window (no tiny fragments)", () => {
+    // comma at index 1 is < maxChars/2, so cut at the last space instead
+    expect(splitLongText("a, bbbbbb cccccc dddddd", 16)).toEqual(["a, bbbbbb cccccc", "dddddd"]);
+  });
+
+  it("keeps a word with no spaces whole", () => {
+    const long = "x".repeat(50);
+    expect(splitLongText(long, 10)).toEqual([long]);
+  });
+
+  it("returns the text unchanged when it fits", () => {
+    expect(splitLongText("short", 100)).toEqual(["short"]);
+  });
+});
+
+describe("splitIntoSlides (mid-verse)", () => {
+  it("splits an overlong verse across slides", () => {
+    const text = "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish.";
+    const slides = splitIntoSlides([V("JHN", 3, 16, text)], { maxChars: 60 });
+    expect(slides.length).toBeGreaterThan(1);
+    for (const s of slides) {
+      expect(s.verses).toHaveLength(1);
+      expect(s.verses[0]!.verse).toBe(16);
+      expect(s.verses[0]!.text.length).toBeLessThanOrEqual(60);
+    }
+    expect(slides.map((s) => s.verses[0]!.text).join(" ")).toBe(text);
+  });
+
+  it("never puts two fragments of the same verse on one slide", () => {
+    // early comma forces a space-cut; remaining fragments are short enough to pack together
+    const text = "a, " + "bbbbbbbbb ".repeat(4) + "c, d";
+    const slides = splitIntoSlides([V("JHN", 3, 16, text)], { maxChars: 20 });
+    for (const s of slides) {
+      const keys = s.verses.map((v) => `${v.chapter}:${v.verse}`);
+      expect(new Set(keys).size).toBe(keys.length);
+    }
+  });
+
+  it("has no verse-count limit when maxLines is omitted", () => {
+    const verses = Array.from({ length: 8 }, (_, i) => V("JHN", 3, 16 + i, "a"));
+    expect(splitIntoSlides(verses, { maxChars: 1000 })).toHaveLength(1);
+  });
+
+  it("presets produce more slides for smaller sizes", () => {
+    // 63 chars each → short: 1/slide (8), medium: 3/slide (3), long: 5/slide (2)
+    const verses = Array.from({ length: 8 }, (_, i) =>
+      V("JHN", 3, 16 + i, "For God so loved the world, that he gave his only begotten Son."),
+    );
+    const n = (p: keyof typeof SLIDE_SIZE_PRESETS) => splitIntoSlides(verses, SLIDE_SIZE_PRESETS[p]).length;
+    expect(n("short")).toBeGreaterThan(n("medium"));
+    expect(n("medium")).toBeGreaterThan(n("long"));
+    expect(SLIDE_SIZE_PRESETS.medium).toEqual(DEFAULT_SLIDE_BUDGET);
   });
 });
