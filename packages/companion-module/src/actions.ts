@@ -55,7 +55,16 @@ export type ActionId =
   | "song_end"
   | "song_set_trust"
   | "stt_start"
-  | "stt_stop";
+  | "stt_stop"
+  | "notes_next_point"
+  | "notes_prev_point"
+  | "notes_goto_point"
+  | "notes_scroll_down"
+  | "notes_scroll_up"
+  | "notes_top"
+  | "notes_select"
+  | "stage_message_send"
+  | "stage_message_clear";
 
 export type ActionOptions = Record<
   string,
@@ -580,6 +589,45 @@ export function dispatchAction(
     case "stt_stop":
       messages.push({ type: "stt_spawner_stop" });
       break;
+    case "notes_next_point":
+      messages.push({ type: "notes_point", delta: 1 });
+      break;
+    case "notes_prev_point":
+      messages.push({ type: "notes_point", delta: -1 });
+      break;
+    case "notes_goto_point":
+      messages.push({
+        type: "notes_point",
+        index: Math.max(0, Math.floor(num("index", 1)) - 1),
+      });
+      break;
+    case "notes_scroll_down":
+      messages.push({ type: "notes_scroll", delta: num("amount", 0.33) });
+      break;
+    case "notes_scroll_up":
+      messages.push({ type: "notes_scroll", delta: -num("amount", 0.33) });
+      break;
+    case "notes_top":
+      messages.push({ type: "notes_reset" });
+      break;
+    case "notes_select": {
+      if (!state.loadedShowId) break;
+      const notesId = str("notesId");
+      messages.push({
+        type: "notes_select",
+        showId: state.loadedShowId,
+        notesId: notesId === "__none__" || notesId === "" ? null : notesId,
+      });
+      break;
+    }
+    case "stage_message_send": {
+      const text = str("text").trim();
+      if (text) messages.push({ type: "stage_message", text });
+      break;
+    }
+    case "stage_message_clear":
+      messages.push({ type: "stage_message_clear" });
+      break;
   }
 
   return { messages, localEvents };
@@ -764,6 +812,48 @@ const subTakeInput: CompanionInputFieldDropdown = {
     { id: "outro", label: "Outro" },
   ],
 };
+
+const notesAmountInput: CompanionInputFieldNumber = {
+  id: "amount",
+  type: "number",
+  label: "Amount (viewport fraction)",
+  default: 0.33,
+  min: 0.05,
+  max: 2,
+};
+
+const notesPointInput: CompanionInputFieldNumber = {
+  id: "index",
+  type: "number",
+  label: "Point (1-based)",
+  default: 1,
+  min: 1,
+  max: 999,
+};
+
+const stageTextInput: CompanionInputFieldTextInput = {
+  id: "text",
+  type: "textinput",
+  label: "Message",
+  default: "",
+};
+
+function notesDropdown(state: CompanionState): CompanionInputFieldDropdown {
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  const choices = [
+    ...(show?.sermonNotes ?? []).map((n) => ({ id: n.id, label: n.title })),
+    { id: "__none__", label: "— none —" },
+  ];
+  return {
+    id: "notesId",
+    type: "dropdown",
+    label: "Notes",
+    default: choices[0]!.id,
+    choices,
+  };
+}
 
 export type ActionRunner = (id: ActionId, options: ActionOptions) => void;
 
@@ -1073,6 +1163,51 @@ export function actionDefinitions(
       name: "STT: stop spawner",
       options: [],
       callback: wrap("stt_stop"),
+    },
+    notes_next_point: {
+      name: "Notes: next point",
+      options: [],
+      callback: wrap("notes_next_point"),
+    },
+    notes_prev_point: {
+      name: "Notes: previous point",
+      options: [],
+      callback: wrap("notes_prev_point"),
+    },
+    notes_goto_point: {
+      name: "Notes: go to point",
+      options: [notesPointInput],
+      callback: wrap("notes_goto_point"),
+    },
+    notes_scroll_down: {
+      name: "Notes: scroll down",
+      options: [notesAmountInput],
+      callback: wrap("notes_scroll_down"),
+    },
+    notes_scroll_up: {
+      name: "Notes: scroll up",
+      options: [notesAmountInput],
+      callback: wrap("notes_scroll_up"),
+    },
+    notes_top: {
+      name: "Notes: scroll to top",
+      options: [],
+      callback: wrap("notes_top"),
+    },
+    notes_select: {
+      name: "Notes: select set (loaded show)",
+      options: [notesDropdown(state)],
+      callback: wrap("notes_select"),
+    },
+    stage_message_send: {
+      name: "Stage: send message",
+      options: [stageTextInput],
+      callback: wrap("stage_message_send"),
+    },
+    stage_message_clear: {
+      name: "Stage: clear message",
+      options: [],
+      callback: wrap("stage_message_clear"),
     },
   };
 }

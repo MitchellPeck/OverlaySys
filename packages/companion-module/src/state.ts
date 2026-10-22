@@ -22,7 +22,12 @@ export function apply(
     case "local_reconnecting":
       return { ...state, connected: false, connectionState: "reconnecting" };
     case "local_disconnected":
-      return { ...state, connected: false, connectionState: "disconnected" };
+      return {
+        ...state,
+        connected: false,
+        connectionState: "disconnected",
+        stage: null,
+      };
 
     case "state": {
       const next = new Map(state.channelStates);
@@ -105,6 +110,18 @@ export function apply(
       return { ...state, sttSpawner: evt.status };
     case "stt_listener_state":
       return { ...state, sttListeners: evt.listeners };
+
+    case "stage_state":
+      return {
+        ...state,
+        stage: {
+          state: evt.state,
+          pointCount: evt.pointCount,
+          title: evt.title,
+          pointHeading: evt.pointHeading,
+          nextHeading: evt.nextHeading,
+        },
+      };
 
     case "error":
       return { ...state, lastError: `${evt.code}: ${evt.message}` };

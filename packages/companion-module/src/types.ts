@@ -8,6 +8,7 @@ import type {
   HotcardMeta,
   TemplateMeta,
   SttSpawnerStatus,
+  StageState,
 } from "@overlaysys/core";
 
 export interface ShowMeta {
@@ -43,6 +44,13 @@ export interface CompanionState {
   sttSpawner: SttSpawnerStatus | null;
   sttListeners: SttListener[];
   lastError: string | null;
+  stage: {
+    state: StageState;
+    pointCount: number;
+    title: string | null;
+    pointHeading: string | null;
+    nextHeading: string | null;
+  } | null;
 }
 
 export function initialState(): CompanionState {
@@ -63,5 +71,6 @@ export function initialState(): CompanionState {
     sttSpawner: null,
     sttListeners: [],
     lastError: null,
+    stage: null,
   };
 }

@@ -117,6 +117,12 @@ export function variableDefinitions(
     { variableId: "cursor_row_name", name: "Cursor row display label" },
     { variableId: "cursor_row_kind", name: "Cursor row kind (song/graphic/video/scripture)" },
     { variableId: "cursor_row_is_song", name: "Cursor row is a song (yes/no)" },
+    { variableId: "notes_title", name: "Pastor notes title" },
+    { variableId: "notes_point", name: "Pastor notes current point (1-based)" },
+    { variableId: "notes_point_count", name: "Pastor notes point count" },
+    { variableId: "notes_point_heading", name: "Pastor notes current point heading" },
+    { variableId: "notes_next_heading", name: "Pastor notes next point heading" },
+    { variableId: "stage_message", name: "Stage message currently showing" },
   );
 
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
@@ -238,6 +244,15 @@ export function projectVariables(
   out.cursor_row_name = cursorRow ? rowDisplayLabel(state, cursorRow) : "";
   out.cursor_row_kind = cursorRow?.kind ?? "";
   out.cursor_row_is_song = cursorRow ? (cursorRow.kind === "song" ? "yes" : "no") : "";
+
+  const stage = state.stage;
+  const hasNotes = !!stage && stage.pointCount > 0;
+  out.notes_title = hasNotes ? stage.title ?? "" : "";
+  out.notes_point = hasNotes ? String(stage.state.pointIdx + 1) : "";
+  out.notes_point_count = stage ? String(stage.pointCount) : "0";
+  out.notes_point_heading = hasNotes ? stage.pointHeading ?? "" : "";
+  out.notes_next_heading = hasNotes ? stage.nextHeading ?? "" : "";
+  out.stage_message = stage?.state.message?.text ?? "";
 
   const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
   const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;

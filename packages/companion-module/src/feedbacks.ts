@@ -30,7 +30,11 @@ export type FeedbackId =
   | "row_at_index_is_cursor"
   | "row_at_index_is_active"
   | "cursor_row_kind_is"
-  | "row_at_index_kind_is";
+  | "row_at_index_kind_is"
+  | "notes_active"
+  | "notes_at_first"
+  | "notes_at_last"
+  | "stage_message_showing";
 
 export type FeedbackOptions = Record<
   string,
@@ -56,6 +60,30 @@ export interface FeedbackDefinition {
 }
 
 export const feedbackDefinitions: FeedbackDefinition[] = [
+  {
+    id: "notes_active",
+    name: "Pastor notes active",
+    description: "True when pastor notes with at least one point are selected.",
+    options: [],
+  },
+  {
+    id: "notes_at_first",
+    name: "Pastor notes at first point",
+    description: "True when notes are active and on the first point.",
+    options: [],
+  },
+  {
+    id: "notes_at_last",
+    name: "Pastor notes at last point",
+    description: "True when notes are active and on the last point.",
+    options: [],
+  },
+  {
+    id: "stage_message_showing",
+    name: "Stage message showing",
+    description: "True while a message is shown on the stage display.",
+    options: [],
+  },
   {
     id: "channel_is_live",
     name: "Channel is live",
@@ -332,6 +360,18 @@ export function feedbackPredicate(
   options: FeedbackOptions,
 ): boolean {
   switch (id) {
+    case "notes_active":
+      return (state.stage?.pointCount ?? 0) > 0;
+    case "notes_at_first":
+      return !!state.stage && state.stage.pointCount > 0 && state.stage.state.pointIdx === 0;
+    case "notes_at_last":
+      return (
+        !!state.stage &&
+        state.stage.pointCount > 0 &&
+        state.stage.state.pointIdx >= state.stage.pointCount - 1
+      );
+    case "stage_message_showing":
+      return state.stage?.state.message != null;
     case "scripture_active":
       return Boolean(state.channelStates.get(String(options.channel ?? ""))?.scriptureSession);
     case "scripture_queued":

@@ -349,6 +349,79 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     feedbacks: [],
   };
 
+  type NotesFeedback = { feedbackId: string; options: Record<string, never>; style: { bgcolor: number; color: number } };
+  const greyed = { bgcolor: 0x333333, color: 0x777777 };
+  const notesBtn = (
+    key: string,
+    name: string,
+    text: string,
+    actionId: string,
+    feedbacks: NotesFeedback[] = [],
+  ) => {
+    presets[key] = {
+      type: "button",
+      category: "Pastor Notes",
+      name,
+      style: { text, size: "14", color: white, bgcolor: dark },
+      steps: [{ down: [{ actionId, options: {} }], up: [] }],
+      feedbacks,
+    };
+  };
+  notesBtn("notes_prev", "Notes: previous point", "◀ PREV", "notes_prev_point", [
+    { feedbackId: "notes_at_first", options: {}, style: greyed },
+  ]);
+  notesBtn(
+    "notes_next",
+    "Notes: next point",
+    "NEXT ▶\\n$(overlaysys:notes_point)/$(overlaysys:notes_point_count)",
+    "notes_next_point",
+    [{ feedbackId: "notes_at_last", options: {}, style: greyed }],
+  );
+  notesBtn("notes_scroll_up", "Notes: scroll up", "▲", "notes_scroll_up");
+  notesBtn("notes_scroll_down", "Notes: scroll down", "▼", "notes_scroll_down");
+  notesBtn("notes_top", "Notes: top", "TOP", "notes_top");
+  presets["notes_status"] = {
+    type: "button",
+    category: "Pastor Notes",
+    name: "Notes: current point heading",
+    style: {
+      text: "$(overlaysys:notes_point_heading)",
+      size: "14",
+      color: white,
+      bgcolor: dark,
+    },
+    steps: [{ down: [], up: [] }],
+    feedbacks: [],
+  };
+
+  presets["stage_msg_wrap"] = {
+    type: "button",
+    category: "Stage",
+    name: "Stage message: Wrap up",
+    style: { text: "WRAP UP", size: "14", color: white, bgcolor: dark },
+    steps: [
+      {
+        down: [{ actionId: "stage_message_send", options: { text: "Wrap up" } }],
+        up: [],
+      },
+    ],
+    feedbacks: [],
+  };
+  presets["stage_msg_clear"] = {
+    type: "button",
+    category: "Stage",
+    name: "Stage message: clear",
+    style: { text: "CLEAR MSG", size: "14", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "stage_message_clear", options: {} }], up: [] }],
+    feedbacks: [
+      {
+        feedbackId: "stage_message_showing",
+        options: {},
+        style: { bgcolor: 0xcc0000 },
+      },
+    ],
+  };
+
   return presets;
 }
 
