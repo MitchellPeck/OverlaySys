@@ -66,10 +66,11 @@ ChannelConfig {
 }
 ```
 
-`ProjectChannelOverride` gains optional `kind`, `follows`, `layoutId`,
-resolved in `channelResolution.ts` like the existing fields. Missing
-`kind` parses as `"graphics"`, so existing JSON and cloud rows need no
-migration. Graphics-only fields (`renderMode`, `mirrorOf`) are ignored
+Missing `kind` parses as `"graphics"`, so existing JSON and cloud rows
+need no migration (`channel_configs` stores a JSON payload).
+`ProjectChannelOverride` is **not** extended: overrides are applied only
+in the operator UI today — the server and renderer read base configs —
+so a per-project stage override would have no effect on output. Graphics-only fields (`renderMode`, `mirrorOf`) are ignored
 for stage channels. Display binding and auto-open keep using the
 per-machine `ChannelWindowPrefs`, unchanged.
 
@@ -140,6 +141,28 @@ blocks. Each `Point { heading: string; markdown: string }`, where
 `heading` is the heading text or the block's first line (truncated).
 Empty/whitespace bodies yield `[]`.
 
+### Live rundown row (`ChannelState.liveRow`)
+
+The server has no notion of a loaded show or rundown cursor — those are
+client-local (operator store, Companion state). So each channel records
+the last rundown row taken to it:
+
+```ts
+RowSource { showId: string; rowId: string }
+ChannelState { ...existing, liveRow?: RowSource }
+```
+
+- `take` / `cue` messages gain optional `source: RowSource`;
+  `media_take` gains optional `showId` (it already has `rowId`).
+- Server-originated takes set it: `song_take`, `take_song_sub` (intro,
+  outro, lyrics), `song_take_pvw_to_pgm`, scripture intro and slide.
+- `liveRow` changes **only** when a take carries a source. Hotcards and
+  ad-hoc takes leave it alone, and `clear` does not reset it, so a
+  pastor's cue stays up while a lower third flashes by.
+- `take_pvw_to_pgm` carries the preview's `liveRow` to the destination.
+- Operator (`graphicRowMessage`, `videoRowTakeMessage`, song outro) and
+  Companion row takes send the source.
+
 ### Runtime `StageState` (server memory only)
 
 ```ts
@@ -160,7 +183,7 @@ set is already active. Loading a different show clears it.
 ### `StageFeed` (`server/src/stageFeed.ts`)
 
 `buildStageFeed(inputs): StageFeed` is a pure function. Inputs: the
-followed channel's `ChannelState`, the loaded show + rundown cursor,
+followed channel's `ChannelState`, the show named by its `liveRow`,
 song/scripture sessions and `Song` documents, all live channel states,
 and `StageState`.
 
@@ -186,9 +209,11 @@ extracted from time fields on live graphics using `timeField.ts`.
 
 ### Transport (`ws-protocol`, `server/src/ws.ts`)
 
-- Stage windows use the existing `subscribe { channel }`. When the
-  channel's `kind` is `stage`, the server sends
-  `stage_feed { channel, feed }` instead of `state`.
+- Stage windows use the existing `subscribe { channel }`. Every
+  subscription is also registered with the stage feed hub; while the
+  channel's `kind` is `stage` the hub sends `stage_feed { channel, feed }`
+  alongside the (empty) `state`. Checking kind at build time means
+  switching a channel's kind takes effect without resubscribing.
 - A feed is rebuilt and pushed on any input change, debounced to ~50 ms
   per channel, and immediately on subscribe.
 - Clock, timers and video remaining are ticked locally by the renderer
@@ -319,7 +344,8 @@ rendering verified manually in the running app.
 - `buildStageFeed`: lyric next across section boundaries and at
   arrangement end, scripture next/last, next row + cue, timer
   extraction, video, missing `follows` channel.
-- `channelResolution`: stage overrides.
+- `liveRow`: set by sourced takes, kept by unsourced takes and clear,
+  carried by `take_pvw_to_pgm`.
 - Server WS: `notes_*` and `stage_message*` handlers; stage
   subscribers receive `stage_feed`, graphics subscribers unchanged;
   `stage_state` broadcast; layout save re-pushes.
@@ -334,10 +360,11 @@ rendering verified manually in the running app.
 Each phase gets its own implementation plan and ships independently.
 
 1. **Stage channel foundation** — `kind`/`follows`/`layoutId`,
-   `StageFeed`, `stage_feed` transport, `StageRenderer`, widgets
-   `currentSlide`, `nextSlide`, `rowTitle`, `rowCue`, `clock`, `timer`,
-   `videoRemaining`, `text`; built-in Speaker layout (notes area
-   omitted); channel settings UI. Layouts stored locally.
+   `liveRow` plumbing, `StageFeed`, `stage_feed` transport, `StageRenderer`,
+   widgets `currentSlide`, `nextSlide`, `rowTitle`, `rowCue`, `clock`,
+   `timer`, `videoRemaining`, `text`; built-in Speaker layout (notes area
+   omitted); channel settings UI. Layouts are built-in only — on-disk
+   `data/stage-layouts/` storage arrives with the designer in phase 5.
 2. **Sermon notes** — schema, show editor tab, import, row linking,
    `StageState` + `notesNav`, `notes_*` messages, `sermonNotes` widget,
    Speaker layout gains notes, operator Stage panel (notes part).
