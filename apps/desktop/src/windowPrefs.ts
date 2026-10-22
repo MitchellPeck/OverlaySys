@@ -174,21 +174,23 @@ export function updateDisplayCache(
 }
 
 /**
- * Whether a channel should open at launch. A channel pinned to a display that
- * isn't connected stays closed rather than piling onto the primary screen;
- * channels that never chose a display still open on the primary.
+ * Whether a channel should open at launch. Only the exact saved display (by
+ * id) counts: a same-name or same-resolution screen is often the operator's
+ * main monitor (same model as the TVs), and opening there piles every channel
+ * onto it. Channels that never chose a display still open on the primary.
+ * Manual opens still use the looser label/bounds matching.
  */
 export function shouldAutoOpen(
   prefs: Pick<ChannelWindowPrefs, "autoOpen" | "displayId">,
   matchedBy: MatchedBy,
 ): boolean {
   if (!prefs.autoOpen) return false;
-  return prefs.displayId === undefined || matchedBy !== "fallback";
+  return prefs.displayId === undefined || matchedBy === "id";
 }
 
 /**
- * After a display is connected: the auto-open channels that can now find their
- * saved display and aren't already open.
+ * After a display is connected: the auto-open channels whose exact saved
+ * display (by id) is now connected and that aren't already open.
  */
 export function channelsToOpenOnDisplayChange(
   channels: Record<string, Pick<ChannelWindowPrefs, "autoOpen" | "displayId">>,
@@ -197,6 +199,6 @@ export function channelsToOpenOnDisplayChange(
 ): string[] {
   return Object.entries(channels)
     .filter(([id, prefs]) => prefs.autoOpen && prefs.displayId !== undefined && !isOpen(id))
-    .filter(([, prefs]) => resolve(prefs) !== "fallback")
+    .filter(([, prefs]) => resolve(prefs) === "id")
     .map(([id]) => id);
 }

@@ -6,10 +6,14 @@ describe("shouldAutoOpen", () => {
     expect(shouldAutoOpen({ autoOpen: false, displayId: 7 }, "id")).toBe(false);
   });
 
-  it("opens on the saved display when it is connected (any match)", () => {
-    for (const m of ["id", "label", "bounds"] as const) {
-      expect(shouldAutoOpen({ autoOpen: true, displayId: 7 }, m)).toBe(true);
-    }
+  it("opens on the saved display only when that exact display is connected", () => {
+    expect(shouldAutoOpen({ autoOpen: true, displayId: 7 }, "id")).toBe(true);
+  });
+
+  it("a same-name or same-resolution screen doesn't count as the saved display", () => {
+    // e.g. the main monitor is the same model / resolution as the TVs
+    expect(shouldAutoOpen({ autoOpen: true, displayId: 7 }, "label")).toBe(false);
+    expect(shouldAutoOpen({ autoOpen: true, displayId: 7 }, "bounds")).toBe(false);
   });
 
   it("skips a channel whose saved display isn't connected", () => {
@@ -37,6 +41,15 @@ describe("channelsToOpenOnDisplayChange", () => {
       (id) => id === "lobby",
     );
     expect(out).toEqual(["program"]);
+  });
+
+  it("does not open on a hot-plug that only matches by name or resolution", () => {
+    const out = channelsToOpenOnDisplayChange(
+      { a: { autoOpen: true, displayId: 7 }, b: { autoOpen: true, displayId: 8 } },
+      (p) => (p.displayId === 7 ? "label" : "bounds"),
+      () => false,
+    );
+    expect(out).toEqual([]);
   });
 
   it("never opens channels without a saved display on hot-plug", () => {

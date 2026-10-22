@@ -32,6 +32,10 @@ describe("scripture schemas", () => {
     ).toMatchObject({ introTemplateId: "i" });
   });
 
+  it("settings keep a default scripture template", () => {
+    expect(ScriptureSettingsSchema.parse({ defaultTemplateId: "body" })).toEqual({ defaultTemplateId: "body" });
+  });
+
   it("channel state carries scripture session, queue and context", () => {
     const s = ChannelStateSchema.parse({
       channel: "program",

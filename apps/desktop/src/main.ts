@@ -1217,10 +1217,13 @@ async function boot(): Promise<void> {
     const file = loadPrefs(prefsFilePath());
     for (const [channelId, prefs] of Object.entries(file.channels)) {
       if (!prefs.autoOpen) continue;
-      if (shouldAutoOpen(prefs, resolveChannelDisplay(prefs).matchedBy)) {
+      const { matchedBy } = resolveChannelDisplay(prefs);
+      if (shouldAutoOpen(prefs, matchedBy)) {
         openConfiguredChannelWindow(channelId, prefs, {}, false);
       } else {
-        console.info(`[desktop] channel ${channelId}: saved display not connected — not opening`);
+        console.info(
+          `[desktop] channel ${channelId}: saved display ${prefs.displayId} not connected (best match: ${matchedBy}) — not opening`,
+        );
       }
     }
   } catch (err) {

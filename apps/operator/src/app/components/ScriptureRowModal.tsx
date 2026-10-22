@@ -389,6 +389,14 @@ function Step2({
     introFieldLiterals: seedIntro?.introFieldLiterals,
   });
   const settings = useScriptureSettings();
+  // New rows start on the Settings default template (settings load async, so
+  // apply it once they arrive — unless the operator already picked one).
+  const [templatePicked, setTemplatePicked] = useState(false);
+  useEffect(() => {
+    if (seedTemplateId || templatePicked) return;
+    const def = settings?.defaultTemplateId;
+    if (def && templates.some((t) => t.id === def)) setTemplateId(def);
+  }, [seedTemplateId, templatePicked, settings, templates]);
   const defaultName = templates.find((t) => t.id === settings?.introTemplateId)?.name;
 
   /** Switch slide size, re-splitting only if the budget actually changes. Returns false if the operator cancels. */
@@ -421,7 +429,10 @@ function Step2({
       <Field label="Template">
         <Select
           value={templateId}
-          onChange={(e) => setTemplateId(e.target.value)}
+          onChange={(e) => {
+            setTemplatePicked(true);
+            setTemplateId(e.target.value);
+          }}
         >
           {templates.map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
