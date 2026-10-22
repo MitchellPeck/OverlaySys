@@ -23,6 +23,8 @@ import { initApiBible } from "./apiBible/config";
 import { registerApiBibleRoutes } from "./apiBible/routes";
 import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
+import os from "node:os";
+import { lanAddresses } from "./networkInfo";
 import {
   clearCloudTokens,
   getCloudSyncStatus,
@@ -96,6 +98,14 @@ const sttConfig = await loadSttConfig();
 
 app.get("/health", async () => ({ ok: true, time: Date.now() }));
 
+// LAN info for "open on another device" links. boundPort is set once the
+// listener is up (listenWithFallback may pick a port other than 4000).
+let boundPort = PORT;
+app.get("/api/network", async () => ({
+  port: boundPort,
+  addresses: lanAddresses(os.networkInterfaces()),
+}));
+
 await registerAssetRoutes(app);
 await registerImportRoutes(app);
 await registerPublishRoutes(app);
@@ -163,6 +173,7 @@ app.post("/api/cloud/sync", async () => {
 // the resolved port from the magic stdout line below and builds every window
 // URL from it, so a fallback is transparent to the app's own windows.
 const actualPort = await listenWithFallback(app, HOST, PORT);
+boundPort = actualPort;
 // Not awaited: API.Bible lookups must never delay boot. The refresh job
 // starts once the key has been resolved.
 void initApiBible()

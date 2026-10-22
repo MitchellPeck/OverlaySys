@@ -100,8 +100,29 @@ export class WsClient {
   }
 }
 
-export function defaultServerUrl(): string {
-  const override = new URLSearchParams(location.search).get("server");
+export interface ServerUrlLocation {
+  search: string;
+  protocol: string;
+  host: string;
+  hostname: string;
+  pathname: string;
+}
+
+/**
+ * Pick the WS URL: an explicit `?server=` wins; when served by the OverlaySys
+ * server itself (under /renderer) connect back to the same origin so it works
+ * from other LAN devices on whatever port was actually bound; otherwise (Vite
+ * dev) assume the server is on :4000 of the same hostname.
+ */
+export function resolveServerUrl(loc: ServerUrlLocation): string {
+  const override = new URLSearchParams(loc.search).get("server");
   if (override) return override;
-  return `ws://${location.hostname}:4000/ws`;
+  if (loc.pathname === "/renderer" || loc.pathname.startsWith("/renderer/")) {
+    return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws`;
+  }
+  return `ws://${loc.hostname}:4000/ws`;
+}
+
+export function defaultServerUrl(): string {
+  return resolveServerUrl(location);
 }
