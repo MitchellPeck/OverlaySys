@@ -114,7 +114,28 @@ export function setLiveRow(channel: string, source: RowSource): void {
   const s = getOrInit(channel);
   s.liveRow = source;
   activeSource.set(channel, source);
+  noteLiveRow(channel, source);
   emit(channel);
+}
+
+const liveRowListeners = new Set<(channel: string, source: RowSource) => void>();
+
+/** Fires whenever a channel's liveRow is set. */
+export function onLiveRow(listener: (channel: string, source: RowSource) => void): () => void {
+  liveRowListeners.add(listener);
+  return () => {
+    liveRowListeners.delete(listener);
+  };
+}
+
+function noteLiveRow(channel: string, source: RowSource): void {
+  for (const l of [...liveRowListeners]) {
+    try {
+      l(channel, source);
+    } catch (err) {
+      console.warn("[channels] onLiveRow listener failed", err);
+    }
+  }
 }
 
 function emit(channel: string): void {
@@ -186,7 +207,10 @@ export function take(
     ...(subTakeContext ? { subTakeContext } : {}),
     ...(scripture ? { scriptureContext: scripture.context } : {}),
   };
-  if (source) s.liveRow = source;
+  if (source) {
+    s.liveRow = source;
+    noteLiveRow(channel, source);
+  }
   // Song slide advances keep the source their session start set.
   if (!takeIsInternal) activeSource.set(channel, source ?? null);
   states.set(channel, s);
@@ -381,7 +405,10 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
     ...(queued.scriptureContext ? { scriptureContext: queued.scriptureContext } : {}),
   };
   const carriedSource = activeSource.get(fromChannel) ?? null;
-  if (carriedSource) pgm.liveRow = carriedSource;
+  if (carriedSource) {
+    pgm.liveRow = carriedSource;
+    noteLiveRow(toChannel, carriedSource);
+  }
   activeSource.set(toChannel, carriedSource);
   states.set(toChannel, pgm);
   emit(toChannel);
@@ -461,7 +488,10 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: now },
   };
   delete s.mediaClearCut;
-  if (args.showId) s.liveRow = { showId: args.showId, rowId: args.rowId };
+  if (args.showId) {
+    s.liveRow = { showId: args.showId, rowId: args.rowId };
+    noteLiveRow(channel, s.liveRow);
+  }
   emit(channel);
 }
 

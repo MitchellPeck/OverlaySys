@@ -30,6 +30,7 @@ import { scheduleSync } from "./cloudSync";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
+import * as stageState from "./stageState";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
@@ -54,6 +55,17 @@ songSession.onMatch((channel, result, hypothesis, meta) => {
 // Any channel change can alter what a confidence monitor shows (a timer on
 // another channel, the followed channel's take), so rebuild every feed.
 channels.onAnyChange(() => stageFeedHub.invalidateAll());
+
+// Cueing a row to preview must not switch the pastor's notes; only rows that
+// actually go to air do.
+channels.onLiveRow((channel, source) => {
+  if (channel === "preview") return;
+  void stageState.onRowTaken(source);
+});
+stageState.subscribeStageState(() => {
+  stageFeedHub.invalidateAll();
+  void stageState.stageStateMessage().then(broadcast, (err) => console.warn("[stageState] broadcast failed", err));
+});
 
 sttListener.subscribe((listeners) => {
   broadcast({ type: "stt_listener_state", listeners });
@@ -124,6 +136,7 @@ export function handleConnection(
   const offBroadcast = registerSender(send);
 
   send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now() });
+  void stageState.stageStateMessage().then(send, () => {});
 
   ws.on("message", async (raw) => {
     let parsed;
@@ -291,6 +304,7 @@ export function handleConnection(
           const list = await shows.listShowMetas();
           broadcast({ type: "show_list", shows: list });
           stageFeedHub.invalidateAll();
+          broadcast(await stageState.stageStateMessage());
           scheduleSync();
           break;
         }
@@ -301,6 +315,7 @@ export function handleConnection(
             const list = await shows.listShowMetas();
             broadcast({ type: "show_list", shows: list });
             stageFeedHub.invalidateAll();
+            broadcast(await stageState.stageStateMessage());
             scheduleSync();
           }
           break;
@@ -394,6 +409,30 @@ export function handleConnection(
           else send({ type: "song", song: s });
           break;
         }
+        case "notes_select":
+          await stageState.dispatchStage({ type: "select", showId: parsed.showId, notesId: parsed.notesId });
+          break;
+        case "notes_point":
+          if ((parsed.delta === undefined) === (parsed.index === undefined)) break;
+          await stageState.dispatchStage(
+            parsed.index !== undefined ? { type: "point", index: parsed.index } : { type: "point", delta: parsed.delta! },
+          );
+          break;
+        case "notes_scroll":
+          await stageState.dispatchStage({ type: "scroll", delta: parsed.delta });
+          break;
+        case "notes_reset":
+          await stageState.dispatchStage({ type: "reset" });
+          break;
+        case "notes_overflow":
+          await stageState.dispatchStage({ type: "overflow", direction: parsed.direction, atPoint: parsed.atPoint });
+          break;
+        case "stage_message":
+          await stageState.dispatchStage({ type: "message", text: parsed.text, now: Date.now() });
+          break;
+        case "stage_message_clear":
+          await stageState.dispatchStage({ type: "messageClear" });
+          break;
         case "save_song": {
           const saved = await songs.saveSong(parsed.song);
           send({ type: "ack", op: "save_song", id: saved.id });

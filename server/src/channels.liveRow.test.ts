@@ -97,4 +97,17 @@ describe("channel liveRow", () => {
     channels.take("lr-f", "tpl", {});
     expect(channels.allStates().map((s) => s.channel)).toContain("lr-f");
   });
+
+  it("onLiveRow fires for sourced takes and setLiveRow, not unsourced takes", () => {
+    const seen: string[] = [];
+    const off = channels.onLiveRow((ch, src) => seen.push(`${ch}:${src.rowId}`));
+    try {
+      channels.take("olr", "tpl", {}, undefined, undefined, { showId: "s", rowId: "a" });
+      channels.take("olr", "tpl", {});
+      channels.setLiveRow("olr", { showId: "s", rowId: "b" });
+      expect(seen).toEqual(["olr:a", "olr:b"]);
+    } finally {
+      off();
+    }
+  });
 });

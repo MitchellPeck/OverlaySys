@@ -8,6 +8,7 @@ import {
   MediaPlaybackSchema,
   TemplateSchema,
   ShowSchema,
+  StageStateSchema,
   SongSchema,
   HotcardSchema,
   ProjectSchema,
@@ -277,6 +278,15 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("stt_cancel_install"),
     jobId: z.string(),
   }),
+  z.object({ type: z.literal("notes_select"), showId: z.string(), notesId: z.string().nullable() }),
+  // Exactly one of delta/index is required; enforced in the ws handler since
+  // a refine would make this a ZodEffects, which discriminatedUnion rejects.
+  z.object({ type: z.literal("notes_point"), delta: z.number().int().optional(), index: z.number().int().optional() }),
+  z.object({ type: z.literal("notes_scroll"), delta: z.number() }),
+  z.object({ type: z.literal("notes_reset") }),
+  z.object({ type: z.literal("notes_overflow"), direction: z.enum(["next", "prev"]), atPoint: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("stage_message"), text: z.string().max(200) }),
+  z.object({ type: z.literal("stage_message_clear") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -468,6 +478,14 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("stt_install_progress"),
     progress: SttInstallProgressSchema,
+  }),
+  z.object({
+    type: z.literal("stage_state"),
+    state: StageStateSchema,
+    pointCount: z.number().int().nonnegative(),
+    title: z.string().nullable(),
+    pointHeading: z.string().nullable(),
+    nextHeading: z.string().nullable(),
   }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
