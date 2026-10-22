@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
@@ -674,8 +674,17 @@ function RundownTable({
           }
           if (row.kind === "scripture") {
             return (
-              <tr key={row.id}>
-                <td colSpan={10} style={{ padding: "6px 8px" }}>
+              <DraggableRow
+                key={row.id}
+                rowId={row.id}
+                index={i}
+                isDragging={dragProps.isDragging}
+                onDragStart={dragProps.onDragStart}
+                onDragEnd={dragProps.onDragEnd}
+                onDropBefore={dragProps.onDropBefore}
+                onDropAfter={dragProps.onDropAfter}
+              >
+                <td colSpan={5} style={{ padding: "6px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span><BookOpen size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.reference} ({row.translation})</span>
                     <span style={{ color: colors.textDim, fontSize: 11 }}>
@@ -707,13 +716,22 @@ function RundownTable({
                     </IconButton>
                   </div>
                 </td>
-              </tr>
+              </DraggableRow>
             );
           }
           if (row.kind === "video") {
             return (
-              <tr key={row.id}>
-                <td colSpan={10} style={{ padding: "6px 8px" }}>
+              <DraggableRow
+                key={row.id}
+                rowId={row.id}
+                index={i}
+                isDragging={dragProps.isDragging}
+                onDragStart={dragProps.onDragStart}
+                onDragEnd={dragProps.onDragEnd}
+                onDropBefore={dragProps.onDropBefore}
+                onDropAfter={dragProps.onDropAfter}
+              >
+                <td colSpan={5} style={{ padding: "6px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <VideoThumb assetUrl={row.assetUrl} width={40} />
                     <span><Film size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.label || "Video"}</span>
@@ -746,7 +764,7 @@ function RundownTable({
                     </IconButton>
                   </div>
                 </td>
-              </tr>
+              </DraggableRow>
             );
           }
           return (
@@ -763,6 +781,75 @@ function RundownTable({
         })}
       </tbody>
     </table>
+  );
+}
+
+
+/**
+ * A rundown table row that can be dragged and dropped onto (before/after by
+ * pointer half) — shared by every row kind so the whole run of show reorders.
+ * Renders the row-number cell (also the drag grip) then `children`.
+ */
+function DraggableRow({
+  rowId,
+  index,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+  onDropBefore,
+  onDropAfter,
+  background,
+  children,
+}: {
+  rowId: string;
+  index: number;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDropBefore: (sourceId: string) => void;
+  onDropAfter: (sourceId: string) => void;
+  background?: string;
+  children: ReactNode;
+}) {
+  const [dropZone, setDropZone] = useState<"before" | "after" | null>(null);
+  return (
+    <tr
+      draggable
+      onDragStart={(e) => {
+        onDragStart();
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", rowId);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        setDropZone(e.clientY < r.top + r.height / 2 ? "before" : "after");
+      }}
+      onDragLeave={() => setDropZone(null)}
+      onDrop={(e) => {
+        e.preventDefault();
+        const sourceId = e.dataTransfer.getData("text/plain");
+        const z = dropZone;
+        setDropZone(null);
+        if (!sourceId || !z) return;
+        if (z === "before") onDropBefore(sourceId);
+        else onDropAfter(sourceId);
+      }}
+      onDragEnd={onDragEnd}
+      style={{
+        opacity: isDragging ? 0.5 : 1,
+        // 2px borders here are intentional drag indicators, not the standard token.
+        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
+        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
+        ...(background ? { background } : {}),
+      }}
+    >
+      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
+        {index + 1}
+      </td>
+      {children}
+    </tr>
   );
 }
 
@@ -793,7 +880,6 @@ function RundownRowEditor({
   onUpdate: (recipe: (s: Show) => void) => void;
   onDelete: () => void;
 }) {
-  const [dropZone, setDropZone] = useState<"before" | "after" | null>(null);
 
   function patchRow(patch: Partial<GraphicRow>) {
     onUpdate((s) => {
@@ -811,40 +897,15 @@ function RundownRowEditor({
   }
 
   return (
-    <tr
-      draggable
-      onDragStart={(e) => {
-        onDragStart();
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", row.id);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        setDropZone(e.clientY < r.top + r.height / 2 ? "before" : "after");
-      }}
-      onDragLeave={() => setDropZone(null)}
-      onDrop={(e) => {
-        e.preventDefault();
-        const sourceId = e.dataTransfer.getData("text/plain");
-        const z = dropZone;
-        setDropZone(null);
-        if (!sourceId || !z) return;
-        if (z === "before") onDropBefore(sourceId);
-        else onDropAfter(sourceId);
-      }}
+    <DraggableRow
+      rowId={row.id}
+      index={index}
+      isDragging={isDragging}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        // 2px borders here are intentional drag indicators, not the standard token.
-        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
-        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
-      }}
+      onDropBefore={onDropBefore}
+      onDropAfter={onDropAfter}
     >
-      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
-        {index + 1}
-      </td>
       <td style={{ ...td, width: 220 }}>
         <Select
           value={row.templateId}
@@ -891,7 +952,7 @@ function RundownRowEditor({
           ×
         </IconButton>
       </td>
-    </tr>
+    </DraggableRow>
   );
 }
 
@@ -926,7 +987,6 @@ function SongRowEditor({
   onUpdate: (recipe: (s: Show) => void) => void;
   onDelete: () => void;
 }) {
-  const [dropZone, setDropZone] = useState<"before" | "after" | null>(null);
   // Per-row overrides are collapsed by default — most users won't need them
   // and the row stays compact. Local state per editor instance.
   const [overridesOpen, setOverridesOpen] = useState(false);
@@ -1011,40 +1071,16 @@ function SongRowEditor({
 
   return (
     <>
-    <tr
-      draggable
-      onDragStart={(e) => {
-        onDragStart();
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", row.id);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        setDropZone(e.clientY < r.top + r.height / 2 ? "before" : "after");
-      }}
-      onDragLeave={() => setDropZone(null)}
-      onDrop={(e) => {
-        e.preventDefault();
-        const sourceId = e.dataTransfer.getData("text/plain");
-        const z = dropZone;
-        setDropZone(null);
-        if (!sourceId || !z) return;
-        if (z === "before") onDropBefore(sourceId);
-        else onDropAfter(sourceId);
-      }}
+    <DraggableRow
+      rowId={row.id}
+      index={index}
+      isDragging={isDragging}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
-        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
-        background: "rgba(255, 177, 58, 0.06)",
-      }}
+      onDropBefore={onDropBefore}
+      onDropAfter={onDropAfter}
+      background="rgba(255, 177, 58, 0.06)"
     >
-      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
-        {index + 1}
-      </td>
       <td style={{ ...td, width: 220 }}>
         <Select value={row.songId} onChange={(e) => pickSong(e.target.value)}>
           {!songs.some((s) => s.id === row.songId) && (
@@ -1165,7 +1201,7 @@ function SongRowEditor({
           ×
         </IconButton>
       </td>
-    </tr>
+    </DraggableRow>
     {overridesOpen && (
       <tr style={{ background: "rgba(255, 177, 58, 0.04)" }}>
         <td colSpan={6} style={{ padding: "8px 16px 12px 48px" }}>
