@@ -195,6 +195,39 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     feedbacks: [],
   };
 
+  presets["scripture_intro_cursor"] = {
+    type: "button",
+    category: "Scripture",
+    name: "Scripture Intro (cursor row)",
+    style: { text: "SCRIPTURE\\nINTRO", size: "14", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "scripture_take_intro_at_cursor", options: { channel: "" } }], up: [] }],
+    feedbacks: [{ feedbackId: "scripture_queued", options: { channel: "program" }, style: { bgcolor: 0x996600 } }],
+  };
+  presets["scripture_prev"] = {
+    type: "button",
+    category: "Scripture",
+    name: "Scripture -1",
+    style: { text: "◀ -1", size: "18", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "scripture_advance", options: { channel: "program", delta: -1 } }], up: [] }],
+    feedbacks: [],
+  };
+  presets["scripture_next"] = {
+    type: "button",
+    category: "Scripture",
+    name: "Scripture +1",
+    style: { text: "+1 ▶", size: "18", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "scripture_advance", options: { channel: "program", delta: 1 } }], up: [] }],
+    feedbacks: [{ feedbackId: "scripture_queued", options: { channel: "program" }, style: { bgcolor: 0x996600 } }],
+  };
+  presets["scripture_end"] = {
+    type: "button",
+    category: "Scripture",
+    name: "Scripture End",
+    style: { text: "END", size: "14", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "scripture_end", options: { channel: "program" } }], up: [] }],
+    feedbacks: [{ feedbackId: "scripture_active", options: { channel: "program" }, style: { bgcolor: 0x00aa00 } }],
+  };
+
   presets["cursor_prev"] = {
     type: "button",
     category: "Rundown",

@@ -30,6 +30,15 @@ export type ActionId =
   | "take_row_pvw_pgm_by_index"
   | "take_row_at_cursor"
   | "take_row_song_aware"
+  | "scripture_take_intro"
+  | "scripture_take_intro_by_index"
+  | "scripture_take_intro_at_cursor"
+  | "scripture_take_slide"
+  | "scripture_take_slide_by_index"
+  | "scripture_take_slide_at_cursor"
+  | "scripture_advance"
+  | "scripture_goto"
+  | "scripture_end"
   | "cursor_advance"
   | "cursor_set"
   | "cursor_set_by_index"
@@ -88,8 +97,7 @@ function rowMessages(
     ];
   }
   if (row.kind === "scripture") {
-    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
-    return [];
+    return [{ type: "scripture_take_slide", showId: state.loadedShowId ?? "", rowId: row.id, slideIdx: 0, channel }];
   }
   if (row.kind === "video") {
     return [
@@ -134,8 +142,8 @@ function rowPvwPgmMessages(
     ];
   }
   if (row.kind === "scripture") {
-    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
-    return [];
+    // No preview stage for scripture slides: go straight to the To channel.
+    return [{ type: "scripture_take_slide", showId: state.loadedShowId ?? "", rowId: row.id, slideIdx: 0, channel: toChannel }];
   }
   if (row.kind === "video") {
     // No PVW stage for video (would double audio).
@@ -185,6 +193,16 @@ export function dispatchAction(
       ? (opts[k] as number)
       : Number(opts[k] ?? dflt);
   const bool = (k: string): boolean => Boolean(opts[k]);
+  const loadedShow = () => (state.loadedShowId ? state.showCache.get(state.loadedShowId) : undefined);
+  const scriptureRowAt = (target: "index" | "cursor") => {
+    const show = loadedShow();
+    if (!show) return undefined;
+    const idx = target === "index" ? num("rowIndex", 1) - 1 : state.loadedShowRowCursor;
+    const row = idx == null ? undefined : show.rows[idx];
+    return row && row.kind === "scripture" ? { show, row } : undefined;
+  };
+  const optChannel = () => (str("channel") ? { channel: str("channel") } : {});
+  const slideIdx = () => Math.max(0, Math.floor(num("slide", 1)) - 1);
 
   switch (id) {
     case "take_template":
@@ -337,6 +355,14 @@ export function dispatchAction(
               : undefined;
       if (!row) break;
       const pvwPgm = bool("pvwPgm");
+      if (row.kind === "scripture") {
+        const sub = str("sub", "lyrics");
+        const channel = pvwPgm ? str("toChannel", "program") : str("channel");
+        const ch = channel ? { channel } : {};
+        if (sub === "intro") messages.push({ type: "scripture_take_intro", showId: show.id, rowId: row.id, ...ch });
+        else if (sub === "lyrics") messages.push({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, ...ch });
+        break;
+      }
       if (row.kind === "song") {
         const sub = str("sub", "lyrics");
         if (sub !== "intro" && sub !== "lyrics" && sub !== "outro") break;
@@ -378,6 +404,33 @@ export function dispatchAction(
       messages.push(...rowMessages(state, row, channel));
       break;
     }
+    case "scripture_take_intro":
+      messages.push({ type: "scripture_take_intro", showId: str("showId"), rowId: str("rowId"), ...optChannel() });
+      break;
+    case "scripture_take_intro_by_index":
+    case "scripture_take_intro_at_cursor": {
+      const hit = scriptureRowAt(id === "scripture_take_intro_by_index" ? "index" : "cursor");
+      if (hit) messages.push({ type: "scripture_take_intro", showId: hit.show.id, rowId: hit.row.id, ...optChannel() });
+      break;
+    }
+    case "scripture_take_slide":
+      messages.push({ type: "scripture_take_slide", showId: str("showId"), rowId: str("rowId"), slideIdx: slideIdx(), ...optChannel() });
+      break;
+    case "scripture_take_slide_by_index":
+    case "scripture_take_slide_at_cursor": {
+      const hit = scriptureRowAt(id === "scripture_take_slide_by_index" ? "index" : "cursor");
+      if (hit) messages.push({ type: "scripture_take_slide", showId: hit.show.id, rowId: hit.row.id, slideIdx: slideIdx(), ...optChannel() });
+      break;
+    }
+    case "scripture_advance":
+      messages.push({ type: "scripture_advance", channel: str("channel"), delta: num("delta", 1) < 0 ? -1 : 1 });
+      break;
+    case "scripture_goto":
+      messages.push({ type: "scripture_goto", channel: str("channel"), slideIdx: slideIdx() });
+      break;
+    case "scripture_end":
+      messages.push({ type: "scripture_end", channel: str("channel") });
+      break;
     case "cursor_advance":
       localEvents.push({
         type: "local_cursor_advance",
@@ -633,6 +686,16 @@ const deltaInput: CompanionInputFieldNumber = {
   step: 1,
 };
 
+const slideInput: CompanionInputFieldNumber = {
+  id: "slide",
+  type: "number",
+  label: "Slide (1-based)",
+  default: 1,
+  min: 1,
+  max: 200,
+  step: 1,
+};
+
 const rowIndexInput: CompanionInputFieldNumber = {
   id: "rowIndex",
   type: "number",
@@ -811,6 +874,51 @@ export function actionDefinitions(
       name: "Take row at cursor",
       options: [channelDropdown(state)],
       callback: wrap("take_row_at_cursor"),
+    },
+    scripture_take_intro: {
+      name: "Scripture: take intro (queues the scripture) by row ID",
+      options: [showDropdown(state), rowDropdown(state), { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_intro"),
+    },
+    scripture_take_intro_by_index: {
+      name: "Scripture: take intro from loaded show (by index)",
+      options: [rowIndexInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_intro_by_index"),
+    },
+    scripture_take_intro_at_cursor: {
+      name: "Scripture: take intro of the cursor row",
+      options: [{ ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_intro_at_cursor"),
+    },
+    scripture_take_slide: {
+      name: "Scripture: take slide N by row ID",
+      options: [showDropdown(state), rowDropdown(state), slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_slide"),
+    },
+    scripture_take_slide_by_index: {
+      name: "Scripture: take slide N from loaded show (by index)",
+      options: [rowIndexInput, slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_slide_by_index"),
+    },
+    scripture_take_slide_at_cursor: {
+      name: "Scripture: take slide N of the cursor row",
+      options: [slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      callback: wrap("scripture_take_slide_at_cursor"),
+    },
+    scripture_advance: {
+      name: "Scripture: next / previous slide (starts a queued scripture)",
+      options: [channelDropdown(state), deltaInput],
+      callback: wrap("scripture_advance"),
+    },
+    scripture_goto: {
+      name: "Scripture: go to slide N (starts a queued scripture)",
+      options: [channelDropdown(state), slideInput],
+      callback: wrap("scripture_goto"),
+    },
+    scripture_end: {
+      name: "Scripture: end (cancels a queued scripture)",
+      options: [channelDropdown(state)],
+      callback: wrap("scripture_end"),
     },
     take_row_song_aware: {
       name: "Take row (song-aware: songs take a sub-take, other rows take normally)",

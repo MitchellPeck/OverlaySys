@@ -88,6 +88,10 @@ export function variableDefinitions(
       { variableId: `${c}_song_blanked`, name: `${c} song is blanked (yes/no)` },
       { variableId: `${c}_song_trust_mode`, name: `${c} song trust mode (yes/no)` },
       { variableId: `${c}_song_queued_title`, name: `${c} song queued by its intro (title)` },
+      { variableId: `${c}_scripture_ref`, name: `${c} scripture slide reference` },
+      { variableId: `${c}_scripture_slide`, name: `${c} scripture slide (n/total)` },
+      { variableId: `${c}_scripture_text`, name: `${c} scripture slide text` },
+      { variableId: `${c}_scripture_queued_ref`, name: `${c} scripture queued by its intro (reference)` },
     );
     for (let i = 1; i <= 10; i++) {
       defs.push({
@@ -136,13 +140,13 @@ function rowMatchesPgm(
   active: ActiveGraphic | null | undefined,
   pgmSongId: string | undefined,
   row: RundownRow,
+  pgmScriptureRowId: string | undefined,
 ): boolean {
   if (row.kind === "song") {
     return Boolean(pgmSongId && pgmSongId === row.songId);
   }
   if (row.kind === "scripture") {
-    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
-    return false;
+    return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
   if (row.kind === "video") return false;
   if (!active) return false;
@@ -202,6 +206,12 @@ export function projectVariables(
       out[`${c}_song_blanked`] = "";
       out[`${c}_song_trust_mode`] = "";
     }
+
+    const scr = ch?.scriptureSession;
+    out[`${c}_scripture_ref`] = scr?.slideReference ?? "";
+    out[`${c}_scripture_slide`] = scr ? `${scr.slideIdx + 1}/${scr.slideCount}` : "";
+    out[`${c}_scripture_text`] = scr?.text ?? "";
+    out[`${c}_scripture_queued_ref`] = ch?.queuedScripture?.reference ?? "";
   }
 
   out.connection_state = state.connectionState;
@@ -230,13 +240,14 @@ export function projectVariables(
   out.cursor_row_is_song = cursorRow ? (cursorRow.kind === "song" ? "yes" : "no") : "";
 
   const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
+  const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;
   const pgmActive = state.channelStates.get("program")?.active ?? null;
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
     const row = loadedShow?.rows[n - 1];
     out[`rundown_${n}_name`] = row ? rowDisplayLabel(state, row) : "";
     out[`rundown_${n}_kind`] = row?.kind ?? "";
     out[`rundown_${n}_is_active`] =
-      row && rowMatchesPgm(pgmActive, pgmSongId, row) ? "yes" : "no";
+      row && rowMatchesPgm(pgmActive, pgmSongId, row, pgmScriptureRowId) ? "yes" : "no";
   }
 
   for (const e of rundownFieldEntries(state)) {
