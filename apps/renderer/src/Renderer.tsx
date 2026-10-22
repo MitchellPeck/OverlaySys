@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Template, ChannelState, ChannelConfig } from "@overlaysys/core";
+import type { Template, ChannelState, ChannelConfig, StageFeed } from "@overlaysys/core";
+import { StageView } from "./stage/StageView";
+import { serverOffset } from "./stage/stageTime";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
 import { createMirrorSubscription } from "./mirrorSubscription";
@@ -66,6 +68,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
+  const [stageFeed, setStageFeed] = useState<{ feed: StageFeed; offsetMs: number } | null>(null);
   const [config, setConfig] = useState<ChannelConfig | null>(null);
   const [scale, setScale] = useState(1);
   // Session-level fade. opacity drives the stage; transitionMs=0 disables
@@ -284,6 +287,8 @@ export function Renderer({ channel, debug = false }: Props) {
         if (subscription.source !== before) {
           console.log(`[renderer] ${channel}: now mirroring ${subscription.source}`);
         }
+      } else if (msg.type === "stage_feed" && msg.channel === channel) {
+        setStageFeed({ feed: msg.feed, offsetMs: serverOffset(msg.feed.serverNow, Date.now()) });
       } else if (msg.type === "state" && subscription.accepts(msg.channel)) {
         // Session boundary fades: a stage-wide opacity overlay applied on
         // top of whatever the template's own IN/OUT does, as a deliberate
@@ -408,6 +413,9 @@ export function Renderer({ channel, debug = false }: Props) {
             : "none",
         }}
       />
+      {config?.kind === "stage" && stageFeed && (
+        <StageView feed={stageFeed.feed} offsetMs={stageFeed.offsetMs} connected={status === "open"} />
+      )}
       {debug && (
         <DebugOverlay
           status={status}
