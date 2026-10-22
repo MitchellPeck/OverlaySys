@@ -116,6 +116,10 @@ export type ScriptureSessionSummary = z.infer<typeof ScriptureSessionSummarySche
 export const QueuedScriptureSchema = z.object({ rowId: z.string(), reference: z.string() });
 export type QueuedScripture = z.infer<typeof QueuedScriptureSchema>;
 
+/** The rundown row a take came from. */
+export const RowSourceSchema = z.object({ showId: z.string(), rowId: z.string() });
+export type RowSource = z.infer<typeof RowSourceSchema>;
+
 export const ChannelStateSchema = z.object({
   channel: z.string(),
   active: ActiveGraphicSchema.nullable(),
@@ -129,5 +133,11 @@ export const ChannelStateSchema = z.object({
    * the take's Out transition. Reset by the next media_take.
    */
   mediaClearCut: z.boolean().optional(),
+  /**
+   * Last rundown row taken to this channel. Only takes that carry a source
+   * change it — hotcards, ad-hoc takes and clears leave it — so stage
+   * monitors keep the row's cue up while a lower third flashes by.
+   */
+  liveRow: RowSourceSchema.optional(),
 });
 export type ChannelState = z.infer<typeof ChannelStateSchema>;

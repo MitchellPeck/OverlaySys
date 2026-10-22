@@ -18,6 +18,8 @@ import {
   SttCaptureDeviceSchema,
   SttInputDeviceSchema,
   SttInstallProgressSchema,
+  RowSourceSchema,
+  StageFeedSchema,
   type TemplateMeta,
 } from "@overlaysys/core";
 
@@ -38,6 +40,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     channel: z.string(),
     templateId: z.string(),
     data: DataPayload,
+    source: RowSourceSchema.optional(),
   }),
   z.object({
     type: z.literal("clear"),
@@ -53,6 +56,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     channel: z.string(), // typically "preview"
     templateId: z.string(),
     data: DataPayload,
+    source: RowSourceSchema.optional(),
   }),
   z.object({ type: z.literal("list_templates") }),
   z.object({ type: z.literal("get_template"), templateId: z.string() }),
@@ -175,6 +179,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("media_take"),
     channel: z.string(),
     rowId: z.string(),
+    /** Show the row belongs to; with rowId it becomes the channel's liveRow. */
+    showId: z.string().optional(),
     assetUrl: z.string(),
     label: z.string().optional(),
     volume: z.number().min(0).max(1),
@@ -286,6 +292,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("state"),
     channel: z.string(),
     state: ChannelStateSchema,
+  }),
+  /** Confidence-monitor content for a `kind: "stage"` channel. */
+  z.object({
+    type: z.literal("stage_feed"),
+    channel: z.string(),
+    feed: StageFeedSchema,
   }),
   /** ~4 Hz playback tick for a channel's media slot. Status transitions arrive as `state`. */
   z.object({

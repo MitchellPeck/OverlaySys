@@ -6,6 +6,7 @@ import type {
   MediaTransition,
   QueuedScripture,
   QueuedSong,
+  RowSource,
   ScriptureContext,
   ScriptureSessionSummary,
   SongSessionSummary,
@@ -20,6 +21,21 @@ type Listener = (state: ChannelState) => void;
 
 const states = new Map<string, ChannelState>();
 const listeners = new Map<string, Set<Listener>>();
+
+type AnyListener = (channel: string) => void;
+const anyListeners = new Set<AnyListener>();
+
+/** Called after every emit on any channel. Used by the stage feed hub. */
+export function onAnyChange(listener: AnyListener): () => void {
+  anyListeners.add(listener);
+  return () => {
+    anyListeners.delete(listener);
+  };
+}
+
+export function allStates(): ChannelState[] {
+  return [...states.values()];
+}
 // Auto-out timers keyed by channel. Set when a take/promote lands a
 // template that has autoOutMs configured; fires clear() so the renderer
 // plays its out animation. Always cancelled on any subsequent take, clear,
@@ -88,12 +104,18 @@ export function getState(channel: string): ChannelState {
   return getOrInit(channel);
 }
 
+export function setLiveRow(channel: string, source: RowSource): void {
+  const s = getOrInit(channel);
+  s.liveRow = source;
+  emit(channel);
+}
+
 function emit(channel: string): void {
   const s = states.get(channel);
   if (!s) return;
   const ls = listeners.get(channel);
-  if (!ls) return;
-  for (const l of ls) l(s);
+  if (ls) for (const l of ls) l(s);
+  for (const l of anyListeners) l(channel);
 }
 
 export function subscribe(channel: string, listener: Listener): () => void {
@@ -116,6 +138,7 @@ export function take(
   data: Record<string, string>,
   subTakeContext?: SubTakeContext,
   scripture?: { context: ScriptureContext; session?: ScriptureSessionSummary; queued?: QueuedScripture },
+  source?: RowSource,
 ): void {
   // Cancel any prior auto-out before we install the new active mount —
   // even if the new take is for the same template, the timer should
@@ -156,6 +179,7 @@ export function take(
     ...(subTakeContext ? { subTakeContext } : {}),
     ...(scripture ? { scriptureContext: scripture.context } : {}),
   };
+  if (source) s.liveRow = source;
   states.set(channel, s);
   emit(channel);
   // Internal takes (song slide advances) bypass auto-out — songs control
@@ -345,6 +369,7 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
     ...(queued.subTakeContext ? { subTakeContext: queued.subTakeContext } : {}),
     ...(queued.scriptureContext ? { scriptureContext: queued.scriptureContext } : {}),
   };
+  if (src.liveRow) pgm.liveRow = src.liveRow;
   states.set(toChannel, pgm);
   emit(toChannel);
 
@@ -395,6 +420,7 @@ function notifyPlayback(e: MediaPlaybackEvent): void {
 
 export type MediaTakeArgs = {
   rowId: string;
+  showId?: string;
   assetUrl: string;
   label?: string;
   volume: number;
@@ -422,6 +448,7 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: now },
   };
   delete s.mediaClearCut;
+  if (args.showId) s.liveRow = { showId: args.showId, rowId: args.rowId };
   emit(channel);
 }
 
