@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Panel, colors } from "@overlaysys/ui";
+import { Button, Field, Panel, Select, colors } from "@overlaysys/ui";
+import { useStore } from "@/lib/store";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { ScriptureIntroEditor, type IntroConfig } from "@/app/components/ScriptureIntroEditor";
@@ -105,13 +106,20 @@ export default function ScriptureSettingsPage() {
 }
 
 function DefaultIntroPanel() {
+  const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<IntroConfig | null>(null);
+  // Kept apart from `draft`: the intro editor replaces its whole value on a
+  // template change, which would otherwise drop this field.
+  const [defaultTemplateId, setDefaultTemplateId] = useState<string | undefined>(undefined);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getScriptureSettings()
-      .then((s) => setDraft(s))
+      .then((s) => {
+        setDraft(s);
+        setDefaultTemplateId(s.defaultTemplateId);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
@@ -119,7 +127,7 @@ function DefaultIntroPanel() {
     if (!draft) return;
     setError(null);
     try {
-      const s = await putScriptureSettings(draft);
+      const s = await putScriptureSettings({ ...draft, defaultTemplateId });
       setScriptureSettingsCache(s);
       setSaved("Saved");
     } catch (e) {
@@ -128,7 +136,26 @@ function DefaultIntroPanel() {
   }
 
   return (
-    <Panel title="Default scripture intro">
+    <Panel title="Scripture defaults">
+      <Field label="Default scripture template">
+        <Select
+          value={defaultTemplateId ?? ""}
+          disabled={!draft}
+          onChange={(e) => {
+            setDefaultTemplateId(e.target.value || undefined);
+            setSaved(null);
+          }}
+        >
+          <option value="">— First template —</option>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <p style={{ color: colors.textDim, fontSize: 13 }}>
+        Pre-selected when you add a scripture row. Each row keeps its own template.
+      </p>
+      <h3 style={{ fontSize: 14, margin: "16px 0 4px" }}>Default intro</h3>
       <p style={{ color: colors.textDim, fontSize: 13, marginTop: 0 }}>
         Used by every scripture row unless the row sets its own intro or skips it.
       </p>
