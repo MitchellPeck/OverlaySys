@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Button, colors } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { httpBase } from "@/lib/pcoClient";
+import { isElectron } from "@/lib/desktop";
 import { QrCode } from "./QrCode";
+import { lanMonitorUrl } from "./lanMonitorUrl";
 
 interface NetworkInfo {
   port: number;
@@ -12,7 +14,7 @@ interface NetworkInfo {
 }
 
 /** "Open on another device" links for a stage channel. */
-export function LanStageLinks({ channelId }: { channelId: string }) {
+export function LanStageLinks({ channelId, rendererBase }: { channelId: string; rendererBase: string }) {
   const cloud = isCloudMode();
   const [info, setInfo] = useState<NetworkInfo | null | undefined>(undefined);
 
@@ -35,7 +37,7 @@ export function LanStageLinks({ channelId }: { channelId: string }) {
       <div style={{ fontWeight: 600, marginBottom: 4 }}>Open on another device</div>
       {info && info.addresses.length > 0 ? (
         info.addresses.map((addr) => (
-          <LanLink key={addr} url={`http://${addr}:${info.port}/renderer/?channel=${encodeURIComponent(channelId)}`} />
+          <LanLink key={addr} url={lanMonitorUrl({ rendererBase, fromDesktop: isElectron(), address: addr, port: info.port, channelId })} />
         ))
       ) : (
         <div>
@@ -53,6 +55,7 @@ export function LanStageLinks({ channelId }: { channelId: string }) {
 function LanLink({ url }: { url: string }) {
   const [showQr, setShowQr] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [hint, setHint] = useState(false);
   const textRef = useRef<HTMLElement>(null);
 
   const copy = async () => {
@@ -69,6 +72,8 @@ function LanLink({ url }: { url: string }) {
         sel?.removeAllRanges();
         sel?.addRange(range);
       }
+      setHint(true);
+      setTimeout(() => setHint(false), 3000);
     }
   };
 
@@ -80,6 +85,7 @@ function LanLink({ url }: { url: string }) {
         </code>
         <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
         <Button onClick={() => setShowQr((v) => !v)}>{showQr ? "Hide QR" : "QR"}</Button>
+        {hint && <span>Press ⌘C / Ctrl+C to copy</span>}
       </div>
       {showQr && (
         <div style={{ marginTop: 6 }}>

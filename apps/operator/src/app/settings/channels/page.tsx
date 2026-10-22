@@ -542,7 +542,7 @@ function ChannelRow({
           )}
           {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}><span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved</span>}
         </div>
-        {draft.kind === "stage" && <LanStageLinks channelId={config.id} />}
+        {draft.kind === "stage" && <LanStageLinks channelId={config.id} rendererBase={rendererBase} />}
         {showOverride && draft.kind === "graphics" && (
           <ProjectOverrideEditor
             config={config}
