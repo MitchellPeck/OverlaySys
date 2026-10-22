@@ -34,6 +34,7 @@ export const AREAS: Record<AreaId, Area> = {
       { route: "/songs", label: "Songs", icon: Music },
       { route: "/design", label: "Designs", icon: Palette },
       { route: "/hotcards", label: "Hotcards", icon: Zap },
+      { route: "/pco", label: "Planning Center", icon: CloudDownload, desktopOnly: true },
     ],
   },
   settings: {
@@ -43,7 +44,6 @@ export const AREAS: Record<AreaId, Area> = {
       { route: "/settings/channels", label: "Channels", icon: MonitorSpeaker, desktopOnly: true },
       { route: "/settings/stt", label: "Speech-to-text", icon: Mic, desktopOnly: true },
       { route: "/settings/scripture", label: "Scripture", icon: BookOpen, desktopOnly: true },
-      { route: "/pco", label: "Planning Center", icon: CloudDownload, desktopOnly: true },
       { route: "/data", label: "Data", icon: ArrowDownUp },
       { route: "/projects", label: "Projects", icon: FolderKanban },
       { route: "/account", label: "Account", icon: UserRound },

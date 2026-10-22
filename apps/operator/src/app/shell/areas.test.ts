@@ -15,8 +15,12 @@ describe("areas model", () => {
     }
   });
 
+  it("maps the Planning Center import to the library", () => {
+    expect(routeToArea("/pco")).toBe("library");
+  });
+
   it("maps settings routes, including ones without a /settings prefix", () => {
-    for (const p of ["/settings/channels", "/settings/stt", "/settings/scripture", "/pco", "/data", "/projects", "/account"]) {
+    for (const p of ["/settings/channels", "/settings/stt", "/settings/scripture", "/data", "/projects", "/account"]) {
       expect(routeToArea(p), p).toBe("settings");
     }
   });
@@ -34,7 +38,7 @@ describe("areas model", () => {
     expect(areasFor(false)).toEqual(["live", "library", "settings"]);
     expect(destinationsFor("settings", true).map((d) => d.route)).toEqual(["/data", "/projects", "/account"]);
     expect(destinationsFor("settings", false).map((d) => d.route)).toEqual([
-      "/settings/channels", "/settings/stt", "/settings/scripture", "/pco", "/data", "/projects", "/account",
+      "/settings/channels", "/settings/stt", "/settings/scripture", "/data", "/projects", "/account",
     ]);
   });
 
@@ -70,6 +74,6 @@ describe("areas model", () => {
 
   it("lists areas in tab order", () => {
     expect(AREA_ORDER).toEqual(["live", "library", "settings"]);
-    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Designs", "Hotcards"]);
+    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Designs", "Hotcards", "Planning Center"]);
   });
 });

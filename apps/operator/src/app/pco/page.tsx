@@ -560,6 +560,7 @@ export default function PcoPage() {
         serviceTypeId,
         planId,
         planTitle: newName,
+        planDate: plans.find((p) => p.id === planId)?.sortDate,
         target:
           targetMode === "new"
             ? { mode: "new", name: newName, projectId: currentProjectId }

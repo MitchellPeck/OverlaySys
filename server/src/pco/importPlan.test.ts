@@ -177,6 +177,39 @@ describe("importPlan", () => {
     expect(created?.sections[0]?.slides[0]?.lines).toEqual(["fresh lyric line"]);
   });
 
+  it("dates a new show with the plan's service date", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const result = await importPlan(
+      fakeClient,
+      { ...baseReq, planDate: "2026-07-19T09:00:00Z", target: { mode: "new", name: "Sunday" } },
+      NOW,
+    );
+    expect((await shows.getShow(result.showId!))?.scheduledFor).toBe("2026-07-19");
+  });
+
+  it("dates an existing undated show but keeps an existing show's own date", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const first = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "Sunday" } }, NOW);
+    const showId = first.showId!;
+    expect((await shows.getShow(showId))?.scheduledFor).toBeUndefined();
+
+    await importPlan(fakeClient, { ...baseReq, planDate: "2026-07-19T09:00:00Z", target: { mode: "existing", showId } }, NOW);
+    expect((await shows.getShow(showId))?.scheduledFor).toBe("2026-07-19");
+
+    await importPlan(fakeClient, { ...baseReq, planDate: "2026-08-02T09:00:00Z", target: { mode: "existing", showId } }, NOW);
+    expect((await shows.getShow(showId))?.scheduledFor).toBe("2026-07-19");
+  });
+
+  it("ignores an unparseable plan date", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const result = await importPlan(
+      fakeClient,
+      { ...baseReq, planDate: "next Sunday", target: { mode: "new", name: "Sunday" } },
+      NOW,
+    );
+    expect((await shows.getShow(result.showId!))?.scheduledFor).toBeUndefined();
+  });
+
   it("re-importing the same plan updates rows/songs in place instead of duplicating", async () => {
     await songs.saveSong(existingLibrarySong());
 

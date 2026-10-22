@@ -73,6 +73,8 @@ export interface ImportPlanRequest {
   serviceTypeId: string;
   planId: string;
   planTitle?: string;
+  /** PCO plan `sort_date` (e.g. "2026-07-19T09:00:00Z"); dates the show. */
+  planDate?: string;
   target: ImportTarget;
   items: ImportItemConfig[];
   /** Fallback templates when an item config omits `templateId`. */
@@ -99,6 +101,16 @@ export interface ImportPlanResult {
   writtenSongIds: string[];
   warnings: string[];
   errors: { itemId: string; message: string }[];
+}
+
+/**
+ * Date-only service date from a PCO `sort_date`. PCO writes the service's
+ * wall-clock time with a `Z` suffix, so the leading date is the local date —
+ * converting through `Date` would shift evening services across midnight.
+ */
+export function planServiceDate(sortDate: string | undefined): string | undefined {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(sortDate ?? "");
+  return m ? m[1] : undefined;
 }
 
 /**
@@ -343,6 +355,11 @@ export async function importPlan(
     else show.rows.push(row);
     counts.rows++;
   }
+
+  // Date the show from the plan. A show that already has a date keeps it —
+  // the operator may have set it deliberately.
+  const serviceDate = planServiceDate(req.planDate);
+  if (serviceDate && !show.scheduledFor) show.scheduledFor = serviceDate;
 
   show.updatedAt = now;
 

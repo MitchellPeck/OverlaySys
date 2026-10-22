@@ -65,6 +65,8 @@ export interface ImportPlanRequest {
   serviceTypeId: string;
   planId: string;
   planTitle?: string;
+  /** PCO plan `sort_date`; the server dates the show from it. */
+  planDate?: string;
   target: ImportTarget;
   items: ImportItemConfig[];
   defaultLyricTemplateId?: string;
