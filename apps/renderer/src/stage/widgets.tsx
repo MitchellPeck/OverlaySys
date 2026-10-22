@@ -1,5 +1,9 @@
+import { useLayoutEffect, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { SlideView, StageFeed, StageWidget } from "@overlaysys/core";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { parseNotesMarkdown, type Span } from "./notesMarkdown";
+import { overflowDirection } from "./notesOverflow";
 import { useFitText } from "./useFitText";
 import { formatClockDisplay, formatRemaining, timerDisplay, videoRemainingSec } from "./stageTime";
 
@@ -69,7 +73,151 @@ function slideText(v: SlideView, maxLines?: number): string {
   return lines.join("\n");
 }
 
-export function StageWidgetView({ widget, feed, nowMs }: { widget: StageWidget; feed: StageFeed; nowMs: number }) {
+function Spans({ spans }: { spans: Span[] }) {
+  return (
+    <>
+      {spans.map((sp, i) => {
+        let node: ReactNode = sp.text;
+        if (sp.italic) node = <em>{node}</em>;
+        if (sp.bold) node = <strong>{node}</strong>;
+        return <span key={i}>{node}</span>;
+      })}
+    </>
+  );
+}
+
+const HEADING_SCALE = [1.25, 1.15, 1.05];
+
+type NotesWidget = Extract<StageWidget, { kind: "sermonNotes" }>;
+
+function NotesBody({
+  widget,
+  notes,
+  send,
+}: {
+  widget: NotesWidget;
+  notes: NonNullable<StageFeed["notes"]>;
+  send?: (msg: ClientMessage) => void;
+}) {
+  const st = widget.style;
+  const { highlightColor, dimPast, showCounter, anchor } = widget.props;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const pointRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const sentKey = useRef("");
+  const { points, pointIdx, scrollOffset } = notes;
+
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const scroller = scrollerRef.current;
+    const active = pointRefs.current[pointIdx];
+    if (!box || !scroller || !active) return;
+    const boxH = box.clientHeight;
+    scroller.style.transform = `translateY(${anchor * boxH - active.offsetTop - scrollOffset * boxH}px)`;
+    const dir = overflowDirection({
+      scrollOffset,
+      boxHeight: boxH,
+      anchor,
+      pointTop: active.offsetTop,
+      pointHeight: active.offsetHeight,
+      isFirst: pointIdx === 0,
+      isLast: pointIdx >= points.length - 1,
+    });
+    const key = `${pointIdx}:${scrollOffset}`;
+    if (dir && send && sentKey.current !== key) {
+      sentKey.current = key;
+      send({ type: "notes_overflow", direction: dir, atPoint: pointIdx });
+    }
+  }, [pointIdx, scrollOffset, points, anchor, send, st.fontSize]);
+
+  return (
+    <div
+      ref={boxRef}
+      style={{
+        flex: 1,
+        minHeight: 0,
+        position: "relative",
+        overflow: "hidden",
+        fontFamily: st.fontFamily,
+        fontSize: st.fontSize,
+        fontWeight: st.fontWeight,
+        color: st.color,
+        textAlign: st.align,
+        lineHeight: 1.25,
+      }}
+    >
+      <div
+        ref={scrollerRef}
+        style={{ position: "absolute", left: 0, right: 0, top: 0, transition: "transform 300ms ease" }}
+      >
+        {points.map((pt, i) => {
+          const active = i === pointIdx;
+          const blocks = parseNotesMarkdown(pt.markdown);
+          return (
+            <div
+              key={i}
+              ref={(el) => {
+                pointRefs.current[i] = el;
+              }}
+              style={{
+                marginBottom: st.fontSize * 0.8,
+                opacity: dimPast && i < pointIdx ? 0.35 : 1,
+                borderLeft: active ? `6px solid ${highlightColor}` : "6px solid transparent",
+                paddingLeft: 18,
+                overflowWrap: "anywhere",
+              }}
+            >
+              {pt.heading && !blocks.some((b) => b.kind === "heading") && (
+                <div style={{ fontWeight: 700, fontSize: st.fontSize * 1.25, marginBottom: 6 }}>{pt.heading}</div>
+              )}
+              {blocks.map((b, j) => {
+                if (b.kind === "heading")
+                  return (
+                    <div key={j} style={{ fontWeight: 700, fontSize: st.fontSize * (HEADING_SCALE[b.level - 1] ?? 1), margin: "0 0 6px" }}>
+                      <Spans spans={b.spans} />
+                    </div>
+                  );
+                if (b.kind === "para")
+                  return (
+                    <p key={j} style={{ margin: "0 0 0.5em" }}>
+                      <Spans spans={b.spans} />
+                    </p>
+                  );
+                const Tag = b.ordered ? "ol" : "ul";
+                return (
+                  <Tag key={j} style={{ margin: "0 0 0.5em", paddingLeft: "1.2em", textAlign: "left" }}>
+                    {b.items.map((it, k) => (
+                      <li key={k}>
+                        <Spans spans={it} />
+                      </li>
+                    ))}
+                  </Tag>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+      {showCounter && (
+        <div style={{ position: "absolute", top: 0, right: 0, fontSize: 24, color: "#888", fontFamily: st.fontFamily }}>
+          {pointIdx + 1} / {points.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function StageWidgetView({
+  widget,
+  feed,
+  nowMs,
+  send,
+}: {
+  widget: StageWidget;
+  feed: StageFeed;
+  nowMs: number;
+  send?: (msg: ClientMessage) => void;
+}) {
   if (widget.hidden) return null;
   switch (widget.kind) {
     case "currentSlide": {
@@ -131,8 +279,26 @@ export function StageWidgetView({ widget, feed, nowMs }: { widget: StageWidget; 
       );
     }
     case "sermonNotes":
-    case "message":
-      return null; // implemented in a later task
+      return (
+        <Frame widget={widget}>
+          {feed.notes && feed.notes.points.length > 0 ? (
+            <NotesBody widget={widget} notes={feed.notes} send={send} />
+          ) : (
+            <div style={{ color: "#888", fontFamily: widget.style.fontFamily, fontSize: widget.style.fontSize, opacity: 0.6 }}>No notes</div>
+          )}
+        </Frame>
+      );
+    case "message": {
+      const msg = feed.message;
+      if (!msg) return null;
+      const flashing = widget.props.flash && nowMs - msg.sentAt < 6000;
+      const dim = flashing && Math.floor((nowMs - msg.sentAt) / 500) % 2 === 1 ? 0.4 : 1;
+      return (
+        <Frame widget={widget}>
+          <FitBody widget={widget} text={msg.text} dim={dim} />
+        </Frame>
+      );
+    }
     case "text":
       return (
         <Frame widget={widget}>

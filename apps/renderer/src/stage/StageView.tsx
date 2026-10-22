@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { StageFeed } from "@overlaysys/core";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { StageWidgetView } from "./widgets";
 
 /** Re-render at 4 Hz so clocks, timers and video remaining tick locally. */
@@ -25,7 +26,17 @@ function useFitScale(w: number, h: number): number {
   return scale;
 }
 
-export function StageView({ feed, offsetMs, connected }: { feed: StageFeed; offsetMs: number; connected: boolean }) {
+export function StageView({
+  feed,
+  offsetMs,
+  connected,
+  send,
+}: {
+  feed: StageFeed;
+  offsetMs: number;
+  connected: boolean;
+  send?: (msg: ClientMessage) => void;
+}) {
   const { layout } = feed;
   const now = useNow(offsetMs);
   const scale = useFitScale(layout.size.w, layout.size.h);
@@ -43,7 +54,7 @@ export function StageView({ feed, offsetMs, connected }: { feed: StageFeed; offs
         }}
       >
         {layout.widgets.map((w) => (
-          <StageWidgetView key={w.id} widget={w} feed={feed} nowMs={now} />
+          <StageWidgetView key={w.id} widget={w} feed={feed} nowMs={now} send={send} />
         ))}
       </div>
       {!connected && (

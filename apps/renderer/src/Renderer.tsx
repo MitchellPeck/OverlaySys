@@ -435,7 +435,7 @@ export function Renderer({ channel, debug = false }: Props) {
         }}
       />
       {isStage && stageFeed && (
-        <StageView feed={stageFeed.feed} offsetMs={stageFeed.offsetMs} connected={status === "open"} />
+        <StageView feed={stageFeed.feed} offsetMs={stageFeed.offsetMs} connected={status === "open"} send={sendRef.current} />
       )}
       {debug && (
         <DebugOverlay
