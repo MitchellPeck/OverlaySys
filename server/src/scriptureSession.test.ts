@@ -153,6 +153,29 @@ describe("scriptureSession", () => {
     expect(scriptureSession.getLive(CH)).toBeUndefined();
   });
 
+  it("an operator clear drops the queued scripture", () => {
+    scriptureSession.takeIntro(CH, "show", row, intro);
+    channels.clear(CH);
+    expect(channels.getState(CH).queuedScripture).toBeUndefined();
+    expect(scriptureSession.getQueued(CH)).toBeUndefined();
+  });
+
+  it("promoting a plain graphic to program ends live scripture there", () => {
+    scriptureSession.takeSlide(CH, "show", row, 0);
+    channels.take("preview", "lower-third", {});
+    channels.takePvwToPgm("preview", CH);
+    expect(channels.getState(CH).scriptureSession).toBeUndefined();
+    expect(scriptureSession.getLive(CH)).toBeUndefined();
+  });
+
+  it("promoting a non-intro graphic to program drops program's queued scripture", () => {
+    scriptureSession.takeIntro(CH, "show", row, intro);
+    channels.take("preview", "lower-third", {});
+    channels.takePvwToPgm("preview", CH);
+    expect(channels.getState(CH).queuedScripture).toBeUndefined();
+    expect(scriptureSession.getQueued(CH)).toBeUndefined();
+  });
+
   it("reports api.bible usage on slide takes", () => {
     const spy = vi.spyOn(fums, "reportViews").mockResolvedValue();
     const niv = { ...row, source: { provider: "api.bible", bibleId: "B", fetchedAt: "x", usageTokens: ["t1"] } } as ScriptureRow;
