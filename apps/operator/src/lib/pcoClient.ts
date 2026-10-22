@@ -14,7 +14,7 @@ import { defaultServerUrl } from "./wsClient";
  * Derives the HTTP base from the WS URL (like scriptureClient), so it talks to
  * the same local server that owns the in-memory PCO token.
  */
-function httpBase(): string {
+export function httpBase(): string {
   const ws = defaultServerUrl();
   try {
     const u = new URL(ws);
