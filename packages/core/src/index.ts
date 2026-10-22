@@ -7,6 +7,8 @@ export * from "./project";
 export * from "./storageAdapter";
 export * from "./syncEngine";
 export * from "./channel";
+export * from "./scriptureSettings";
+export * from "./scriptureIntro";
 export * from "./channelConfig";
 export * from "./channelResolution";
 export * from "./channelWindowPrefs";

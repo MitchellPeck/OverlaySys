@@ -4,8 +4,12 @@ import { useEffect, useState } from "react";
 import { Button, Panel, colors } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
+import { ScriptureIntroEditor, type IntroConfig } from "@/app/components/ScriptureIntroEditor";
+import { setScriptureSettingsCache } from "@/lib/scriptureSettings";
 import {
   getApiBibleStatus,
+  getScriptureSettings,
+  putScriptureSettings,
   removeApiBibleKey,
   saveApiBibleKey,
   type ApiBibleStatus,
@@ -94,7 +98,50 @@ export default function ScriptureSettingsPage() {
             </p>
           )}
         </Panel>
+        <DefaultIntroPanel />
       </PageBody>
     </>
+  );
+}
+
+function DefaultIntroPanel() {
+  const [draft, setDraft] = useState<IntroConfig | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getScriptureSettings()
+      .then((s) => setDraft(s))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  async function save() {
+    if (!draft) return;
+    setError(null);
+    try {
+      const s = await putScriptureSettings(draft);
+      setScriptureSettingsCache(s);
+      setSaved("Saved");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <Panel title="Default scripture intro">
+      <p style={{ color: colors.textDim, fontSize: 13, marginTop: 0 }}>
+        Used by every scripture row unless the row sets its own intro or skips it.
+      </p>
+      {draft ? (
+        <ScriptureIntroEditor value={draft} onChange={(n) => { setDraft(n); setSaved(null); }} />
+      ) : (
+        <p>Loading…</p>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+        <Button variant="primary" disabled={!draft} onClick={() => void save()}>Save</Button>
+        {saved && <span style={{ fontSize: 12, color: colors.ok }}>{saved}</span>}
+      </div>
+      {error && <p role="alert" style={{ color: colors.errorText, fontSize: 12 }}>{error}</p>}
+    </Panel>
   );
 }

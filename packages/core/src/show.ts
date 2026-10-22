@@ -145,6 +145,14 @@ export const ScriptureRowSchema = z.object({
       usageTokens: z.array(z.string()).default([]),
     })
     .optional(),
+  /** Intro template override; falls back to ScriptureSettings.introTemplateId. */
+  introTemplateId: z.string().optional(),
+  /** templateFieldKey -> scripture field key (reference, book, translation, translationName, attribution). */
+  introFieldMap: z.record(z.string(), z.string()).optional(),
+  /** templateFieldKey -> literal with {key} tokens; wins over introFieldMap. */
+  introFieldLiterals: z.record(z.string(), z.string()).optional(),
+  /** Operator opted this row out of an intro. */
+  skipIntro: z.boolean().optional(),
 });
 export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
 

@@ -143,6 +143,33 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     fromChannel: z.string().default("preview"),
     toChannel: z.string().default("program"),
   }),
+  // ── Scripture (server-side session; see server/src/scriptureSession.ts) ──
+  z.object({
+    // Intro sub-take: puts the resolved intro on air and queues the row so
+    // the next scripture slide command starts it.
+    type: z.literal("scripture_take_intro"),
+    showId: z.string(),
+    rowId: z.string(),
+    channel: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("scripture_take_slide"),
+    showId: z.string(),
+    rowId: z.string(),
+    slideIdx: z.number().int().nonnegative(),
+    channel: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("scripture_advance"),
+    channel: z.string(),
+    delta: z.union([z.literal(-1), z.literal(1)]),
+  }),
+  z.object({
+    type: z.literal("scripture_goto"),
+    channel: z.string(),
+    slideIdx: z.number().int().nonnegative(),
+  }),
+  z.object({ type: z.literal("scripture_end"), channel: z.string() }),
   // ── Media slot (full-frame video beneath graphics) ──
   z.object({
     type: z.literal("media_take"),

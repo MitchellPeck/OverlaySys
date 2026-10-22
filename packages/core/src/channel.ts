@@ -18,12 +18,20 @@ export const SubTakeContextSchema = z.object({
 });
 export type SubTakeContext = z.infer<typeof SubTakeContextSchema>;
 
+/** Identity of a scripture take: its intro, or one of its slides. */
+export const ScriptureContextSchema = z.discriminatedUnion("sub", [
+  z.object({ rowId: z.string(), sub: z.literal("intro") }),
+  z.object({ rowId: z.string(), sub: z.literal("slide"), slideIdx: z.number().int().nonnegative() }),
+]);
+export type ScriptureContext = z.infer<typeof ScriptureContextSchema>;
+
 export const ActiveGraphicSchema = z.object({
   templateId: z.string(),
   data: z.record(z.string(), z.string()),
   phase: ChannelPhaseSchema,
   takenAt: z.number(), // epoch ms
   subTakeContext: SubTakeContextSchema.optional(),
+  scriptureContext: ScriptureContextSchema.optional(),
 });
 export type ActiveGraphic = z.infer<typeof ActiveGraphicSchema>;
 
@@ -92,11 +100,29 @@ export const QueuedSongSchema = z.object({
 });
 export type QueuedSong = z.infer<typeof QueuedSongSchema>;
 
+/** The scripture row whose slides are live on a channel. */
+export const ScriptureSessionSummarySchema = z.object({
+  rowId: z.string(),
+  reference: z.string(),
+  slideIdx: z.number().int().nonnegative(),
+  slideCount: z.number().int().positive(),
+  /** Reference of the live slide, e.g. "John 3:16b-17". */
+  slideReference: z.string(),
+  text: z.string(),
+});
+export type ScriptureSessionSummary = z.infer<typeof ScriptureSessionSummarySchema>;
+
+/** A scripture row armed by its intro; the next slide command starts it. */
+export const QueuedScriptureSchema = z.object({ rowId: z.string(), reference: z.string() });
+export type QueuedScripture = z.infer<typeof QueuedScriptureSchema>;
+
 export const ChannelStateSchema = z.object({
   channel: z.string(),
   active: ActiveGraphicSchema.nullable(),
   songSession: SongSessionSummarySchema.optional(),
   queuedSong: QueuedSongSchema.optional(),
+  scriptureSession: ScriptureSessionSummarySchema.optional(),
+  queuedScripture: QueuedScriptureSchema.optional(),
   media: ChannelMediaSchema.nullable().optional(),
   /**
    * True when the last media_clear asked for a hard cut, so renderers skip

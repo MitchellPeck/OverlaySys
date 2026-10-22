@@ -15,6 +15,9 @@ export type FeedbackId =
   | "video_paused"
   | "song_active"
   | "song_queued"
+  | "scripture_active"
+  | "scripture_queued"
+  | "scripture_slide_is"
   | "song_trust_on"
   | "song_section_is"
   | "song_sub_take_on_channel"
@@ -47,7 +50,8 @@ export interface FeedbackDefinition {
       | "row_index"
       | "kind_ordinal"
       | "sub_take"
-      | "row_kind";
+      | "row_kind"
+      | "slide";
   }[];
 }
 
@@ -142,6 +146,24 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
       { id: "rowIndex", type: "row_index" },
       { id: "sub", type: "sub_take" },
     ],
+  },
+  {
+    id: "scripture_active",
+    name: "Scripture slides live",
+    description: "True when the chosen channel shows a scripture slide.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "scripture_queued",
+    name: "Scripture queued (intro taken)",
+    description: "True when the chosen channel has a scripture armed by its intro. Next / go to slide on that channel will start it.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "scripture_slide_is",
+    name: "Scripture slide N is live",
+    description: "True when the chosen channel's live scripture is on slide N (1-based).",
+    options: [{ id: "channel", type: "channel" }, { id: "slide", type: "slide" }],
   },
   {
     id: "stt_running",
@@ -284,13 +306,13 @@ function rowMatchesPgm(
   active: ActiveGraphic | null | undefined,
   pgmSongId: string | undefined,
   row: RundownRow,
+  pgmScriptureRowId: string | undefined,
 ): boolean {
   if (row.kind === "song") {
     return Boolean(pgmSongId && pgmSongId === row.songId);
   }
   if (row.kind === "scripture") {
-    // TODO: wire scripture row in Task E4 / D1 — placeholder for exhaustive switch
-    return false;
+    return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
   if (row.kind === "video") return false;
   if (!active) return false;
@@ -310,6 +332,14 @@ export function feedbackPredicate(
   options: FeedbackOptions,
 ): boolean {
   switch (id) {
+    case "scripture_active":
+      return Boolean(state.channelStates.get(String(options.channel ?? ""))?.scriptureSession);
+    case "scripture_queued":
+      return Boolean(state.channelStates.get(String(options.channel ?? ""))?.queuedScripture);
+    case "scripture_slide_is": {
+      const sess = state.channelStates.get(String(options.channel ?? ""))?.scriptureSession;
+      return !!sess && sess.slideIdx === Number(options.slide ?? 1) - 1;
+    }
     case "channel_is_live": {
       const c = String(options.channel ?? "");
       return state.channelStates.get(c)?.active != null;
@@ -407,7 +437,7 @@ export function feedbackPredicate(
       const row = show.rows.find((r) => r.id === String(options.rowId ?? ""));
       if (!row) return false;
       const pgm = state.channelStates.get("program");
-      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
+      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId);
     }
     case "row_at_index_is_cursor": {
       if (state.loadedShowId == null || state.loadedShowRowCursor == null)
@@ -423,7 +453,7 @@ export function feedbackPredicate(
       const row = show.rows[idx];
       if (!row) return false;
       const pgm = state.channelStates.get("program");
-      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row);
+      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId);
     }
     case "cursor_row_kind_is": {
       if (state.loadedShowId == null || state.loadedShowRowCursor == null)
@@ -500,6 +530,16 @@ const kindOrdinalInput: CompanionInputFieldTextInput = {
   default: "verse:1",
 };
 
+const slideInputF: CompanionInputFieldNumber = {
+  id: "slide",
+  type: "number",
+  label: "Slide (1-based)",
+  default: 1,
+  min: 1,
+  max: 200,
+  step: 1,
+};
+
 const rowIndexInputF: CompanionInputFieldNumber = {
   id: "rowIndex",
   type: "number",
@@ -563,6 +603,8 @@ export function feedbackDefinitionsForSDK(
           return subTakeInputF;
         case "row_kind":
           return rowKindInputF;
+        case "slide":
+          return slideInputF;
       }
     });
     defs[d.id] = {

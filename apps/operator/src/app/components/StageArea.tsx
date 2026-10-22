@@ -117,7 +117,8 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
       return <SongTakeStrip show={show} row={mode.row} channel={channel} liveSession={songSessions[channel] ?? null} />;
     }
     case "scripture":
-      return <ScriptureTakeStrip row={mode.row} channel={mode.row.channelHint ?? "program"} />;
+      if (!show) return null;
+      return <ScriptureTakeStrip show={show} row={mode.row} channel={mode.row.channelHint ?? "program"} />;
     case "graphic":
       return <GraphicStage key={mode.row.id} row={mode.row} compact={compact} />;
     case "video":

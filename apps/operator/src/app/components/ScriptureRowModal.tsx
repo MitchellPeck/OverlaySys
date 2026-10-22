@@ -15,6 +15,8 @@ import {
   type PassageResponse,
 } from "@/lib/scriptureClient";
 import { Button, Field, Input, Modal, Select, colors } from "@overlaysys/ui";
+import { ScriptureIntroEditor, type IntroConfig } from "./ScriptureIntroEditor";
+import { useScriptureSettings } from "@/lib/scriptureSettings";
 import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
 import { useStore } from "@/lib/store";
 import {
@@ -44,6 +46,7 @@ export interface SaveArgs {
   passage: PassageResponse;
   slides: EditableSlide[];
   templateId: string;
+  intro: IntroConfig & { skipIntro?: boolean };
 }
 
 export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) {
@@ -305,6 +308,16 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
               : undefined
           }
           seedTemplateId={editingRow?.templateId}
+          seedIntro={
+            editingRow
+              ? {
+                  introTemplateId: editingRow.introTemplateId,
+                  introFieldMap: editingRow.introFieldMap,
+                  introFieldLiterals: editingRow.introFieldLiterals,
+                  skipIntro: editingRow.skipIntro,
+                }
+              : undefined
+          }
           backLabel={editingRow ? "Cancel" : "Back"}
           onCancel={() => {
             if (editingRow) {
@@ -313,7 +326,7 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
               setPassage(null);
             }
           }}
-          onSave={(slides, templateId) => {
+          onSave={(slides, templateId, intro) => {
             const meta = translations.find((t) => t.id === passage.translation);
             onSave({
               reference: passage.reference,
@@ -323,6 +336,7 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
               passage,
               slides,
               templateId,
+              intro,
             });
             onClose();
           }}
@@ -336,6 +350,7 @@ function Step2({
   passage,
   seedSlides,
   seedTemplateId,
+  seedIntro,
   backLabel = "Back",
   onCancel,
   onSave,
@@ -343,9 +358,10 @@ function Step2({
   passage: PassageResponse;
   seedSlides?: EditableSlide[];
   seedTemplateId?: string;
+  seedIntro?: IntroConfig & { skipIntro?: boolean };
   backLabel?: string;
   onCancel: () => void;
-  onSave: (slides: EditableSlide[], templateId: string) => void;
+  onSave: (slides: EditableSlide[], templateId: string, intro: IntroConfig & { skipIntro?: boolean }) => void;
 }) {
   const templates = useStore((s) => s.templates);
   const [sizePref, setSizePref] = useState<SlideSizePref>(() => loadSlideSizePref());
@@ -363,6 +379,17 @@ function Step2({
   const [templateId, setTemplateId] = useState<string>(
     seedTemplateId || templates[0]?.id || "",
   );
+
+  const [introMode, setIntroMode] = useState<"default" | "custom" | "none">(
+    seedIntro?.skipIntro ? "none" : seedIntro?.introTemplateId ? "custom" : "default",
+  );
+  const [introCfg, setIntroCfg] = useState<IntroConfig>({
+    introTemplateId: seedIntro?.introTemplateId,
+    introFieldMap: seedIntro?.introFieldMap,
+    introFieldLiterals: seedIntro?.introFieldLiterals,
+  });
+  const settings = useScriptureSettings();
+  const defaultName = templates.find((t) => t.id === settings?.introTemplateId)?.name;
 
   /** Switch slide size, re-splitting only if the budget actually changes. Returns false if the operator cancels. */
   function applySize(next: SlideSizePref): boolean {
@@ -441,6 +468,18 @@ function Step2({
           )}
         </div>
       </Field>
+      <Field label="Intro" style={{ marginTop: 12 }}>
+        <Select value={introMode} onChange={(e) => setIntroMode(e.target.value as "default" | "custom" | "none")}>
+          <option value="default">Use default intro{defaultName ? ` (${defaultName})` : " (none set)"}</option>
+          <option value="custom">Custom intro for this row</option>
+          <option value="none">No intro</option>
+        </Select>
+      </Field>
+      {introMode === "custom" && (
+        <div style={{ marginTop: 8 }}>
+          <ScriptureIntroEditor value={introCfg} onChange={setIntroCfg} />
+        </div>
+      )}
       <p style={{ fontSize: 12, color: colors.textDim, marginTop: 8 }}>
         Click between words to add a slide break; drag a break to move it.
       </p>
@@ -459,7 +498,17 @@ function Step2({
         <Button
           variant="primary"
           disabled={!templateId || slides.length === 0}
-          onClick={() => onSave(slides, templateId)}
+          onClick={() =>
+            onSave(
+              slides,
+              templateId,
+              introMode === "custom"
+                ? { ...introCfg, skipIntro: false }
+                : introMode === "none"
+                  ? { skipIntro: true }
+                  : {},
+            )
+          }
         >
           Save
         </Button>

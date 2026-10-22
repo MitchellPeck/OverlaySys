@@ -34,14 +34,14 @@ function onChannel(
       return !!m && m.rowId === row.id && m.playback.status !== "ended" && m.playback.status !== "error";
     }
     case "scripture":
-      return false;
+      return st?.scriptureSession?.rowId === row.id || st?.active?.scriptureContext?.rowId === row.id;
   }
 }
 
 /**
  * Whether a rundown row is currently on program or cued on preview, derived
  * only from state the operator already receives. Program wins over preview.
- * Scripture rows never light: channel state carries no row identity for them.
+ * Scripture rows light from scriptureSession / scriptureContext.
  */
 export function rowAirState(
   row: Row,

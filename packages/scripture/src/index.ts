@@ -6,3 +6,4 @@ export * from "./providers/registry";
 export * from "./providers/bundled";
 export * from "./providers/apiBible";
 export * from "./bundles";
+export * from "./slideData";

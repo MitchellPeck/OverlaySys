@@ -85,10 +85,16 @@ describe("rowAirState", () => {
     expect(rowAirState(video("v1"), { program: { channel: "program", active: null, media: media("error") } }, {})).toBeNull();
   });
 
-  it("never lights scripture rows (state carries no row identity)", () => {
-    const states: Record<string, ChannelState> = {
-      program: { channel: "program", active: active("scripture", {}) },
-    };
-    expect(rowAirState(scripture("x"), states, {})).toBeNull();
+  it("scripture lights from its session or its intro context", () => {
+    const row = { kind: "scripture", id: "sr", reference: "John 3:16", translation: "KJV", templateId: "body", slides: [] } as unknown as Show["rows"][number];
+    const live = {
+      program: { channel: "program", active: null, scriptureSession: { rowId: "sr", reference: "John 3:16", slideIdx: 0, slideCount: 1, slideReference: "John 3:16", text: "x" } },
+    } as unknown as Record<string, ChannelState>;
+    expect(rowAirState(row, live, {})).toBe("program");
+    const intro = {
+      preview: { channel: "preview", active: { templateId: "intro", data: {}, phase: "in", takenAt: 1, scriptureContext: { rowId: "sr", sub: "intro" } } },
+    } as unknown as Record<string, ChannelState>;
+    expect(rowAirState(row, intro, {})).toBe("preview");
+    expect(rowAirState(row, {}, {})).toBeNull();
   });
 });

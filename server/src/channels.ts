@@ -4,11 +4,15 @@ import type {
   MediaPlayback,
   MediaStatus,
   MediaTransition,
+  QueuedScripture,
   QueuedSong,
+  ScriptureContext,
+  ScriptureSessionSummary,
   SongSessionSummary,
   SubTakeContext,
 } from "@overlaysys/core";
 import { DEFAULT_MEDIA_TRANSITION } from "@overlaysys/core";
+import * as scriptureSession from "./scriptureSession";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
 
@@ -111,6 +115,7 @@ export function take(
   templateId: string,
   data: Record<string, string>,
   subTakeContext?: SubTakeContext,
+  scripture?: { context: ScriptureContext; session?: ScriptureSessionSummary; queued?: QueuedScripture },
 ): void {
   // Cancel any prior auto-out before we install the new active mount —
   // even if the new take is for the same template, the timer should
@@ -135,19 +140,29 @@ export function take(
       delete s.queuedSong;
     }
   }
+  // Every take replaces whatever scripture owned the channel — including song
+  // slides (internal takes) and scripture's own takes, which re-establish
+  // their state from `scripture` below. One emit carries both changes.
+  scriptureSession.dropAll(channel);
+  delete s.scriptureSession;
+  delete s.queuedScripture;
+  if (scripture?.session) s.scriptureSession = scripture.session;
+  if (scripture?.queued) s.queuedScripture = scripture.queued;
   s.active = {
     templateId,
     data,
     phase: "in",
     takenAt: Date.now(),
     ...(subTakeContext ? { subTakeContext } : {}),
+    ...(scripture ? { scriptureContext: scripture.context } : {}),
   };
   states.set(channel, s);
   emit(channel);
   // Internal takes (song slide advances) bypass auto-out — songs control
   // their own progression and shouldn't self-clear mid-set on a slide
-  // pause.
-  if (!takeIsInternal) {
+  // pause. Scripture slide takes (those carrying a session) do the same so
+  // an auto-out can't end the session mid-passage; scripture intros keep it.
+  if (!takeIsInternal && !scripture?.session) {
     void maybeScheduleAutoOut(channel, templateId, s.active.takenAt);
   }
 }
@@ -171,9 +186,18 @@ export function clear(
     // in song mode after the screen is cleared.
     const session = songSession.getSession(channel);
     if (session) songSession.end(channel);
+    if (scriptureSession.dropLive(channel)) {
+      const st = getOrInit(channel);
+      delete st.scriptureSession;
+    }
   }
   cancelAutoOut(channel);
   const s = getOrInit(channel);
+  if (!clearIsInternal && !options?.keepQueuedSong && scriptureSession.dropQueued(channel)) {
+    delete s.queuedScripture;
+    states.set(channel, s);
+    if (!s.active) emit(channel);
+  }
   if (!clearIsInternal && !options?.keepQueuedSong && songSession.dropQueued(channel)) {
     delete s.queuedSong;
     states.set(channel, s);
@@ -246,6 +270,14 @@ export function setQueuedSong(
   if (!options?.deferEmit) emit(channel);
 }
 
+export function setQueuedScripture(channel: string, queued: QueuedScripture | null): void {
+  const s = getOrInit(channel);
+  if (queued === null) delete s.queuedScripture;
+  else s.queuedScripture = queued;
+  states.set(channel, s);
+  emit(channel);
+}
+
 export function setActiveNull(channel: string): void {
   const s = getOrInit(channel);
   s.active = null;
@@ -290,12 +322,28 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   } else {
     delete pgm.queuedSong;
   }
+  // Scripture mirrors songs: live scripture on the destination ends; a
+  // promoted scripture intro carries its queue.
+  if (scriptureSession.dropLive(toChannel)) delete pgm.scriptureSession;
+  let carriedScripture: QueuedScripture | null = null;
+  if (queued.scriptureContext?.sub === "intro") {
+    carriedScripture = scriptureSession.moveQueued(fromChannel, toChannel);
+  } else {
+    scriptureSession.dropQueued(toChannel);
+  }
+  if (carriedScripture) {
+    pgm.queuedScripture = carriedScripture;
+    delete src.queuedScripture;
+  } else {
+    delete pgm.queuedScripture;
+  }
   pgm.active = {
     templateId: queued.templateId,
     data: queued.data,
     phase: "in",
     takenAt: Date.now(),
     ...(queued.subTakeContext ? { subTakeContext: queued.subTakeContext } : {}),
+    ...(queued.scriptureContext ? { scriptureContext: queued.scriptureContext } : {}),
   };
   states.set(toChannel, pgm);
   emit(toChannel);
