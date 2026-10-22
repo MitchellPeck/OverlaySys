@@ -15,6 +15,7 @@ import * as channels from "./channels";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import * as stageState from "./stageState";
 import * as templates from "./templates";
 import { buildStageFeed } from "./stageFeed";
 
@@ -75,6 +76,9 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     if (t) templateMap.set(id, t);
   }
 
+  const stage = stageState.getStageState();
+  const notes = await stageState.activeNotes(stage);
+
   return buildStageFeed({
     layout: resolveStageLayout(cfg.layoutId),
     followed,
@@ -83,6 +87,8 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     songs: songMap,
     templates: templateMap,
     now,
+    stage,
+    notes,
   });
 }
 

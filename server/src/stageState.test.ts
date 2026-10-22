@@ -86,4 +86,22 @@ describe("stageState", () => {
     await stage.dispatchStage({ type: "select", showId: "show-1", notesId: "gone" });
     expect(await stage.stageStateMessage()).toMatchObject({ pointCount: 0, title: null, pointHeading: null, nextHeading: null });
   });
+
+  it("a take from another show that links notes commits once", async () => {
+    const show2: Show = ShowSchema.parse({
+      id: "show-2",
+      name: "Other",
+      projectId: "p",
+      songs: [],
+      sermonNotes: [{ id: "m1", title: "M", body: "# M" }],
+      rows: [{ kind: "graphic", id: "q", templateId: "t", data: {}, sermonNotesId: "m1" }],
+    });
+    vi.spyOn(shows, "getShow").mockImplementation(async (id) => (id === "show-1" ? show : id === "show-2" ? show2 : null));
+    await stage.onRowTaken({ showId: "show-1", rowId: "r1" });
+    const seen = vi.fn();
+    stage.subscribeStageState(seen);
+    await stage.onRowTaken({ showId: "show-2", rowId: "q" });
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(stage.getStageState().notes).toEqual({ showId: "show-2", notesId: "m1" });
+  });
 });

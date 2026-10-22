@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  INITIAL_STAGE_STATE,
   NONE_SLIDE,
   SPEAKER_LAYOUT,
   ShowSchema,
@@ -80,6 +81,8 @@ function base(followed: ChannelState | null, extra: Partial<Parameters<typeof bu
     songs,
     templates,
     now: 1000,
+    stage: INITIAL_STAGE_STATE,
+    notes: null,
     ...extra,
   });
 }
@@ -286,5 +289,42 @@ describe("buildStageFeed", () => {
       label: "Announcements",
     });
     expect(base(media("ended")).video).toBeNull();
+  });
+
+  it("includes the active notes with a clamped point index", () => {
+    const f = base(null, {
+      stage: { ...INITIAL_STAGE_STATE, notes: { showId: "show-1", notesId: "n" }, pointIdx: 9, scrollOffset: 0.5 },
+      notes: {
+        notes: { id: "n", title: "Grace", body: "" },
+        points: [
+          { heading: "A", markdown: "# A" },
+          { heading: "B", markdown: "# B" },
+        ],
+      },
+    });
+    expect(f.notes).toEqual({
+      id: "n",
+      title: "Grace",
+      points: [
+        { heading: "A", markdown: "# A" },
+        { heading: "B", markdown: "# B" },
+      ],
+      pointIdx: 1,
+      scrollOffset: 0.5,
+    });
+  });
+
+  it("notes are null without an active set; message passes through", () => {
+    const f = base(null, { stage: { ...INITIAL_STAGE_STATE, message: { text: "Wrap up", sentAt: 3 } } });
+    expect(f.notes).toBeNull();
+    expect(f.message).toEqual({ text: "Wrap up", sentAt: 3 });
+  });
+
+  it("an empty notes document yields notes with no points and index 0", () => {
+    const f = base(null, {
+      stage: { ...INITIAL_STAGE_STATE, notes: { showId: "s", notesId: "n" }, pointIdx: 2 },
+      notes: { notes: { id: "n", title: "Empty", body: "" }, points: [] },
+    });
+    expect(f.notes).toMatchObject({ points: [], pointIdx: 0 });
   });
 });

@@ -60,7 +60,7 @@ channels.onAnyChange(() => stageFeedHub.invalidateAll());
 // actually go to air do.
 channels.onLiveRow((channel, source) => {
   if (channel === "preview") return;
-  void stageState.onRowTaken(source);
+  void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
 });
 stageState.subscribeStageState(() => {
   stageFeedHub.invalidateAll();

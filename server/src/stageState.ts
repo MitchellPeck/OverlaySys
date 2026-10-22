@@ -63,14 +63,16 @@ export async function dispatchStage(action: StageAction): Promise<void> {
 
 /** Called whenever a channel's liveRow is set. */
 export async function onRowTaken(source: RowSource): Promise<void> {
-  if (state.notes && state.notes.showId !== source.showId) {
-    commit(reduceStageState(state, { type: "select", showId: source.showId, notesId: null }, 0));
+  let next = state;
+  if (next.notes && next.notes.showId !== source.showId) {
+    next = reduceStageState(next, { type: "select", showId: source.showId, notesId: null }, 0);
   }
   const show = await shows.getShow(source.showId);
   const row = show?.rows.find((r) => r.id === source.rowId);
   if (row?.sermonNotesId) {
-    commit(reduceStageState(state, { type: "select", showId: source.showId, notesId: row.sermonNotesId }, 0));
+    next = reduceStageState(next, { type: "select", showId: source.showId, notesId: row.sermonNotesId }, 0);
   }
+  commit(next);
 }
 
 export async function stageStateMessage(): Promise<ServerMessage> {

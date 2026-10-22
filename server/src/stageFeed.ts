@@ -10,10 +10,13 @@ import {
   type RundownRow,
   type Show,
   type SlideView,
+  type NotesPoint,
+  type SermonNotes,
   type Song,
   type StageFeed,
   type StageLayout,
   type StageRowView,
+  type StageState,
   type StageTimer,
   type StageVideo,
   type Template,
@@ -28,6 +31,8 @@ export interface StageFeedInputs {
   songs: Map<string, Song>;
   templates: Map<string, Template>;
   now: number;
+  stage: StageState;
+  notes: { notes: SermonNotes; points: NotesPoint[] } | null;
 }
 
 type Cursor = { sectionIdx: number; slideIdx: number };
@@ -207,6 +212,16 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     }
   }
 
+  const notesView = i.notes
+    ? {
+        id: i.notes.notes.id,
+        title: i.notes.notes.title,
+        points: i.notes.points,
+        pointIdx: Math.min(i.stage.pointIdx, Math.max(0, i.notes.points.length - 1)),
+        scrollOffset: i.stage.scrollOffset,
+      }
+    : null;
+
   return {
     layout: i.layout,
     current,
@@ -215,8 +230,8 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     nextRow: nextRowObj ? rowView(nextRowObj, songs, templates) : null,
     timers: timersOf(i.allStates, templates, followed?.channel ?? null),
     video: videoOf(followed),
-    notes: null,
-    message: null,
+    notes: notesView,
+    message: i.stage.message,
     serverNow: i.now,
   };
 }

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChannelConfigSchema, ShowSchema, type ChannelConfig, type Template } from "@overlaysys/core";
+import { ChannelConfigSchema, INITIAL_STAGE_STATE, ShowSchema, type ChannelConfig, type Template } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as templates from "./templates";
+import * as stageState from "./stageState";
 import * as hub from "./stageFeedHub";
 
 const configs = new Map<string, ChannelConfig>();
@@ -157,5 +158,12 @@ describe("stageFeedHub", () => {
     expect(warn.mock.calls[0]![0]).toContain("[stageFeedHub]");
     expect(send).not.toHaveBeenCalled();
     off();
+  });
+
+  it("feeds include the shared stage message", async () => {
+    cfg({ id: "pastor", name: "Pastor", kind: "stage" });
+    vi.spyOn(stageState, "getStageState").mockReturnValue({ ...INITIAL_STAGE_STATE, message: { text: "Hi", sentAt: 1 } });
+    vi.spyOn(stageState, "activeNotes").mockResolvedValue(null);
+    expect((await hub.computeFeed("pastor"))?.message).toEqual({ text: "Hi", sentAt: 1 });
   });
 });
