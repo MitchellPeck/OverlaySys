@@ -709,6 +709,20 @@ function RundownTable({
                     >
                       Edit slides…
                     </button>
+                    {(draft.sermonNotes ?? []).length > 0 && (
+                      <div style={{ width: 160 }}>
+                        <NotesSetPicker
+                          sets={draft.sermonNotes ?? []}
+                          value={row.sermonNotesId}
+                          onChange={(v) =>
+                            onUpdate((s) => {
+                              const r = s.rows.find((x) => x.id === row.id);
+                              if (r) r.sermonNotesId = v;
+                            })
+                          }
+                        />
+                      </div>
+                    )}
                     <IconButton
                       onClick={() => onDeleteRow(row.id)}
                       title="Delete row"
@@ -757,6 +771,20 @@ function RundownTable({
                     >
                       Edit video…
                     </button>
+                    {(draft.sermonNotes ?? []).length > 0 && (
+                      <div style={{ width: 160 }}>
+                        <NotesSetPicker
+                          sets={draft.sermonNotes ?? []}
+                          value={row.sermonNotesId}
+                          onChange={(v) =>
+                            onUpdate((s) => {
+                              const r = s.rows.find((x) => x.id === row.id);
+                              if (r) r.sermonNotesId = v;
+                            })
+                          }
+                        />
+                      </div>
+                    )}
                     <IconButton
                       onClick={() => onDeleteRow(row.id)}
                       title="Delete row"

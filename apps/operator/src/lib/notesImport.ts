@@ -12,7 +12,7 @@ export function normalizeImportedMarkdown(md: string): string {
       inner.split("|").map((c) => c.trim()).filter(Boolean).join(" "),
     )
     .replace(/__(.+?)__/g, "**$1**")
-    .replace(/(^|[^_\w])_(?!_)(.+?)_(?![_\w])/g, "$1*$2*")
+    .replace(/(^|[^_\w\\])_(?!_)(.*?[^\\])_(?![_\w])/g, "$1*$2*")
     .replace(/^(\s*)\*\s+/gm, "$1- ")
     .replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1")
     .split("\n")
@@ -22,12 +22,21 @@ export function normalizeImportedMarkdown(md: string): string {
     .trim();
 }
 
-export async function notesFromFile(file: File): Promise<{ title: string; body: string }> {
+export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+
+type FileLike = Pick<File, "name" | "size" | "text" | "arrayBuffer">;
+
+export async function notesFromFile(file: FileLike): Promise<{ title: string; body: string }> {
+  if (file.size > MAX_IMPORT_BYTES) throw new Error("File is too large (max 5 MB)");
   const title = titleFromFileName(file.name);
+  let body: string;
   if (/\.docx$/i.test(file.name)) {
     const mammoth = await import("mammoth/mammoth.browser");
     const { value } = await mammoth.convertToMarkdown({ arrayBuffer: await file.arrayBuffer() });
-    return { title, body: normalizeImportedMarkdown(value) };
+    body = normalizeImportedMarkdown(value);
+  } else {
+    body = normalizeImportedMarkdown(await file.text());
   }
-  return { title, body: normalizeImportedMarkdown(await file.text()) };
+  if (!body) throw new Error("No text found in that file");
+  return { title, body };
 }
