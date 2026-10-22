@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScriptureRow, Song } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as scriptureSession from "./scriptureSession";
 import * as songSession from "./songSession";
 import * as fums from "./apiBible/fums";
+import * as templates from "./templates";
 
 const CH = "program";
 const v = (verse: number, text: string) => ({ book: "JHN", chapter: 3, verse, text });
@@ -182,5 +183,37 @@ describe("scriptureSession", () => {
     scriptureSession.takeSlide(CH, "show", niv, 0);
     expect(spy).toHaveBeenCalledWith(["t1"]);
     spy.mockRestore();
+  });
+
+  describe("auto-out", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+    const mockAutoOut = () =>
+      vi.spyOn(templates, "getTemplate").mockImplementation(
+        async (id: string) => ({ id, autoOutMs: 1 }) as Awaited<ReturnType<typeof templates.getTemplate>>,
+      );
+
+    it("a slide template with autoOutMs does not end the scripture session", async () => {
+      vi.useFakeTimers();
+      mockAutoOut();
+      scriptureSession.takeSlide(CH, "show", row, 0);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(scriptureSession.getLive(CH)).toBeDefined();
+      const s = channels.getState(CH);
+      expect(s.scriptureSession).toBeDefined();
+      expect(s.active?.phase).toBe("in");
+    });
+
+    it("an intro template with autoOutMs still auto-outs but keeps the queue", async () => {
+      vi.useFakeTimers();
+      mockAutoOut();
+      scriptureSession.takeIntro(CH, "show", row, intro);
+      await vi.advanceTimersByTimeAsync(50);
+      const s = channels.getState(CH);
+      expect(s.active?.phase).not.toBe("in");
+      expect(s.queuedScripture).toEqual({ rowId: "row-s", reference: "John 3:16-18" });
+    });
   });
 });

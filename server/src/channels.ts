@@ -160,8 +160,9 @@ export function take(
   emit(channel);
   // Internal takes (song slide advances) bypass auto-out — songs control
   // their own progression and shouldn't self-clear mid-set on a slide
-  // pause.
-  if (!takeIsInternal) {
+  // pause. Scripture slide takes (those carrying a session) do the same so
+  // an auto-out can't end the session mid-passage; scripture intros keep it.
+  if (!takeIsInternal && !scripture?.session) {
     void maybeScheduleAutoOut(channel, templateId, s.active.takenAt);
   }
 }
