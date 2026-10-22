@@ -130,6 +130,9 @@ export function StageWidgetView({ widget, feed, nowMs }: { widget: StageWidget; 
         </Frame>
       );
     }
+    case "sermonNotes":
+    case "message":
+      return null; // implemented in a later task
     case "text":
       return (
         <Frame widget={widget}>

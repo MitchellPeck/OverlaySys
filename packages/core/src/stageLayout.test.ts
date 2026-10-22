@@ -63,3 +63,19 @@ describe("resolveStageLayout", () => {
     expect(resolveStageLayout("nope").id).toBe(DEFAULT_STAGE_LAYOUT_ID);
   });
 });
+
+describe("notes and message widgets", () => {
+  it("fill defaults", () => {
+    const n = StageWidgetSchema.parse({ id: "n", kind: "sermonNotes", rect: { x: 0, y: 0, w: 10, h: 10 } });
+    if (n.kind !== "sermonNotes") throw new Error("narrowing");
+    expect(n.props).toEqual({ highlightColor: "#ffd166", dimPast: true, showCounter: true, anchor: 0.33 });
+    const m = StageWidgetSchema.parse({ id: "m", kind: "message", rect: { x: 0, y: 0, w: 10, h: 10 } });
+    if (m.kind !== "message") throw new Error("narrowing");
+    expect(m.props).toEqual({ flash: true });
+  });
+  it("Speaker layout includes notes and message widgets", () => {
+    const kinds = SPEAKER_LAYOUT.widgets.map((w) => w.kind);
+    expect(kinds).toContain("sermonNotes");
+    expect(kinds).toContain("message");
+  });
+});

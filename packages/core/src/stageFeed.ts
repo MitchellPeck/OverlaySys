@@ -41,6 +41,18 @@ export const StageVideoSchema = z.object({
 });
 export type StageVideo = z.infer<typeof StageVideoSchema>;
 
+export const StageNotesViewSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  points: z.array(z.object({ heading: z.string(), markdown: z.string() })),
+  pointIdx: z.number().int().nonnegative(),
+  scrollOffset: z.number(),
+});
+export type StageNotesView = z.infer<typeof StageNotesViewSchema>;
+
+export const StageMessageSchema = z.object({ text: z.string(), sentAt: z.number() });
+export type StageMessage = z.infer<typeof StageMessageSchema>;
+
 export const StageFeedSchema = z.object({
   layout: StageLayoutSchema,
   current: SlideViewSchema,
@@ -49,6 +61,8 @@ export const StageFeedSchema = z.object({
   nextRow: StageRowViewSchema.nullable(),
   timers: z.array(StageTimerSchema),
   video: StageVideoSchema.nullable(),
+  notes: StageNotesViewSchema.nullable(),
+  message: StageMessageSchema.nullable(),
   serverNow: z.number(),
 });
 export type StageFeed = z.infer<typeof StageFeedSchema>;

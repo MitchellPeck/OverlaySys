@@ -215,6 +215,8 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     nextRow: nextRowObj ? rowView(nextRowObj, songs, templates) : null,
     timers: timersOf(i.allStates, templates, followed?.channel ?? null),
     video: videoOf(followed),
+    notes: null,
+    message: null,
     serverNow: i.now,
   };
 }
