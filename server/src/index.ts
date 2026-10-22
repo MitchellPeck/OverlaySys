@@ -19,6 +19,7 @@ import { defaultDevEnvFiles, loadDevEnvFiles } from "./devEnv";
 import { registerPcoRoutes } from "./pco/routes";
 import { initPcoAuthFromEnv } from "./pco/pcoTokens";
 import { initScripture, registerScriptureRoutes } from "./scripture";
+import { registerStageSettingsRoutes } from "./stageSettings";
 import { initApiBible } from "./apiBible/config";
 import { registerApiBibleRoutes } from "./apiBible/routes";
 import { startApiBibleRefresh } from "./apiBible/refresh";
@@ -114,6 +115,7 @@ await registerPcoRoutes(app);
 // PCO_APP_ID + PCO_SECRET) so a PAT connects without any UI or OAuth flow.
 initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
+await registerStageSettingsRoutes(app);
 await registerApiBibleRoutes(app);
 
 app.get("/api/templates", async () => {

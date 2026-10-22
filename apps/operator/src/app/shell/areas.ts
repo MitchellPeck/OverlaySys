@@ -3,7 +3,7 @@
 
 import {
   ArrowDownUp, BookOpen, CloudDownload, FolderKanban, ListOrdered, Mic, MonitorPlay,
-  MonitorSpeaker, Music, Palette, UserRound, Zap, type LucideIcon,
+  MonitorSmartphone, MonitorSpeaker, Music, Palette, UserRound, Zap, type LucideIcon,
 } from "lucide-react";
 
 export type AreaId = "live" | "library" | "settings";
@@ -44,6 +44,7 @@ export const AREAS: Record<AreaId, Area> = {
       { route: "/settings/channels", label: "Channels", icon: MonitorSpeaker, desktopOnly: true },
       { route: "/settings/stt", label: "Speech-to-text", icon: Mic, desktopOnly: true },
       { route: "/settings/scripture", label: "Scripture", icon: BookOpen, desktopOnly: true },
+      { route: "/settings/stage", label: "Stage monitor", icon: MonitorSmartphone, desktopOnly: true },
       { route: "/data", label: "Data", icon: ArrowDownUp },
       { route: "/projects", label: "Projects", icon: FolderKanban },
       { route: "/account", label: "Account", icon: UserRound },

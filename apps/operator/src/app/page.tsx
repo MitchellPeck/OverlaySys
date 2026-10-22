@@ -12,6 +12,7 @@ import { Monitors } from "./components/Monitors";
 import { StageArea } from "./components/StageArea";
 import { TimersRail } from "./components/TimersRail";
 import { HotcardsPanel } from "./components/HotcardsPanel";
+import { StagePanel } from "./components/StagePanel";
 import { ConsoleBottomBar } from "./components/ConsoleBottomBar";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { PageChrome } from "./shell/PageChrome";
@@ -91,6 +92,7 @@ function ShowPageLocal() {
           <div style={{ flex: "0 1 auto", maxHeight: "45%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <TimersRail />
           </div>
+          <StagePanel />
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <HotcardsPanel />
           </div>

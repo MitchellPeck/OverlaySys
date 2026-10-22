@@ -23,9 +23,11 @@ import type {
   SttInputDevice,
   SttInstallProgress,
 } from "@overlaysys/core";
+import type { ServerMessage } from "@overlaysys/ws-protocol";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
 
+export type StageStateMessage = Extract<ServerMessage, { type: "stage_state" }>;
 type ConnState = "connecting" | "open" | "closed";
 export type ShowMeta = {
   id: string;
@@ -89,6 +91,7 @@ type StoreState = {
   sttMatches: Record<string, SttMatchSummary>;
   sttListeners: SttListenerInfo[];
 
+  stageState: StageStateMessage | null;
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
 
@@ -115,6 +118,7 @@ type StoreState = {
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
   setSttMatch: (channel: string, match: SttMatchSummary) => void;
   setSttListeners: (listeners: SttListenerInfo[]) => void;
+  setStageState: (m: StageStateMessage | null) => void;
   setHotcards: (h: HotcardMeta[]) => void;
   setHotcard: (h: Hotcard) => void;
 
@@ -182,6 +186,7 @@ export const useStore = create<StoreState>((set) => ({
   songSessions: {},
   sttMatches: {},
   sttListeners: [],
+  stageState: null,
   hotcards: [],
   hotcardCache: {},
   projects: [],
@@ -311,6 +316,7 @@ export const useStore = create<StoreState>((set) => ({
   setSttMatch: (channel, match) =>
     set((s) => ({ sttMatches: { ...s.sttMatches, [channel]: match } })),
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
+  setStageState: (m) => set({ stageState: m }),
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),
