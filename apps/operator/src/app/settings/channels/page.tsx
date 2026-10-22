@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChannelConfig, ChannelRenderMode } from "@overlaysys/core";
+import type { ChannelConfig, ChannelKind, ChannelRenderMode } from "@overlaysys/core";
+import { BUILT_IN_STAGE_LAYOUTS, DEFAULT_STAGE_FOLLOWS } from "@overlaysys/core";
 import { Button, IconButton, Input, Panel, Select, colors, radius } from "@overlaysys/ui";
 import type { ProjectChannelOverride } from "@overlaysys/core";
 import { useWs } from "@/lib/useWs";
@@ -409,7 +410,7 @@ function ChannelRow({
   return (
     <li style={{ marginBottom: 8 }}>
       <Panel padding="md">
-        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 160px 200px auto auto", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 120px 160px 200px auto auto", gap: 8, alignItems: "center" }}>
           <code style={{ fontSize: 12, color: colors.textDim }}>{config.id}</code>
           <Input
             value={draft.name}
@@ -417,25 +418,64 @@ function ChannelRow({
             title="Display name"
           />
           <Select
-            value={draft.renderMode}
-            onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
-            title="Render mode"
+            value={draft.kind}
+            onChange={(e) => patch({ kind: e.target.value as ChannelKind })}
+            title="Channel kind"
           >
-            <option value="normal">normal</option>
-            <option value="matte">matte (white on black)</option>
+            <option value="graphics">graphics</option>
+            <option value="stage">stage monitor</option>
           </Select>
-          <Select
-            value={draft.mirrorOf ?? ""}
-            onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
-            title="Mirror of (channel whose state this one reflects)"
-          >
-            <option value="">— no mirror —</option>
-            {mirrorOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                mirrors {o.name}
-              </option>
-            ))}
-          </Select>
+          {draft.kind === "graphics" ? (
+            <>
+            <Select
+              value={draft.renderMode}
+              onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
+              title="Render mode"
+            >
+              <option value="normal">normal</option>
+              <option value="matte">matte (white on black)</option>
+            </Select>
+            <Select
+              value={draft.mirrorOf ?? ""}
+              onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
+              title="Mirror of (channel whose state this one reflects)"
+            >
+              <option value="">— no mirror —</option>
+              {mirrorOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  mirrors {o.name}
+                </option>
+              ))}
+            </Select>
+            </>
+          ) : (
+            <>
+              <Select
+                value={draft.follows ?? DEFAULT_STAGE_FOLLOWS}
+                onChange={(e) => patch({ follows: e.target.value })}
+                title="Channel whose content this monitor shows"
+              >
+                {allChannels
+                  .filter((o) => o.id !== config.id && o.kind !== "stage")
+                  .map((o) => (
+                    <option key={o.id} value={o.id}>
+                      follows {o.name}
+                    </option>
+                  ))}
+              </Select>
+              <Select
+                value={draft.layoutId ?? BUILT_IN_STAGE_LAYOUTS[0]!.id}
+                onChange={(e) => patch({ layoutId: e.target.value })}
+                title="Stage layout"
+              >
+                {BUILT_IN_STAGE_LAYOUTS.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </Select>
+            </>
+          )}
           <div style={{ display: "flex", gap: 4 }}>
             {dirty && (
               <Button onClick={revert} variant="ghost" size="sm" title="Discard unsaved changes">
@@ -460,20 +500,22 @@ function ChannelRow({
           </IconButton>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "180px 1fr",
-            gap: 8,
-            alignItems: "center",
-            marginTop: 8,
-          }}
-        >
-          <span style={{ fontSize: 11, color: colors.textDim, textAlign: "right" }}>
-            background:
-          </span>
-          <BackgroundEditor value={draft.background} onChange={(v) => patch({ background: v })} />
-        </div>
+        {draft.kind === "graphics" && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "180px 1fr",
+              gap: 8,
+              alignItems: "center",
+              marginTop: 8,
+            }}
+          >
+            <span style={{ fontSize: 11, color: colors.textDim, textAlign: "right" }}>
+              background:
+            </span>
+            <BackgroundEditor value={draft.background} onChange={(v) => patch({ background: v })} />
+          </div>
+        )}
 
         <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim, display: "flex", gap: 12, alignItems: "center" }}>
           <a
@@ -484,7 +526,7 @@ function ChannelRow({
           >
             renderer URL
           </a>
-          {draft.renderMode === "matte" && (
+          {draft.kind === "graphics" && draft.renderMode === "matte" && (
             <span style={{ color: colors.textDim }}>
               (matte mode forces black bg)
             </span>
@@ -496,7 +538,7 @@ function ChannelRow({
           )}
           {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}><span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved</span>}
         </div>
-        {showOverride && (
+        {showOverride && draft.kind === "graphics" && (
           <ProjectOverrideEditor
             config={config}
             allChannels={allChannels}
