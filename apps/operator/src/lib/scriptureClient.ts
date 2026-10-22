@@ -1,5 +1,6 @@
 "use client";
 
+import type { ScriptureSettings } from "@overlaysys/core";
 import type { TranslationMeta, ScriptureVerse } from "@overlaysys/scripture";
 import { defaultServerUrl } from "./wsClient";
 
@@ -93,12 +94,18 @@ export async function removeApiBibleKey(): Promise<ApiBibleStatus> {
   throw new Error(`api-bible remove: ${r.status}`);
 }
 
-/** API.Bible usage reporting (FUMS) — fire-and-forget, never blocks a take. */
-export function reportScriptureUsage(tokens: string[]): void {
-  if (tokens.length === 0) return;
-  void fetch(`${httpBase()}/api/scripture/usage`, {
-    method: "POST",
+export async function getScriptureSettings(): Promise<ScriptureSettings> {
+  const r = await fetch(`${httpBase()}/api/scripture/settings`);
+  if (!r.ok) throw new Error(`scripture settings: ${r.status}`);
+  return r.json();
+}
+
+export async function putScriptureSettings(settings: ScriptureSettings): Promise<ScriptureSettings> {
+  const r = await fetch(`${httpBase()}/api/scripture/settings`, {
+    method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tokens }),
-  }).catch(() => undefined);
+    body: JSON.stringify(settings),
+  });
+  if (!r.ok) throw new Error(`scripture settings save: ${r.status}`);
+  return r.json();
 }

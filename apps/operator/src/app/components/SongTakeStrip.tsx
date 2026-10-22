@@ -166,12 +166,9 @@ export function SongTakeStrip({
 
   function takeIntro() {
     if (!intro) return;
-    send({
-      type: "take",
-      channel,
-      templateId: intro.templateId,
-      data: intro.fieldValues,
-    });
+    // Server path so the intro queues its song (section buttons — here or in
+    // Companion — then start it), exactly like Companion's intro.
+    send({ type: "take_song_sub", showId: show.id, songRowId: row.id, sub: "intro", channel });
     setLastFired("intro");
   }
 
