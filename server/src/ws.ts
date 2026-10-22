@@ -21,6 +21,7 @@ import * as songs from "./songs";
 import * as hotcards from "./hotcards";
 import * as projects from "./projects";
 import * as songSession from "./songSession";
+import { handleScriptureMessage } from "./scriptureHandlers";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
@@ -564,6 +565,13 @@ export function handleConnection(
           }
           break;
         }
+        case "scripture_take_intro":
+        case "scripture_take_slide":
+        case "scripture_advance":
+        case "scripture_goto":
+        case "scripture_end":
+          await handleScriptureMessage(parsed, send);
+          break;
         case "list_channels": {
           const list = await channelConfigs.listChannelConfigs();
           send({ type: "channel_list", configs: list });
