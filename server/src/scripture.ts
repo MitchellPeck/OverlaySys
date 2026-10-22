@@ -127,7 +127,8 @@ export async function registerScriptureRoutes(app: FastifyInstance): Promise<voi
   );
 }
 
-function formatNormalizedReference(parsed: ParsedReference[]): string {
+/** Canonical display form of a parsed reference, e.g. "John 3:16-18". */
+export function formatNormalizedReference(parsed: ParsedReference[]): string {
   return parsed.map(formatOne).join("; ");
 }
 

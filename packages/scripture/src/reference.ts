@@ -72,3 +72,37 @@ function parseSegment(segment: string): ParsedReference {
   const range: RefRange = { chapter, startVerse, endChapter, endVerse };
   return { book: book.id, ranges: [range] };
 }
+
+/**
+ * Guess a scripture reference from a free-text title (e.g. a Planning Center
+ * plan item title). Tries the whole title, then the text after the last ":" or
+ * " - " / " – " / " — " separator when the prefix contains no digits (so
+ * "Announcements: Week 3" and "Scripture: John 3:16" are told apart by what
+ * parses). Returns the first candidate `parseReference` accepts, else null.
+ */
+export function guessScriptureReference(title: string): string | null {
+  const whole = title.trim();
+  if (!whole) return null;
+  const candidates: string[] = [whole];
+  const sep = /\s+[-–—]\s+|:\s*/g;
+  let lastEnd = -1;
+  let lastStart = -1;
+  for (let m = sep.exec(whole); m; m = sep.exec(whole)) {
+    const prefix = whole.slice(0, m.index);
+    // A colon inside "John 3:16" has digits before it; labels don't.
+    if (/\d/.test(prefix)) continue;
+    lastStart = m.index;
+    lastEnd = m.index + m[0].length;
+  }
+  if (lastStart >= 0) candidates.push(whole.slice(lastEnd).trim());
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      parseReference(c);
+      return c;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}

@@ -417,3 +417,82 @@ describe("importPlan", () => {
     expect(song?.customFields["pco_arrangement_id"]).toBe("arr-D-acoustic");
   });
 });
+
+describe("importPlan — scripture kind", () => {
+  const scriptureItems: PcoPlanItem[] = [
+    { id: "item-S1", title: "Scripture: John 3:16", sequence: 1, itemType: "item", description: "Read by Pat" },
+    { id: "item-S2", title: "Bad ref", sequence: 2, itemType: "item" },
+    { id: "item-C", title: "Welcome", sequence: 3, itemType: "header", description: "3 min" },
+  ];
+  const scriptureClient: PcoClient = {
+    listServiceTypes: async () => [],
+    listPlans: async () => [],
+    getPlanItems: async () => scriptureItems,
+    listSongArrangements: async () => [],
+  };
+  const req: ImportPlanRequest = {
+    serviceTypeId: "st-1",
+    planId: "plan-1",
+    target: { mode: "new", name: "Scripture Sunday" },
+    defaultGraphicTemplateId: "tpl-graphic",
+    items: [
+      { itemId: "item-S1", kind: "scripture", reference: "John 3:16", translation: "KJV", templateId: "tpl-scripture" },
+      { itemId: "item-S2", kind: "scripture", reference: "Not a ref", translation: "KJV", templateId: "tpl-scripture" },
+      { itemId: "item-C", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome" } },
+    ],
+  };
+
+  it("imports a scripture item as a scripture row with sourceRef and PCO description notes", async () => {
+    const result = await importPlan(scriptureClient, { ...req, items: [req.items[0]!] }, NOW);
+    expect(result.ok).toBe(true);
+    expect(result.counts.rows).toBe(1);
+    const show = await shows.getShow(result.showId!);
+    expect(show?.rows[0]).toMatchObject({
+      kind: "scripture",
+      reference: "John 3:16",
+      translation: "KJV",
+      templateId: "tpl-scripture",
+      notes: "Read by Pat",
+      sourceRef: { itemId: "item-S1" },
+    });
+  });
+
+  it("reports a bad reference as an error and still imports the other rows", async () => {
+    const result = await importPlan(scriptureClient, { ...req }, NOW);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatchObject({ itemId: "item-S2" });
+    expect(result.errors[0]!.message).toContain('Scripture "Not a ref"');
+    const show = await shows.getShow(result.showId!);
+    expect(show?.rows.map((r) => r.kind)).toEqual(["scripture", "graphic"]);
+  });
+
+  it("errors when reference or translation is missing", async () => {
+    const result = await importPlan(
+      scriptureClient,
+      { ...req, items: [{ itemId: "item-S1", kind: "scripture", templateId: "tpl-scripture" }] },
+      NOW,
+    );
+    expect(result.errors[0]).toEqual({
+      itemId: "item-S1",
+      message: "Scripture item needs a reference and translation.",
+    });
+  });
+
+  it("keeps operator slide edits when re-importing the same reference", async () => {
+    const first = await importPlan(scriptureClient, { ...req, items: [req.items[0]!] }, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    const row = show.rows[0]!;
+    if (row.kind !== "scripture") throw new Error("expected scripture row");
+    row.slides = [{ id: "edited", verses: row.slides[0]!.verses }];
+    await shows.saveShow(show);
+    const again = await importPlan(
+      scriptureClient,
+      { ...req, target: { mode: "existing", showId: first.showId }, items: [req.items[0]!] },
+      NOW,
+    );
+    const after = await shows.getShow(again.showId!);
+    expect(after?.rows).toHaveLength(1);
+    expect(after?.rows[0]).toMatchObject({ kind: "scripture", slides: [{ id: "edited" }] });
+  });
+});

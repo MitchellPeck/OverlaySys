@@ -48,13 +48,17 @@ export interface ImportTarget {
 
 export interface ImportItemConfig {
   itemId: string;
-  kind: "song" | "graphic";
+  kind: "song" | "graphic" | "scripture";
   songAction?: "link" | "create";
   songId?: string;
   song?: Song;
   templateId?: string;
   data?: Record<string, string>;
   notes?: string;
+  /** Scripture kind. */
+  reference?: string;
+  translation?: string;
+  slideMaxChars?: number;
 }
 
 export interface ImportPlanRequest {

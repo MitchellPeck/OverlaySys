@@ -24,7 +24,9 @@ import * as songs from "../songs";
 import * as shows from "../shows";
 import { getTemplate, listTemplateMetas } from "../templates";
 import { loadPcoConfig } from "../storage";
+import { loadScriptureSettings } from "../scriptureSettings";
 import type { PcoClient } from "./pcoClient";
+import { buildImportedScriptureRow } from "./scriptureImport";
 
 export interface ImportTarget {
   mode: "new" | "existing";
@@ -35,13 +37,14 @@ export interface ImportTarget {
 
 /**
  * Per-item import configuration from the operator UI. `kind` chooses whether a
- * (song) plan item becomes a library-backed song row or a plain graphic row;
- * `templateId` is the lyric template (song) or graphic template (graphic);
+ * (song) plan item becomes a library-backed song row, a plain graphic row, or
+ * a scripture row; `templateId` is the lyric template (song), graphic template
+ * (graphic) or scripture slide template (scripture);
  * `data` holds the configured graphic field values.
  */
 export interface ImportItemConfig {
   itemId: string;
-  kind: "song" | "graphic";
+  kind: "song" | "graphic" | "scripture";
   /** Song kind: link an existing library song or create/update one. */
   songAction?: "link" | "create";
   /** Song kind + link: the library song id to reference. */
@@ -56,8 +59,14 @@ export interface ImportItemConfig {
   templateId?: string;
   /** Graphic kind: configured template field values. */
   data?: Record<string, string>;
-  /** Graphic kind: optional row notes. */
+  /** Graphic/scripture kind: optional row notes. */
   notes?: string;
+  /** Scripture kind: reference text, e.g. "John 3:16-18". */
+  reference?: string;
+  /** Scripture kind: translation id (TranslationMeta.id). */
+  translation?: string;
+  /** Scripture kind: max characters per auto-split slide. */
+  slideMaxChars?: number;
 }
 
 export interface ImportPlanRequest {
@@ -282,6 +291,35 @@ export async function importPlan(
       }
       row = buildSongRow({ rowId, songId, lyricTemplateId, sourceRef });
       show.songs = ensureShowSongEntry(show.songs, songId);
+    } else if (cfg.kind === "scripture") {
+      if (!cfg.reference?.trim() || !cfg.translation) {
+        errors.push({ itemId: item.id, message: "Scripture item needs a reference and translation." });
+        continue;
+      }
+      const templateId =
+        cfg.templateId ?? (await loadScriptureSettings()).defaultTemplateId ?? fallbackGraphic;
+      if (!templateId) {
+        errors.push({ itemId: item.id, message: "No scripture template available for row." });
+        continue;
+      }
+      try {
+        row = await buildImportedScriptureRow({
+          rowId,
+          reference: cfg.reference,
+          translation: cfg.translation,
+          templateId,
+          slideMaxChars: cfg.slideMaxChars,
+          notes: cfg.notes ?? pcoItemGraphicDefaults(item, []).notes,
+          sourceRef,
+          existing: existingIdx >= 0 ? show.rows[existingIdx] : undefined,
+        });
+      } catch (err) {
+        errors.push({
+          itemId: item.id,
+          message: `Scripture "${cfg.reference}": ${err instanceof Error ? err.message : String(err)}`,
+        });
+        continue;
+      }
     } else {
       const templateId = cfg.templateId ?? fallbackGraphic;
       if (!templateId) {

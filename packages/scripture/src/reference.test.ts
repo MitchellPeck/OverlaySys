@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReference } from "./reference";
+import { guessScriptureReference, parseReference } from "./reference";
 import { ScriptureRefError } from "./types";
 
 describe("parseReference — single verse", () => {
@@ -97,5 +97,33 @@ describe("parseReference — errors", () => {
     expect(() => parseReference("John 0:1")).toThrow(ScriptureRefError);
     expect(() => parseReference("John 3:0")).toThrow(ScriptureRefError);
     expect(() => parseReference("John -1:1")).toThrow(ScriptureRefError);
+  });
+});
+
+describe("guessScriptureReference", () => {
+  it("accepts a title that is itself a reference", () => {
+    expect(guessScriptureReference("John 3:16")).toBe("John 3:16");
+    expect(guessScriptureReference("  John 3:16  ")).toBe("John 3:16");
+  });
+
+  it("strips a leading label before a colon", () => {
+    expect(guessScriptureReference("Scripture: John 3:16-18")).toBe("John 3:16-18");
+    expect(guessScriptureReference("Sermon text - Romans 8:28")).toBe("Romans 8:28");
+  });
+
+  it("uses the text after a dash separator", () => {
+    expect(guessScriptureReference("Reading – Romans 8:28")).toBe("Romans 8:28");
+    expect(guessScriptureReference("Reading — Romans 8:28-30")).toBe("Romans 8:28-30");
+    expect(guessScriptureReference("Reading - 1 Cor 13:4-7")).toBe("1 Cor 13:4-7");
+  });
+
+  it("returns null for non-references", () => {
+    expect(guessScriptureReference("Welcome")).toBeNull();
+    expect(guessScriptureReference("Announcements: Week 3")).toBeNull();
+    expect(guessScriptureReference("")).toBeNull();
+  });
+
+  it("returns null for whole-chapter refs (parseReference needs a verse)", () => {
+    expect(guessScriptureReference("Psalm 23")).toBeNull();
   });
 });

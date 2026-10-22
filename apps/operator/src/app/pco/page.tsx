@@ -19,6 +19,7 @@ import {
   Button,
   Field,
   Inline,
+  Input,
   Modal,
   Panel,
   Pill,
@@ -36,6 +37,15 @@ import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud, refreshShowMetasCloud } from "@/lib/cloudData";
 import { FieldInput } from "@/lib/FieldInput";
+import {
+  ScriptureRefError,
+  guessScriptureReference,
+  parseReference,
+  type TranslationMeta,
+} from "@overlaysys/scripture";
+import { listTranslations } from "@/lib/scriptureClient";
+import { useScriptureSettings } from "@/lib/scriptureSettings";
+import { budgetForPref, loadSlideSizePref } from "@/lib/slideSizePref";
 import { refillItemFields } from "@/lib/pcoFieldRefill";
 import {
   getPcoStatus,
@@ -50,7 +60,36 @@ import {
 
 type Status = "checking" | "disconnected" | "connected";
 type SongAction = "link" | "create";
-type RowKind = "song" | "item";
+type RowKind = "song" | "item" | "scripture";
+
+const SCRIPTURE_TRANSLATION_KEY = "overlaysys.pco.scriptureTranslation";
+
+function loadRememberedTranslation(): string {
+  try {
+    return localStorage.getItem(SCRIPTURE_TRANSLATION_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberTranslation(id: string): void {
+  try {
+    localStorage.setItem(SCRIPTURE_TRANSLATION_KEY, id);
+  } catch {
+    // storage unavailable — the choice just isn't remembered
+  }
+}
+
+/** Inline parse error for a scripture reference, or null when it parses. */
+function referenceError(reference: string): string | null {
+  if (!reference.trim()) return "Enter a reference";
+  try {
+    parseReference(reference);
+    return null;
+  } catch (e) {
+    return e instanceof ScriptureRefError ? e.hint ?? e.message : "Invalid reference";
+  }
+}
 
 interface ItemCfg {
   include: boolean;
@@ -59,6 +98,12 @@ interface ItemCfg {
   songId?: string;
   lyricTemplateId: string;
   graphicTemplateId: string;
+  /** Scripture kind: reference text (pre-filled by guessing from the title). */
+  reference: string;
+  /** Scripture kind: "" means "use the page default translation". */
+  translation: string;
+  /** Scripture kind: "" means "use the default scripture template". */
+  scriptureTemplateId: string;
   data: Record<string, string>;
   /** Field keys the operator typed into — preserved across template changes. */
   edited: Set<string>;
@@ -78,6 +123,34 @@ export default function PcoPage() {
   const { send } = useWs();
   const cloud = isCloudMode();
   const router = useRouter();
+
+  const scriptureSettings = useScriptureSettings();
+  const [translations, setTranslations] = useState<TranslationMeta[]>([]);
+  // Last translation the operator picked on this page (persisted).
+  const [pickedTranslation, setPickedTranslation] = useState("");
+  useEffect(() => {
+    setPickedTranslation(loadRememberedTranslation());
+    let cancelled = false;
+    listTranslations()
+      .then((t) => {
+        if (!cancelled) setTranslations(t);
+      })
+      .catch(() => {
+        // no translations → scripture items stay un-importable until reload
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const defaultTranslation =
+    translations.find((t) => t.id === pickedTranslation)?.id ?? translations[0]?.id ?? "";
+  const defaultScriptureTemplateId = (() => {
+    const def = scriptureSettings?.defaultTemplateId;
+    return def && templates.some((t) => t.id === def) ? def : "";
+  })();
+  const effTranslation = (c: ItemCfg) => c.translation || defaultTranslation;
+  const effScriptureTemplate = (c: ItemCfg) =>
+    c.scriptureTemplateId || defaultScriptureTemplateId || c.graphicTemplateId;
 
   const [status, setStatus] = useState<Status>("checking");
   const [error, setError] = useState<string | null>(null);
@@ -270,9 +343,13 @@ export default function PcoPage() {
       for (const it of fetched) {
         const preview = map[it.id];
         const isSong = it.itemType === "song" && !!it.song;
+        const guessed = isSong ? null : guessScriptureReference(it.title);
         nextCfgs[it.id] = {
           include: true,
-          kind: isSong ? "song" : "item",
+          kind: isSong ? "song" : guessed ? "scripture" : "item",
+          reference: guessed ?? "",
+          translation: "",
+          scriptureTemplateId: "",
           songAction: preview?.match ? "link" : "create",
           songId: preview?.match?.songId,
           lyricTemplateId: def,
@@ -308,6 +385,9 @@ export default function PcoPage() {
 
   function setKind(item: PcoPlanItem, kind: RowKind) {
     patch(item.id, (c) => {
+      if (kind === "scripture") {
+        return { ...c, kind, reference: c.reference || guessScriptureReference(item.title) || "" };
+      }
       if (kind !== "item") return { ...c, kind };
       const tpl = templateCache[c.graphicTemplateId];
       if (!tpl) return { ...c, kind };
@@ -408,8 +488,14 @@ export default function PcoPage() {
   const canImport = useMemo(() => {
     if (includedCount === 0 || importing) return false;
     if (targetMode === "existing" && !existingShowId) return false;
+    for (const it of items) {
+      const c = cfgs[it.id];
+      if (c?.include && c.kind === "scripture") {
+        if (referenceError(c.reference) || !(c.translation || defaultTranslation)) return false;
+      }
+    }
     return true;
-  }, [includedCount, importing, targetMode, existingShowId]);
+  }, [includedCount, importing, targetMode, existingShowId, items, cfgs, defaultTranslation]);
 
   /**
    * Make the imported show the active one and jump to its editor. The server
@@ -451,6 +537,15 @@ export default function PcoPage() {
             songId: c.songAction === "link" ? c.songId : undefined,
             templateId: c.lyricTemplateId || undefined,
             ...(draft ? { song: draft } : {}),
+          });
+        } else if (c.kind === "scripture") {
+          payload.push({
+            itemId: it.id,
+            kind: "scripture",
+            reference: c.reference.trim(),
+            translation: effTranslation(c),
+            templateId: effScriptureTemplate(c) || undefined,
+            slideMaxChars: budgetForPref(loadSlideSizePref()).maxChars,
           });
         } else {
           payload.push({
@@ -594,7 +689,19 @@ export default function PcoPage() {
                         onToggleInclude={() =>
                           patch(item.id, (c) => ({ ...c, include: !c.include }))
                         }
+                        translations={translations}
+                        scriptureTranslation={effTranslation(cfg)}
+                        scriptureTemplateId={effScriptureTemplate(cfg)}
                         onKind={(k) => setKind(item, k)}
+                        onReference={(r) => patch(item.id, (c) => ({ ...c, reference: r }))}
+                        onScriptureTranslation={(id) => {
+                          setPickedTranslation(id);
+                          rememberTranslation(id);
+                          patch(item.id, (c) => ({ ...c, translation: id }));
+                        }}
+                        onScriptureTemplate={(id) =>
+                          patch(item.id, (c) => ({ ...c, scriptureTemplateId: id }))
+                        }
                         onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
                         onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
                         onGraphicTemplate={(id) =>
@@ -799,8 +906,14 @@ function ItemConfigCard({
   cfg,
   templates,
   template,
+  translations,
+  scriptureTranslation,
+  scriptureTemplateId,
   onToggleInclude,
   onKind,
+  onReference,
+  onScriptureTranslation,
+  onScriptureTemplate,
   onSongAction,
   onLyricTemplate,
   onGraphicTemplate,
@@ -811,8 +924,14 @@ function ItemConfigCard({
   cfg: ItemCfg;
   templates: { id: string; name: string }[];
   template: Template | null;
+  translations: TranslationMeta[];
+  scriptureTranslation: string;
+  scriptureTemplateId: string;
   onToggleInclude: () => void;
   onKind: (k: RowKind) => void;
+  onReference: (r: string) => void;
+  onScriptureTranslation: (id: string) => void;
+  onScriptureTemplate: (id: string) => void;
   onSongAction: (a: SongAction) => void;
   onLyricTemplate: (id: string) => void;
   onGraphicTemplate: (id: string) => void;
@@ -840,9 +959,10 @@ function ItemConfigCard({
       {cfg.include && (
         <div style={{ marginTop: 10 }}>
           <Field label="Import as">
-            <Select value={cfg.kind} onChange={(e) => onKind(e.target.value as RowKind)} disabled={!isSong}>
+            <Select value={cfg.kind} onChange={(e) => onKind(e.target.value as RowKind)}>
               {isSong && <option value="song">Song (lyrics)</option>}
               <option value="item">Item (graphic)</option>
+              <option value="scripture">Scripture</option>
             </Select>
           </Field>
 
@@ -869,6 +989,43 @@ function ItemConfigCard({
               )}
               <Field label="Lyric template">
                 <Select value={cfg.lyricTemplateId} onChange={(e) => onLyricTemplate(e.target.value)}>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          ) : cfg.kind === "scripture" ? (
+            <>
+              <Field label="Reference">
+                <Input
+                  value={cfg.reference}
+                  onChange={(e) => onReference(e.target.value)}
+                  placeholder="John 3:16-18"
+                  invalid={!!referenceError(cfg.reference)}
+                />
+              </Field>
+              {referenceError(cfg.reference) && (
+                <p style={{ color: colors.errorText, fontSize: 12, marginTop: -4 }}>
+                  {referenceError(cfg.reference)}
+                </p>
+              )}
+              <Field label="Translation">
+                <Select
+                  value={scriptureTranslation}
+                  onChange={(e) => onScriptureTranslation(e.target.value)}
+                >
+                  {translations.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.abbreviation} — {t.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Template">
+                <Select value={scriptureTemplateId} onChange={(e) => onScriptureTemplate(e.target.value)}>
                   {templates.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
