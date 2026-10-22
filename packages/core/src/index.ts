@@ -12,6 +12,7 @@ export * from "./scriptureIntro";
 export * from "./channelConfig";
 export * from "./channelResolution";
 export * from "./channelWindowPrefs";
+export * from "./stageLayout";
 export * from "./song";
 export * from "./songResolution";
 export * from "./songParser";
