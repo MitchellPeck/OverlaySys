@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_PROJECT_ID } from "./project";
 import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema } from "./channel";
+import { SermonNotesSchema } from "./sermonNotes";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -23,6 +24,8 @@ export const GraphicRowSchema = z.object({
   data: z.record(z.string(), z.string()),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  /** Sermon notes set this row selects on the confidence monitor when taken. */
+  sermonNotesId: z.string().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
 export type GraphicRow = z.infer<typeof GraphicRowSchema>;
@@ -36,6 +39,8 @@ export const SongRowSchema = z.object({
   trustMode: z.boolean().optional(),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  /** Sermon notes set this row selects on the confidence monitor when taken. */
+  sermonNotesId: z.string().optional(),
   /** Per-row override of the intro template; falls back to ShowSong / Song default. */
   introTemplateId: z.string().optional(),
   /** Per-row override of the intro field map (templateFieldKey -> songFieldKey). */
@@ -132,6 +137,8 @@ export const ScriptureRowSchema = z.object({
   templateId: z.string(),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  /** Sermon notes set this row selects on the confidence monitor when taken. */
+  sermonNotesId: z.string().optional(),
   sourceRef: RowSourceRefSchema.optional(),
   /**
    * Set for rows fetched from a licensed API (NIV via API.Bible). The server
@@ -172,6 +179,8 @@ export const VideoRowSchema = z.object({
   transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   channelHint: z.string().optional(),
   notes: z.string().optional(),
+  /** Sermon notes set this row selects on the confidence monitor when taken. */
+  sermonNotesId: z.string().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
 export type VideoRow = z.infer<typeof VideoRowSchema>;
@@ -247,6 +256,8 @@ export const ShowSchema = z.preprocess(
      * this field simply have no value and fall back to name-parsed dates.
      */
     scheduledFor: z.string().optional(),
+    /** Sermon notes for this show; rows link to one via `sermonNotesId`. */
+    sermonNotes: z.array(SermonNotesSchema).optional(),
     /** Soft-delete tombstone; see hotcard.ts for the rationale. */
     deletedAt: z.string().optional(),
   }),
