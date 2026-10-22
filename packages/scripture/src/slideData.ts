@@ -1,11 +1,24 @@
-import type { ScriptureSlide } from "@overlaysys/core";
-import { BOOKS } from "@overlaysys/scripture";
+import { BOOKS } from "./books";
+import type { ScriptureVerse } from "./types";
 
 type VerseRef = { book: string; chapter: number; verse: number };
 
+/** Structural slide shape: only the verses matter for references and take text. */
+export interface SlideLike {
+  verses: ScriptureVerse[];
+}
+
+/** Structural row shape: the subset of a scripture row a take needs. */
+export interface ScriptureRowLike {
+  slides: SlideLike[];
+  translation: string;
+  translationAbbreviation?: string;
+  attribution?: string;
+}
+
 const verseKey = (v: VerseRef) => `${v.book}:${v.chapter}:${v.verse}`;
 
-function countVerses(slides: ScriptureSlide[]): Map<string, number> {
+function countVerses(slides: SlideLike[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const s of slides) {
     for (const v of s.verses) counts.set(verseKey(v), (counts.get(verseKey(v)) ?? 0) + 1);
@@ -18,7 +31,7 @@ function countVerses(slides: ScriptureSlide[]): Map<string, number> {
  * A verse that appears on more than one slide (split mid-verse) gets a
  * letter suffix by order of appearance: a, b, c…
  */
-export function slideReference(slides: ScriptureSlide[], slideIdx: number): string {
+export function slideReference(slides: SlideLike[], slideIdx: number): string {
   const slide = slides[slideIdx];
   if (!slide || slide.verses.length === 0) return "";
 
@@ -76,4 +89,18 @@ export function slideReference(slides: ScriptureSlide[], slideIdx: number): stri
   });
 
   return `${bookName} ${runStrings.join(", ")}`;
+}
+
+/** The data a scripture slide take sends to its template. */
+export function scriptureSlideData(
+  row: ScriptureRowLike,
+  slideIdx: number,
+): { text: string; reference: string; translation: string; attribution: string } {
+  const slide = row.slides[slideIdx];
+  return {
+    text: slide ? slide.verses.map((v) => v.text).join("\n") : "",
+    reference: slideReference(row.slides, slideIdx),
+    translation: row.translationAbbreviation ?? row.translation,
+    attribution: row.attribution ?? "",
+  };
 }

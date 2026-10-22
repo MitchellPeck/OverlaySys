@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ScriptureSlide } from "@overlaysys/core";
-import { slideReference } from "./scriptureReference";
+import { scriptureSlideData, slideReference, type SlideLike } from "./slideData";
 
 const v = (chapter: number, verse: number, text = "t") => ({ book: "JHN", chapter, verse, text });
-const s = (...verses: ReturnType<typeof v>[]): ScriptureSlide => ({ id: Math.random().toString(), verses });
+const s = (...verses: ReturnType<typeof v>[]): SlideLike => ({ verses });
 
 describe("slideReference", () => {
   it("whole-verse slides are unchanged from the old format", () => {
@@ -35,5 +34,23 @@ describe("slideReference", () => {
   it("suffixed end of a run", () => {
     const slides = [s(v(3, 20), v(3, 21)), s(v(3, 21))];
     expect(slideReference(slides, 0)).toBe("John 3:20-21a");
+  });
+});
+
+describe("scriptureSlideData", () => {
+  it("builds the take data the strip used to send", () => {
+    const slides = [s(v(3, 16, "For God so")), s(v(3, 16, "loved"), v(3, 17, "For God sent"))];
+    expect(scriptureSlideData({ slides, translation: "KJV", translationAbbreviation: "KJV", attribution: "PD" }, 1)).toEqual({
+      text: "loved\nFor God sent",
+      reference: "John 3:16b-17",
+      translation: "KJV",
+      attribution: "PD",
+    });
+  });
+
+  it("falls back to the translation id and empty attribution", () => {
+    const d = scriptureSlideData({ slides: [s(v(3, 16, "x"))], translation: "WEB" }, 0);
+    expect(d.translation).toBe("WEB");
+    expect(d.attribution).toBe("");
   });
 });

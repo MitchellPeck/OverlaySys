@@ -3,7 +3,7 @@
 import type { ScriptureRow } from "@overlaysys/core";
 import { Button } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
-import { slideReference } from "@/lib/scriptureReference";
+import { slideReference } from "@overlaysys/scripture";
 import { reportScriptureUsage } from "@/lib/scriptureClient";
 
 interface Props {
