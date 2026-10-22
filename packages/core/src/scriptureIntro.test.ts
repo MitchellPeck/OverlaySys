@@ -103,4 +103,31 @@ describe("helpers", () => {
     expect(s.reference).toEqual({ kind: "exact", songFieldKey: "reference" });
     expect(s.foo).toEqual({ kind: "suggested", songFieldKey: "translation" });
   });
+
+  it("suggestScriptureFieldMap aliases title-like to reference and subtitle-like to translation", () => {
+    const s = suggestScriptureFieldMap([
+      { key: "title", label: "Title", type: "text" },
+      { key: "subtitle", label: "Subtitle", type: "text" },
+    ]);
+    expect(s.title).toEqual({ kind: "suggested", songFieldKey: "reference" });
+    expect(s.subtitle).toEqual({ kind: "suggested", songFieldKey: "translation" });
+  });
+
+  it("suggestScriptureFieldMap alias matches by label and only the first title-like claims reference", () => {
+    const s = suggestScriptureFieldMap([
+      { key: "a", label: " Heading ", type: "text" },
+      { key: "b", label: "Name", type: "text" },
+    ]);
+    expect(s.a).toEqual({ kind: "suggested", songFieldKey: "reference" });
+    expect(s.b).toEqual({ kind: "none" });
+  });
+
+  it("suggestScriptureFieldMap does not let an alias steal a field claimed by an exact key", () => {
+    const s = suggestScriptureFieldMap([
+      { key: "title", label: "Title", type: "text" },
+      { key: "reference", label: "Reference", type: "text" },
+    ]);
+    expect(s.reference).toEqual({ kind: "exact", songFieldKey: "reference" });
+    expect(s.title).toEqual({ kind: "none" });
+  });
 });

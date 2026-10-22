@@ -70,6 +70,47 @@ export function resolveScriptureIntro(
   return { templateId, fieldValues };
 }
 
+const TITLE_ALIASES = new Set(["title", "heading", "name", "header"]);
+const SUBTITLE_ALIASES = new Set(["subtitle", "subheading", "sub title", "sub-title"]);
+
+/**
+ * Suggest a template-field -> scripture-field map. Exact key matches win; then
+ * title-like fields (by key or label) alias to `reference` and subtitle-like
+ * to `translation` (first such field claims each); the rest use the shared
+ * key/label matcher over whatever scripture fields remain.
+ */
 export function suggestScriptureFieldMap(templateFields: TemplateFieldLike[]): Record<string, SuggestedFieldMatch> {
-  return suggestFieldMap(templateFields, SCRIPTURE_FIELD_DESCRIPTORS);
+  const result: Record<string, SuggestedFieldMatch> = {};
+  const claimed = new Set<string>();
+  const scriptureByLowerKey = new Map(SCRIPTURE_FIELD_DESCRIPTORS.map((d) => [d.key.toLowerCase(), d.key]));
+  const rest: TemplateFieldLike[] = [];
+  for (const tf of templateFields) {
+    const key = scriptureByLowerKey.get(tf.key.toLowerCase());
+    if (key && !claimed.has(key)) {
+      result[tf.key] = { kind: "exact", songFieldKey: key };
+      claimed.add(key);
+    } else {
+      rest.push(tf);
+    }
+  }
+  const remaining: TemplateFieldLike[] = [];
+  for (const tf of rest) {
+    const names = [tf.key, tf.label].map((n) => (n ?? "").trim().toLowerCase());
+    const target = names.some((n) => TITLE_ALIASES.has(n))
+      ? "reference"
+      : names.some((n) => SUBTITLE_ALIASES.has(n))
+        ? "translation"
+        : null;
+    if (target && !claimed.has(target)) {
+      result[tf.key] = { kind: "suggested", songFieldKey: target };
+      claimed.add(target);
+    } else {
+      remaining.push(tf);
+    }
+  }
+  Object.assign(
+    result,
+    suggestFieldMap(remaining, SCRIPTURE_FIELD_DESCRIPTORS.filter((d) => !claimed.has(d.key))),
+  );
+  return result;
 }
