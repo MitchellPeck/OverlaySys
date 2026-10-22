@@ -83,6 +83,39 @@ export interface ResolvedTake {
 }
 
 /**
+ * `{key}` substitution shared by song and scripture literals. `{{`/`}}` escape
+ * to braces; unknown keys become ""; an unterminated `{` is emitted verbatim.
+ */
+export function interpolateWith(template: string, lookup: (key: string) => string | undefined): string {
+  let out = "";
+  let i = 0;
+  while (i < template.length) {
+    const ch = template[i];
+    if (ch === "{") {
+      if (template[i + 1] === "{") {
+        out += "{";
+        i += 2;
+        continue;
+      }
+      const end = template.indexOf("}", i + 1);
+      if (end < 0) {
+        out += template.slice(i);
+        break;
+      }
+      out += lookup(template.slice(i + 1, end)) ?? "";
+      i = end + 1;
+    } else if (ch === "}" && template[i + 1] === "}") {
+      out += "}";
+      i += 2;
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
  * Substitutes `{key}` tokens in `template` with values resolved through
  * {@link resolveCustomFieldValue}. Supports built-in song fields ("title",
  * "ccliNumber", "author", "copyright") and any custom field key, with the
@@ -101,36 +134,7 @@ export function interpolateSongString(
   showSong: ShowSong | undefined,
   song: Song,
 ): string {
-  let out = "";
-  let i = 0;
-  while (i < template.length) {
-    const ch = template[i];
-    if (ch === "{") {
-      if (template[i + 1] === "{") {
-        out += "{";
-        i += 2;
-        continue;
-      }
-      const end = template.indexOf("}", i + 1);
-      if (end < 0) {
-        // Unterminated `{` — emit the rest verbatim. Treating this as an error
-        // would break ergonomics for templates that happen to mention braces.
-        out += template.slice(i);
-        break;
-      }
-      const key = template.slice(i + 1, end);
-      const value = resolveCustomFieldValue(key, row, showSong, song);
-      out += value ?? "";
-      i = end + 1;
-    } else if (ch === "}" && template[i + 1] === "}") {
-      out += "}";
-      i += 2;
-    } else {
-      out += ch;
-      i++;
-    }
-  }
-  return out;
+  return interpolateWith(template, (key) => resolveCustomFieldValue(key, row, showSong, song));
 }
 
 /**
