@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelMedia, ChannelState, VideoRow } from "@overlaysys/core";
-import { onAirMediaFor, posterPathFor } from "./mediaTake";
+import { onAirMediaFor, posterPathFor, videoRowTakeMessage } from "./mediaTake";
 
 const row = (over: Partial<VideoRow> = {}): VideoRow => ({
   kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, ...over,
@@ -41,5 +41,14 @@ describe("posterPathFor", () => {
     expect(posterPathFor("https://cdn.example/x.mp4")).toBeNull();
     expect(posterPathFor("/assets/abc.png")).toBeNull();
     expect(posterPathFor("")).toBeNull();
+  });
+});
+
+describe("videoRowTakeMessage showId", () => {
+  it("adds showId when given", () => {
+    expect(videoRowTakeMessage(row(), "show-1")).toMatchObject({ showId: "show-1", rowId: "v1" });
+  });
+  it("omits showId without one", () => {
+    expect(videoRowTakeMessage(row())).not.toHaveProperty("showId");
   });
 });

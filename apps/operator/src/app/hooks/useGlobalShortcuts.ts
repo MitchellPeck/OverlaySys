@@ -83,7 +83,7 @@ export function useGlobalShortcuts(): void {
       } else if (e.code === "Enter") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send(graphicRowMessage(row, "cue", store.rowDataOverrides));
+          client.send(graphicRowMessage(row, "cue", store.rowDataOverrides, show?.id));
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",
@@ -102,7 +102,7 @@ export function useGlobalShortcuts(): void {
       } else if (e.code === "Space") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send(graphicRowMessage(row, "take", store.rowDataOverrides));
+          client.send(graphicRowMessage(row, "take", store.rowDataOverrides, show?.id));
         } else if (row && row.kind === "song" && show) {
           client.send({
             type: "song_take",
@@ -120,7 +120,7 @@ export function useGlobalShortcuts(): void {
               action: onAir.paused ? "play" : "pause",
             });
           } else {
-            client.send(videoRowTakeMessage(row));
+            client.send(videoRowTakeMessage(row, show?.id));
           }
         } else if (hotcard) {
           client.send({

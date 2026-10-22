@@ -127,7 +127,7 @@ export function Rundown() {
                 onDoubleClick={() => {
                   setSelectedRow(row.id);
                   if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-                  send(videoRowTakeMessage(row));
+                  send(videoRowTakeMessage(row, show?.id));
                 }}
               />
             );
@@ -158,7 +158,7 @@ export function Rundown() {
               onClick={() => setSelectedRow(row.id)}
               onDoubleClick={() => {
                 setSelectedRow(row.id);
-                send(graphicRowMessage(row, "take", overrides));
+                send(graphicRowMessage(row, "take", overrides, show?.id));
               }}
             />
           );

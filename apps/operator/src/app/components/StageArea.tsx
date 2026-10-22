@@ -127,7 +127,7 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
           {onAirMediaFor(mode.row, channelStates) ? (
             <p style={{ color: colors.textDim, margin: 0 }}>On air. Use the transport in the bottom bar.</p>
           ) : (
-            <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row))} />
+            <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row, useStore.getState().show?.id))} />
           )}
           <VideoDetails key={mode.row.id} row={mode.row} />
         </>
@@ -202,8 +202,8 @@ function GraphicStage({ row, compact }: { row: GraphicRow; compact: boolean }) {
 
   const takeButtons = (
     <TakeButtons
-      onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides))}
-      onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides))}
+      onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, useStore.getState().show?.id))}
+      onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, useStore.getState().show?.id))}
     />
   );
 
@@ -365,7 +365,7 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
                     {...btn}
                     onClick={act(() => {
                       setSelectedRow(row.id);
-                      send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides));
+                      send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, useStore.getState().show?.id));
                     })}
                   >
                     Cue
@@ -376,7 +376,7 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
                     {...btn}
                     onClick={act(() => {
                       setSelectedRow(row.id);
-                      send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides));
+                      send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, useStore.getState().show?.id));
                     })}
                   >
                     Take
@@ -400,7 +400,7 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
                     onClick={act(() => {
                       setSelectedRow(row.id);
                       if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-                      send(videoRowTakeMessage(row));
+                      send(videoRowTakeMessage(row, useStore.getState().show?.id));
                     })}
                   >
                     Take

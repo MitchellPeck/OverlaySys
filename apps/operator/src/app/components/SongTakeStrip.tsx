@@ -179,6 +179,7 @@ export function SongTakeStrip({
       channel,
       templateId: outro.templateId,
       data: outro.fieldValues,
+      source: { showId: show.id, rowId: row.id },
     });
     setLastFired("outro");
   }

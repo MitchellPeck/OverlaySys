@@ -24,13 +24,22 @@ export function withEffectiveData<R extends Row>(row: R, overrides: RowDataOverr
   return { ...row, data: effectiveRowData(row, overrides) };
 }
 
-/** The cue/take message for a graphic row, with effective data. Same shape as the inline sends it replaces. */
-export function graphicRowMessage(row: GraphicRow, type: "cue" | "take", overrides: RowDataOverrides): ClientMessage {
+/**
+ * The cue/take message for a graphic row, with effective data. With a show
+ * id it carries the rundown source so stage monitors know the live row.
+ */
+export function graphicRowMessage(
+  row: GraphicRow,
+  type: "cue" | "take",
+  overrides: RowDataOverrides,
+  showId?: string,
+): ClientMessage {
   return {
     type,
     channel: row.channelHint ?? (type === "cue" ? "preview" : "program"),
     templateId: row.templateId,
     data: effectiveRowData(row, overrides),
+    ...(showId ? { source: { showId, rowId: row.id } } : {}),
   };
 }
 

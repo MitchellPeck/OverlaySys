@@ -43,6 +43,13 @@ describe("scriptureSession", () => {
     expect(s.scriptureSession).toBeUndefined();
   });
 
+  it("scripture intro and slide takes set the channel liveRow", () => {
+    scriptureSession.takeIntro(CH, "show", row, intro);
+    expect(channels.getState(CH).liveRow).toEqual({ showId: "show", rowId: "row-s" });
+    scriptureSession.takeSlide(CH, "show", row, 1);
+    expect(channels.getState(CH).liveRow).toEqual({ showId: "show", rowId: "row-s" });
+  });
+
   it("Next after an intro starts the queued row at slide 1 in one take", () => {
     scriptureSession.takeIntro(CH, "show", row, intro);
     const takes = vi.spyOn(channels, "take");

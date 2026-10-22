@@ -163,7 +163,7 @@ export function handleConnection(
           break;
         }
         case "take": {
-          channels.take(parsed.channel, parsed.templateId, parsed.data);
+          channels.take(parsed.channel, parsed.templateId, parsed.data, undefined, undefined, parsed.source);
           break;
         }
         case "clear": {
@@ -175,7 +175,7 @@ export function handleConnection(
           break;
         }
         case "cue": {
-          channels.take(parsed.channel, parsed.templateId, parsed.data);
+          channels.take(parsed.channel, parsed.templateId, parsed.data, undefined, undefined, parsed.source);
           break;
         }
         case "take_pvw_to_pgm": {
@@ -191,6 +191,7 @@ export function handleConnection(
             endAction: parsed.endAction,
             ...(parsed.transitionIn ? { transitionIn: parsed.transitionIn } : {}),
             ...(parsed.transitionOut ? { transitionOut: parsed.transitionOut } : {}),
+            ...(parsed.showId ? { showId: parsed.showId } : {}),
           });
           break;
         }
@@ -416,6 +417,7 @@ export function handleConnection(
             arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
           });
+          channels.setLiveRow(parsed.channel, { showId: parsed.showId, rowId: row.id });
           break;
         }
         case "song_take_pvw_to_pgm": {
@@ -441,6 +443,7 @@ export function handleConnection(
             arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
           });
+          channels.setLiveRow(parsed.toChannel, { showId: parsed.showId, rowId: parsed.songRowId });
           break;
         }
         case "song_advance": {
@@ -531,10 +534,14 @@ export function handleConnection(
               });
               break;
             }
-            channels.take(resolvedChannel, take.templateId, take.fieldValues, {
-              songRowId: row.id,
-              sub: parsed.sub,
-            });
+            channels.take(
+              resolvedChannel,
+              take.templateId,
+              take.fieldValues,
+              { songRowId: row.id, sub: parsed.sub },
+              undefined,
+              { showId: parsed.showId, rowId: row.id },
+            );
             if (parsed.sub === "intro") {
               // Arm the song on this channel so the section / slide buttons
               // that follow an intro start it instead of being dropped.
@@ -563,6 +570,7 @@ export function handleConnection(
               trustMode: row.trustMode ?? false,
             });
           }
+          channels.setLiveRow(resolvedChannel, { showId: parsed.showId, rowId: row.id });
           break;
         }
         case "scripture_take_intro":

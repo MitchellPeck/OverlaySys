@@ -139,3 +139,14 @@ describe("upNextRows", () => {
     expect(ids(upNextRows(show, "1", 10))).toEqual(["2", "3", "4", "5", "6"]);
   });
 });
+
+describe("graphicRowMessage source", () => {
+  const row = graphic("g1", { a: "1" });
+  it("adds the rundown source when a show id is given", () => {
+    const msg = graphicRowMessage(row, "take", {}, "show-1");
+    expect(msg).toMatchObject({ type: "take", source: { showId: "show-1", rowId: "g1" } });
+  });
+  it("omits source without a show id", () => {
+    expect(graphicRowMessage(row, "cue", {})).not.toHaveProperty("source");
+  });
+});

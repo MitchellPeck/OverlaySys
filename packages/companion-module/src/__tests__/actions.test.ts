@@ -266,6 +266,7 @@ describe("dispatchAction — load_show and row actions", () => {
         channel: "program",
         templateId: "tpl-1",
         data: { title: "Hi" },
+        source: { showId: "show-1", rowId: "r1" },
       },
     ]);
   });
@@ -297,6 +298,7 @@ describe("dispatchAction — load_show and row actions", () => {
         channel: "preview",
         templateId: "tpl-1",
         data: { title: "Hi" },
+        source: { showId: "show-1", rowId: "r1" },
       },
       {
         type: "take_pvw_to_pgm",
@@ -367,6 +369,16 @@ describe("dispatchAction — load_show and row actions", () => {
     ]);
   });
 
+  it("row takes carry the loaded show as source", () => {
+    const r = dispatchAction(loadedShowState(), "take_row_by_index", {
+      rowIndex: 1,
+    });
+    expect(r.messages[0]).toMatchObject({
+      type: "take",
+      source: { showId: "show-1", rowId: "r1" },
+    });
+  });
+
   it("take_row_by_index works with index 1 (first row)", () => {
     const r = dispatchAction(loadedShowState(), "take_row_by_index", {
       rowIndex: 1,
@@ -377,6 +389,7 @@ describe("dispatchAction — load_show and row actions", () => {
         channel: "program",
         templateId: "tpl-1",
         data: { title: "Hi" },
+        source: { showId: "show-1", rowId: "r1" },
       },
     ]);
   });
@@ -398,6 +411,7 @@ describe("dispatchAction — load_show and row actions", () => {
         channel: "preview",
         templateId: "tpl-1",
         data: { title: "Hi" },
+        source: { showId: "show-1", rowId: "r1" },
       },
       {
         type: "take_pvw_to_pgm",
@@ -506,7 +520,13 @@ describe("dispatchAction — take_row_song_aware", () => {
       dispatchAction(s, "take_row", { rowId: "r1", channel: "" }).messages,
     );
     expect(r.messages).toEqual([
-      { type: "take", channel: "lower", templateId: "tpl-1", data: { title: "Hi" } },
+      {
+        type: "take",
+        channel: "lower",
+        templateId: "tpl-1",
+        data: { title: "Hi" },
+        source: { showId: "show-1", rowId: "r1" },
+      },
     ]);
   });
 
@@ -520,7 +540,7 @@ describe("dispatchAction — take_row_song_aware", () => {
     expect(r.messages).toEqual(
       dispatchAction(state(), "take_row_by_index", { rowIndex: 3, channel: "program" }).messages,
     );
-    expect(r.messages[0]?.type).toBe("media_take");
+    expect(r.messages[0]).toMatchObject({ type: "media_take", showId: "show-1", rowId: "r3" });
   });
 
   it("by row id on a song passes an explicit channel override", () => {

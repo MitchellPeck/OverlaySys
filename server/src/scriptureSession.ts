@@ -57,7 +57,7 @@ export function takeIntro(
   channels.take(ch, intro.templateId, intro.fieldValues, undefined, {
     context: { rowId: row.id, sub: "intro" },
     queued: queuedSummary(row),
-  });
+  }, { showId, rowId: row.id });
   // Set AFTER take returns: take() drops every scripture map for the channel.
   queued.set(ch, { showId, row });
 }
@@ -76,7 +76,7 @@ export function takeSlide(ch: string, showId: string, row: ScriptureRow, slideId
   channels.take(ch, row.templateId, data, undefined, {
     context: { rowId: row.id, sub: "slide", slideIdx },
     session,
-  });
+  }, { showId, rowId: row.id });
   live.set(ch, { showId, row, slideIdx });
   if (row.source?.provider === "api.bible") void reportViews(row.source.usageTokens);
   return true;

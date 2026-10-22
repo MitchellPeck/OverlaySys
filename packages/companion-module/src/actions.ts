@@ -86,6 +86,8 @@ function rowMessages(
   row: RundownRow,
   channel: string,
 ): ClientMessage[] {
+  const showId = state.loadedShowId;
+  const source = showId ? { source: { showId, rowId: row.id } } : {};
   if (row.kind === "song") {
     return [
       {
@@ -111,6 +113,7 @@ function rowMessages(
         endAction: row.endAction,
         transitionIn: row.transitionIn,
         transitionOut: row.transitionOut,
+        ...(showId ? { showId } : {}),
       },
     ];
   }
@@ -120,6 +123,7 @@ function rowMessages(
       channel,
       templateId: row.templateId,
       data: row.data,
+      ...source,
     },
   ];
 }
@@ -130,6 +134,8 @@ function rowPvwPgmMessages(
   fromChannel: string,
   toChannel: string,
 ): ClientMessage[] {
+  const showId = state.loadedShowId;
+  const source = showId ? { source: { showId, rowId: row.id } } : {};
   if (row.kind === "song") {
     return [
       {
@@ -155,6 +161,7 @@ function rowPvwPgmMessages(
       channel: fromChannel,
       templateId: row.templateId,
       data: row.data,
+      ...source,
     },
     { type: "take_pvw_to_pgm", fromChannel, toChannel },
   ];

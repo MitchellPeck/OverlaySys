@@ -2,7 +2,7 @@ import type { ChannelMedia, ChannelState, VideoRow } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 /** Media takes go straight to their channel — there is no PVW stage for video. */
-export function videoRowTakeMessage(row: VideoRow): ClientMessage {
+export function videoRowTakeMessage(row: VideoRow, showId?: string): ClientMessage {
   return {
     type: "media_take",
     channel: row.channelHint ?? "program",
@@ -13,6 +13,7 @@ export function videoRowTakeMessage(row: VideoRow): ClientMessage {
     endAction: row.endAction,
     transitionIn: row.transitionIn,
     transitionOut: row.transitionOut,
+    ...(showId ? { showId } : {}),
   };
 }
 
