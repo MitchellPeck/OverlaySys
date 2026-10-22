@@ -104,4 +104,15 @@ describe("stageState", () => {
     expect(seen).toHaveBeenCalledTimes(1);
     expect(stage.getStageState().notes).toEqual({ showId: "show-2", notesId: "m1" });
   });
+
+  it("onRowTaken keeps changes dispatched while the show loads", async () => {
+    let resolve!: (s: Show) => void;
+    vi.spyOn(shows, "getShow").mockImplementation(() => new Promise<Show>((r) => (resolve = r)));
+    const taken = stage.onRowTaken({ showId: "show-1", rowId: "r1" });
+    await stage.dispatchStage({ type: "message", text: "Hi", now: 1 });
+    resolve(show);
+    await taken;
+    expect(stage.getStageState().message).toEqual({ text: "Hi", sentAt: 1 });
+    expect(stage.getStageState().notes).toEqual({ showId: "show-1", notesId: "n1" });
+  });
 });

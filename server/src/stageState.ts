@@ -63,12 +63,13 @@ export async function dispatchStage(action: StageAction): Promise<void> {
 
 /** Called whenever a channel's liveRow is set. */
 export async function onRowTaken(source: RowSource): Promise<void> {
+  const show = await shows.getShow(source.showId);
+  const row = show?.rows.find((r) => r.id === source.rowId);
+  // Build on the live state only after the await, so concurrent dispatches aren't lost.
   let next = state;
   if (next.notes && next.notes.showId !== source.showId) {
     next = reduceStageState(next, { type: "select", showId: source.showId, notesId: null }, 0);
   }
-  const show = await shows.getShow(source.showId);
-  const row = show?.rows.find((r) => r.id === source.rowId);
   if (row?.sermonNotesId) {
     next = reduceStageState(next, { type: "select", showId: source.showId, notesId: row.sermonNotesId }, 0);
   }
