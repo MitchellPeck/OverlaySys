@@ -336,6 +336,13 @@ function ShowEditPageInner() {
   }
 
   function addScriptureRow(args: ScriptureSaveArgs) {
+    // Undefined values clear a previous override when switching back to "default".
+    const introFields = {
+      introTemplateId: args.intro.introTemplateId,
+      introFieldMap: args.intro.introFieldMap,
+      introFieldLiterals: args.intro.introFieldLiterals,
+      skipIntro: args.intro.skipIntro || undefined,
+    };
     if (editingScriptureRow) {
       update((s) => {
         const idx = s.rows.findIndex((r) => r.id === editingScriptureRow.id);
@@ -350,6 +357,7 @@ function ShowEditPageInner() {
             attribution: args.attribution,
             slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
             templateId: args.templateId,
+            ...introFields,
           };
         }
       });
@@ -369,6 +377,7 @@ function ShowEditPageInner() {
       ...(args.passage.source ? { source: args.passage.source } : {}),
       slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
       templateId: args.templateId,
+      ...introFields,
     };
     update((s) => {
       s.rows.push(row);
