@@ -6,6 +6,7 @@
 import {
   DEFAULT_STAGE_FOLLOWS,
   resolveStageLayout,
+  type ChannelState,
   type Song,
   type StageFeed,
   type Template,
@@ -19,6 +20,8 @@ import { buildStageFeed } from "./stageFeed";
 
 export const STAGE_FEED_DEBOUNCE_MS = 50;
 
+const PREVIEW_CHANNEL = "preview";
+
 type Send = (channel: string, feed: StageFeed) => void;
 
 const subs = new Map<string, Set<Send>>();
@@ -27,12 +30,25 @@ const pending = new Map<string, ReturnType<typeof setTimeout>>();
 export async function computeFeed(channel: string, now = Date.now()): Promise<StageFeed | null> {
   const cfg = await channelConfigs.getChannelConfig(channel);
   if (!cfg || cfg.kind !== "stage") return null;
-  const followsId = cfg.follows ?? DEFAULT_STAGE_FOLLOWS;
-  const followedCfg = await channelConfigs.getChannelConfig(followsId);
+  let followsId = cfg.follows ?? DEFAULT_STAGE_FOLLOWS;
+  let followedCfg = await channelConfigs.getChannelConfig(followsId);
+  // A mirror channel has no state of its own — follow its source (one hop).
+  if (followedCfg?.kind !== "stage" && followedCfg?.mirrorOf) {
+    followsId = followedCfg.mirrorOf;
+    followedCfg = await channelConfigs.getChannelConfig(followsId);
+  }
   // A channel with no config can still carry state (ad-hoc ids); a stage
   // channel (including this one) has nothing worth following.
   const followed = followedCfg?.kind === "stage" ? null : channels.getState(followsId);
-  const allStates = channels.allStates();
+  // Timers come only from channels that can be on air: preview cues and
+  // stage channels' own state don't count.
+  const allStates: ChannelState[] = [];
+  for (const s of channels.allStates()) {
+    if (s.channel === PREVIEW_CHANNEL) continue;
+    const c = s.channel === channel ? cfg : await channelConfigs.getChannelConfig(s.channel);
+    if (c?.kind === "stage") continue;
+    allStates.push(s);
+  }
 
   const show = followed?.liveRow ? await shows.getShow(followed.liveRow.showId) : null;
   const rowIdx = show && followed?.liveRow ? show.rows.findIndex((r) => r.id === followed.liveRow!.rowId) : -1;
@@ -41,6 +57,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
   const songIds = new Set<string>();
   if (followed?.songSession) songIds.add(followed.songSession.songId);
   const templateIds = new Set<string>();
+  if (followed?.active) templateIds.add(followed.active.templateId);
   for (const s of allStates) if (s.active) templateIds.add(s.active.templateId);
   for (const r of nearRows) {
     if (r.kind === "song") songIds.add(r.songId);

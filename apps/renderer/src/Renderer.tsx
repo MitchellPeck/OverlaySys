@@ -70,6 +70,12 @@ export function Renderer({ channel, debug = false }: Props) {
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
   const [stageFeed, setStageFeed] = useState<{ feed: StageFeed; offsetMs: number } | null>(null);
   const [config, setConfig] = useState<ChannelConfig | null>(null);
+  // A stage channel shows only its StageView: its own state's templates and
+  // media must not mount (they'd play hidden, media audio included). Mirrored
+  // into a ref so the long-lived WS effect's applyState sees the current kind.
+  const isStage = config?.kind === "stage";
+  const isStageRef = useRef(isStage);
+  isStageRef.current = isStage;
   const [scale, setScale] = useState(1);
   // Session-level fade. opacity drives the stage; transitionMs=0 disables
   // the CSS transition so we can snap back to 1 cleanly after a fade-out
@@ -115,6 +121,18 @@ export function Renderer({ channel, debug = false }: Props) {
   // div in JSX rather than mutating document.body, so it's predictable
   // across page CSS, React Strict Mode, and OBS browser-source quirks.
   const matte = config?.renderMode === "matte";
+
+  // Config can land after state: tear down anything mounted before we knew
+  // this was a stage channel.
+  useEffect(() => {
+    if (!isStage || !mountedRef.current) return;
+    const m = mountedRef.current;
+    mountedRef.current = null;
+    lastTemplateIdRef.current = null;
+    lastTakenAtRef.current = 0;
+    m.destroy();
+  }, [isStage]);
+
   const backgroundColor = matte ? "#000" : (config?.background ?? "transparent");
 
   useEffect(() => {
@@ -140,6 +158,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
     async function applyState(state: ChannelState) {
       if (!stageRef.current) return;
+      if (isStageRef.current) return;
 
       if (!state.active) {
         if (mountedRef.current) {
@@ -382,15 +401,17 @@ export function Renderer({ channel, debug = false }: Props) {
           zIndex: 0,
         }}
       />
-      <MediaLayer
-        media={latestState?.media ?? null}
-        clearCut={latestState?.mediaClearCut === true}
-        channel={channel}
-        isMirror={subscriptionRef.current.source !== channel}
-        matte={matte}
-        scale={scale}
-        send={sendRef.current}
-      />
+      {!isStage && (
+        <MediaLayer
+          media={latestState?.media ?? null}
+          clearCut={latestState?.mediaClearCut === true}
+          channel={channel}
+          isMirror={subscriptionRef.current.source !== channel}
+          matte={matte}
+          scale={scale}
+          send={sendRef.current}
+        />
+      )}
       <div
         ref={stageRef}
         style={{
@@ -413,7 +434,7 @@ export function Renderer({ channel, debug = false }: Props) {
             : "none",
         }}
       />
-      {config?.kind === "stage" && stageFeed && (
+      {isStage && stageFeed && (
         <StageView feed={stageFeed.feed} offsetMs={stageFeed.offsetMs} connected={status === "open"} />
       )}
       {debug && (

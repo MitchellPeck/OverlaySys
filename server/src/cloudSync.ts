@@ -24,6 +24,7 @@ import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
+import * as stageFeedHub from "./stageFeedHub";
 
 export interface CloudTokens {
   accessToken: string;
@@ -262,6 +263,11 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
         type: "channel_list",
         configs: await listChannelConfigs(),
       });
+    }
+    // Confidence monitors render rows, songs and templates and read channel
+    // configs (kind, follows, layout) — rebuild them against pulled data.
+    if (touched("templates") || touched("shows") || touched("songs") || touched("channelConfigs")) {
+      stageFeedHub.invalidateAll();
     }
     // Project channel overrides aren't yet in the WS protocol's broadcast
     // surface — the operator fetches them on demand via cloudData. When

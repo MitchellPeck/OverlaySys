@@ -239,6 +239,19 @@ describe("buildStageFeed", () => {
     ]);
   });
 
+  it("lists the followed channel's timers before other channels'", () => {
+    const followed: ChannelState = {
+      channel: "program",
+      active: { templateId: "timer", data: { t: "7000" }, phase: "on", takenAt: 1 },
+    };
+    const other: ChannelState = {
+      channel: "a-chan",
+      active: { templateId: "timer", data: { t: "5000" }, phase: "on", takenAt: 1 },
+    };
+    const f = base(followed, { allStates: [other, followed] });
+    expect(f.timers.map((t) => t.channel)).toEqual(["program", "a-chan"]);
+  });
+
   it("skips timers with an unparseable value", () => {
     const timerState: ChannelState = {
       channel: "t",

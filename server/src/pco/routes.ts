@@ -5,6 +5,7 @@ import { listShowMetas } from "../shows";
 import { listSongMetas } from "../songs";
 import { loadPcoConfig, savePcoConfig } from "../storage";
 import { broadcast } from "../broadcast";
+import * as stageFeedHub from "../stageFeedHub";
 import {
   basicHeader,
   bearerHeader,
@@ -128,6 +129,8 @@ export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
         const song = await songs.getSong(songId);
         if (song) broadcast({ type: "song", song });
       }
+      // A confidence monitor may be showing the imported show or songs.
+      if (result.showId || result.writtenSongIds.length > 0) stageFeedHub.invalidateAll();
       return result;
     } catch (err) {
       return pcoErrorReply(reply, err);

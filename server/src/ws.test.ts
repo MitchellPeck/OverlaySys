@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
 import { handleConnection } from "./ws";
 import * as channels from "./channels";
+import * as shows from "./shows";
+import * as songs from "./songs";
+import * as songSession from "./songSession";
+import * as templates from "./templates";
+import { ShowSchema, SongSchema } from "@overlaysys/core";
 
 /**
  * Minimal stand-in for a `ws` socket: an EventEmitter with the readyState +
@@ -86,5 +91,59 @@ describe("ws subscribe", () => {
     await new Promise((r) => setImmediate(r));
     // Exactly one delta for the take — not one per subscribe call.
     expect(states(sock, ch).length).toBe(before + 1);
+  });
+});
+
+describe("ws song takes set liveRow", () => {
+  const song = SongSchema.parse({
+    id: "song-lr",
+    title: "Amazing Grace",
+    sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "s1", lines: ["Amazing grace"] }] }],
+    defaultArrangement: ["v1"],
+  });
+  const show = ShowSchema.parse({
+    id: "show-lr",
+    name: "Sunday",
+    projectId: "p",
+    songs: [],
+    rows: [{ kind: "song", id: "row-lr", songId: "song-lr", lyricTemplateId: "lyrics" }],
+  });
+  const SRC = { showId: "show-lr", rowId: "row-lr" };
+
+  function mockLibrary() {
+    vi.spyOn(shows, "getShow").mockResolvedValue(show);
+    vi.spyOn(songs, "getSong").mockResolvedValue(song);
+    vi.spyOn(templates, "getTemplate").mockResolvedValue(null);
+    vi.spyOn(songSession, "start").mockImplementation(() => {});
+    vi.spyOn(songSession, "promoteTo").mockImplementation(() => {});
+  }
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("song_take sets liveRow on its channel", async () => {
+    mockLibrary();
+    const ch = `t-${Date.now()}-song`;
+    const sock = connect();
+    await sock.client({ type: "song_take", channel: ch, showId: "show-lr", songRowId: "row-lr" });
+    await vi.waitFor(() => expect(channels.getState(ch).liveRow).toEqual(SRC));
+  });
+
+  it("song_take_pvw_to_pgm sets liveRow on toChannel, not fromChannel", async () => {
+    mockLibrary();
+    const from = `t-${Date.now()}-from`;
+    const to = `t-${Date.now()}-to`;
+    const sock = connect();
+    await sock.client({ type: "song_take_pvw_to_pgm", showId: "show-lr", songRowId: "row-lr", fromChannel: from, toChannel: to });
+    await vi.waitFor(() => expect(channels.getState(to).liveRow).toEqual(SRC));
+    expect(channels.getState(from).liveRow).toBeUndefined();
+  });
+
+  it("take_song_sub lyrics sets liveRow on the resolved channel", async () => {
+    mockLibrary();
+    const ch = `t-${Date.now()}-sub`;
+    const sock = connect();
+    await sock.client({ type: "take_song_sub", showId: "show-lr", songRowId: "row-lr", sub: "lyrics", channel: ch });
+    await vi.waitFor(() => expect(channels.getState(ch).liveRow).toEqual(SRC));
   });
 });

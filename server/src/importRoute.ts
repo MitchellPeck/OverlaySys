@@ -13,6 +13,7 @@ import * as songs from "./songs";
 import * as projects from "./projects";
 import * as bundleApply from "./bundleApply";
 import { broadcast } from "./broadcast";
+import * as stageFeedHub from "./stageFeedHub";
 
 /**
  * `POST /api/import` — single-shot bulk import for the operator's /data page.
@@ -198,6 +199,11 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       }
       if (counts.projects > 0) {
         broadcast({ type: "project_list", projects: await projects.listProjects() });
+      }
+      // Confidence monitors may be showing a row, song or template that the
+      // import just overwrote.
+      if (counts.templates > 0 || counts.shows > 0 || counts.songs > 0) {
+        stageFeedHub.invalidateAll();
       }
 
       return { ok: errors.length === 0, counts, errors };

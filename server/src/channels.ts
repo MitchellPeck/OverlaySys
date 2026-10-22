@@ -43,6 +43,12 @@ export function allStates(): ChannelState[] {
 const autoOutTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let takeIsInternal = false;
+
+// The row source of whatever take currently owns each channel's `active`
+// (null for an unsourced take). Distinct from `liveRow`, which is sticky:
+// take_pvw_to_pgm carries this — not preview's liveRow — so promoting an
+// unsourced cue never drags a stale preview row onto program.
+const activeSource = new Map<string, RowSource | null>();
 let clearIsInternal = false;
 
 function cancelAutoOut(channel: string): void {
@@ -107,6 +113,7 @@ export function getState(channel: string): ChannelState {
 export function setLiveRow(channel: string, source: RowSource): void {
   const s = getOrInit(channel);
   s.liveRow = source;
+  activeSource.set(channel, source);
   emit(channel);
 }
 
@@ -180,6 +187,8 @@ export function take(
     ...(scripture ? { scriptureContext: scripture.context } : {}),
   };
   if (source) s.liveRow = source;
+  // Song slide advances keep the source their session start set.
+  if (!takeIsInternal) activeSource.set(channel, source ?? null);
   states.set(channel, s);
   emit(channel);
   // Internal takes (song slide advances) bypass auto-out — songs control
@@ -216,6 +225,7 @@ export function clear(
     }
   }
   cancelAutoOut(channel);
+  activeSource.delete(channel);
   const s = getOrInit(channel);
   if (!clearIsInternal && !options?.keepQueuedSong && scriptureSession.dropQueued(channel)) {
     delete s.queuedScripture;
@@ -305,6 +315,7 @@ export function setQueuedScripture(channel: string, queued: QueuedScripture | nu
 export function setActiveNull(channel: string): void {
   const s = getOrInit(channel);
   s.active = null;
+  activeSource.delete(channel);
   states.set(channel, s);
   emit(channel);
 }
@@ -369,7 +380,9 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
     ...(queued.subTakeContext ? { subTakeContext: queued.subTakeContext } : {}),
     ...(queued.scriptureContext ? { scriptureContext: queued.scriptureContext } : {}),
   };
-  if (src.liveRow) pgm.liveRow = src.liveRow;
+  const carriedSource = activeSource.get(fromChannel) ?? null;
+  if (carriedSource) pgm.liveRow = carriedSource;
+  activeSource.set(toChannel, carriedSource);
   states.set(toChannel, pgm);
   emit(toChannel);
 

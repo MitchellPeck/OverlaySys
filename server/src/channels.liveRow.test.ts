@@ -35,6 +35,32 @@ describe("channel liveRow", () => {
     expect(channels.getState("lr-pgm").liveRow).toEqual(SRC);
   });
 
+  it("promote of a sourced preview cue sets the program liveRow", () => {
+    channels.take("lr-pvw-a", "tpl", {}, undefined, undefined, SRC);
+    channels.takePvwToPgm("lr-pvw-a", "lr-pgm-a");
+    expect(channels.getState("lr-pgm-a").liveRow).toEqual(SRC);
+  });
+
+  it("promote of a later unsourced preview cue leaves the program liveRow alone", () => {
+    const OTHER = { showId: "show-1", rowId: "row-2" };
+    channels.take("lr-pvw-b", "tpl", {}, undefined, undefined, SRC);
+    channels.takePvwToPgm("lr-pvw-b", "lr-pgm-b");
+    channels.setLiveRow("lr-pgm-b", OTHER);
+    channels.take("lr-pvw-b", "hotcard", {});
+    channels.takePvwToPgm("lr-pvw-b", "lr-pgm-b");
+    expect(channels.getState("lr-pgm-b").liveRow).toEqual(OTHER);
+  });
+
+  it("sourced cue, clear preview, unsourced cue, promote leaves the program liveRow alone", () => {
+    const PGM = { showId: "show-1", rowId: "row-pgm" };
+    channels.setLiveRow("lr-pgm-c", PGM);
+    channels.take("lr-pvw-c", "tpl", {}, undefined, undefined, SRC);
+    channels.clear("lr-pvw-c");
+    channels.take("lr-pvw-c", "hotcard", {});
+    channels.takePvwToPgm("lr-pvw-c", "lr-pgm-c");
+    expect(channels.getState("lr-pgm-c").liveRow).toEqual(PGM);
+  });
+
   it("media_take with showId sets liveRow from rowId", () => {
     channels.mediaTake("lr-m", {
       rowId: "vid-1",

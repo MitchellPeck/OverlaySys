@@ -138,9 +138,14 @@ function currentOf(s: ChannelState, songs: Map<string, Song>, templates: Map<str
   return NONE_SLIDE;
 }
 
-function timersOf(states: ChannelState[], templates: Map<string, Template>): StageTimer[] {
+/** The followed channel's timers come first, then the rest by channel id. */
+function timersOf(states: ChannelState[], templates: Map<string, Template>, followedId: string | null): StageTimer[] {
   const out: StageTimer[] = [];
-  const sorted = [...states].sort((a, b) => a.channel.localeCompare(b.channel));
+  const sorted = [...states].sort((a, b) => {
+    if (a.channel === followedId) return b.channel === followedId ? 0 : -1;
+    if (b.channel === followedId) return 1;
+    return a.channel.localeCompare(b.channel);
+  });
   for (const s of sorted) {
     if (!s.active || s.active.phase === "out") continue;
     const tpl = templates.get(s.active.templateId);
@@ -208,7 +213,7 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     next,
     row: row ? rowView(row, songs, templates) : null,
     nextRow: nextRowObj ? rowView(nextRowObj, songs, templates) : null,
-    timers: timersOf(i.allStates, templates),
+    timers: timersOf(i.allStates, templates, followed?.channel ?? null),
     video: videoOf(followed),
     serverNow: i.now,
   };

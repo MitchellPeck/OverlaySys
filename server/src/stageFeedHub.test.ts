@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChannelConfigSchema, type ChannelConfig } from "@overlaysys/core";
+import { ChannelConfigSchema, ShowSchema, type ChannelConfig, type Template } from "@overlaysys/core";
+import * as channels from "./channels";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songs from "./songs";
@@ -7,6 +8,24 @@ import * as templates from "./templates";
 import * as hub from "./stageFeedHub";
 
 const configs = new Map<string, ChannelConfig>();
+
+const timerTpl: Template = {
+  id: "timer",
+  name: "Countdown",
+  version: 1,
+  html: "",
+  css: "",
+  fields: [{ key: "t", label: "Service starts", type: "time", timeMode: "countdown" }],
+} as unknown as Template;
+
+const lowerThird: Template = {
+  id: "lt",
+  name: "Lower Third",
+  version: 1,
+  html: "",
+  css: "",
+  fields: [{ key: "name", label: "Name", type: "text" }],
+} as unknown as Template;
 function cfg(raw: Record<string, unknown>) {
   const c = ChannelConfigSchema.parse(raw);
   configs.set(c.id, c);
@@ -43,6 +62,52 @@ describe("stageFeedHub", () => {
     cfg({ id: "b", name: "B", kind: "stage", follows: "a" });
     expect((await hub.computeFeed("a"))?.current.kind).toBe("none");
     expect((await hub.computeFeed("b"))?.current.kind).toBe("none");
+  });
+
+  it("leaves timers that are only cued on preview out of the feed", async () => {
+    vi.mocked(templates.getTemplate).mockImplementation(async (id) => (id === "timer" ? timerTpl : null));
+    cfg({ id: "pastor", name: "Pastor", kind: "stage" });
+    channels.take("preview", "timer", { t: "5000" });
+    channels.take("hub-timer-chan", "timer", { t: "6000" });
+    const feed = await hub.computeFeed("pastor");
+    const timerChannels = feed?.timers.map((t) => t.channel) ?? [];
+    expect(timerChannels).not.toContain("preview");
+    expect(timerChannels).toContain("hub-timer-chan");
+    channels.setActiveNull("preview");
+    channels.setActiveNull("hub-timer-chan");
+  });
+
+  it("follows a mirror channel's source", async () => {
+    vi.mocked(templates.getTemplate).mockImplementation(async (id) => (id === "lt" ? lowerThird : null));
+    vi.mocked(shows.getShow).mockResolvedValue(
+      ShowSchema.parse({
+        id: "show-m",
+        name: "Sunday",
+        projectId: "p",
+        songs: [],
+        rows: [{ kind: "graphic", id: "row-m", templateId: "lt", data: { name: "Welcome" } }],
+      }),
+    );
+    cfg({ id: "program", name: "Program" });
+    cfg({ id: "alpha", name: "Alpha", mirrorOf: "program" });
+    cfg({ id: "pastor", name: "Pastor", kind: "stage", follows: "alpha" });
+    channels.take("program", "lt", { name: "Welcome" }, undefined, undefined, { showId: "show-m", rowId: "row-m" });
+    const feed = await hub.computeFeed("pastor");
+    expect(feed?.row?.title).toBe("Lower Third — Welcome");
+    expect(feed?.current).toEqual({ kind: "graphic", lines: ["Welcome"], reference: "Lower Third" });
+    channels.setActiveNull("program");
+  });
+
+  it("follows nothing when the mirror source is a stage channel", async () => {
+    cfg({ id: "monitor", name: "Monitor", kind: "stage" });
+    cfg({ id: "beta", name: "Beta", mirrorOf: "monitor" });
+    cfg({ id: "pastor", name: "Pastor", kind: "stage", follows: "beta" });
+    channels.take("beta", "tpl", {});
+    channels.take("monitor", "tpl", {});
+    const feed = await hub.computeFeed("pastor");
+    expect(feed?.current.kind).toBe("none");
+    channels.setActiveNull("beta");
+    channels.setActiveNull("monitor");
   });
 
   it("pushes on subscribe and once per debounce window on invalidation", async () => {
