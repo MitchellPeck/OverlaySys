@@ -26,6 +26,7 @@
     "gsap": "^3.12.5",
     "immer": "^10.1.1",
     "lucide-react": "^1.60.0",
+    "mammoth": "^1.13.0",
     "next": "^15.1.0",
     "papaparse": "^5.4.1",
     "qrcode": "^1.5.4",

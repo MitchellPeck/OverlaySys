@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { ChannelConfig, Show, RundownRow, GraphicRow, ScriptureRow, VideoRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
+import type { ChannelConfig, SermonNotes, Show, RundownRow, GraphicRow, ScriptureRow, VideoRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
 import { BookOpen, ChevronDown, ChevronRight, Film } from "lucide-react";
 import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
@@ -17,6 +17,7 @@ import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
+import { SermonNotesEditor, NotesSetPicker } from "./SermonNotesEditor";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
 import { VideoThumb } from "@/app/components/VideoThumb";
@@ -563,6 +564,7 @@ function ShowEditPageInner() {
             <button onClick={() => setScriptureModalOpen(true)} style={addRowBtn}>+ Scripture</button>
             <button onClick={() => setVideoModalOpen(true)} style={addRowBtn}>+ Video</button>
           </div>
+          <SermonNotesEditor notes={draft.sermonNotes ?? []} onUpdate={update} />
         </div>
       </div>
       <ScriptureRowModal
@@ -667,6 +669,7 @@ function RundownTable({
                 songCache={songCache}
                 templates={templates}
                 channels={channels}
+                sermonNotes={draft.sermonNotes ?? []}
                 onUpdate={onUpdate}
                 {...dragProps}
               />
@@ -774,6 +777,7 @@ function RundownTable({
               templates={templates}
               template={templateCache[row.templateId] ?? null}
               channels={channels}
+              sermonNotes={draft.sermonNotes ?? []}
               onUpdate={onUpdate}
               {...dragProps}
             />
@@ -859,6 +863,7 @@ function RundownRowEditor({
   templates,
   template,
   channels,
+  sermonNotes,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -872,6 +877,7 @@ function RundownRowEditor({
   templates: TemplateMeta[];
   template: Template | null;
   channels: ChannelConfig[];
+  sermonNotes: SermonNotes[];
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -946,6 +952,11 @@ function RundownRowEditor({
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
         />
+        <NotesSetPicker
+          sets={sermonNotes}
+          value={row.sermonNotesId}
+          onChange={(v) => patchRow({ sermonNotesId: v })}
+        />
       </td>
       <td style={{ ...td, width: 36, textAlign: "center" }}>
         <IconButton onClick={onDelete} title="Delete row" size={24} style={{ color: colors.red, fontSize: 14 }}>
@@ -964,6 +975,7 @@ function SongRowEditor({
   songCache,
   templates,
   channels,
+  sermonNotes,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -979,6 +991,7 @@ function SongRowEditor({
   songCache: Record<string, Song>;
   templates: TemplateMeta[];
   channels: ChannelConfig[];
+  sermonNotes: SermonNotes[];
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -1194,6 +1207,11 @@ function SongRowEditor({
           value={row.notes ?? ""}
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
+        />
+        <NotesSetPicker
+          sets={sermonNotes}
+          value={row.sermonNotesId}
+          onChange={(v) => patchRow({ sermonNotesId: v })}
         />
       </td>
       <td style={{ ...td, width: 36, textAlign: "center" }}>
