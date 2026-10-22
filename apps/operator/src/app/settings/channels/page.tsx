@@ -399,6 +399,8 @@ function ChannelRow({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(config);
   const mirrorOptions = allChannels.filter((o) => o.id !== config.id);
+  const followOptions = mirrorOptions.filter((o) => o.kind !== "stage");
+  const followsValue = draft.follows ?? DEFAULT_STAGE_FOLLOWS;
 
   function patch(p: Partial<ChannelConfig>) {
     setDraft((cur) => ({ ...cur, ...p }));
@@ -427,41 +429,42 @@ function ChannelRow({
           </Select>
           {draft.kind === "graphics" ? (
             <>
-            <Select
-              value={draft.renderMode}
-              onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
-              title="Render mode"
-            >
-              <option value="normal">normal</option>
-              <option value="matte">matte (white on black)</option>
-            </Select>
-            <Select
-              value={draft.mirrorOf ?? ""}
-              onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
-              title="Mirror of (channel whose state this one reflects)"
-            >
-              <option value="">— no mirror —</option>
-              {mirrorOptions.map((o) => (
-                <option key={o.id} value={o.id}>
-                  mirrors {o.name}
-                </option>
-              ))}
-            </Select>
+              <Select
+                value={draft.renderMode}
+                onChange={(e) => patch({ renderMode: e.target.value as ChannelRenderMode })}
+                title="Render mode"
+              >
+                <option value="normal">normal</option>
+                <option value="matte">matte (white on black)</option>
+              </Select>
+              <Select
+                value={draft.mirrorOf ?? ""}
+                onChange={(e) => patch({ mirrorOf: e.target.value || undefined })}
+                title="Mirror of (channel whose state this one reflects)"
+              >
+                <option value="">— no mirror —</option>
+                {mirrorOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    mirrors {o.name}
+                  </option>
+                ))}
+              </Select>
             </>
           ) : (
             <>
               <Select
-                value={draft.follows ?? DEFAULT_STAGE_FOLLOWS}
+                value={followsValue}
                 onChange={(e) => patch({ follows: e.target.value })}
                 title="Channel whose content this monitor shows"
               >
-                {allChannels
-                  .filter((o) => o.id !== config.id && o.kind !== "stage")
-                  .map((o) => (
-                    <option key={o.id} value={o.id}>
-                      follows {o.name}
-                    </option>
-                  ))}
+                {!followOptions.some((o) => o.id === followsValue) && (
+                  <option value={followsValue}>follows {followsValue} (missing)</option>
+                )}
+                {followOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    follows {o.name}
+                  </option>
+                ))}
               </Select>
               <Select
                 value={draft.layoutId ?? BUILT_IN_STAGE_LAYOUTS[0]!.id}
