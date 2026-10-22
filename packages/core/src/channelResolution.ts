@@ -33,6 +33,9 @@ export function resolveChannelConfig(
     renderMode: override.renderMode ?? base.renderMode,
     mirrorOf: override.mirrorOf ?? base.mirrorOf,
     background: override.background ?? base.background,
+    kind: base.kind,
+    ...(base.follows !== undefined ? { follows: base.follows } : {}),
+    ...(base.layoutId !== undefined ? { layoutId: base.layoutId } : {}),
     // updatedAt of the effective config is the latest of the two writes,
     // so a downstream sync engine can short-circuit when both sides are
     // already fresh. Tombstone fields are intentionally not propagated.

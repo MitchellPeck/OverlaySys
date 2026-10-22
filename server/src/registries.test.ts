@@ -59,7 +59,7 @@ function makeTemplate(id: string): Template {
 }
 
 function makeChannel(id: string): ChannelConfig {
-  return { id, name: id, renderMode: "matte", mirrorOf: "program", background: "transparent" };
+  return { id, name: id, kind: "graphics", renderMode: "matte", mirrorOf: "program", background: "transparent" };
 }
 
 function makeProject(id: string): Project {

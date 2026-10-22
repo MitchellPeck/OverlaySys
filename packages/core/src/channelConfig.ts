@@ -16,6 +16,17 @@ import { z } from "zod";
 export const ChannelRenderModeSchema = z.enum(["normal", "matte"]);
 export type ChannelRenderMode = z.infer<typeof ChannelRenderModeSchema>;
 
+/**
+ * `graphics` channels mount templates. `stage` channels are confidence
+ * monitors: the renderer draws a StageLayout fed by the server's StageFeed
+ * (see stageFeed.ts) and ignores template takes.
+ */
+export const ChannelKindSchema = z.enum(["graphics", "stage"]);
+export type ChannelKind = z.infer<typeof ChannelKindSchema>;
+
+/** Channel a stage channel follows when `follows` is unset. */
+export const DEFAULT_STAGE_FOLLOWS = "program";
+
 export const ChannelConfigSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -34,6 +45,11 @@ export const ChannelConfigSchema = z.object({
    * regardless of this value.
    */
   background: z.string().default("transparent"),
+  kind: ChannelKindSchema.default("graphics"),
+  /** Stage only: the channel whose current/next content this monitor shows. */
+  follows: z.string().optional(),
+  /** Stage only: StageLayout id; unset or unknown falls back to the built-in Speaker layout. */
+  layoutId: z.string().optional(),
   /**
    * ISO timestamp of the last write. Set by the cloud (or by callers in
    * local mode) on every save. Used by the sync engine for last-writer-wins

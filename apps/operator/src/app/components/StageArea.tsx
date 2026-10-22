@@ -287,6 +287,7 @@ function VideoDetails({ row }: { row: VideoRow }) {
 const STAGE_PREVIEW_CONFIG: ChannelConfig = {
   id: "__stage-preview",
   name: "Selected",
+  kind: "graphics",
   renderMode: "normal",
   background: "transparent",
 };

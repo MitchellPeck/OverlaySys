@@ -108,6 +108,7 @@ function makeChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
     id: "program",
     name: "Program",
+    kind: "graphics",
     renderMode: "normal",
     background: "transparent",
     ...overrides,

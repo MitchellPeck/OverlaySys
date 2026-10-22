@@ -187,6 +187,7 @@ export default function ChannelsPage() {
     const config: ChannelConfig = {
       id,
       name,
+      kind: "graphics",
       renderMode: creating.renderMode,
       background: "transparent",
       ...(creating.mirrorOf ? { mirrorOf: creating.mirrorOf } : {}),

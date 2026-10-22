@@ -114,8 +114,8 @@ beforeEach(async () => {
   await shows.saveShow(s2);
   const h1: Hotcard = { id: "h1", name: "Card", projectId: "p1", templateId: "t1", data: {} };
   await hotcards.saveHotcard(h1);
-  const program: ChannelConfig = { id: "program", name: "Program", renderMode: "normal", background: "transparent" };
-  const preview: ChannelConfig = { id: "preview", name: "Preview", renderMode: "normal", background: "transparent" };
+  const program: ChannelConfig = { id: "program", name: "Program", kind: "graphics", renderMode: "normal", background: "transparent" };
+  const preview: ChannelConfig = { id: "preview", name: "Preview", kind: "graphics", renderMode: "normal", background: "transparent" };
   await channelConfigs.saveChannelConfig(program);
   await channelConfigs.saveChannelConfig(preview);
 

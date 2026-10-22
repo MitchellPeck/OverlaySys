@@ -11,6 +11,7 @@ function makeBase(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
   return {
     id: "program",
     name: "Program",
+    kind: "graphics",
     renderMode: "normal",
     background: "transparent",
     ...overrides,
@@ -63,6 +64,7 @@ describe("resolveChannelConfig", () => {
     expect(effective).toEqual({
       id: "program",
       name: "Sunday PGM",
+      kind: "graphics",
       renderMode: "normal",
       mirrorOf: undefined,
       background: "#00ff00",

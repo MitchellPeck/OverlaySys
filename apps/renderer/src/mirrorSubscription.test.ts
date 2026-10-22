@@ -5,6 +5,7 @@ import { createMirrorSubscription } from "./mirrorSubscription";
 const alphaCfg: ChannelConfig = {
   id: "alpha-program",
   name: "Alpha (Program)",
+  kind: "graphics",
   renderMode: "matte",
   mirrorOf: "program",
   background: "transparent",
