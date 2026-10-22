@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { ScriptureSettingsSchema } from "@overlaysys/core";
 import {
   ALL_BUNDLES,
   BundledProvider,
@@ -11,6 +12,7 @@ import {
 } from "@overlaysys/scripture";
 import { reportViews } from "./apiBible/fums";
 import { ensureApiBible } from "./apiBible/config";
+import { loadScriptureSettings, saveScriptureSettings } from "./scriptureSettings";
 
 let registry: ProviderRegistry | null = null;
 
@@ -35,6 +37,14 @@ export function _getRegistryForTest(): ProviderRegistry {
 }
 
 export async function registerScriptureRoutes(app: FastifyInstance): Promise<void> {
+  app.get("/api/scripture/settings", async () => loadScriptureSettings());
+
+  app.put<{ Body: unknown }>("/api/scripture/settings", async (req, reply) => {
+    const parsed = ScriptureSettingsSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ message: parsed.error.message });
+    return saveScriptureSettings(parsed.data);
+  });
+
   app.get("/api/scripture/translations", async () => {
     await ensureApiBible();
     return { translations: getScriptureRegistry().listTranslations() };
