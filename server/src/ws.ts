@@ -29,6 +29,7 @@ import * as sttInstaller from "./sttInstaller";
 import { scheduleSync } from "./cloudSync";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
+import * as stageFeedHub from "./stageFeedHub";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
@@ -49,6 +50,10 @@ songSession.onMatch((channel, result, hypothesis, meta) => {
     isFinal: meta.isFinal,
   });
 });
+
+// Any channel change can alter what a confidence monitor shows (a timer on
+// another channel, the followed channel's take), so rebuild every feed.
+channels.onAnyChange(() => stageFeedHub.invalidateAll());
 
 sttListener.subscribe((listeners) => {
   broadcast({ type: "stt_listener_state", listeners });
@@ -143,6 +148,12 @@ export function handleConnection(
               channel: parsed.channel,
               state: channels.getState(parsed.channel),
             });
+            void stageFeedHub.computeFeed(parsed.channel).then(
+              (feed) => {
+                if (feed) send({ type: "stage_feed", channel: parsed.channel, feed });
+              },
+              (err) => console.warn("[stageFeedHub] resync failed", err),
+            );
             break;
           }
           const unsub = channels.subscribe(parsed.channel, (state) => {
@@ -156,9 +167,13 @@ export function handleConnection(
               : channels.subscribeMediaPlayback(parsed.channel, (e) => {
                   send({ type: "media_playback", ...e });
                 });
+          const unsubStage = stageFeedHub.subscribeStage(parsed.channel, (channel, feed) => {
+            send({ type: "stage_feed", channel, feed });
+          });
           subscriptions.set(parsed.channel, () => {
             unsub();
             unsubPlayback();
+            unsubStage();
           });
           break;
         }
@@ -231,6 +246,7 @@ export function handleConnection(
           const list = await templates.listTemplateMetas();
           broadcast({ type: "template_list", templates: list });
           broadcast({ type: "template", template: saved });
+          stageFeedHub.invalidateAll();
           scheduleSync();
           break;
         }
@@ -240,6 +256,7 @@ export function handleConnection(
           if (ok) {
             const list = await templates.listTemplateMetas();
             broadcast({ type: "template_list", templates: list });
+            stageFeedHub.invalidateAll();
             scheduleSync();
           }
           break;
@@ -273,6 +290,7 @@ export function handleConnection(
           broadcast({ type: "show", show: saved });
           const list = await shows.listShowMetas();
           broadcast({ type: "show_list", shows: list });
+          stageFeedHub.invalidateAll();
           scheduleSync();
           break;
         }
@@ -282,6 +300,7 @@ export function handleConnection(
           if (ok) {
             const list = await shows.listShowMetas();
             broadcast({ type: "show_list", shows: list });
+            stageFeedHub.invalidateAll();
             scheduleSync();
           }
           break;
@@ -381,6 +400,7 @@ export function handleConnection(
           broadcast({ type: "song", song: saved });
           const list = await songs.listSongMetas();
           broadcast({ type: "song_list", songs: list });
+          stageFeedHub.invalidateAll();
           scheduleSync();
           break;
         }
@@ -390,6 +410,7 @@ export function handleConnection(
           if (ok) {
             const list = await songs.listSongMetas();
             broadcast({ type: "song_list", songs: list });
+            stageFeedHub.invalidateAll();
             scheduleSync();
           }
           break;
@@ -597,6 +618,7 @@ export function handleConnection(
           broadcast({ type: "channel", config: saved });
           const list = await channelConfigs.listChannelConfigs();
           broadcast({ type: "channel_list", configs: list });
+          stageFeedHub.invalidateAll();
           scheduleSync();
           break;
         }
@@ -606,6 +628,7 @@ export function handleConnection(
           if (ok) {
             const list = await channelConfigs.listChannelConfigs();
             broadcast({ type: "channel_list", configs: list });
+            stageFeedHub.invalidateAll();
             scheduleSync();
           }
           break;
