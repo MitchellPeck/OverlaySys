@@ -31,6 +31,10 @@ describe("splitPoints", () => {
     expect(splitPoints("- **Grace** is free")[0]!.heading).toBe("Grace is free");
   });
 
+  it("names an empty heading Untitled", () => {
+    expect(splitPoints("# \nbody")[0]!.heading).toBe("Untitled");
+  });
+
   it("returns [] for empty or whitespace input", () => {
     expect(splitPoints("")).toEqual([]);
     expect(splitPoints("  \n\n \t")).toEqual([]);

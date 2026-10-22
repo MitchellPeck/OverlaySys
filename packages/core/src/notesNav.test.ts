@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INITIAL_STAGE_STATE, reduceStageState, type StageState } from "./notesNav";
+import { INITIAL_STAGE_STATE, MAX_SCROLL_OFFSET, reduceStageState, type StageState } from "./notesNav";
 
 const active = (over: Partial<StageState> = {}): StageState => ({
   ...INITIAL_STAGE_STATE,
@@ -70,5 +70,37 @@ describe("reduceStageState", () => {
     expect(m.message).toEqual({ text: "Wrap up", sentAt: 7 });
     expect(reduceStageState(m, { type: "messageClear" }, 0).message).toBeNull();
     expect(reduceStageState(INITIAL_STAGE_STATE, { type: "message", text: "   ", now: 7 }, 0).message).toBeNull();
+  });
+});
+
+describe("reduceStageState invariants", () => {
+  it("ignores non-finite point, scroll and overflow inputs", () => {
+    const s = active({ pointIdx: 2, scrollOffset: 0.5 });
+    expect(reduceStageState(s, { type: "point", delta: Number.NaN }, 5)).toBe(s);
+    expect(reduceStageState(s, { type: "point", index: Number.POSITIVE_INFINITY }, 5)).toBe(s);
+    expect(reduceStageState(s, { type: "scroll", delta: Number.POSITIVE_INFINITY }, 5)).toBe(s);
+    expect(reduceStageState(s, { type: "scroll", delta: Number.NEGATIVE_INFINITY }, 5)).toBe(s);
+    expect(reduceStageState(s, { type: "overflow", direction: "next", atPoint: Number.NaN }, 5)).toBe(s);
+  });
+
+  it("truncates point delta and index toward zero", () => {
+    expect(reduceStageState(active(), { type: "point", index: 1.7 }, 5).pointIdx).toBe(1);
+    expect(reduceStageState(active(), { type: "point", delta: 1.7 }, 5).pointIdx).toBe(1);
+  });
+
+  it("bounds scroll offset to +/- MAX_SCROLL_OFFSET", () => {
+    expect(MAX_SCROLL_OFFSET).toBe(3);
+    let s = active({ pointIdx: 4 });
+    for (let i = 0; i < 5; i++) s = reduceStageState(s, { type: "scroll", delta: 1 }, 5);
+    expect(s.scrollOffset).toBe(MAX_SCROLL_OFFSET);
+    expect(reduceStageState(s, { type: "scroll", delta: -0.33 }, 5).scrollOffset).toBeCloseTo(2.67);
+    expect(reduceStageState(active({ pointIdx: 2, scrollOffset: -2.9 }), { type: "scroll", delta: -1 }, 5).scrollOffset).toBe(-MAX_SCROLL_OFFSET);
+  });
+
+  it("clamps the position when the active notes shrank", () => {
+    const shrunk = active({ pointIdx: 4, scrollOffset: 0.5 });
+    const overflow = reduceStageState(shrunk, { type: "overflow", direction: "next", atPoint: 4 }, 3);
+    expect(overflow).toMatchObject({ pointIdx: 2, scrollOffset: 0 });
+    expect(reduceStageState(shrunk, { type: "scroll", delta: 0.1 }, 3).pointIdx).toBe(2);
   });
 });

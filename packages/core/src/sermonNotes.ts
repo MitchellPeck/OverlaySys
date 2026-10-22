@@ -21,7 +21,8 @@ function plainHeading(line: string): string {
     .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
     .replace(/(\*\*|__|\*|_|`)/g, "")
     .trim();
-  return text.length > HEADING_MAX ? text.slice(0, HEADING_MAX - 1) + "…" : text;
+  const clipped = text.length > HEADING_MAX ? text.slice(0, HEADING_MAX - 1) + "…" : text;
+  return clipped || "Untitled";
 }
 
 function point(lines: string[]): NotesPoint | null {

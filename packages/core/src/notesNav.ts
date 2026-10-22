@@ -22,6 +22,9 @@ export type StageAction =
   | { type: "message"; text: string; now: number }
   | { type: "messageClear" };
 
+/** Scroll is bounded to this many viewport fractions either way; overflow handles moving between points. */
+export const MAX_SCROLL_OFFSET = 3;
+
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
 function goTo(s: StageState, idx: number, count: number): StageState {
@@ -43,18 +46,31 @@ export function reduceStageState(s: StageState, a: StageAction, pointCount: numb
     case "messageClear":
       return s.message ? { ...s, message: null } : s;
   }
+  // Malformed numeric input is ignored outright; the reducer owns its invariants.
+  const valid =
+    a.type === "point" ? Number.isFinite("index" in a ? a.index : a.delta)
+    : a.type === "scroll" ? Number.isFinite(a.delta)
+    : a.type === "overflow" ? Number.isFinite(a.atPoint)
+    : true;
+  if (!valid) return s;
   if (!s.notes || pointCount <= 0) return s;
+  // The notes may have shrunk since the position was set; pull it back into range first.
+  let cur = s;
+  if (cur.pointIdx > pointCount - 1) cur = { ...cur, pointIdx: pointCount - 1, scrollOffset: 0 };
   switch (a.type) {
     case "point":
-      return "index" in a ? goTo(s, a.index, pointCount) : goTo(s, s.pointIdx + a.delta, pointCount);
+      return "index" in a
+        ? goTo(cur, Math.trunc(a.index), pointCount)
+        : goTo(cur, cur.pointIdx + Math.trunc(a.delta), pointCount);
     case "scroll": {
-      const raw = s.scrollOffset + a.delta;
-      return { ...s, scrollOffset: s.pointIdx === 0 ? Math.max(0, raw) : raw };
+      const raw = cur.scrollOffset + a.delta;
+      const lo = cur.pointIdx === 0 ? 0 : -MAX_SCROLL_OFFSET;
+      return { ...cur, scrollOffset: clamp(raw, lo, MAX_SCROLL_OFFSET) };
     }
     case "reset":
-      return { ...s, pointIdx: 0, scrollOffset: 0 };
+      return { ...cur, pointIdx: 0, scrollOffset: 0 };
     case "overflow":
-      if (a.atPoint !== s.pointIdx) return s;
-      return goTo(s, s.pointIdx + (a.direction === "next" ? 1 : -1), pointCount);
+      if (a.atPoint !== cur.pointIdx) return cur;
+      return goTo(cur, cur.pointIdx + (a.direction === "next" ? 1 : -1), pointCount);
   }
 }
