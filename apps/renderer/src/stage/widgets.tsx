@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { SlideView, StageFeed, StageWidget } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
@@ -106,6 +106,7 @@ function NotesBody({
   const pointRefs = useRef<(HTMLDivElement | null)[]>([]);
   const sentKey = useRef("");
   const { points, pointIdx, scrollOffset } = notes;
+  const parsed = useMemo(() => points.map((pt) => parseNotesMarkdown(pt.markdown)), [points]);
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -124,7 +125,9 @@ function NotesBody({
       isLast: pointIdx >= points.length - 1,
     });
     const key = `${pointIdx}:${scrollOffset}`;
-    if (dir && send && sentKey.current !== key) {
+    if (!dir) {
+      sentKey.current = "";
+    } else if (send && sentKey.current !== key) {
       sentKey.current = key;
       send({ type: "notes_overflow", direction: dir, atPoint: pointIdx });
     }
@@ -150,9 +153,9 @@ function NotesBody({
         ref={scrollerRef}
         style={{ position: "absolute", left: 0, right: 0, top: 0, transition: "transform 300ms ease" }}
       >
-        {points.map((pt, i) => {
+        {points.map((_pt, i) => {
           const active = i === pointIdx;
-          const blocks = parseNotesMarkdown(pt.markdown);
+          const blocks = parsed[i]!;
           return (
             <div
               key={i}
@@ -167,9 +170,6 @@ function NotesBody({
                 overflowWrap: "anywhere",
               }}
             >
-              {pt.heading && !blocks.some((b) => b.kind === "heading") && (
-                <div style={{ fontWeight: 700, fontSize: st.fontSize * 1.25, marginBottom: 6 }}>{pt.heading}</div>
-              )}
               {blocks.map((b, j) => {
                 if (b.kind === "heading")
                   return (
