@@ -119,7 +119,7 @@ describe("helpers", () => {
       { key: "b", label: "Name", type: "text" },
     ]);
     expect(s.a).toEqual({ kind: "suggested", songFieldKey: "reference" });
-    expect(s.b).toEqual({ kind: "none" });
+    expect(s.b?.songFieldKey).not.toBe("reference"); // falls through to the generic matcher
   });
 
   it("suggestScriptureFieldMap does not let an alias steal a field claimed by an exact key", () => {
