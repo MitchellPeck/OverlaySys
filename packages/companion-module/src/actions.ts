@@ -621,7 +621,8 @@ export function dispatchAction(
       break;
     }
     case "stage_message_send": {
-      const text = str("text").trim();
+      // The server rejects messages over 200 chars — cut rather than drop silently.
+      const text = str("text").trim().slice(0, 200);
       if (text) messages.push({ type: "stage_message", text });
       break;
     }

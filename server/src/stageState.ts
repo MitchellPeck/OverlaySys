@@ -76,13 +76,28 @@ export async function onRowTaken(source: RowSource): Promise<void> {
   commit(next);
 }
 
+/**
+ * Clear the active notes when their set (or show) no longer exists — after a
+ * show save/delete or a sync pass that touched shows.
+ */
+export async function reconcileActiveNotes(): Promise<void> {
+  const notes = state.notes;
+  if (!notes || (await activeNotes(state))) return;
+  // Only clear if nothing re-selected notes while the show was loading.
+  if (state.notes !== notes) return;
+  commit(reduceStageState(state, { type: "select", showId: notes.showId, notesId: null }, 0));
+}
+
 export async function stageStateMessage(): Promise<ServerMessage> {
-  const active = await activeNotes();
+  // Snapshot before the await so the message's state and headings agree.
+  const s = state;
+  const active = await activeNotes(s);
   const points = active?.points ?? [];
-  const idx = Math.min(state.pointIdx, Math.max(0, points.length - 1));
+  const idx = Math.min(s.pointIdx, Math.max(0, points.length - 1));
   return {
     type: "stage_state",
-    state,
+    // The notes may have shrunk since the position was set; report the clamped point.
+    state: idx === s.pointIdx ? s : { ...s, pointIdx: idx, scrollOffset: 0 },
     pointCount: points.length,
     title: active?.notes.title ?? null,
     pointHeading: points[idx]?.heading ?? null,

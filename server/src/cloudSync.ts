@@ -25,6 +25,7 @@ import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
 import * as stageFeedHub from "./stageFeedHub";
+import * as stageState from "./stageState";
 
 export interface CloudTokens {
   accessToken: string;
@@ -268,6 +269,15 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
     // configs (kind, follows, layout) — rebuild them against pulled data.
     if (touched("templates") || touched("shows") || touched("songs") || touched("channelConfigs")) {
       stageFeedHub.invalidateAll();
+    }
+    // Pulled shows may have changed or removed the active sermon notes.
+    if (touched("shows")) {
+      try {
+        await stageState.reconcileActiveNotes();
+        broadcast(await stageState.stageStateMessage());
+      } catch (err) {
+        console.warn("[cloudSync] stage state refresh failed", err);
+      }
     }
     // Project channel overrides aren't yet in the WS protocol's broadcast
     // surface — the operator fetches them on demand via cloudData. When

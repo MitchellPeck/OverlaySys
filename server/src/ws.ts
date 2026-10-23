@@ -303,6 +303,7 @@ export function handleConnection(
           broadcast({ type: "show", show: saved });
           const list = await shows.listShowMetas();
           broadcast({ type: "show_list", shows: list });
+          await stageState.reconcileActiveNotes();
           stageFeedHub.invalidateAll();
           broadcast(await stageState.stageStateMessage());
           scheduleSync();
@@ -314,6 +315,7 @@ export function handleConnection(
           if (ok) {
             const list = await shows.listShowMetas();
             broadcast({ type: "show_list", shows: list });
+            await stageState.reconcileActiveNotes();
             stageFeedHub.invalidateAll();
             broadcast(await stageState.stageStateMessage());
             scheduleSync();

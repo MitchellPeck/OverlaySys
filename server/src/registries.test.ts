@@ -7,6 +7,7 @@ import * as storage from "./storage";
 import * as templates from "./templates";
 import * as channelConfigs from "./channelConfigs";
 import * as projects from "./projects";
+import * as shows from "./shows";
 
 /**
  * The WS write path (operator edits) goes through these registries, while
@@ -142,5 +143,24 @@ describe("registry deletes leave tombstones and hide them", () => {
     expect((await storage.loadProject("p1"))?.deletedAt).toBeTruthy();
     expect(await projects.getProject("p1")).toBeNull();
     expect((await projects.listProjects()).map((p) => p.id)).not.toContain("p1");
+  });
+});
+
+describe("duplicateShow", () => {
+  it("copies sermon notes so copied row links still resolve", async () => {
+    await shows.reloadShows();
+    await shows.saveShow({
+      id: "show-src",
+      name: "Sunday",
+      projectId: "p",
+      songs: [],
+      sermonNotes: [{ id: "n1", title: "Grace", body: "# One" }],
+      rows: [{ kind: "graphic", id: "r1", templateId: "t", data: {}, sermonNotesId: "n1" }],
+    });
+    const copy = await shows.duplicateShow("show-src");
+    expect(copy?.sermonNotes).toEqual([{ id: "n1", title: "Grace", body: "# One" }]);
+    expect(copy?.rows[0]?.sermonNotesId).toBe("n1");
+    // Deep copy — editing the duplicate's notes leaves the source alone.
+    expect(copy?.sermonNotes?.[0]).not.toBe((await shows.getShow("show-src"))?.sermonNotes?.[0]);
   });
 });

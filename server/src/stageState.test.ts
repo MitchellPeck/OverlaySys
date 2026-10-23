@@ -115,4 +115,35 @@ describe("stageState", () => {
     expect(stage.getStageState().message).toEqual({ text: "Hi", sentAt: 1 });
     expect(stage.getStageState().notes).toEqual({ showId: "show-1", notesId: "n1" });
   });
+  it("stageStateMessage clamps pointIdx when the notes shrink", async () => {
+    let current = show;
+    vi.spyOn(shows, "getShow").mockImplementation(async (id) => (id === "show-1" ? current : null));
+    const six = "# P1\na\n# P2\nb\n# P3\nc\n# P4\nd\n# P5\ne\n# P6\nf";
+    current = { ...show, sermonNotes: [{ id: "n1", title: "Grace", body: six }] };
+    await stage.dispatchStage({ type: "select", showId: "show-1", notesId: "n1" });
+    await stage.dispatchStage({ type: "point", index: 5 });
+    await stage.dispatchStage({ type: "scroll", delta: 0.5 });
+    expect(stage.getStageState()).toMatchObject({ pointIdx: 5, scrollOffset: 0.5 });
+    current = { ...show, sermonNotes: [{ id: "n1", title: "Grace", body: "# P1\na\n# P2\nb\n# P3\nc\n# P4\nd" }] };
+    const msg = await stage.stageStateMessage();
+    expect(msg).toMatchObject({ pointCount: 4, pointHeading: "P4", nextHeading: null, state: { pointIdx: 3, scrollOffset: 0 } });
+  });
+
+  it("reconcileActiveNotes clears notes whose set was deleted", async () => {
+    let current = show;
+    vi.spyOn(shows, "getShow").mockImplementation(async (id) => (id === "show-1" ? current : null));
+    await stage.dispatchStage({ type: "select", showId: "show-1", notesId: "n1" });
+    await stage.reconcileActiveNotes();
+    expect(stage.getStageState().notes).toEqual({ showId: "show-1", notesId: "n1" });
+    current = { ...show, sermonNotes: [show.sermonNotes![1]!] };
+    await stage.reconcileActiveNotes();
+    expect(stage.getStageState().notes).toBeNull();
+  });
+
+  it("reconcileActiveNotes clears notes whose show was deleted", async () => {
+    await stage.dispatchStage({ type: "select", showId: "show-1", notesId: "n1" });
+    vi.spyOn(shows, "getShow").mockResolvedValue(null);
+    await stage.reconcileActiveNotes();
+    expect(stage.getStageState().notes).toBeNull();
+  });
 });

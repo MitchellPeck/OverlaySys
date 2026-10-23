@@ -235,6 +235,25 @@ describe("importPlan", () => {
     expect(allNew).toHaveLength(1);
   });
 
+  it("re-importing keeps a replaced row's sermon notes link", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const first = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "Sunday" } }, NOW);
+    const showId = first.showId!;
+    const before = (await shows.getShow(showId))!;
+    await shows.saveShow({
+      ...before,
+      sermonNotes: [{ id: "n1", title: "Grace", body: "# One" }],
+      rows: before.rows.map((r, i) => (i === 0 ? { ...r, sermonNotesId: "n1" } : r)),
+    });
+
+    await importPlan(fakeClient, { ...baseReq, target: { mode: "existing", showId } }, "2026-07-15T00:00:00.000Z");
+
+    const after = (await shows.getShow(showId))!;
+    expect(after.rows[0]?.id).toBe(before.rows[0]?.id);
+    expect(after.rows[0]?.sermonNotesId).toBe("n1");
+    expect(after.rows[1]?.sermonNotesId).toBeUndefined();
+  });
+
   it("imports a song item as a graphic row when kind=graphic (no library song touched)", async () => {
     const result = await importPlan(
       fakeClient,

@@ -7,6 +7,7 @@ import * as shows from "./shows";
 import * as songs from "./songs";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
+import * as stageState from "./stageState";
 import { ShowSchema, SongSchema } from "@overlaysys/core";
 
 /**
@@ -145,5 +146,25 @@ describe("ws song takes set liveRow", () => {
     const sock = connect();
     await sock.client({ type: "take_song_sub", showId: "show-lr", songRowId: "row-lr", sub: "lyrics", channel: ch });
     await vi.waitFor(() => expect(channels.getState(ch).liveRow).toEqual(SRC));
+  });
+});
+
+describe("ws show writes reconcile the active notes", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    stageState._resetForTest();
+  });
+
+  it("delete_show of the active notes' show clears them", async () => {
+    await stageState.dispatchStage({ type: "select", showId: "gone-show", notesId: "n1" });
+    vi.spyOn(shows, "deleteShow").mockResolvedValue(true);
+    vi.spyOn(shows, "getShow").mockResolvedValue(null);
+    vi.spyOn(shows, "listShowMetas").mockResolvedValue([]);
+    const sock = connect();
+    await sock.client({ type: "delete_show", showId: "gone-show" });
+    await new Promise((r) => setImmediate(r));
+    expect(stageState.getStageState().notes).toBeNull();
+    const last = sock.sent.filter((m) => m.type === "stage_state").at(-1);
+    expect(last).toMatchObject({ state: { notes: null } });
   });
 });

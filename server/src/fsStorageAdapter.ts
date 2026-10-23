@@ -49,6 +49,16 @@ import {
   saveTemplate,
 } from "./storage";
 
+/**
+ * Stopgap until the cloud `shows` table carries sermon notes: a pulled show
+ * arrives without `sermonNotes`, so keep the local copy's rather than wiping
+ * them. An explicit `[]` still clears. See docs/cloud-sermon-notes-migration.md.
+ */
+export function keepLocalSermonNotes(incoming: Show, existing: Show | null): Show {
+  if (incoming.sermonNotes !== undefined || !existing?.sermonNotes) return incoming;
+  return { ...incoming, sermonNotes: existing.sermonNotes };
+}
+
 function overridesDir(): string {
   return path.join(dataRoot(), "channel_overrides");
 }
@@ -123,9 +133,10 @@ export class FsStorageAdapter implements StorageAdapter {
     return s && !s.deletedAt ? s : null;
   }
   async saveShow(_org: string, show: Show): Promise<void> {
+    const merged = show.sermonNotes === undefined ? keepLocalSermonNotes(show, await loadShow(show.id)) : show;
     await saveShow({
-      ...show,
-      updatedAt: show.updatedAt ?? new Date().toISOString(),
+      ...merged,
+      updatedAt: merged.updatedAt ?? new Date().toISOString(),
     });
   }
   async deleteShow(_org: string, id: string): Promise<boolean> {

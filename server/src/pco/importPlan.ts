@@ -351,8 +351,11 @@ export async function importPlan(
       row = buildGraphicRow({ rowId, templateId, data, notes, sourceRef });
     }
 
-    if (existingIdx >= 0) show.rows[existingIdx] = row;
-    else show.rows.push(row);
+    if (existingIdx >= 0) {
+      // Keep the operator's sermon-notes link on the row being replaced.
+      const notesId = show.rows[existingIdx]!.sermonNotesId;
+      show.rows[existingIdx] = notesId ? { ...row, sermonNotesId: notesId } : row;
+    } else show.rows.push(row);
     counts.rows++;
   }
 

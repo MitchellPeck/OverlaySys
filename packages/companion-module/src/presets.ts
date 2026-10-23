@@ -373,7 +373,7 @@ export function presetDefinitions(): CompanionPresetDefinitions {
   notesBtn(
     "notes_next",
     "Notes: next point",
-    "NEXT ▶\\n$(overlaysys:notes_point)/$(overlaysys:notes_point_count)",
+    "NEXT ▶\\n$(overlaysys:notes_point)/$(overlaysys:notes_point_count)\\n$(overlaysys:notes_next_heading)",
     "notes_next_point",
     [{ feedbackId: "notes_at_last", options: {}, style: greyed }],
   );

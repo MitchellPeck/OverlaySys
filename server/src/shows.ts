@@ -75,6 +75,8 @@ export async function duplicateShow(sourceId: string): Promise<Show | null> {
     projectId: src.projectId,
     rows: src.rows.map((row) => ({ ...row, id: randomUUID() })),
     songs: src.songs.map((s) => ({ ...s })),
+    // Copied rows keep their sermonNotesId, so the notes they point at come too.
+    ...(src.sermonNotes ? { sermonNotes: src.sermonNotes.map((n) => ({ ...n })) } : {}),
   });
   await storage.saveShow(copy);
   REGISTRY.set(copy.id, copy);

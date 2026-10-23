@@ -29,8 +29,12 @@ export function StagePanel() {
 
   const sets = show?.sermonNotes ?? [];
   const active = stage?.state.notes;
-  const activeId = show && active && active.showId === show.id ? active.notesId : "";
+  // Fall back to "" when the active set isn't one of this show's (another
+  // show's notes, or a set that was deleted) so the select never goes blank.
+  const activeId =
+    show && active && active.showId === show.id && sets.some((n) => n.id === active.notesId) ? active.notesId : "";
   const hasActive = !!active;
+  const canNavigate = (stage?.pointCount ?? 0) > 0;
   const message = stage?.state.message ?? null;
 
   function sendMessage(t: string) {
@@ -65,7 +69,11 @@ export function StagePanel() {
                 show && send({ type: "notes_select", showId: show.id, notesId: e.target.value || null })
               }
             >
-              <option value="">{hasActive && !activeId ? "(other show's notes)" : "No notes"}</option>
+              <option value="">
+                {hasActive && !activeId
+                  ? active.showId === show?.id ? "(missing notes)" : "(other show's notes)"
+                  : "No notes"}
+              </option>
               {sets.map((n) => (
                 <option key={n.id} value={n.id}>
                   {n.title}
@@ -83,20 +91,29 @@ export function StagePanel() {
               </div>
             )}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              <Button disabled={!hasActive} onClick={() => send({ type: "notes_point", delta: -1 })}>
+              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: -1 })}>
                 ◀ Prev
               </Button>
-              <Button disabled={!hasActive} onClick={() => send({ type: "notes_point", delta: 1 })}>
+              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: 1 })}>
                 Next ▶
               </Button>
-              <Button disabled={!hasActive} title="Scroll up" onClick={() => send({ type: "notes_scroll", delta: -0.33 })}>
+              <Button disabled={!canNavigate} title="Scroll up" onClick={() => send({ type: "notes_scroll", delta: -0.33 })}>
                 ↑
               </Button>
-              <Button disabled={!hasActive} title="Scroll down" onClick={() => send({ type: "notes_scroll", delta: 0.33 })}>
+              <Button disabled={!canNavigate} title="Scroll down" onClick={() => send({ type: "notes_scroll", delta: 0.33 })}>
                 ↓
               </Button>
-              <Button disabled={!hasActive} onClick={() => send({ type: "notes_reset" })}>
+              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_reset" })}>
                 Top
+              </Button>
+              <Button
+                disabled={!active}
+                title="Clear the active sermon notes"
+                onClick={() =>
+                  active && send({ type: "notes_select", showId: show?.id ?? active.showId, notesId: null })
+                }
+              >
+                Clear
               </Button>
             </div>
           </>

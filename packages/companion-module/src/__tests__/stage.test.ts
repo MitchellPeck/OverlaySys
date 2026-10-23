@@ -32,6 +32,10 @@ describe("companion stage", () => {
     expect(dispatchAction(s, "notes_top", {}).messages).toEqual([{ type: "notes_reset" }]);
     expect(dispatchAction(s, "stage_message_send", { text: "Wrap up" }).messages).toEqual([{ type: "stage_message", text: "Wrap up" }]);
     expect(dispatchAction(s, "stage_message_send", { text: "  " }).messages).toEqual([]);
+    // The server rejects messages over 200 chars; trim and cut rather than drop.
+    expect(dispatchAction(s, "stage_message_send", { text: `  ${"x".repeat(250)}  ` }).messages).toEqual([
+      { type: "stage_message", text: "x".repeat(200) },
+    ]);
     expect(dispatchAction(s, "stage_message_clear", {}).messages).toEqual([{ type: "stage_message_clear" }]);
   });
 

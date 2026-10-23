@@ -564,7 +564,13 @@ function ShowEditPageInner() {
             <button onClick={() => setScriptureModalOpen(true)} style={addRowBtn}>+ Scripture</button>
             <button onClick={() => setVideoModalOpen(true)} style={addRowBtn}>+ Video</button>
           </div>
-          <SermonNotesEditor notes={draft.sermonNotes ?? []} onUpdate={update} />
+          {cloud ? (
+            <p style={{ color: colors.textDim, fontSize: 13, margin: 0 }}>
+              Sermon notes are available in the desktop app.
+            </p>
+          ) : (
+            <SermonNotesEditor notes={draft.sermonNotes ?? []} onUpdate={update} />
+          )}
         </div>
       </div>
       <ScriptureRowModal
@@ -620,6 +626,8 @@ function RundownTable({
   onEditScriptureRow?: (row: ScriptureRow) => void;
   onEditVideoRow?: (row: VideoRow) => void;
 }) {
+  // Cloud shows can't store sermon notes yet, so don't offer to link them.
+  const notesSets = isCloudMode() ? [] : draft.sermonNotes ?? [];
   if (draft.rows.length === 0) {
     return (
       <p style={{ color: colors.textDim, fontSize: 13, padding: 24, textAlign: "center" }}>
@@ -669,7 +677,7 @@ function RundownTable({
                 songCache={songCache}
                 templates={templates}
                 channels={channels}
-                sermonNotes={draft.sermonNotes ?? []}
+                sermonNotes={notesSets}
                 onUpdate={onUpdate}
                 {...dragProps}
               />
@@ -709,10 +717,10 @@ function RundownTable({
                     >
                       Edit slides…
                     </button>
-                    {(draft.sermonNotes ?? []).length > 0 && (
+                    {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
                         <NotesSetPicker
-                          sets={draft.sermonNotes ?? []}
+                          sets={notesSets}
                           value={row.sermonNotesId}
                           onChange={(v) =>
                             onUpdate((s) => {
@@ -771,10 +779,10 @@ function RundownTable({
                     >
                       Edit video…
                     </button>
-                    {(draft.sermonNotes ?? []).length > 0 && (
+                    {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
                         <NotesSetPicker
-                          sets={draft.sermonNotes ?? []}
+                          sets={notesSets}
                           value={row.sermonNotesId}
                           onChange={(v) =>
                             onUpdate((s) => {
@@ -805,7 +813,7 @@ function RundownTable({
               templates={templates}
               template={templateCache[row.templateId] ?? null}
               channels={channels}
-              sermonNotes={draft.sermonNotes ?? []}
+              sermonNotes={notesSets}
               onUpdate={onUpdate}
               {...dragProps}
             />
