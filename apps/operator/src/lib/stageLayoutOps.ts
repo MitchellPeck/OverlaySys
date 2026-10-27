@@ -33,7 +33,7 @@ export function removeWidgets(ids: string[]): Recipe {
   };
 }
 
-/** Copies are appended on top, offset by +20/+20. */
+/** Copies are appended on top, offset by +20/+20, and always unlocked (a locked copy couldn't be dragged off its original). */
 export function duplicateWidgets(ids: string[], newId: (old: string) => string): Recipe {
   return (d) => {
     const copies: StageWidget[] = [];
@@ -42,6 +42,7 @@ export function duplicateWidgets(ids: string[], newId: (old: string) => string):
       const c = JSON.parse(JSON.stringify(w)) as StageWidget;
       c.id = newId(w.id);
       c.rect = moveRect(w.rect, 20, 20);
+      delete c.locked;
       copies.push(c);
     }
     d.widgets.push(...(copies as Draft<StageWidget>[]));
@@ -80,6 +81,10 @@ export function nudgeWidgets(ids: string[], dx: number, dy: number): Recipe {
   };
 }
 
+/**
+ * Aligns the unlocked widgets among `ids`. With a single unlocked widget (even
+ * if locked ones are selected too) it aligns to the canvas, like `alignRects`.
+ */
 export function alignWidgets(ids: string[], mode: AlignMode): Recipe {
   return (d) => {
     const ws = unlocked(d, ids);

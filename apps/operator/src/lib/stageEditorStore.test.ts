@@ -47,6 +47,29 @@ describe("useStageEditor", () => {
     for (let i = 0; i < 60; i++) st().commit(addWidget("text", `w${i}`));
     expect(st().history).toHaveLength(50);
   });
+  it("commit clears the redo stack", () => {
+    st().commit(addWidget("text", "t1"));
+    st().undo();
+    expect(st().redoStack).toHaveLength(1);
+    st().commit(addWidget("text", "t2"));
+    expect(st().redoStack).toHaveLength(0);
+  });
+  it("pushHistory is capped at 50", () => {
+    for (let i = 0; i < 60; i++) {
+      st().pushHistory();
+      st().applyLive(nudgeWidgets([], 0, 0));
+    }
+    expect(st().history).toHaveLength(50);
+  });
+  it("undo and redo on empty stacks are no-ops", () => {
+    const before = st().draft;
+    st().undo();
+    st().redo();
+    expect(st().draft).toBe(before);
+    expect(st().dirty).toBe(false);
+    expect(st().history).toHaveLength(0);
+    expect(st().redoStack).toHaveLength(0);
+  });
   it("sampleKind defaults to song", () => {
     expect(st().sampleKind).toBe("song");
   });

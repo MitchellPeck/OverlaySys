@@ -87,4 +87,16 @@ describe("stageLayoutOps", () => {
     expect(c.rect.x).toBe(l.widgets[0]!.rect.x + 20);
     expect(c.rect.y).toBe(l.widgets[0]!.rect.y + 20);
   });
+  it("duplicateWidgets produces unlocked copies of locked widgets", () => {
+    const l = produce(produce(three(), toggleLocked("a")), duplicateWidgets(["a"], (o) => `${o}-copy`));
+    expect(l.widgets[0]!.locked).toBe(true);
+    expect(l.widgets.at(-1)!.locked).toBeFalsy();
+  });
+  it("align with only one unlocked widget in the selection aligns it to the canvas", () => {
+    let l = produce(three(), toggleLocked("b"));
+    l = produce(l, alignWidgets(["a", "b"], "left"));
+    expect(l.widgets[0]!.rect.x).toBe(0);
+    l = produce(l, alignWidgets(["a", "b"], "bottom"));
+    expect(l.widgets[0]!.rect.y).toBe(1080 - l.widgets[0]!.rect.h);
+  });
 });

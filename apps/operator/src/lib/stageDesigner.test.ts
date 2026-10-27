@@ -9,6 +9,7 @@ import {
   stageLayoutsEqual,
   centeredRectAt,
   createTrailingThrottle,
+  shouldConfirmLinkNavigation,
   sizePresetKey,
   stageEditorShortcut,
 } from "./stageDesigner";
@@ -171,5 +172,44 @@ describe("stageLayoutsEqual / shouldAdoptIncomingLayout", () => {
   it("skips the awaited save echo even if the server normalised it", () => {
     const echo = { ...base, background: "#000" };
     expect(shouldAdoptIncomingLayout({ draft: base, dirty: false, awaitingEchoId: base.id }, echo)).toBe(false);
+  });
+});
+
+describe("shouldConfirmLinkNavigation", () => {
+  const here = "http://localhost:3000/design/stage/edit?id=abc";
+  const click = (o: Partial<Parameters<typeof shouldConfirmLinkNavigation>[0]> = {}) =>
+    shouldConfirmLinkNavigation({
+      dirty: true,
+      href: "/rundown",
+      currentHref: here,
+      button: 0,
+      modified: false,
+      defaultPrevented: false,
+      target: null,
+      download: false,
+      ...o,
+    });
+
+  it("confirms a plain left click on an in-app link while dirty", () => {
+    expect(click()).toBe(true);
+    expect(click({ href: "http://localhost:3000/design/stage" })).toBe(true);
+    expect(click({ href: "/design/stage/edit?id=other" })).toBe(true);
+    expect(click({ target: "_self" })).toBe(true);
+  });
+  it("never confirms when clean", () => {
+    expect(click({ dirty: false })).toBe(false);
+  });
+  it("leaves new-tab, download, prevented and non-primary clicks alone", () => {
+    expect(click({ modified: true })).toBe(false);
+    expect(click({ button: 1 })).toBe(false);
+    expect(click({ target: "_blank" })).toBe(false);
+    expect(click({ download: true })).toBe(false);
+    expect(click({ defaultPrevented: true })).toBe(false);
+  });
+  it("leaves other origins (beforeunload covers them) and same-page hash links alone", () => {
+    expect(click({ href: "https://example.com/" })).toBe(false);
+    expect(click({ href: "mailto:a@b.c" })).toBe(false);
+    expect(click({ href: "#top" })).toBe(false);
+    expect(click({ href: "/design/stage/edit?id=abc#x" })).toBe(false);
   });
 });

@@ -106,6 +106,38 @@ export function createTrailingThrottle<A extends unknown[]>(fn: (...args: A) => 
   };
 }
 
+/**
+ * Whether a click on an `<a href>` should ask before leaving a dirty editor.
+ * Only same-origin navigations that would replace this page in-app count:
+ * modified / middle clicks, other targets and downloads open elsewhere, other
+ * origins unload the page (beforeunload covers them), and a hash-only change
+ * stays on the page.
+ */
+export function shouldConfirmLinkNavigation(c: {
+  dirty: boolean;
+  href: string;
+  currentHref: string;
+  button: number;
+  /** Any of meta / ctrl / shift / alt held. */
+  modified: boolean;
+  defaultPrevented: boolean;
+  target: string | null;
+  download: boolean;
+}): boolean {
+  if (!c.dirty || c.defaultPrevented || c.button !== 0 || c.modified || c.download) return false;
+  if (c.target && c.target !== "_self") return false;
+  let to: URL;
+  let from: URL;
+  try {
+    from = new URL(c.currentHref);
+    to = new URL(c.href, from);
+  } catch {
+    return false;
+  }
+  if (to.origin !== from.origin) return false;
+  return !(to.pathname === from.pathname && to.search === from.search);
+}
+
 /** A w×h rect centered on `p`, shrunk to fit and kept inside the canvas. */
 export function centeredRectAt(p: { x: number; y: number }, w: number, h: number, canvas: { w: number; h: number }): StageRect {
   const rw = Math.min(w, canvas.w);
