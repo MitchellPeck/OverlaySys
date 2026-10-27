@@ -12,7 +12,7 @@ import {
   stageLayoutMeta,
   StageLayoutSchema,
   StageWidgetSchema,
-  resolveStageLayout,
+  resolveBuiltInStageLayout,
 } from "./stageLayout";
 
 describe("StageWidgetSchema", () => {
@@ -83,13 +83,13 @@ describe("built-in layouts", () => {
   });
 });
 
-describe("resolveStageLayout", () => {
+describe("resolveBuiltInStageLayout", () => {
   it("returns the matching built-in", () => {
-    expect(resolveStageLayout("speaker").id).toBe("speaker");
+    expect(resolveBuiltInStageLayout("speaker").id).toBe("speaker");
   });
   it("falls back to the default for unknown or missing ids", () => {
-    expect(resolveStageLayout(undefined).id).toBe(DEFAULT_STAGE_LAYOUT_ID);
-    expect(resolveStageLayout("nope").id).toBe(DEFAULT_STAGE_LAYOUT_ID);
+    expect(resolveBuiltInStageLayout(undefined).id).toBe(DEFAULT_STAGE_LAYOUT_ID);
+    expect(resolveBuiltInStageLayout("nope").id).toBe(DEFAULT_STAGE_LAYOUT_ID);
   });
 });
 

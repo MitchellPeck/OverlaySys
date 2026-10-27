@@ -247,7 +247,10 @@ export const STAGE_WIDGET_LABELS: Record<StageWidgetKind, string> = {
   text: "Text",
 };
 
-/** The built-in with this id, else the default. Phase 5 adds stored layouts. */
-export function resolveStageLayout(id: string | undefined): StageLayout {
+/**
+ * The built-in with this id, else the default Speaker layout. Built-ins only:
+ * the server's stageLayouts.resolveStageLayout layers stored layouts on top.
+ */
+export function resolveBuiltInStageLayout(id: string | undefined): StageLayout {
   return BUILT_IN_STAGE_LAYOUTS.find((l) => l.id === id) ?? SPEAKER_LAYOUT;
 }
