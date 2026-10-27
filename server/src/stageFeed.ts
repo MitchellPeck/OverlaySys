@@ -6,6 +6,7 @@ import {
   NONE_SLIDE,
   decodeTimerValue,
   resolveArrangement,
+  stageTimerValue,
   type ChannelState,
   type RundownRow,
   type Show,
@@ -18,6 +19,7 @@ import {
   type StageRowView,
   type StageState,
   type StageTimer,
+  type StageTimerInstance,
   type StageVideo,
   type Template,
 } from "@overlaysys/core";
@@ -32,6 +34,8 @@ export interface StageFeedInputs {
   templates: Map<string, Template>;
   now: number;
   stage: StageState;
+  /** Standalone and item timers, item timer first (reducer order). */
+  stageTimers: StageTimerInstance[];
   notes: { notes: SermonNotes; points: NotesPoint[] } | null;
 }
 
@@ -144,8 +148,22 @@ function currentOf(s: ChannelState, songs: Map<string, Song>, templates: Map<str
 }
 
 /** The followed channel's timers come first, then the rest by channel id. */
-function timersOf(states: ChannelState[], templates: Map<string, Template>, followedId: string | null): StageTimer[] {
-  const out: StageTimer[] = [];
+function timersOf(
+  instances: StageTimerInstance[],
+  states: ChannelState[],
+  templates: Map<string, Template>,
+  followedId: string | null,
+  now: number,
+): StageTimer[] {
+  const out: StageTimer[] = instances.map((t) => ({
+    id: t.id,
+    label: t.label,
+    mode: t.mode,
+    source: t.source,
+    overtime: t.overtime,
+    running: t.anchor !== null && t.pausedAt === undefined,
+    value: stageTimerValue(t, now),
+  }));
   const sorted = [...states].sort((a, b) => {
     if (a.channel === followedId) return b.channel === followedId ? 0 : -1;
     if (b.channel === followedId) return 1;
@@ -158,8 +176,13 @@ function timersOf(states: ChannelState[], templates: Map<string, Template>, foll
     for (const f of tpl.fields) {
       if (f.type !== "time" || (f.timeMode !== "countdown" && f.timeMode !== "countup")) continue;
       const value = s.active.data[f.key] ?? "";
-      if (!Number.isFinite(decodeTimerValue(value).anchor)) continue;
+      const decoded = decodeTimerValue(value);
+      if (!Number.isFinite(decoded.anchor)) continue;
       out.push({
+        id: `${s.channel}:${f.key}`,
+        source: "graphic",
+        overtime: false,
+        running: decoded.pausedAt === undefined,
         label: f.label || tpl.name,
         channel: s.channel,
         mode: f.timeMode,
@@ -228,7 +251,7 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     next,
     row: row ? rowView(row, songs, templates) : null,
     nextRow: nextRowObj ? rowView(nextRowObj, songs, templates) : null,
-    timers: timersOf(i.allStates, templates, followed?.channel ?? null),
+    timers: timersOf(i.stageTimers, i.allStates, templates, followed?.channel ?? null, i.now),
     video: videoOf(followed),
     notes: notesView,
     message: i.stage.message,

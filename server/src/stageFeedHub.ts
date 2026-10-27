@@ -17,6 +17,7 @@ import * as shows from "./shows";
 import * as songs from "./songs";
 import * as stageState from "./stageState";
 import * as templates from "./templates";
+import * as timers from "./timers";
 import { buildStageFeed } from "./stageFeed";
 
 export const STAGE_FEED_DEBOUNCE_MS = 50;
@@ -88,6 +89,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     templates: templateMap,
     now,
     stage,
+    stageTimers: timers.getTimers(),
     notes,
   });
 }

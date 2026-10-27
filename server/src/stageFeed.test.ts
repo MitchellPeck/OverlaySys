@@ -8,8 +8,10 @@ import {
   type ChannelState,
   type Show,
   type Song,
+  type StageTimerInstance,
   type Template,
 } from "@overlaysys/core";
+import { decodeTimerValue } from "@overlaysys/core";
 import { buildStageFeed, lyricSlideAt, nextLyricCursor, rowTitle } from "./stageFeed";
 
 const song: Song = SongSchema.parse({
@@ -83,6 +85,7 @@ function base(followed: ChannelState | null, extra: Partial<Parameters<typeof bu
     now: 1000,
     stage: INITIAL_STAGE_STATE,
     notes: null,
+    stageTimers: [],
     ...extra,
   });
 }
@@ -238,7 +241,17 @@ describe("buildStageFeed", () => {
     };
     const f = base(followed, { allStates: [followed, timerState] });
     expect(f.timers).toEqual([
-      { label: "Service starts", channel: "a-timers", mode: "countdown", format: "M:SS", value: "5000" },
+      {
+        id: "a-timers:t",
+        source: "graphic",
+        overtime: false,
+        running: true,
+        label: "Service starts",
+        channel: "a-timers",
+        mode: "countdown",
+        format: "M:SS",
+        value: "5000",
+      },
     ]);
   });
 
@@ -253,6 +266,52 @@ describe("buildStageFeed", () => {
     };
     const f = base(followed, { allStates: [other, followed] });
     expect(f.timers.map((t) => t.channel)).toEqual(["program", "a-chan"]);
+  });
+
+  const manual: StageTimerInstance = {
+    id: "m1",
+    label: "Sermon",
+    mode: "countdown",
+    durationMs: 60_000,
+    anchor: null,
+    overtime: true,
+    source: "manual",
+  };
+  const item: StageTimerInstance = {
+    id: "current-item",
+    label: "Song",
+    mode: "countdown",
+    durationMs: 120_000,
+    anchor: 61_000,
+    overtime: true,
+    source: "item",
+    rowId: "r-song",
+  };
+
+  it("item timer, then manual, then graphic", () => {
+    const followed: ChannelState = {
+      channel: "program",
+      active: { templateId: "timer", data: { t: "7000" }, phase: "on", takenAt: 1 },
+    };
+    const f = base(followed, { stageTimers: [item, manual] });
+    expect(f.timers.map((t) => t.source)).toEqual(["item", "manual", "graphic"]);
+  });
+
+  it("graphic timer ids are channel:field", () => {
+    const followed: ChannelState = {
+      channel: "program",
+      active: { templateId: "timer", data: { t: "7000" }, phase: "on", takenAt: 1 },
+    };
+    const g = base(followed).timers[0]!;
+    expect(g.id).toBe("program:t");
+    expect(g.overtime).toBe(false);
+  });
+
+  it("not-started manual timer is not running and shows full duration", () => {
+    const t = base(null, { stageTimers: [manual] }).timers[0]!;
+    expect(t.running).toBe(false);
+    expect(t.overtime).toBe(true);
+    expect(decodeTimerValue(t.value)).toEqual({ anchor: 1000 + 60_000, pausedAt: 1000 });
   });
 
   it("skips timers with an unparseable value", () => {
