@@ -5,7 +5,7 @@ import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { parseNotesMarkdown, type Span } from "./notesMarkdown";
 import { overflowDirection } from "./notesOverflow";
 import { useFitText } from "./useFitText";
-import { formatClockDisplay, formatRemaining, timerDisplay, videoRemainingSec } from "./stageTime";
+import { formatClockDisplay, formatRemaining, pickStageTimer, stageTimerView, videoRemainingSec } from "./stageTime";
 
 const EMPTY = "—";
 
@@ -259,16 +259,17 @@ export function StageWidgetView({
         </Frame>
       );
     case "timer": {
-      const src = widget.props.source;
-      const t =
-        src === "firstActive" || src === "currentItem"
-          ? feed.timers[0]
-          : "channel" in src
-            ? feed.timers.find((x) => x.channel === src.channel)
-            : feed.timers.find((x) => x.id === src.timerId);
+      const { source, warnBelowSec, warnColor, overColor, showLabel } = widget.props;
+      const t = pickStageTimer(feed.timers, source);
+      const view = t ? stageTimerView(t, nowMs, warnBelowSec) : undefined;
+      const color = view?.phase === "over" ? overColor : view?.phase === "warn" ? warnColor : widget.style.color;
+      const shown: StageWidget = { ...widget, style: { ...widget.style, color } };
       return (
-        <Frame widget={widget}>
-          <FitBody widget={widget} text={t ? timerDisplay(t, nowMs) : ""} />
+        <Frame widget={shown}>
+          {showLabel && t?.label ? (
+            <div style={{ color: "#888", fontFamily: widget.style.fontFamily, fontSize: 24 }}>{t.label}</div>
+          ) : null}
+          <FitBody widget={shown} text={view?.text ?? ""} />
         </Frame>
       );
     }

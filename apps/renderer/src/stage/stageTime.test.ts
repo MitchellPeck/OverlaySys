@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatClockDisplay, formatRemaining, serverOffset, timerDisplay, videoRemainingSec } from "./stageTime";
+import type { StageTimer } from "@overlaysys/core";
+import { formatClockDisplay, formatRemaining, pickStageTimer, serverOffset, stageTimerView, timerDisplay, videoRemainingSec } from "./stageTime";
 
 describe("stageTime", () => {
   it("serverOffset is server minus local", () => {
@@ -33,5 +34,36 @@ describe("stageTime", () => {
     expect(formatRemaining(59.4)).toBe("0:59");
     expect(formatRemaining(61)).toBe("1:01");
     expect(formatRemaining(3725)).toBe("1:02:05");
+  });
+
+  describe("stageTimerView / pickStageTimer", () => {
+    const base: StageTimer = { id: "t", source: "manual", overtime: true, running: true, label: "x", mode: "countdown", value: "100000" };
+
+    it("shows +MM:SS and over phase past the anchor with overtime", () => {
+      expect(stageTimerView(base, 183_000, 60)).toEqual({ text: "+01:23", phase: "over" });
+    });
+    it("clamps to zero and warns without overtime", () => {
+      expect(stageTimerView({ ...base, overtime: false }, 183_000, 60)).toEqual({ text: "00:00", phase: "warn" });
+    });
+    it("warns below the threshold", () => {
+      expect(stageTimerView(base, 70_000, 60).phase).toBe("warn");
+      expect(stageTimerView(base, 10_000, 60).phase).toBe("normal");
+    });
+    it("a paused timer stays frozen", () => {
+      const paused = { ...base, running: false, value: JSON.stringify({ a: 100000, p: 90000 }) };
+      expect(stageTimerView(paused, 9_999_999, 5).text).toBe("00:10");
+    });
+
+    const item = { ...base, id: "current-item", source: "item" as const };
+    const g1 = { ...base, id: "g1", source: "graphic" as const, channel: "a" };
+    const g2 = { ...base, id: "g2", source: "graphic" as const, channel: "b" };
+    it("picks by source", () => {
+      const all = [item, g1, g2];
+      expect(pickStageTimer(all, "firstActive")).toBe(item);
+      expect(pickStageTimer(all, "currentItem")).toBe(item);
+      expect(pickStageTimer([g1, g2], "currentItem")).toBeUndefined();
+      expect(pickStageTimer(all, { channel: "b" })).toBe(g2);
+      expect(pickStageTimer(all, { timerId: "g1" })).toBe(g1);
+    });
   });
 });
