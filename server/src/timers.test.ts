@@ -132,6 +132,20 @@ describe("onRowTaken item countdown", () => {
     expect(getTimers()).toEqual([expect.objectContaining({ id: "current-item", rowId: "r3", anchor: NOW + 1 + 100_000 })]);
   });
 
+  it("takes whose followed-channel lookups resolve out of order still honor the newer take", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.mocked(channelConfigs.listChannelConfigs).mockImplementationOnce(async () => {
+      await gate;
+      return configs;
+    });
+    const first = take("r1"); // its gate resolves last
+    await take("r3", NOW + 1);
+    release();
+    await first;
+    expect(getTimers()).toEqual([expect.objectContaining({ id: "current-item", rowId: "r3", anchor: NOW + 1 + 100_000 })]);
+  });
+
   it("a row without a length clears the item timer but leaves a manual timer alone", async () => {
     const manual = createTimer({ label: "Manual", mode: "countup", overtime: false });
     await take("r1");

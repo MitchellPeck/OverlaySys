@@ -49,12 +49,15 @@ export function isItemTimerDriverExternal(): boolean {
 
 /** Monotonic take counter: a take that started later outranks one still awaiting. */
 let takeSeq = 0;
-let latestTakeRowId: string | null = null;
+/** The newest take (by seq) that passed the followed-channel gate, and its row. */
+let latestFollowedSeq = 0;
+let latestFollowedRowId: string | null = null;
 
 export function _resetForTest(): void {
   timers = [];
   takeSeq = 0;
-  latestTakeRowId = null;
+  latestFollowedSeq = 0;
+  latestFollowedRowId = null;
   itemTimerExternal = () => false;
   listeners.clear();
 }
@@ -97,13 +100,23 @@ export function timersStateMessage(): ServerMessage {
  * countdown; retaking the same row (lyric advance, sub-take, a second
  * channel) leaves it running; a row without a length clears it.
  */
-export async function onRowTaken(channel: string, source: RowSource, now: number = Date.now()): Promise<void> {
+export async function onRowTaken(
+  channel: string,
+  source: RowSource,
+  now: number = Date.now(),
+  /** Already-started lookup, so a caller needing the set too computes it once. */
+  followedChannels: Promise<Set<string>> = stageFollowedChannels(),
+): Promise<void> {
   const seq = ++takeSeq;
-  if (!(await stageFollowedChannels()).has(channel)) return;
-  latestTakeRowId = source.rowId;
+  if (!(await followedChannels).has(channel)) return;
+  // Gate passes may finish out of order: only the newest seq counts as latest.
+  if (seq > latestFollowedSeq) {
+    latestFollowedSeq = seq;
+    latestFollowedRowId = source.rowId;
+  }
   // After the awaits a newer take of a different row has already decided the
   // timer; applying this older one would resurrect a stale row.
-  const superseded = () => seq !== takeSeq && latestTakeRowId !== source.rowId;
+  const superseded = () => latestFollowedSeq > seq && latestFollowedRowId !== source.rowId;
   const settings = await loadStageSettings();
   if (!settings.autoItemTimer || isItemTimerDriverExternal()) return;
   const show = await shows.getShow(source.showId);

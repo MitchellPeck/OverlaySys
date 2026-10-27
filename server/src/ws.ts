@@ -70,10 +70,11 @@ channels.onLiveRow((channel, source) => {
   const syncShowId = pcoLiveSync.getLiveSyncShowId();
   if (syncShowId !== null && source.showId !== syncShowId) pcoLiveSync.stopLiveSync();
   // Only takes a stage monitor can see move the pastor's notes.
-  void stageFollowedChannels()
-    .then((followed) => (followed.has(channel) ? stageState.onRowTaken(source) : undefined))
+  const followed = stageFollowedChannels();
+  void followed
+    .then((set) => (set.has(channel) ? stageState.onRowTaken(source) : undefined))
     .catch((err) => console.warn("[stageState] onRowTaken failed", err));
-  void timers.onRowTaken(channel, source).catch((err) => console.warn("[timers] onRowTaken failed", err));
+  void timers.onRowTaken(channel, source, undefined, followed).catch((err) => console.warn("[timers] onRowTaken failed", err));
 });
 timers.subscribeTimers(() => {
   stageFeedHub.invalidateAll();
