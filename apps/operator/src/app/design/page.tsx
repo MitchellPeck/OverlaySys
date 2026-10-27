@@ -81,6 +81,10 @@ function StageLayoutsList() {
   }, [conn, send]);
 
   async function createLayout(name: string): Promise<string> {
+    // The button is disabled while offline, but the name prompt is async and
+    // the socket can drop meanwhile: read the live state, and fail (no
+    // navigation to an editor for a layout that was never sent).
+    if (useStore.getState().conn !== "open") throw new Error("Not connected to the server; the layout was not created.");
     const id = `stage-layout-${uuid().slice(0, 8)}`;
     send({ type: "save_stage_layout", layout: StageLayoutSchema.parse({ id, name, widgets: [] }) });
     return id;
