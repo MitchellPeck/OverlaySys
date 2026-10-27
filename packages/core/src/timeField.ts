@@ -107,6 +107,14 @@ export function formatTime(totalMs: number, format: TimeFormat): string {
 }
 
 /**
+ * Like `formatTime`, but a negative value (a stage timer past zero) renders
+ * as `+` followed by the overshoot.
+ */
+export function formatSignedTime(remainingMs: number, format: TimeFormat): string {
+  return remainingMs >= 0 ? formatTime(remainingMs, format) : "+" + formatTime(-remainingMs, format);
+}
+
+/**
  * Parse a duration like "10:00", "1:30:00", or "90" into milliseconds.
  *
  * Rules:

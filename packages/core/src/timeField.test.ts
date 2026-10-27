@@ -3,10 +3,19 @@ import {
   computeTimeDisplay,
   decodeTimerValue,
   encodeTimerValue,
+  formatSignedTime,
   formatTime,
   parseDuration,
 } from "./timeField";
 import type { Field } from "./template";
+
+describe("formatSignedTime", () => {
+  it("formatSignedTime", () => {
+    expect(formatSignedTime(65_000, "M:SS")).toBe("1:05");
+    expect(formatSignedTime(-83_000, "M:SS")).toBe("+1:23");
+    expect(formatSignedTime(0, "MM:SS")).toBe("00:00");
+  });
+});
 
 describe("formatTime", () => {
   it("clamps negatives to zero", () => {
