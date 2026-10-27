@@ -62,6 +62,7 @@ channels.onAnyChange(() => stageFeedHub.invalidateAll());
 channels.onLiveRow((channel, source) => {
   if (channel === "preview") return;
   void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
+  void timers.onRowTaken(source).catch((err) => console.warn("[timers] onRowTaken failed", err));
 });
 timers.subscribeTimers(() => {
   stageFeedHub.invalidateAll();

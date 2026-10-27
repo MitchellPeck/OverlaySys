@@ -63,5 +63,7 @@ export const PcoPlanItemSchema = z.object({
    * arrangement has lyrics, or when no sibling arrangement has any either.
    */
   lyricsArrangement: PcoArrangementSchema.optional(),
+  /** Planned length in seconds; absent when PCO has none (0 or missing). */
+  lengthSec: z.number().int().nonnegative().optional(),
 });
 export type PcoPlanItem = z.infer<typeof PcoPlanItemSchema>;

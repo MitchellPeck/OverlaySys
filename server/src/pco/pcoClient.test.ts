@@ -192,3 +192,20 @@ describe("getPlanItems lyrics fallback", () => {
     ]);
   });
 });
+
+describe("getPlanItems length", () => {
+  const doc = (length: unknown) => ({
+    data: [{ type: "Item", id: "i", attributes: { title: "Welcome", sequence: 1, item_type: "header", length } }],
+  });
+  it.each([
+    [300, 300],
+    [299.6, 300],
+    [0, undefined],
+    [null, undefined],
+  ])("length %s -> lengthSec %s", async (length, expected) => {
+    const { impl } = stubFetch({ [ITEMS_ROUTE]: doc(length) });
+    const items = await createPcoClient("Bearer x", impl).getPlanItems("st", "plan-1");
+    expect(items[0]?.lengthSec).toBe(expected);
+  });
+});
+

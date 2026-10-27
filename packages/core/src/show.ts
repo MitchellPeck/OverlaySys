@@ -26,6 +26,10 @@ export const GraphicRowSchema = z.object({
   notes: z.string().optional(),
   /** Sermon notes set this row selects on the confidence monitor when taken. */
   sermonNotesId: z.string().optional(),
+  /** Planned length in seconds (from PCO or set by the operator); drives the stage item countdown. */
+  lengthSec: z.number().int().nonnegative().optional(),
+  /** Operator-set length: PCO re-import leaves `lengthSec` alone. */
+  lengthSecManual: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
 export type GraphicRow = z.infer<typeof GraphicRowSchema>;
@@ -41,6 +45,10 @@ export const SongRowSchema = z.object({
   notes: z.string().optional(),
   /** Sermon notes set this row selects on the confidence monitor when taken. */
   sermonNotesId: z.string().optional(),
+  /** Planned length in seconds (from PCO or set by the operator); drives the stage item countdown. */
+  lengthSec: z.number().int().nonnegative().optional(),
+  /** Operator-set length: PCO re-import leaves `lengthSec` alone. */
+  lengthSecManual: z.boolean().optional(),
   /** Per-row override of the intro template; falls back to ShowSong / Song default. */
   introTemplateId: z.string().optional(),
   /** Per-row override of the intro field map (templateFieldKey -> songFieldKey). */
@@ -139,6 +147,10 @@ export const ScriptureRowSchema = z.object({
   notes: z.string().optional(),
   /** Sermon notes set this row selects on the confidence monitor when taken. */
   sermonNotesId: z.string().optional(),
+  /** Planned length in seconds (from PCO or set by the operator); drives the stage item countdown. */
+  lengthSec: z.number().int().nonnegative().optional(),
+  /** Operator-set length: PCO re-import leaves `lengthSec` alone. */
+  lengthSecManual: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
   /**
    * Set for rows fetched from a licensed API (NIV via API.Bible). The server
@@ -181,6 +193,10 @@ export const VideoRowSchema = z.object({
   notes: z.string().optional(),
   /** Sermon notes set this row selects on the confidence monitor when taken. */
   sermonNotesId: z.string().optional(),
+  /** Planned length in seconds (from PCO or set by the operator); drives the stage item countdown. */
+  lengthSec: z.number().int().nonnegative().optional(),
+  /** Operator-set length: PCO re-import leaves `lengthSec` alone. */
+  lengthSecManual: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
 export type VideoRow = z.infer<typeof VideoRowSchema>;

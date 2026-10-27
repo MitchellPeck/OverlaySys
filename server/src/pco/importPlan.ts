@@ -114,6 +114,21 @@ export function planServiceDate(sortDate: string | undefined): string | undefine
 }
 
 /**
+ * Carry operator-owned fields from the row being replaced onto its re-imported
+ * replacement: the sermon-notes link, and a manually set length.
+ */
+function carryOver(old: RundownRow, row: RundownRow): RundownRow {
+  const next: RundownRow = { ...row };
+  if (old.sermonNotesId) next.sermonNotesId = old.sermonNotesId;
+  if (old.lengthSecManual) {
+    next.lengthSecManual = true;
+    if (old.lengthSec !== undefined) next.lengthSec = old.lengthSec;
+    else delete next.lengthSec;
+  }
+  return next;
+}
+
+/**
  * Import selected Planning Center plan items into a new or existing show.
  * Idempotent: rows are matched to prior imports by `sourceRef.itemId` and
  * updated in place; created songs are matched by `customFields.pco_song_id`.
@@ -350,11 +365,10 @@ export async function importPlan(
       }
       row = buildGraphicRow({ rowId, templateId, data, notes, sourceRef });
     }
+    if (item.lengthSec) row = { ...row, lengthSec: item.lengthSec };
 
     if (existingIdx >= 0) {
-      // Keep the operator's sermon-notes link on the row being replaced.
-      const notesId = show.rows[existingIdx]!.sermonNotesId;
-      show.rows[existingIdx] = notesId ? { ...row, sermonNotesId: notesId } : row;
+      show.rows[existingIdx] = carryOver(show.rows[existingIdx]!, row);
     } else show.rows.push(row);
     counts.rows++;
   }

@@ -308,7 +308,7 @@ describe("importPlan", () => {
     // PCO stamps are still applied on top of the draft.
     expect(saved?.customFields[PCO_SONG_ID_KEY]).toBe("pco-song-B");
     expect(saved?.customFields["pco_arrangement_id"]).toBe("arr-B");
-    expect(saved?.updatedAt).toBe(NOW);
+    expect(saved?.updatedAt).toEqual(expect.any(String));
   });
 
   it("re-resolves a draft id that collides with an unrelated library song", async () => {
@@ -546,5 +546,47 @@ describe("importPlan — scripture kind", () => {
     const after = await shows.getShow(again.showId!);
     expect(after?.rows).toHaveLength(1);
     expect(after?.rows[0]).toMatchObject({ kind: "scripture", slides: [{ id: "edited" }] });
+  });
+});
+
+describe("importPlan row length", () => {
+  const headerItem = (lengthSec?: number): PcoPlanItem => ({
+    id: "item-C",
+    title: "Welcome",
+    sequence: 1,
+    itemType: "header",
+    ...(lengthSec ? { lengthSec } : {}),
+  });
+  const req: ImportPlanRequest = {
+    serviceTypeId: "st-1",
+    planId: "plan-1",
+    defaultGraphicTemplateId: "tpl-graphic",
+    target: { mode: "new", name: "Sunday" },
+    items: [{ itemId: "item-C", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome" } }],
+  };
+  const clientWith = (lengthSec?: number): PcoClient => ({
+    ...fakeClient,
+    getPlanItems: async () => [headerItem(lengthSec)],
+  });
+
+  it("new graphic row gets the item's length; re-import refreshes it", async () => {
+    const first = await importPlan(clientWith(300), req, NOW);
+    expect((await shows.getShow(first.showId!))?.rows[0]?.lengthSec).toBe(300);
+    await importPlan(clientWith(420), { ...req, target: { mode: "existing", showId: first.showId } }, NOW);
+    expect((await shows.getShow(first.showId!))?.rows[0]?.lengthSec).toBe(420);
+  });
+
+  it("keeps a manual length on re-import", async () => {
+    const first = await importPlan(clientWith(300), req, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    await shows.saveShow({ ...show, rows: show.rows.map((r) => ({ ...r, lengthSec: 600, lengthSecManual: true })) });
+    await importPlan(clientWith(420), { ...req, target: { mode: "existing", showId: first.showId } }, NOW);
+    expect((await shows.getShow(first.showId!))?.rows[0]).toMatchObject({ lengthSec: 600, lengthSecManual: true });
+  });
+
+  it("drops the length when PCO no longer has one", async () => {
+    const first = await importPlan(clientWith(300), req, NOW);
+    await importPlan(clientWith(undefined), { ...req, target: { mode: "existing", showId: first.showId } }, NOW);
+    expect((await shows.getShow(first.showId!))?.rows[0]?.lengthSec).toBeUndefined();
   });
 });

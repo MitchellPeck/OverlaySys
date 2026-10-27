@@ -185,6 +185,7 @@ export function createPcoClient(
           itemType: coerceItemType(a["item_type"]),
           description: str(a["description"]),
           htmlDetails: str(a["html_details"]),
+          lengthSec: typeof a["length"] === "number" && Number.isFinite(a["length"]) && a["length"] > 0 ? Math.round(a["length"]) : undefined,
           song,
           arrangement,
         });

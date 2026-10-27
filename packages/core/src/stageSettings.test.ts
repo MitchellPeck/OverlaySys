@@ -9,4 +9,11 @@ describe("StageSettingsSchema", () => {
   it("trims and drops blank presets", () => {
     expect(StageSettingsSchema.parse({ messagePresets: [" Go ", "", "  "] }).messagePresets).toEqual(["Go"]);
   });
+  it("defaults the item timer settings on for older files", () => {
+    expect(StageSettingsSchema.parse({ messagePresets: ["a"] })).toMatchObject({
+      messagePresets: ["a"],
+      autoItemTimer: true,
+      itemTimerOvertime: true,
+    });
+  });
 });
