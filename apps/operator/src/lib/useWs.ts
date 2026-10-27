@@ -62,6 +62,9 @@ function bootstrap(): void {
       case "stage_state":
         store.setStageState(msg);
         break;
+      case "timers_state":
+        store.setStageTimers(msg.timers);
+        break;
       case "media_playback":
         store.applyMediaPlayback(msg.channel, msg.takenAt, msg.playback);
         break;

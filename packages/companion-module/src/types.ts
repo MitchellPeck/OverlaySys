@@ -9,7 +9,11 @@ import type {
   TemplateMeta,
   SttSpawnerStatus,
   StageState,
+  StageTimerInstance,
 } from "@overlaysys/core";
+
+/** Warn threshold for the item-timer variable and feedbacks. */
+export const ITEM_WARN_MS = 60_000;
 
 export interface ShowMeta {
   id: string;
@@ -44,6 +48,7 @@ export interface CompanionState {
   sttSpawner: SttSpawnerStatus | null;
   sttListeners: SttListener[];
   lastError: string | null;
+  timers: StageTimerInstance[];
   stage: {
     state: StageState;
     pointCount: number;
@@ -71,6 +76,7 @@ export function initialState(): CompanionState {
     sttSpawner: null,
     sttListeners: [],
     lastError: null,
+    timers: [],
     stage: null,
   };
 }

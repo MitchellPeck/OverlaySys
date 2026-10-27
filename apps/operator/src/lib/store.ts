@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type {
+  StageTimerInstance,
   ChannelState,
   MediaPlayback,
   ChannelConfig,
@@ -92,6 +93,7 @@ type StoreState = {
   sttListeners: SttListenerInfo[];
 
   stageState: StageStateMessage | null;
+  stageTimers: StageTimerInstance[];
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
 
@@ -119,6 +121,7 @@ type StoreState = {
   setSttMatch: (channel: string, match: SttMatchSummary) => void;
   setSttListeners: (listeners: SttListenerInfo[]) => void;
   setStageState: (m: StageStateMessage | null) => void;
+  setStageTimers: (t: StageTimerInstance[]) => void;
   setHotcards: (h: HotcardMeta[]) => void;
   setHotcard: (h: Hotcard) => void;
 
@@ -187,6 +190,7 @@ export const useStore = create<StoreState>((set) => ({
   sttMatches: {},
   sttListeners: [],
   stageState: null,
+  stageTimers: [],
   hotcards: [],
   hotcardCache: {},
   projects: [],
@@ -317,6 +321,7 @@ export const useStore = create<StoreState>((set) => ({
     set((s) => ({ sttMatches: { ...s.sttMatches, [channel]: match } })),
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
   setStageState: (m) => set({ stageState: m }),
+  setStageTimers: (t) => set({ stageTimers: t }),
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),

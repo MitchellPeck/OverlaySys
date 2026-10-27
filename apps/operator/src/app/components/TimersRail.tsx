@@ -5,6 +5,7 @@ import { Plus } from "lucide-react";
 import { Button, PanelHeader } from "@overlaysys/ui";
 import { AnchoredPopover } from "./AnchoredPopover";
 import { ActiveTimersPanel } from "./ActiveTimersPanel";
+import { StageTimersSection } from "./StageTimersSection";
 import { TimerPanel } from "./TimerPanel";
 
 export function TimersRail() {
@@ -23,6 +24,7 @@ export function TimersRail() {
         }
       />
       <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
+        <StageTimersSection />
         <ActiveTimersPanel />
       </div>
       {open && (

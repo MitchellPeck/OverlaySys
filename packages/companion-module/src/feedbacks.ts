@@ -5,7 +5,8 @@ import type {
   CompanionInputFieldNumber,
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
-import type { CompanionState } from "./types";
+import { ITEM_WARN_MS, type CompanionState } from "./types";
+import { CURRENT_ITEM_TIMER_ID, timerMs, timerPhase } from "@overlaysys/core";
 
 export type FeedbackId =
   | "channel_is_live"
@@ -34,7 +35,9 @@ export type FeedbackId =
   | "notes_active"
   | "notes_at_first"
   | "notes_at_last"
-  | "stage_message_showing";
+  | "stage_message_showing"
+  | "item_timer_warning"
+  | "item_timer_overtime";
 
 export type FeedbackOptions = Record<
   string,
@@ -82,6 +85,18 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     id: "stage_message_showing",
     name: "Stage message showing",
     description: "True while a message is shown on the stage display.",
+    options: [],
+  },
+  {
+    id: "item_timer_warning",
+    name: "Item timer warning",
+    description: "True when the current item timer is under 60 seconds remaining (not yet overtime).",
+    options: [],
+  },
+  {
+    id: "item_timer_overtime",
+    name: "Item timer overtime",
+    description: "True when the current item timer has run past zero (overtime on).",
     options: [],
   },
   {
@@ -358,8 +373,16 @@ export function feedbackPredicate(
   state: CompanionState,
   id: FeedbackId,
   options: FeedbackOptions,
+  now: number = Date.now(),
 ): boolean {
   switch (id) {
+    case "item_timer_warning":
+    case "item_timer_overtime": {
+      const item = state.timers.find((t) => t.id === CURRENT_ITEM_TIMER_ID);
+      if (!item) return false;
+      const phase = timerPhase(item.mode, timerMs(item, now), item.overtime, ITEM_WARN_MS);
+      return phase === (id === "item_timer_warning" ? "warn" : "over");
+    }
     case "notes_active":
       return (state.stage?.pointCount ?? 0) > 0;
     case "notes_at_first":

@@ -27,6 +27,7 @@ export function apply(
         connected: false,
         connectionState: "disconnected",
         stage: null,
+        timers: [],
       };
 
     case "state": {
@@ -122,6 +123,9 @@ export function apply(
           nextHeading: evt.nextHeading,
         },
       };
+
+    case "timers_state":
+      return { ...state, timers: evt.timers };
 
     case "error":
       return { ...state, lastError: `${evt.code}: ${evt.message}` };

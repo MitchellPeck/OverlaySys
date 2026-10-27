@@ -1,6 +1,6 @@
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import type { RundownRow } from "@overlaysys/core";
-import { pickNextShow } from "@overlaysys/core";
+import { pickNextShow, CURRENT_ITEM_TIMER_ID } from "@overlaysys/core";
 import type {
   CompanionActionDefinitions,
   CompanionInputFieldDropdown,
@@ -64,7 +64,12 @@ export type ActionId =
   | "notes_top"
   | "notes_select"
   | "stage_message_send"
-  | "stage_message_clear";
+  | "stage_message_clear"
+  | "stage_timer_start"
+  | "stage_timer_pause"
+  | "stage_timer_resume"
+  | "stage_timer_reset"
+  | "stage_timer_adjust";
 
 export type ActionOptions = Record<
   string,
@@ -629,6 +634,20 @@ export function dispatchAction(
     case "stage_message_clear":
       messages.push({ type: "stage_message_clear" });
       break;
+    case "stage_timer_start":
+    case "stage_timer_pause":
+    case "stage_timer_resume":
+    case "stage_timer_reset": {
+      const timerId = str("timer", CURRENT_ITEM_TIMER_ID) || CURRENT_ITEM_TIMER_ID;
+      messages.push({ type: `timer_${id.slice("stage_timer_".length)}` as "timer_start", id: timerId });
+      break;
+    }
+    case "stage_timer_adjust": {
+      const timerId = str("timer", CURRENT_ITEM_TIMER_ID) || CURRENT_ITEM_TIMER_ID;
+      const amount = num("amount", 60);
+      if (Number.isFinite(amount)) messages.push({ type: "timer_adjust", id: timerId, deltaMs: Math.round(amount * 1000) });
+      break;
+    }
   }
 
   return { messages, localEvents };
@@ -855,6 +874,28 @@ function notesDropdown(state: CompanionState): CompanionInputFieldDropdown {
     choices,
   };
 }
+
+function timerDropdown(state: CompanionState): CompanionInputFieldDropdown {
+  const manual = state.timers
+    .filter((t) => t.id !== CURRENT_ITEM_TIMER_ID)
+    .map((t) => ({ id: t.id, label: t.label }));
+  return {
+    id: "timer",
+    type: "dropdown",
+    label: "Timer",
+    default: CURRENT_ITEM_TIMER_ID,
+    choices: [{ id: CURRENT_ITEM_TIMER_ID, label: "Current item" }, ...manual],
+  };
+}
+
+const timerAmountInput: CompanionInputFieldNumber = {
+  id: "amount",
+  type: "number",
+  label: "Seconds (negative to subtract)",
+  default: 60,
+  min: -86400,
+  max: 86400,
+};
 
 export type ActionRunner = (id: ActionId, options: ActionOptions) => void;
 
@@ -1209,6 +1250,31 @@ export function actionDefinitions(
       name: "Stage: clear message",
       options: [],
       callback: wrap("stage_message_clear"),
+    },
+    stage_timer_start: {
+      name: "Stage timer: start",
+      options: [timerDropdown(state)],
+      callback: wrap("stage_timer_start"),
+    },
+    stage_timer_pause: {
+      name: "Stage timer: pause",
+      options: [timerDropdown(state)],
+      callback: wrap("stage_timer_pause"),
+    },
+    stage_timer_resume: {
+      name: "Stage timer: resume",
+      options: [timerDropdown(state)],
+      callback: wrap("stage_timer_resume"),
+    },
+    stage_timer_reset: {
+      name: "Stage timer: reset",
+      options: [timerDropdown(state)],
+      callback: wrap("stage_timer_reset"),
+    },
+    stage_timer_adjust: {
+      name: "Stage timer: adjust",
+      options: [timerDropdown(state), timerAmountInput],
+      callback: wrap("stage_timer_adjust"),
     },
   };
 }

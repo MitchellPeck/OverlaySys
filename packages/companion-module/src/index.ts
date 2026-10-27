@@ -30,6 +30,7 @@ import {
 class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   private state: CompanionState = initialState();
   private connection: Connection | null = null;
+  private timerTick: ReturnType<typeof setInterval> | null = null;
   private channels: string[] = ["program", "preview"];
   private currentConfig: ModuleConfig = { ...defaultConfig };
 
@@ -51,6 +52,8 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   }
 
   async destroy(): Promise<void> {
+    if (this.timerTick) clearInterval(this.timerTick);
+    this.timerTick = null;
     this.connection?.stop();
     this.connection = null;
   }
@@ -164,6 +167,23 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   private refreshDynamic(): void {
     this.setVariableValues(projectVariables(this.state, this.channels));
     this.checkFeedbacks();
+    this.syncTimerTick();
+  }
+
+  /** Re-project timer-driven variables/feedbacks every second while any timer runs. */
+  private syncTimerTick(): void {
+    const running = this.state.timers.some(
+      (t) => t.anchor !== null && t.pausedAt === undefined,
+    );
+    if (running && !this.timerTick) {
+      this.timerTick = setInterval(() => {
+        this.setVariableValues(projectVariables(this.state, this.channels));
+        this.checkFeedbacks("item_timer_warning", "item_timer_overtime");
+      }, 1000);
+    } else if (!running && this.timerTick) {
+      clearInterval(this.timerTick);
+      this.timerTick = null;
+    }
   }
 
   private runAction(id: ActionId, options: ActionOptions): void {
@@ -229,6 +249,7 @@ function mutatesDropdownSources(evt: ReducerEvent): boolean {
     case "hotcard":
     case "template":
     case "channel":
+    case "timers_state":
     // Loaded-show pointer + cursor changes affect the row dropdown.
     case "local_load_show":
     case "local_clear_loaded_show":

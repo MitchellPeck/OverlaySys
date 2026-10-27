@@ -4,7 +4,8 @@ import {
   sectionDisplayLabel,
   songTitleForChannel,
 } from "./labels";
-import type { CompanionState } from "./types";
+import { ITEM_WARN_MS, type CompanionState } from "./types";
+import { CURRENT_ITEM_TIMER_ID, formatSignedTime, formatTime, timerMs, timerPhase } from "@overlaysys/core";
 
 export const RUNDOWN_LIMIT = 40;
 
@@ -123,6 +124,9 @@ export function variableDefinitions(
     { variableId: "notes_point_heading", name: "Pastor notes current point heading" },
     { variableId: "notes_next_heading", name: "Pastor notes next point heading" },
     { variableId: "stage_message", name: "Stage message currently showing" },
+    { variableId: "item_timer", name: "Current item timer (M:SS, +M:SS in overtime)" },
+    { variableId: "item_timer_label", name: "Current item timer label" },
+    { variableId: "item_overtime", name: "Current item timer is in overtime (true/false)" },
   );
 
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
@@ -169,6 +173,7 @@ function rowMatchesPgm(
 export function projectVariables(
   state: CompanionState,
   channels: string[],
+  now: number = Date.now(),
 ): Record<string, string> {
   const out: Record<string, string> = {};
 
@@ -253,6 +258,21 @@ export function projectVariables(
   out.notes_point_heading = hasNotes ? stage.pointHeading ?? "" : "";
   out.notes_next_heading = hasNotes ? stage.nextHeading ?? "" : "";
   out.stage_message = stage?.state.message?.text ?? "";
+
+  const item = state.timers.find((t) => t.id === CURRENT_ITEM_TIMER_ID);
+  if (item) {
+    const ms = timerMs(item, now);
+    out.item_timer =
+      item.mode === "countdown" && item.overtime
+        ? formatSignedTime(ms, "M:SS")
+        : formatTime(ms, "M:SS");
+    out.item_timer_label = item.label;
+    out.item_overtime = String(timerPhase(item.mode, ms, item.overtime, ITEM_WARN_MS) === "over");
+  } else {
+    out.item_timer = "";
+    out.item_timer_label = "";
+    out.item_overtime = "false";
+  }
 
   const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
   const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;

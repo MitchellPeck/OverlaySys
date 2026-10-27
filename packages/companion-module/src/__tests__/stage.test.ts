@@ -67,4 +67,58 @@ describe("companion stage", () => {
     expect(feedbackPredicate(last, "stage_message_showing", {})).toBe(true);
     expect(feedbackPredicate(mid, "stage_message_showing", {})).toBe(false);
   });
+
+  describe("stage timers", () => {
+    const NOW = 1_000_000;
+    const itemTimer = (remainingMs: number, overtime = true) => ({
+      type: "timers_state" as const,
+      timers: [
+        {
+          id: "current-item",
+          label: "Sermon",
+          mode: "countdown" as const,
+          durationMs: 600_000,
+          anchor: NOW + remainingMs,
+          overtime,
+          source: "item" as const,
+          rowId: "r1",
+        },
+      ],
+    });
+
+    it("maps timer actions to messages, defaulting to the item timer", () => {
+      const s = initialState();
+      expect(dispatchAction(s, "stage_timer_adjust", { timer: "current-item", amount: -30 }).messages).toEqual([
+        { type: "timer_adjust", id: "current-item", deltaMs: -30000 },
+      ]);
+      expect(dispatchAction(s, "stage_timer_adjust", {}).messages).toEqual([
+        { type: "timer_adjust", id: "current-item", deltaMs: 60000 },
+      ]);
+      expect(dispatchAction(s, "stage_timer_start", {}).messages).toEqual([{ type: "timer_start", id: "current-item" }]);
+      expect(dispatchAction(s, "stage_timer_pause", { timer: "t1" }).messages).toEqual([{ type: "timer_pause", id: "t1" }]);
+      expect(dispatchAction(s, "stage_timer_resume", {}).messages).toEqual([{ type: "timer_resume", id: "current-item" }]);
+      expect(dispatchAction(s, "stage_timer_reset", {}).messages).toEqual([{ type: "timer_reset", id: "current-item" }]);
+    });
+
+    it("projects item timer variables", () => {
+      const over = apply(initialState(), itemTimer(-83_000));
+      const v = projectVariables(over, [], NOW);
+      expect(v.item_timer).toBe("+1:23");
+      expect(v.item_overtime).toBe("true");
+      expect(v.item_timer_label).toBe("Sermon");
+      expect(projectVariables(initialState(), [], NOW).item_timer).toBe("");
+      const plain = projectVariables(apply(initialState(), itemTimer(-5_000, false)), [], NOW);
+      expect(plain.item_timer).toBe("0:00");
+    });
+
+    it("evaluates item timer feedbacks", () => {
+      const over = apply(initialState(), itemTimer(-83_000));
+      expect(feedbackPredicate(over, "item_timer_overtime", {}, NOW)).toBe(true);
+      expect(feedbackPredicate(over, "item_timer_warning", {}, NOW)).toBe(false);
+      const near = apply(initialState(), itemTimer(10_000));
+      expect(feedbackPredicate(near, "item_timer_overtime", {}, NOW)).toBe(false);
+      expect(feedbackPredicate(near, "item_timer_warning", {}, NOW)).toBe(true);
+      expect(feedbackPredicate(initialState(), "item_timer_warning", {}, NOW)).toBe(false);
+    });
+  });
 });
