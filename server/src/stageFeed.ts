@@ -164,7 +164,7 @@ function timersOf(
     mode: t.mode,
     source: t.source,
     overtime: t.overtime,
-    running: t.anchor !== null && t.pausedAt === undefined,
+    running: t.anchor !== null && t.pausedAt == null,
     value: stageTimerValue(t, now),
   }));
   const sorted = [...states].sort((a, b) => {
@@ -185,7 +185,7 @@ function timersOf(
         id: `${s.channel}:${f.key}`,
         source: "graphic",
         overtime: false,
-        running: decoded.pausedAt === undefined,
+        running: decoded.pausedAt == null,
         label: f.label || tpl.name,
         channel: s.channel,
         mode: f.timeMode,

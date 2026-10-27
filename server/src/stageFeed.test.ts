@@ -10,8 +10,8 @@ import {
   type Song,
   type StageTimerInstance,
   type Template,
+  decodeTimerValue,
 } from "@overlaysys/core";
-import { decodeTimerValue } from "@overlaysys/core";
 import { buildStageFeed, lyricSlideAt, nextLyricCursor, rowTitle } from "./stageFeed";
 
 const song: Song = SongSchema.parse({
@@ -312,6 +312,19 @@ describe("buildStageFeed", () => {
     expect(t.running).toBe(false);
     expect(t.overtime).toBe(true);
     expect(decodeTimerValue(t.value)).toEqual({ anchor: 1000 + 60_000, pausedAt: 1000 });
+  });
+
+  it("a started instance is running; a paused one is not", () => {
+    const started: StageTimerInstance = { ...manual, anchor: 61_000 };
+    const paused: StageTimerInstance = { ...started, id: "m2", pausedAt: 5_000 };
+    const [a, b] = base(null, { stageTimers: [started, paused] }).timers;
+    expect(a!.running).toBe(true);
+    expect(b!.running).toBe(false);
+  });
+
+  it("treats a null pausedAt as not paused", () => {
+    const odd = { ...manual, anchor: 61_000, pausedAt: null } as unknown as StageTimerInstance;
+    expect(base(null, { stageTimers: [odd] }).timers[0]!.running).toBe(true);
   });
 
   it("skips timers with an unparseable value", () => {

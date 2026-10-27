@@ -3,6 +3,8 @@ import { ShowSchema, StageSettingsSchema, type ChannelConfig, type Show } from "
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as stageSettings from "./stageSettings";
+import * as templatesStore from "./templates";
+import { stageFollowedChannels } from "./stageFollowed";
 import {
   _resetForTest,
   createTimer,
@@ -10,7 +12,6 @@ import {
   getTimers,
   onRowTaken,
   setItemTimerDriver,
-  stageFollowedChannels,
   subscribeTimers,
 } from "./timers";
 
@@ -75,6 +76,7 @@ describe("onRowTaken item countdown", () => {
     rows: [
       { kind: "graphic", id: "r1", templateId: "t", data: {}, lengthSec: 300 },
       { kind: "graphic", id: "r2", templateId: "t", data: {} },
+      { kind: "graphic", id: "r3", templateId: "t", data: {}, lengthSec: 100 },
     ],
   });
   const take = (rowId: string, now = NOW, channel = "program") => onRowTaken(channel, { showId: "s1", rowId }, now);
@@ -110,6 +112,24 @@ describe("onRowTaken item countdown", () => {
     const items = getTimers().filter((t) => t.id === "current-item");
     expect(items).toHaveLength(1);
     expect(items[0]!.anchor).toBe(NOW + 300_000);
+  });
+
+  it("an older take that resolves last does not override a newer take", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let reached!: () => void;
+    const atTemplate = new Promise<void>((r) => (reached = r));
+    vi.mocked(templatesStore.getTemplate).mockImplementationOnce(async () => {
+      reached();
+      await gate;
+      return { id: "t", name: "Slow", fields: [] } as never;
+    });
+    const first = take("r1"); // starts first, finishes last
+    await atTemplate;
+    await take("r3", NOW + 1);
+    release();
+    await first;
+    expect(getTimers()).toEqual([expect.objectContaining({ id: "current-item", rowId: "r3", anchor: NOW + 1 + 100_000 })]);
   });
 
   it("a row without a length clears the item timer but leaves a manual timer alone", async () => {
@@ -177,6 +197,7 @@ describe("timers engine", () => {
     subscribeTimers(second);
     createTimer({ label: "A", mode: "countup", overtime: false });
     expect(second).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith("[timers] listener failed", expect.any(Error));
     warn.mockRestore();
   });
 });

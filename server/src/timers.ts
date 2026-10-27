@@ -5,7 +5,6 @@
 import { randomUUID } from "node:crypto";
 import {
   CURRENT_ITEM_TIMER_ID,
-  DEFAULT_STAGE_FOLLOWS,
   reduceTimers,
   type RowSource,
   type Song,
@@ -14,11 +13,11 @@ import {
   type TimerAction,
 } from "@overlaysys/core";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
-import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songsStore from "./songs";
 import * as templatesStore from "./templates";
 import { loadStageSettings } from "./stageSettings";
+import { stageFollowedChannels } from "./stageFollowed";
 import { rowTitle } from "./stageFeed";
 
 type Listener = (t: StageTimerInstance[]) => void;
@@ -48,8 +47,14 @@ export function isItemTimerDriverExternal(): boolean {
   return itemTimerExternal();
 }
 
+/** Monotonic take counter: a take that started later outranks one still awaiting. */
+let takeSeq = 0;
+let latestTakeRowId: string | null = null;
+
 export function _resetForTest(): void {
   timers = [];
+  takeSeq = 0;
+  latestTakeRowId = null;
   itemTimerExternal = () => false;
   listeners.clear();
 }
@@ -86,27 +91,6 @@ export function timersStateMessage(): ServerMessage {
 }
 
 /**
- * The channels stage monitors follow: each stage channel's `follows` (default
- * program), a mirror resolved one hop to its source the way
- * stageFeedHub.computeFeed does. With no stage channels, just the default.
- */
-export async function stageFollowedChannels(): Promise<Set<string>> {
-  const stages = (await channelConfigs.listChannelConfigs()).filter((c) => c.kind === "stage");
-  if (stages.length === 0) return new Set([DEFAULT_STAGE_FOLLOWS]);
-  const out = new Set<string>();
-  for (const cfg of stages) {
-    let id = cfg.follows ?? DEFAULT_STAGE_FOLLOWS;
-    let followed = await channelConfigs.getChannelConfig(id);
-    if (followed?.kind !== "stage" && followed?.mirrorOf) {
-      id = followed.mirrorOf;
-      followed = await channelConfigs.getChannelConfig(id);
-    }
-    if (followed?.kind !== "stage") out.add(id);
-  }
-  return out;
-}
-
-/**
  * Called whenever a channel's liveRow is set. Only takes on a channel a stage
  * monitor follows count, so a lower third on a secondary channel can't touch
  * the sermon countdown. A row with a length starts the current-item
@@ -114,12 +98,17 @@ export async function stageFollowedChannels(): Promise<Set<string>> {
  * channel) leaves it running; a row without a length clears it.
  */
 export async function onRowTaken(channel: string, source: RowSource, now: number = Date.now()): Promise<void> {
+  const seq = ++takeSeq;
   if (!(await stageFollowedChannels()).has(channel)) return;
+  latestTakeRowId = source.rowId;
+  // After the awaits a newer take of a different row has already decided the
+  // timer; applying this older one would resurrect a stale row.
+  const superseded = () => seq !== takeSeq && latestTakeRowId !== source.rowId;
   const settings = await loadStageSettings();
   if (!settings.autoItemTimer || isItemTimerDriverExternal()) return;
   const show = await shows.getShow(source.showId);
   const row = show?.rows.find((r) => r.id === source.rowId);
-  if (!row) return;
+  if (!row || superseded()) return;
 
   const lengthSec = row.lengthSec ?? 0;
   if (lengthSec <= 0) {
@@ -140,6 +129,7 @@ export async function onRowTaken(channel: string, source: RowSource, now: number
 
   // Decide on the live state only after the awaits, so a concurrent take of
   // the same row (second channel) sees the timer the first one started.
+  if (superseded()) return;
   const current = timers.find((t) => t.id === CURRENT_ITEM_TIMER_ID);
   if (current && current.source === "item" && current.rowId === row.id) return;
   if (isItemTimerDriverExternal()) return;
