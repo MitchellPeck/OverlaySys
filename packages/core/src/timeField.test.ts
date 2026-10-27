@@ -10,7 +10,7 @@ import {
 import type { Field } from "./template";
 
 describe("formatSignedTime", () => {
-  it("formatSignedTime", () => {
+  it("prefixes overrun with + and leaves remaining time unsigned", () => {
     expect(formatSignedTime(65_000, "M:SS")).toBe("1:05");
     expect(formatSignedTime(-83_000, "M:SS")).toBe("+1:23");
     expect(formatSignedTime(0, "MM:SS")).toBe("00:00");

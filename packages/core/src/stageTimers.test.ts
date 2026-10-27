@@ -164,11 +164,22 @@ describe("reduceTimers", () => {
     expect(reduceTimers(t, { type: "clearItem", source: "item" }, NOW)).toEqual([]);
   });
 
+  it("setItem ignores a non-finite anchor", () => {
+    const item = { label: "y", overtime: true, source: "item" as const, rowId: "r2" };
+    const t = reduceTimers([], { type: "setItem", label: "x", anchor: 5_000, overtime: true, source: "item", rowId: "r" }, NOW);
+    for (const anchor of [NaN, Infinity, -Infinity]) {
+      expect(reduceTimers(t, { type: "setItem", anchor, ...item }, NOW)).toBe(t);
+    }
+    expect(reduceTimers([], { type: "setItem", anchor: NaN, ...item }, NOW)).toEqual([]);
+  });
+
   it("unknown id returns the same array", () => {
     const t: StageTimerInstance[] = [];
     const actions: TimerAction[] = [
       { type: "pause", id: "nope" },
       { type: "start", id: "nope" },
+      { type: "resume", id: "nope" },
+      { type: "reset", id: "nope" },
       { type: "adjust", id: "nope", deltaMs: 1 },
       { type: "delete", id: "nope" },
     ];
@@ -189,7 +200,7 @@ describe("timerMs", () => {
 });
 
 describe("timerPhase", () => {
-  it("timerPhase", () => {
+  it("is normal until the warn threshold, then warn, then over (or warn without overtime)", () => {
     expect(timerPhase("countdown", 120_000, true, 60_000)).toBe("normal");
     expect(timerPhase("countdown", 59_000, true, 60_000)).toBe("warn");
     expect(timerPhase("countdown", -1_000, true, 60_000)).toBe("over");

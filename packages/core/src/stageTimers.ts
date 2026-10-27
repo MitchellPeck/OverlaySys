@@ -94,6 +94,7 @@ export function reduceTimers(
       return [...timers, t];
     }
     case "setItem": {
+      if (!Number.isFinite(a.anchor)) return timers;
       const item: StageTimerInstance = {
         id: CURRENT_ITEM_TIMER_ID,
         label: cleanLabel(a.label),

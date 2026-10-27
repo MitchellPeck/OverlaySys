@@ -67,6 +67,16 @@ describe("mapPcoLive", () => {
     expect(v.next).toEqual({ title: "B" });
   });
 
+  it("prefers PCO's nextItemId over the sequence successor when it is a real item", () => {
+    expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: "c" }), NOW).next).toEqual({ title: "C" });
+  });
+
+  it("falls back to the sequence successor when nextItemId is a header, unknown or null", () => {
+    expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: "h" }), NOW).next).toEqual({ title: "B" });
+    expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: "zzz" }), NOW).next).toEqual({ title: "B" });
+    expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: null }), NOW).next).toEqual({ title: "B" });
+  });
+
   it("a trailing header with no item after it is not started", () => {
     const r = raw({ currentItemId: "z" });
     r.items.push({ id: "z", title: "Closing", sequence: 9, itemType: "header" });

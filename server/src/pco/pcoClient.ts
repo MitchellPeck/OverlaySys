@@ -185,7 +185,7 @@ export function createPcoClient(
       items,
       currentItemId,
       // No current item means no start time either.
-      currentStartedAt: currentItemId && current ? (str(current.attributes?.["live_start_at"]) ?? null) : null,
+      currentStartedAt: currentItemId ? (str(current?.attributes?.["live_start_at"]) ?? null) : null,
       nextItemId: next?.relationships?.["item"]?.data?.id ?? null,
       serviceEndsAt,
     });

@@ -66,6 +66,10 @@ export function mapPcoLive(raw: PcoLiveRaw, now: number): StageServiceView {
     };
   }
   const later = items.slice(idx + 1);
+  // Prefer PCO's own idea of the next item when it names a real, non-header
+  // item; else the next by sequence.
+  const pcoNext = raw.nextItemId ? items.find((i) => i.id === raw.nextItemId) : undefined;
+  const next = pcoNext ?? later[0];
   return {
     ...base,
     itemIndex: idx + 1,
@@ -75,7 +79,7 @@ export function mapPcoLive(raw: PcoLiveRaw, now: number): StageServiceView {
       startedAt,
       ...(cur.lengthSec !== undefined ? { lengthSec: cur.lengthSec } : {}),
     },
-    next: later[0] ? { title: later[0].title } : null,
+    next: next ? { title: next.title } : null,
     laterLengthSec: later.reduce((s, i) => s + (i.lengthSec ?? 0), 0),
     status: "live",
   };
