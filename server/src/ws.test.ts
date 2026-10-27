@@ -26,9 +26,12 @@ beforeAll(async () => {
   process.env["OVERLAYSYS_DATA_DIR"] = dataDir;
 });
 afterAll(async () => {
-  // Not removed: lazy seeding writes started by connect() can still be in
-  // flight and would reject (ENOENT) into an unhandled error.
+  // Close every socket first so nothing new starts, then let the lazy
+  // seeding writes connect() kicked off finish before removing the dir
+  // (removing it under an in-flight write would reject with ENOENT).
+  for (const s of sockets) s.emit("close");
   await new Promise((r) => setTimeout(r, 300));
+  await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   if (prevDataDir === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
   else process.env["OVERLAYSYS_DATA_DIR"] = prevDataDir;
 });
@@ -65,8 +68,10 @@ const silentLog = {
   },
 } as unknown as Parameters<typeof handleConnection>[2];
 
+const sockets: FakeSocket[] = [];
 function connect(): FakeSocket {
   const sock = new FakeSocket();
+  sockets.push(sock);
   handleConnection(sock as never, {} as never, silentLog);
   return sock;
 }
