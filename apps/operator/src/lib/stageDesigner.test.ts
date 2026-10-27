@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { produce } from "immer";
+import { StageLayoutSchema, type StageLayout } from "@overlaysys/core";
+import { useStageEditor } from "./stageEditorStore";
+import { patchWidget, toggleHidden } from "./stageLayoutOps";
 import {
   STAGE_SIZE_PRESETS,
+  shouldAdoptIncomingLayout,
+  stageLayoutsEqual,
   centeredRectAt,
   createTrailingThrottle,
   sizePresetKey,
@@ -112,5 +118,58 @@ describe("centeredRectAt", () => {
 
   it("shrinks to the canvas when the canvas is smaller than the rect", () => {
     expect(centeredRectAt({ x: 50, y: 50 }, 480, 200, { w: 300, h: 100 })).toEqual({ x: 0, y: 0, w: 300, h: 100 });
+  });
+});
+
+describe("stageLayoutsEqual / shouldAdoptIncomingLayout", () => {
+  const base = StageLayoutSchema.parse({
+    id: "stage-layout-eq000001",
+    name: "Mine",
+    widgets: [{ id: "c", kind: "clock", rect: { x: 0, y: 0, w: 300, h: 100 } }],
+  });
+  /** What the server sends back: re-parsed through zod (schema key order) and stamped. */
+  const echoOf = (l: StageLayout): StageLayout => ({
+    ...StageLayoutSchema.parse(JSON.parse(JSON.stringify(l))),
+    updatedAt: "2026-10-27T12:00:00.000Z",
+  });
+
+  beforeEach(() => useStageEditor.getState().setDraft(base));
+
+  it("ignores key order and updatedAt", () => {
+    const edited = produce(base, patchWidget("c", { style: { background: "#ff0000" } }));
+    const echo = echoOf(edited);
+    expect(JSON.stringify(echo.widgets[0])).not.toEqual(JSON.stringify(edited.widgets[0]));
+    expect(stageLayoutsEqual(edited, echo)).toBe(true);
+    expect(stageLayoutsEqual(edited, { ...echo, name: "Other" })).toBe(false);
+  });
+
+  it("keeps undo history when the save echo of a toggled widget arrives reordered", () => {
+    useStageEditor.getState().commit(toggleHidden("c"));
+    useStageEditor.getState().select(["c"]);
+    const saved = useStageEditor.getState().draft!;
+    useStageEditor.getState().markSaved();
+    const echo = echoOf(saved);
+    expect(JSON.stringify(echo.widgets[0])).not.toEqual(JSON.stringify(saved.widgets[0]));
+    const s = useStageEditor.getState();
+    const adopt = shouldAdoptIncomingLayout({ draft: s.draft, dirty: s.dirty, awaitingEchoId: saved.id }, echo);
+    // The deep compare alone recognises it too.
+    const adoptNoMarker = shouldAdoptIncomingLayout({ draft: s.draft, dirty: s.dirty, awaitingEchoId: null }, echo);
+    expect(adopt).toBe(false);
+    expect(adoptNoMarker).toBe(false);
+    if (adopt) useStageEditor.getState().setDraft(echo);
+    expect(useStageEditor.getState().history).toHaveLength(1);
+    expect(useStageEditor.getState().selectedIds).toEqual(["c"]);
+  });
+
+  it("adopts a different layout when clean, never when dirty", () => {
+    const other = { ...base, name: "Renamed elsewhere" };
+    expect(shouldAdoptIncomingLayout({ draft: base, dirty: false, awaitingEchoId: null }, other)).toBe(true);
+    expect(shouldAdoptIncomingLayout({ draft: base, dirty: true, awaitingEchoId: null }, other)).toBe(false);
+    expect(shouldAdoptIncomingLayout({ draft: null, dirty: false, awaitingEchoId: null }, other)).toBe(true);
+  });
+
+  it("skips the awaited save echo even if the server normalised it", () => {
+    const echo = { ...base, background: "#000" };
+    expect(shouldAdoptIncomingLayout({ draft: base, dirty: false, awaitingEchoId: base.id }, echo)).toBe(false);
   });
 });

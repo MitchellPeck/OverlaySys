@@ -1,4 +1,40 @@
-import type { StageRect } from "@overlaysys/core";
+import type { StageLayout, StageRect } from "@overlaysys/core";
+
+/** Key-order-insensitive deep equality; a key holding `undefined` counts as absent. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const bb = b as unknown[];
+    return a.length === bb.length && a.every((x, i) => deepEqual(x, bb[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  for (const k of keys) if (!deepEqual(ao[k], bo[k])) return false;
+  return true;
+}
+
+/** Same layout apart from key order and `updatedAt` (the server re-parses and stamps on save). */
+export function stageLayoutsEqual(a: StageLayout, b: StageLayout): boolean {
+  return deepEqual({ ...a, updatedAt: undefined }, { ...b, updatedAt: undefined });
+}
+
+/**
+ * Whether an incoming `stage_layout` for the open id should replace the draft
+ * (which resets undo history and selection). Never while dirty; never for the
+ * echo of our own just-acked save; never when it only differs in key order.
+ */
+export function shouldAdoptIncomingLayout(
+  state: { draft: StageLayout | null; dirty: boolean; awaitingEchoId: string | null },
+  incoming: StageLayout,
+): boolean {
+  if (state.dirty) return false;
+  if (state.awaitingEchoId === incoming.id) return false;
+  if (!state.draft || state.draft.id !== incoming.id) return true;
+  return !stageLayoutsEqual(state.draft, incoming);
+}
 
 /** Canvas size presets for the stage layout designer; anything else is "custom". */
 export const STAGE_SIZE_PRESETS: { w: number; h: number }[] = [

@@ -41,6 +41,7 @@ import {
   STAGE_SIZE_PRESETS,
   centeredRectAt,
   createTrailingThrottle,
+  shouldAdoptIncomingLayout,
   sizePresetKey,
   stageEditorShortcut,
 } from "@/lib/stageDesigner";
@@ -57,11 +58,6 @@ function isTyping(el: Element | null): boolean {
   const ae = el as HTMLElement | null;
   if (!ae) return false;
   return ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable;
-}
-
-/** Equal apart from `updatedAt` (the server stamps it on save). */
-function sameLayout(a: StageLayout, b: StageLayout): boolean {
-  return JSON.stringify({ ...a, updatedAt: undefined }) === JSON.stringify({ ...b, updatedAt: undefined });
 }
 
 export default function StageLayoutEditorPage() {
@@ -110,6 +106,8 @@ function StageLayoutEditor() {
   const [previewChannel, setPreviewChannel] = useState("");
   const fetchedRef = useRef<string | null>(null);
   const savingRef = useRef<StageLayout | null>(null);
+  /** Id whose save was acked; its broadcast echo must not reset history. */
+  const awaitingEchoRef = useRef<string | null>(null);
   const duplicateRef = useRef<{ pending: boolean; copyId: string | null }>({ pending: false, copyId: null });
 
   const readOnly = !!draft && (draft.builtIn === true || isBuiltInStageLayoutId(draft.id));
@@ -133,6 +131,7 @@ function StageLayoutEditor() {
   // ---- Loading, save acks, duplicate routing ----
   useEffect(() => {
     fetchedRef.current = null;
+    awaitingEchoRef.current = null;
     setDraft(null);
     setError(null);
     const off = getClient().on((msg) => {
@@ -145,13 +144,17 @@ function StageLayoutEditor() {
         }
         if (msg.layout.id !== layoutId) return;
         const st = useStageEditor.getState();
-        if (st.dirty) return;
-        if (st.draft && st.draft.id === msg.layout.id && sameLayout(st.draft, msg.layout)) return;
-        setDraft(msg.layout);
+        const adopt = shouldAdoptIncomingLayout(
+          { draft: st.draft, dirty: st.dirty, awaitingEchoId: awaitingEchoRef.current },
+          msg.layout,
+        );
+        if (awaitingEchoRef.current === msg.layout.id) awaitingEchoRef.current = null;
+        if (adopt) setDraft(msg.layout);
       } else if (msg.type === "ack") {
         if (msg.op === "save_stage_layout" && msg.id === layoutId) {
           const sent = savingRef.current;
           savingRef.current = null;
+          awaitingEchoRef.current = msg.id;
           // Edits made while the save was in flight stay unsaved.
           if (sent && useStageEditor.getState().draft === sent) markSaved();
           // The server dropped the preview of this layout on save.
@@ -164,6 +167,7 @@ function StageLayoutEditor() {
         if (msg.code === "not_found") setError(`Layout "${layoutId}" not found.`);
         else if (msg.code === "read_only") setError("Built-in layouts are read-only. Duplicate to edit.");
         savingRef.current = null;
+        duplicateRef.current = { pending: false, copyId: null };
       }
     });
     return off;
@@ -243,7 +247,8 @@ function StageLayoutEditor() {
   }
 
   function duplicateLayout() {
-    if (!draft || conn !== "open") return;
+    // Duplicate copies the stored layout, so unsaved edits would be lost.
+    if (!draft || dirty || conn !== "open") return;
     duplicateRef.current = { pending: true, copyId: null };
     send({ type: "duplicate_stage_layout", layoutId: draft.id });
   }
@@ -357,7 +362,15 @@ function StageLayoutEditor() {
             <Button onClick={undo} variant="ghost" size="sm" disabled={readOnly || !canUndo}>↶ Undo</Button>
             <Button onClick={redo} variant="ghost" size="sm" disabled={readOnly || !canRedo}>↷ Redo</Button>
             <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button onClick={duplicateLayout} variant="ghost" size="sm" disabled={conn !== "open"}>Duplicate</Button>
+            <Button
+              onClick={duplicateLayout}
+              variant="ghost"
+              size="sm"
+              disabled={dirty || conn !== "open"}
+              title={dirty ? "Save first — Duplicate copies the saved layout" : "Duplicate this layout"}
+            >
+              Duplicate
+            </Button>
             <Button onClick={save} variant="primary" size="sm" disabled={readOnly || !dirty || conn !== "open"}>
               Save (⌘S)
             </Button>
@@ -577,9 +590,16 @@ function Toolbar({
 }) {
   const [name, setName] = useState(draft.name);
   const [customOpen, setCustomOpen] = useState(false);
+  const skipNameCommitRef = useRef(false);
   useEffect(() => setName(draft.name), [draft.name]);
 
   function commitName() {
+    if (skipNameCommitRef.current) {
+      // Escape: blur fires with the typed (stale) name; discard it.
+      skipNameCommitRef.current = false;
+      setName(draft.name);
+      return;
+    }
     const next = name.trim();
     if (!next || next === draft.name) {
       setName(draft.name);
@@ -621,6 +641,7 @@ function Toolbar({
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") {
+            skipNameCommitRef.current = true;
             setName(draft.name);
             (e.target as HTMLInputElement).blur();
           }
