@@ -62,6 +62,8 @@ type SttListenerInfo = {
 
 type StoreState = {
   conn: ConnState;
+  /** serverTime (from hello) minus local Date.now(); add to Date.now() for server-clock time. */
+  serverTimeOffsetMs: number;
   templates: TemplateMeta[];
   templateCache: Record<string, Template>;
   showMetas: ShowMeta[];
@@ -110,6 +112,7 @@ type StoreState = {
   setCurrentProjectId: (id: string) => void;
 
   setConn: (c: ConnState) => void;
+  setServerTimeOffset: (ms: number) => void;
   setTemplates: (t: TemplateMeta[]) => void;
   setTemplate: (t: Template) => void;
   setShowMetas: (s: ShowMeta[]) => void;
@@ -183,6 +186,7 @@ function pruneOverrides(
 
 export const useStore = create<StoreState>((set) => ({
   conn: "connecting",
+  serverTimeOffsetMs: 0,
   templates: [],
   templateCache: {},
   showMetas: [],
@@ -224,6 +228,7 @@ export const useStore = create<StoreState>((set) => ({
   sttInstallJobs: {},
 
   // A meter reading from before a disconnect is stale; drop it.
+  setServerTimeOffset: (ms) => set({ serverTimeOffsetMs: ms }),
   setConn: (c) =>
     set(c === "open" ? { conn: c } : { conn: c, sttLevels: { levels: [], channels: [] } }),
   setTemplates: (t) => set({ templates: t }),

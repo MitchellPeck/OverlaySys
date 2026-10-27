@@ -32,6 +32,12 @@ describe("layoutPickerModel", () => {
   it("does not flag a custom id as missing before the list arrives", () => {
     expect(layoutPickerModel([], "stage-layout-1").missingId).toBeNull();
   });
+  it("shows a custom id by its raw id (not Speaker) before the list arrives", () => {
+    const m = layoutPickerModel([], "stage-layout-1");
+    expect(m.value).toBe("stage-layout-1");
+    expect(m.options[0]).toEqual({ id: "stage-layout-1", label: "stage-layout-1" });
+    expect(m.missingId).toBeNull();
+  });
   it("lists stored layouts", () => {
     const m = layoutPickerModel([meta("speaker", "Speaker"), meta("stage-layout-1", "Mine")], "stage-layout-1");
     expect(m.options).toHaveLength(2);

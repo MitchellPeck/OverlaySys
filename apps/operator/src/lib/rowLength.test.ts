@@ -13,4 +13,12 @@ describe("rowLength", () => {
     expect(parseRowLength("4:30")).toEqual({ ok: true, sec: 270 });
     expect(parseRowLength("abc")).toEqual({ ok: false });
   });
+  it("rounds fractional seconds to the nearest second", () => {
+    expect(parseRowLength("1.5")).toEqual({ ok: true, sec: 2 });
+  });
+  it("round-trips an hour-plus length", () => {
+    const text = formatRowLength(3725);
+    expect(text).toBe("1:02:05");
+    expect(parseRowLength(text)).toEqual({ ok: true, sec: 3725 });
+  });
 });

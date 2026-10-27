@@ -28,7 +28,12 @@ export function layoutPickerModel(
   const options = metas.map((l) => ({ id: l.id, label: l.name }));
   const value = storedId ?? BUILT_IN_STAGE_LAYOUTS[0]!.id;
   // Until the list arrives we can't tell whether a custom id is missing.
-  const missing = loaded && !options.some((o) => o.id === value);
+  const absent = !options.some((o) => o.id === value);
+  if (absent && !loaded) {
+    // Show the raw id rather than letting the select fall back to displaying Speaker.
+    return { options: [{ id: value, label: value }, ...options], value, missingId: null };
+  }
+  const missing = loaded && absent;
   if (!missing) return { options, value, missingId: null };
   return {
     options: [{ id: value, label: `${value} (missing — Speaker)` }, ...options],

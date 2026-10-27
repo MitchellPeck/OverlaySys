@@ -81,7 +81,6 @@ function StageLayoutsList() {
   }, [conn, send]);
 
   async function createLayout(name: string): Promise<string> {
-    if (conn !== "open") throw new Error("WS not connected");
     const id = `stage-layout-${uuid().slice(0, 8)}`;
     send({ type: "save_stage_layout", layout: StageLayoutSchema.parse({ id, name, widgets: [] }) });
     return id;
@@ -119,7 +118,7 @@ function StageLayoutsList() {
         return (
           <>
             {using.length > 0 && <>Used by: {using.map((c) => c.name || c.id).join(", ")}. </>}
-            They will fall back to Speaker.
+            {using.length > 0 && <>They will fall back to Speaker.</>}
           </>
         );
       }}

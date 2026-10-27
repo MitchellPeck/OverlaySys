@@ -598,6 +598,21 @@ function ShowEditPageInner() {
   );
 }
 
+/** Set or clear a row's length (clearing removes the key) and mark it manual. */
+function commitRowLength(
+  onUpdate: (recipe: (s: Show) => void) => void,
+  rowId: string,
+  lengthSec: number | undefined,
+) {
+  onUpdate((s) => {
+    const r = s.rows.find((x) => x.id === rowId);
+    if (!r) return;
+    if (lengthSec === undefined) delete r.lengthSec;
+    else r.lengthSec = lengthSec;
+    r.lengthSecManual = true;
+  });
+}
+
 function RundownTable({
   draft,
   templates,
@@ -720,15 +735,7 @@ function RundownTable({
                     </button>
                     <RowLengthInput
                       value={row.lengthSec}
-                      onCommit={(lengthSec) =>
-                        onUpdate((s) => {
-                          const r = s.rows.find((x) => x.id === row.id);
-                          if (!r) return;
-                          if (lengthSec === undefined) delete r.lengthSec;
-                          else r.lengthSec = lengthSec;
-                          r.lengthSecManual = true;
-                        })
-                      }
+                      onCommit={(lengthSec) => commitRowLength(onUpdate, row.id, lengthSec)}
                     />
                     {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
@@ -794,15 +801,7 @@ function RundownTable({
                     </button>
                     <RowLengthInput
                       value={row.lengthSec}
-                      onCommit={(lengthSec) =>
-                        onUpdate((s) => {
-                          const r = s.rows.find((x) => x.id === row.id);
-                          if (!r) return;
-                          if (lengthSec === undefined) delete r.lengthSec;
-                          else r.lengthSec = lengthSec;
-                          r.lengthSecManual = true;
-                        })
-                      }
+                      onCommit={(lengthSec) => commitRowLength(onUpdate, row.id, lengthSec)}
                     />
                     {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
@@ -952,7 +951,11 @@ function RundownRowEditor({
     onUpdate((s) => {
       const r = s.rows.find((r) => r.id === row.id);
       if (!r || r.kind !== "graphic") return;
-      Object.assign(r, patch);
+      // Explicit `undefined` clears the key (same as the song patchRow).
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) delete (r as Record<string, unknown>)[key];
+        else (r as Record<string, unknown>)[key] = value;
+      }
     });
   }
   function setData(key: string, value: string) {
@@ -1586,12 +1589,20 @@ function RowLengthInput({
   onCommit: (sec: number | undefined) => void;
 }) {
   const [text, setText] = useState(formatRowLength(value));
-  useEffect(() => setText(formatRowLength(value)), [value]);
+  const focusedRef = useRef(false);
+  // Sync from the model, but never clobber what the user is typing.
+  useEffect(() => {
+    if (!focusedRef.current) setText(formatRowLength(value));
+  }, [value]);
   return (
     <Input
       value={text}
       onChange={(e) => setText(e.target.value)}
+      onFocus={() => {
+        focusedRef.current = true;
+      }}
       onBlur={() => {
+        focusedRef.current = false;
         const parsed = parseRowLength(text);
         if (!parsed.ok) {
           setText(formatRowLength(value));

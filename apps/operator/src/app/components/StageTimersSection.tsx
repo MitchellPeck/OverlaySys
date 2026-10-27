@@ -21,11 +21,14 @@ const WARN_MS = 60_000;
 export function StageTimersSection() {
   const timers = useStore((s) => s.stageTimers);
   const { send } = useWs();
-  const [now, setNow] = useState<number>(() => Date.now());
+  const offset = useStore((s) => s.serverTimeOffsetMs);
+  const [localNow, setLocalNow] = useState<number>(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 500);
+    const id = setInterval(() => setLocalNow(Date.now()), 500);
     return () => clearInterval(id);
   }, []);
+  // Timer anchors are server-clock timestamps, so project on the server clock.
+  const now = localNow + offset;
 
   const ordered = useMemo(
     () => [

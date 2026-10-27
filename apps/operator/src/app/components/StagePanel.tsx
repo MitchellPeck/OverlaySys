@@ -20,7 +20,10 @@ export function StagePanel() {
   const startError = useStore((s) => s.pcoLiveStartError);
   const [presets, setPresets] = useState<string[]>(DEFAULT_MESSAGE_PRESETS);
   const [text, setText] = useState("");
-  const [now, setNow] = useState(() => Date.now());
+  const offset = useStore((s) => s.serverTimeOffsetMs);
+  const [localNow, setNow] = useState(() => Date.now());
+  // lastPolledAt is a server-clock timestamp.
+  const now = localNow + offset;
 
   // Re-evaluate staleness while syncing; the server only rebroadcasts on
   // change or a heartbeat, so lastPolledAt can't drive re-renders by itself.
@@ -59,16 +62,15 @@ export function StagePanel() {
 
   const following = !!pcoLive?.enabled && !!show && pcoLive.showId === show.id;
   const service = following ? pcoLive.service : null;
+  const followingOther = !!pcoLive?.enabled && !following;
   const liveLabel =
-    pcoLive?.status === "error" || pcoLive?.error
-      ? null
-      : pcoLive?.status === "live" && service
-        ? `Live · item ${service.itemIndex} of ${service.itemCount}`
-        : pcoLive?.status === "notStarted"
-          ? "Not started"
-          : pcoLive?.status === "ended"
-            ? "Ended"
-            : null;
+    pcoLive?.status === "live" && service
+      ? `Live · item ${service.itemIndex} of ${service.itemCount}`
+      : pcoLive?.status === "notStarted"
+        ? "Not started"
+        : pcoLive?.status === "ended"
+          ? "Ended"
+          : null;
   const stale =
     following && pcoLive.lastPolledAt !== null && now - pcoLive.lastPolledAt > STALE_MS;
 
@@ -94,11 +96,19 @@ export function StagePanel() {
           </label>
           {startError ? (
             <div style={{ fontSize: 12, color: colors.errorText }}>{startError}</div>
-          ) : pcoLive?.error ? (
+          ) : pcoLive?.enabled && pcoLive.error ? (
             <div style={{ fontSize: 12, color: colors.errorText }}>{pcoLive.error}</div>
           ) : following && liveLabel ? (
             <div style={{ fontSize: 12, color: colors.textDim }}>{liveLabel}</div>
           ) : null}
+          {followingOther && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textDim }}>
+              Following PCO Live for another show
+              <Button size="sm" variant="ghost" onClick={() => send({ type: "pco_live_stop" })}>
+                Stop
+              </Button>
+            </div>
+          )}
           {stale && (
             <div style={{ fontSize: 12, color: colors.warn }}>
               stale · last update {Math.round((now - pcoLive.lastPolledAt!) / 1000)} s ago

@@ -44,6 +44,7 @@ function bootstrap(): void {
     const store = useStore.getState();
     switch (msg.type) {
       case "hello":
+        store.setServerTimeOffset(msg.serverTime - Date.now());
         for (const ch of CHANNELS_TO_WATCH) {
           client.send({ type: "subscribe", channel: ch, role: "operator" });
         }
