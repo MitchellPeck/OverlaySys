@@ -108,7 +108,10 @@ row, not on `RowSourceRef`, so hand-built rows can have a length too.
 |---|---|---|
 | `autoItemTimer` | `true` | taking a row with a length starts the item countdown |
 | `itemTimerOvertime` | `true` | the item countdown runs into overtime |
-| `warnBelowSec` | `60` | item / standalone timers turn amber below this |
+
+The amber threshold is a per-widget prop (`timer.warnBelowSec`,
+default 60), not a global setting, so the designer can tune it per
+layout. *(call)*
 
 ### Feed
 
@@ -141,6 +144,7 @@ StageServiceView {
   itemIndex: number; itemCount: number;    // 1-based position of the current item
   current: { title: string; startedAt: number; lengthSec?: number } | null;
   next: { title: string } | null;
+  laterLengthSec: number;                  // sum of lengths of items after the current one
   plannedEndAt?: number;                   // epoch ms, from PCO plan times
   status: "live" | "notStarted" | "ended" | "error";
   error?: string;
@@ -159,8 +163,8 @@ StageServiceView {
   `"currentItem"`. `"firstActive"` and `{ channel }` keep working.
 - Display: a new `formatSignedTime(ms, format)` in `timeField.ts`
   returns `+M:SS` for negative remaining time on countdowns that have
-  `overtime`. The widget colours text by state: normal; amber below
-  `warnBelowSec`; red with a `+` in overtime. It gains props
+  `overtime`. The widget colours text by state: normal; amber below the
+  widget's `warnBelowSec` (default 60); red with a `+` in overtime. It gains props
   `warnColor` (default `#ffb703`), `overColor` (default `#ef233c`) and
   `showLabel` (shows the timer's label above the time).
 - Operator: the Timers rail gets a "Stage timers" section above the
@@ -225,8 +229,8 @@ StageServiceView {
     `service` is set.
 - New widget `serviceProgress`: "Item 4 of 12 · Ends 11:15 · 3 min
   over". Props: `showPosition`, `showEnd`, `showDelta`. The delta is
-  the projected end (now + the remaining lengths of this and later
-  items) minus `plannedEndAt`, shown as `N min over/under`. If PCO
+  the projected end (now + the current item's remaining time +
+  `laterLengthSec`) minus `plannedEndAt`, shown as `N min over/under`. If PCO
   doesn't give a planned end, the delta is hidden.
 - Operator: the Stage panel gets a "Follow PCO Live" toggle for the
   loaded show, with a status line (live / not started / error +
