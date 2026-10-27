@@ -6,14 +6,8 @@ import type { StageLayout } from "@overlaysys/core";
 
 const HISTORY_LIMIT = 50;
 
-export type StageSampleKind =
-  | "song"
-  | "scripture"
-  | "sermon"
-  | "videoTimer"
-  | "message"
-  | "itemCountdown"
-  | "pcoLive";
+// Local copy; moves to the core export (STAGE_SAMPLE_KINDS) in Task B3.
+export type StageSampleKind = "song" | "scripture" | "notes" | "videoTimer" | "message" | "itemOvertime" | "pcoLive";
 
 type StageEditorState = {
   draft: StageLayout | null;
