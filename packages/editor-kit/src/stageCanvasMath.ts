@@ -27,6 +27,16 @@ export function widgetsInMarquee(
 }
 
 /**
+ * Dedupe marquee selection reports. `prev` is null before the first frame, so
+ * the first frame always reports (an empty hit list must still clear the
+ * selection). Returns the new key when the caller should report, else null.
+ */
+export function nextMarqueeKey(prev: string | null, ids: readonly string[]): string | null {
+  const key = ids.join("\n");
+  return key === prev ? null : key;
+}
+
+/**
  * Move every start rect by (dx, dy). The primary rect snaps against `others`
  * (threshold 0 disables snapping) and the snap correction is applied to the
  * whole selection, so the group keeps its shape.

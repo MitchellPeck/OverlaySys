@@ -4,7 +4,7 @@ import type { StageFeed, StageLayout, StageRect, StageWidget } from "@overlaysys
 import { StageWidgetView } from "@overlaysys/stage-widgets";
 import { fitScale } from "./utils";
 import { SNAP_SCREEN_PX, type Guide, type ResizeHandle } from "./stageGeometry";
-import { dragMove, dragResize, normalizeMarquee, nudgeForKey, pastDragThreshold, widgetsInMarquee } from "./stageCanvasMath";
+import { dragMove, dragResize, nextMarqueeKey, normalizeMarquee, nudgeForKey, pastDragThreshold, widgetsInMarquee } from "./stageCanvasMath";
 
 export type StageCanvasProps = {
   layout: StageLayout;
@@ -26,7 +26,7 @@ type DragBase = { pointerId: number; startClient: Point; scale: number; started:
 type DragState =
   | (DragBase & { kind: "move"; primaryId: string; start: Record<string, StageRect>; others: StageRect[] })
   | (DragBase & { kind: "resize"; id: string; handle: ResizeHandle; start: StageRect; others: StageRect[] })
-  | (DragBase & { kind: "marquee"; origin: Point; lastIds: string });
+  | (DragBase & { kind: "marquee"; origin: Point; lastIds: string | null });
 
 const HOST_PADDING = 32;
 const SELECT_COLOR = "#4ade80";
@@ -118,7 +118,8 @@ export function StageCanvas(props: StageCanvasProps) {
     if (w.locked) return;
     const start: Record<string, StageRect> = {};
     for (const sw of layout.widgets) if (ids.includes(sw.id) && !sw.locked) start[sw.id] = sw.rect;
-    begin(e, { ...base(e), kind: "move", primaryId: w.id, start, others: otherRects(new Set(ids)) });
+    // Locked selected widgets stay put, so they remain snap targets.
+    begin(e, { ...base(e), kind: "move", primaryId: w.id, start, others: otherRects(new Set(Object.keys(start))) });
   }
 
   function onHandlePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
@@ -136,12 +137,17 @@ export function StageCanvas(props: StageCanvasProps) {
 
   function onBackgroundPointerDown(e: React.PointerEvent) {
     if (e.button !== 0 || !stageRef.current) return;
-    begin(e, { ...base(e), kind: "marquee", origin: toCanvas(e.clientX, e.clientY), lastIds: "" });
+    begin(e, { ...base(e), kind: "marquee", origin: toCanvas(e.clientX, e.clientY), lastIds: null });
   }
 
   function onPointerMove(e: React.PointerEvent) {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    // A pointerup we never saw (e.g. released outside the window) must not leave a drag running.
+    if (e.buttons === 0) {
+      endDrag(e, true);
+      return;
+    }
     const dxS = e.clientX - d.startClient.x;
     const dyS = e.clientY - d.startClient.y;
     if (!d.started) {
@@ -164,8 +170,8 @@ export function StageCanvas(props: StageCanvasProps) {
       const m = normalizeMarquee(d.origin, toCanvas(e.clientX, e.clientY));
       setMarquee(m);
       const ids = widgetsInMarquee(layout.widgets, m);
-      const key = ids.join("\n");
-      if (key !== d.lastIds) {
+      const key = nextMarqueeKey(d.lastIds, ids);
+      if (key !== null) {
         d.lastIds = key;
         props.onSelect(ids, false);
       }
@@ -205,6 +211,7 @@ export function StageCanvas(props: StageCanvasProps) {
       onPointerMove={onPointerMove}
       onPointerUp={(e) => endDrag(e, false)}
       onPointerCancel={(e) => endDrag(e, true)}
+      onLostPointerCapture={(e) => endDrag(e, true)}
       style={{
         position: "relative",
         width: "100%",

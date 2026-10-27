@@ -4,6 +4,7 @@ import {
   dragMove,
   dragResize,
   nudgeForKey,
+  nextMarqueeKey,
   normalizeMarquee,
   pastDragThreshold,
   rectsIntersect,
@@ -38,6 +39,14 @@ describe("stageCanvasMath", () => {
       { id: "d", rect: { x: 80, y: 0, w: 50, h: 50 }, locked: true },
     ];
     expect(widgetsInMarquee(widgets, { x: 50, y: 10, w: 100, h: 100 })).toEqual(["a", "d"]);
+  });
+
+  it("the first marquee frame always reports, even with no hits; later frames only on change", () => {
+    expect(nextMarqueeKey(null, [])).toBe("");
+    expect(nextMarqueeKey("", [])).toBeNull();
+    expect(nextMarqueeKey("", ["a"])).toBe("a");
+    expect(nextMarqueeKey("a", ["a"])).toBeNull();
+    expect(nextMarqueeKey("a", [])).toBe("");
   });
 
   it("move applies the delta to every start rect without snapping", () => {
