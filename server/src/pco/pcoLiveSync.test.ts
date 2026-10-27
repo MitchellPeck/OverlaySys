@@ -194,7 +194,7 @@ describe("pcoLiveSync", () => {
     const started = live.startLiveSync("s1", { client });
     live.stopLiveSync();
     release(showWithPlans("s1", ["p1"]));
-    expect(await started).toMatchObject({ ok: false });
+    expect(await started).toEqual({ ok: true });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(client.getLive).not.toHaveBeenCalled();
     expect(state()).toMatchObject({ enabled: false, status: "idle" });

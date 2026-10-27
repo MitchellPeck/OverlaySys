@@ -142,7 +142,8 @@ export async function startLiveSync(
   const startedAtGeneration = generation;
   const show = await shows.getShow(showId);
   if (generation !== startedAtGeneration) {
-    return { ok: false, error: "Live sync was changed before it could start." };
+    // The newer start/stop owns the outcome; pco_live_state tells clients.
+    return { ok: true };
   }
   const plan = show ? pickPlan(show.rows) : null;
   if (!plan) return { ok: false, error: "This show has no Planning Center items." };
