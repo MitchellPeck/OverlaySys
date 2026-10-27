@@ -1,0 +1,41 @@
+{
+  "live": {
+    "data": {
+      "type": "Live",
+      "id": "5001",
+      "attributes": { "title": "Sunday Gathering", "series_title": null, "dates": "October 25, 2026" },
+      "relationships": {
+        "current_item_time": { "data": { "type": "ItemTime", "id": "9002" } },
+        "next_item_time": { "data": { "type": "ItemTime", "id": "9003" } }
+      }
+    },
+    "included": [
+      {
+        "type": "ItemTime",
+        "id": "9002",
+        "attributes": { "live_start_at": "2026-10-25T16:05:00Z", "live_end_at": null },
+        "relationships": { "item": { "data": { "type": "Item", "id": "item-2" } } }
+      },
+      {
+        "type": "ItemTime",
+        "id": "9003",
+        "attributes": { "live_start_at": null, "live_end_at": null },
+        "relationships": { "item": { "data": { "type": "Item", "id": "item-3" } } }
+      }
+    ]
+  },
+  "items": {
+    "data": [
+      { "type": "Item", "id": "item-1", "attributes": { "title": "Welcome", "sequence": 1, "item_type": "header", "length": 0 } },
+      { "type": "Item", "id": "item-2", "attributes": { "title": "Opening Song", "sequence": 2, "item_type": "song", "length": 240 } },
+      { "type": "Item", "id": "item-3", "attributes": { "title": "Message", "sequence": 3, "item_type": "item", "length": 1800 } }
+    ]
+  },
+  "planTimes": {
+    "data": [
+      { "type": "PlanTime", "id": "t1", "attributes": { "time_type": "rehearsal", "starts_at": "2026-10-25T14:00:00Z", "ends_at": "2026-10-25T15:00:00Z" } },
+      { "type": "PlanTime", "id": "t2", "attributes": { "time_type": "service", "starts_at": "2026-10-25T16:00:00Z", "ends_at": "2026-10-25T17:00:00Z" } },
+      { "type": "PlanTime", "id": "t3", "attributes": { "time_type": "service", "starts_at": "2026-10-25T18:00:00Z", "ends_at": "2026-10-25T19:00:00Z" } }
+    ]
+  }
+}

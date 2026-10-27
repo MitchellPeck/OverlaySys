@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fixture from "./__fixtures__/live.json";
 import { createPcoClient, PcoAuthError } from "./pcoClient";
 
 /**
@@ -206,6 +207,43 @@ describe("getPlanItems length", () => {
     const { impl } = stubFetch({ [ITEMS_ROUTE]: doc(length) });
     const items = await createPcoClient("Bearer x", impl).getPlanItems("st", "plan-1");
     expect(items[0]?.lengthSec).toBe(expected);
+  });
+});
+
+describe("getLive", () => {
+  const routes = () => ({
+    "/plan-1/live": structuredClone(fixture.live) as any,
+    "/plan-1/items": structuredClone(fixture.items),
+    "/plan-1/plan_times": structuredClone(fixture.planTimes),
+  });
+
+  it("maps current/next item, start time, lengths and service end", async () => {
+    const { impl, calls } = stubFetch(routes());
+    const live = await createPcoClient("Bearer x", impl).getLive("st", "plan-1");
+    expect(calls).toHaveLength(3);
+    expect(live.planTitle).toBe("Sunday Gathering");
+    expect(live.currentItemId).toBe("item-2");
+    expect(live.currentStartedAt).toBe("2026-10-25T16:05:00Z");
+    expect(live.nextItemId).toBe("item-3");
+    expect(live.items.map((i) => [i.id, i.lengthSec])).toEqual([
+      ["item-1", undefined],
+      ["item-2", 240],
+      ["item-3", 1800],
+    ]);
+    expect(live.serviceEndsAt).toBe("2026-10-25T19:00:00Z");
+  });
+
+  it("returns null current item when there is no current_item_time", async () => {
+    const r = routes();
+    r["/plan-1/live"].data.relationships.current_item_time = { data: null };
+    const live = await createPcoClient("Bearer x", stubFetch(r).impl).getLive("st", "plan-1");
+    expect(live.currentItemId).toBeNull();
+    expect(live.currentStartedAt).toBeNull();
+  });
+
+  it("throws PcoAuthError on 401", async () => {
+    const { impl } = stubFetch(routes(), { "/plan-1/live": 401 });
+    await expect(createPcoClient("Bearer x", impl).getLive("st", "plan-1")).rejects.toBeInstanceOf(PcoAuthError);
   });
 });
 

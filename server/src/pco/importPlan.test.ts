@@ -98,6 +98,7 @@ const fakeClient: PcoClient = {
   listPlans: async () => [],
   getPlanItems: async () => ITEMS,
   listSongArrangements: async () => [],
+  getLive: async () => { throw new Error("unused"); },
 };
 
 // A plan that lists the SAME PCO song twice — e.g. a reprise later in the
@@ -126,6 +127,7 @@ const duplicateSongClient: PcoClient = {
   listPlans: async () => [],
   getPlanItems: async () => DUPLICATE_SONG_ITEMS,
   listSongArrangements: async () => [],
+  getLive: async () => { throw new Error("unused"); },
 };
 
 /** A configured draft for `pco-song-D` whose only slide carries `line`. */
@@ -481,6 +483,7 @@ describe("importPlan — scripture kind", () => {
     listPlans: async () => [],
     getPlanItems: async () => scriptureItems,
     listSongArrangements: async () => [],
+    getLive: async () => { throw new Error("unused"); },
   };
   const req: ImportPlanRequest = {
     serviceTypeId: "st-1",

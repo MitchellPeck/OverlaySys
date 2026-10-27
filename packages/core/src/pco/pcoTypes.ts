@@ -67,3 +67,22 @@ export const PcoPlanItemSchema = z.object({
   lengthSec: z.number().int().nonnegative().optional(),
 });
 export type PcoPlanItem = z.infer<typeof PcoPlanItemSchema>;
+
+/** Services Live state, already normalized out of JSON:API. Times are ISO. */
+export const PcoLiveRawSchema = z.object({
+  planTitle: z.string(),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      title: z.string(),
+      sequence: z.number().int().nonnegative(),
+      itemType: PcoItemTypeSchema,
+      lengthSec: z.number().int().nonnegative().optional(),
+    }),
+  ),
+  currentItemId: z.string().nullable(),
+  currentStartedAt: z.string().nullable(),
+  nextItemId: z.string().nullable(),
+  serviceEndsAt: z.string().nullable(),
+});
+export type PcoLiveRaw = z.infer<typeof PcoLiveRawSchema>;

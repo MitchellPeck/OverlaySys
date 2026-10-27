@@ -1,5 +1,6 @@
 import {
   PcoArrangementSchema,
+  PcoLiveRawSchema,
   PcoPlanItemSchema,
   PcoPlanSchema,
   PcoServiceTypeSchema,
@@ -7,6 +8,7 @@ import {
   pickLyricsArrangement,
   type PcoArrangement,
   type PcoItemType,
+  type PcoLiveRaw,
   type PcoPlan,
   type PcoPlanItem,
   type PcoServiceType,
@@ -26,6 +28,7 @@ export interface PcoClient {
   listPlans(serviceTypeId: string): Promise<PcoPlan[]>;
   getPlanItems(serviceTypeId: string, planId: string): Promise<PcoPlanItem[]>;
   listSongArrangements(songId: string): Promise<PcoArrangement[]>;
+  getLive(serviceTypeId: string, planId: string): Promise<PcoLiveRaw>;
 }
 
 interface JsonApiResource {
@@ -123,8 +126,66 @@ export function createPcoClient(
     return data.map(parseArrangement);
   }
 
+  /** Services Live state: current/next item, when the current one started, and
+   * when the service ends. Three requests; read-only. */
+  async function getLive(serviceTypeId: string, planId: string): Promise<PcoLiveRaw> {
+    const base = `/service_types/${serviceTypeId}/plans/${planId}`;
+    const live = await getAll(`${base}/live?include=current_item_time,next_item_time`);
+    const itemsRes = await getAll(`${base}/items?per_page=100`);
+    const timesRes = await getAll(`${base}/plan_times?per_page=100`);
+
+    const liveRes = live.data[0];
+    const byKey = new Map<string, JsonApiResource>();
+    for (const r of live.included) byKey.set(`${r.type}:${r.id}`, r);
+    const itemTime = (rel: string): JsonApiResource | undefined => {
+      const ref = liveRes?.relationships?.[rel]?.data;
+      return ref ? byKey.get(`${ref.type}:${ref.id}`) : undefined;
+    };
+    const current = itemTime("current_item_time");
+    const next = itemTime("next_item_time");
+
+    const items = itemsRes.data.map((r, i) => {
+      const a = r.attributes ?? {};
+      const len = a["length"];
+      return {
+        id: r.id,
+        title: str(a["title"]) ?? "(untitled)",
+        sequence: typeof a["sequence"] === "number" ? a["sequence"] : i + 1,
+        itemType: coerceItemType(a["item_type"]),
+        lengthSec:
+          typeof len === "number" && Number.isFinite(len) && len > 0
+            ? Math.round(len)
+            : undefined,
+      };
+    });
+    items.sort((x, y) => x.sequence - y.sequence);
+
+    let serviceEndsAt: string | null = null;
+    let latest = -Infinity;
+    for (const t of timesRes.data) {
+      if (t.attributes?.["time_type"] !== "service") continue;
+      const end = str(t.attributes?.["ends_at"]);
+      const ms = end ? Date.parse(end) : NaN;
+      if (end && Number.isFinite(ms) && ms > latest) {
+        latest = ms;
+        serviceEndsAt = end;
+      }
+    }
+
+    return PcoLiveRawSchema.parse({
+      planTitle:
+        str(liveRes?.attributes?.["title"]) ?? str(liveRes?.attributes?.["series_title"]) ?? "",
+      items,
+      currentItemId: current?.relationships?.["item"]?.data?.id ?? null,
+      currentStartedAt: current ? (str(current.attributes?.["live_start_at"]) ?? null) : null,
+      nextItemId: next?.relationships?.["item"]?.data?.id ?? null,
+      serviceEndsAt,
+    });
+  }
+
   return {
     listSongArrangements,
+    getLive,
 
     async listServiceTypes() {
       const { data } = await getAll(`/service_types?per_page=100`);
