@@ -24,11 +24,21 @@ function ms(iso: string | null): number | undefined {
   return Number.isNaN(t) ? undefined : t;
 }
 
-export function mapPcoLive(raw: PcoLiveRaw): StageServiceView {
+/** The id of the item PCO is on; a header resolves to the next non-header item. */
+function currentNonHeaderId(raw: PcoLiveRaw): string | null {
+  if (raw.currentItemId === null) return null;
+  const all = [...raw.items].sort((a, b) => a.sequence - b.sequence);
+  const at = all.findIndex((i) => i.id === raw.currentItemId);
+  if (at < 0) return raw.currentItemId;
+  return all.slice(at).find((i) => i.itemType !== "header")?.id ?? null;
+}
+
+export function mapPcoLive(raw: PcoLiveRaw, now: number): StageServiceView {
   const items = raw.items
     .filter((i) => i.itemType !== "header")
     .sort((a, b) => a.sequence - b.sequence);
-  const idx = raw.currentItemId === null ? -1 : items.findIndex((i) => i.id === raw.currentItemId);
+  const currentId = currentNonHeaderId(raw);
+  const idx = currentId === null ? -1 : items.findIndex((i) => i.id === currentId);
   // A current item without a parseable start time can't anchor anything:
   // treat it as no usable current item.
   const startedAt = ms(raw.currentStartedAt);
@@ -42,10 +52,18 @@ export function mapPcoLive(raw: PcoLiveRaw): StageServiceView {
   };
 
   if (!cur || startedAt === undefined) {
-    // Status "ended" is never produced: the raw Live shape (see
-    // server/src/pco/__fixtures__/README.md) documents no field that
-    // distinguishes a finished session from one not yet started.
-    return { ...base, itemIndex: 0, current: null, next: null, laterLengthSec: 0, status: "notStarted" };
+    // The raw Live shape (see server/src/pco/__fixtures__/README.md) has no
+    // field that marks a finished session, so "ended" is inferred: nothing is
+    // current and the planned service end has passed.
+    const ended = plannedEndAt !== undefined && plannedEndAt < now;
+    return {
+      ...base,
+      itemIndex: 0,
+      current: null,
+      next: null,
+      laterLengthSec: 0,
+      status: ended ? "ended" : "notStarted",
+    };
   }
   const later = items.slice(idx + 1);
   return {

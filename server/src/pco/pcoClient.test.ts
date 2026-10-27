@@ -241,6 +241,20 @@ describe("getLive", () => {
     expect(live.currentStartedAt).toBeNull();
   });
 
+  it("coerces a non-integer or negative sequence instead of throwing", async () => {
+    const r = routes();
+    const items = r["/plan-1/items"].data as { attributes: Record<string, unknown> }[];
+    items[0]!.attributes.sequence = 2.6;
+    items[1]!.attributes.sequence = -4;
+    items[2]!.attributes.sequence = Number.NaN;
+    const live = await createPcoClient("Bearer x", stubFetch(r).impl).getLive("st", "plan-1");
+    expect(live.items.map((i) => [i.id, i.sequence])).toEqual([
+      ["item-2", 0],
+      ["item-1", 3],
+      ["item-3", 3],
+    ]);
+  });
+
   it("throws PcoAuthError on 401", async () => {
     const { impl } = stubFetch(routes(), { "/plan-1/live": 401 });
     await expect(createPcoClient("Bearer x", impl).getLive("st", "plan-1")).rejects.toBeInstanceOf(PcoAuthError);

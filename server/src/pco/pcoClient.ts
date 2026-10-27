@@ -54,6 +54,11 @@ function coerceItemType(v: unknown): PcoItemType {
   return ITEM_TYPES.includes(v as PcoItemType) ? (v as PcoItemType) : "item";
 }
 
+/** A Live item's sequence as a non-negative integer; missing / non-finite → index + 1. */
+function coerceSequence(v: unknown, index: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : index + 1;
+}
+
 /** Shared JSON:API → PcoArrangement mapping, used for both the plan item's
  * own arrangement (`getPlanItems`) and a song's sibling arrangements
  * (`listSongArrangements`). */
@@ -150,7 +155,7 @@ export function createPcoClient(
       return {
         id: r.id,
         title: str(a["title"]) ?? "(untitled)",
-        sequence: typeof a["sequence"] === "number" ? a["sequence"] : i + 1,
+        sequence: coerceSequence(a["sequence"], i),
         itemType: coerceItemType(a["item_type"]),
         lengthSec:
           typeof len === "number" && Number.isFinite(len) && len > 0

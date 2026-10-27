@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ShowSchema, StageSettingsSchema, type Show } from "@overlaysys/core";
+import { ShowSchema, StageSettingsSchema, type ChannelConfig, type Show } from "@overlaysys/core";
+import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as stageSettings from "./stageSettings";
 import {
@@ -9,6 +10,7 @@ import {
   getTimers,
   onRowTaken,
   setItemTimerDriver,
+  stageFollowedChannels,
   subscribeTimers,
 } from "./timers";
 
@@ -18,8 +20,50 @@ vi.mock("./templates", () => ({
   getTemplate: vi.fn(async () => ({ id: "t", name: "Lower Third", fields: [] })),
 }));
 vi.mock("./stageSettings", () => ({ loadStageSettings: vi.fn() }));
+vi.mock("./channelConfigs", () => ({ listChannelConfigs: vi.fn(), getChannelConfig: vi.fn() }));
 
-beforeEach(() => _resetForTest());
+let configs: ChannelConfig[] = [];
+function useConfigs(...list: Partial<ChannelConfig>[]) {
+  configs = list.map((c) => ({ renderMode: "normal", kind: "graphics", ...c }) as ChannelConfig);
+}
+
+beforeEach(() => {
+  _resetForTest();
+  useConfigs();
+  vi.mocked(channelConfigs.listChannelConfigs).mockImplementation(async () => configs);
+  vi.mocked(channelConfigs.getChannelConfig).mockImplementation(async (id) => configs.find((c) => c.id === id) ?? null);
+});
+
+describe("stageFollowedChannels", () => {
+  it("defaults to program with no stage channels", async () => {
+    useConfigs({ id: "program", name: "Program" }, { id: "lt", name: "LT" });
+    expect([...(await stageFollowedChannels())]).toEqual(["program"]);
+  });
+
+  it("collects each stage channel's follows, defaulting to program", async () => {
+    useConfigs(
+      { id: "stage1", name: "S1", kind: "stage", follows: "main" },
+      { id: "stage2", name: "S2", kind: "stage" },
+    );
+    expect([...(await stageFollowedChannels())].sort()).toEqual(["main", "program"]);
+  });
+
+  it("resolves a followed mirror channel one hop to its source", async () => {
+    useConfigs(
+      { id: "stage1", name: "S1", kind: "stage", follows: "alpha" },
+      { id: "alpha", name: "Alpha", mirrorOf: "program", renderMode: "matte" },
+    );
+    expect([...(await stageFollowedChannels())]).toEqual(["program"]);
+  });
+
+  it("ignores a stage channel that follows another stage channel", async () => {
+    useConfigs(
+      { id: "stage1", name: "S1", kind: "stage", follows: "stage2" },
+      { id: "stage2", name: "S2", kind: "stage", follows: "main" },
+    );
+    expect([...(await stageFollowedChannels())]).toEqual(["main"]);
+  });
+});
 
 describe("onRowTaken item countdown", () => {
   const NOW = 1_000_000;
@@ -33,7 +77,7 @@ describe("onRowTaken item countdown", () => {
       { kind: "graphic", id: "r2", templateId: "t", data: {} },
     ],
   });
-  const take = (rowId: string, now = NOW) => onRowTaken({ showId: "s1", rowId }, now);
+  const take = (rowId: string, now = NOW, channel = "program") => onRowTaken(channel, { showId: "s1", rowId }, now);
 
   beforeEach(() => {
     vi.mocked(shows.getShow).mockResolvedValue(show);
@@ -73,6 +117,27 @@ describe("onRowTaken item countdown", () => {
     await take("r1");
     await take("r2");
     expect(getTimers().map((t) => t.id)).toEqual([manual]);
+  });
+
+  it("a take on a channel no stage monitor follows leaves the item timer alone", async () => {
+    await take("r1");
+    await take("r2", NOW + 1000, "lower-thirds");
+    expect(getTimers()).toEqual([expect.objectContaining({ id: "current-item", rowId: "r1" })]);
+    await take("r1", NOW + 2000, "lower-thirds");
+    expect(getTimers()[0]!.anchor).toBe(NOW + 300_000);
+  });
+
+  it("a take on a non-followed channel does not start the item timer", async () => {
+    await take("r1", NOW, "lower-thirds");
+    expect(getTimers()).toEqual([]);
+  });
+
+  it("a take on the channel a stage monitor follows drives it", async () => {
+    useConfigs({ id: "stage1", name: "S1", kind: "stage", follows: "main" });
+    await take("r1");
+    expect(getTimers()).toEqual([]);
+    await take("r1", NOW, "main");
+    expect(getTimers()).toEqual([expect.objectContaining({ id: "current-item", rowId: "r1" })]);
   });
 
   it("setting off does nothing", async () => {

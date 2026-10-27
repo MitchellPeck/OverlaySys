@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import type { PcoLiveRaw, Show } from "@overlaysys/core";
 import * as shows from "../shows";
 import * as timers from "../timers";
@@ -226,6 +227,89 @@ describe("pcoLiveSync", () => {
     expect(state()).toMatchObject({ enabled: true, status: "notStarted" });
     expect(state().service?.status).toBe("notStarted");
     expect(timers.isItemTimerDriverExternal()).toBe(false);
+  });
+
+  it("clears a take-based item timer while live on an item with no length", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    timers.dispatchTimers({
+      type: "setItem",
+      source: "item",
+      rowId: "r0",
+      label: "Take",
+      anchor: T0 + 60_000,
+      durationMs: 60_000,
+      overtime: true,
+    });
+    const noLength = liveRaw({
+      items: [{ id: "B", title: "Sermon", sequence: 1, itemType: "item" }],
+    });
+    await live.startLiveSync("s1", { client: fakeClient(async () => noLength) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state().status).toBe("live");
+    expect(timers.getTimers()).toEqual([]);
+  });
+
+  it("a parse failure sets status error, keeps polling and clears on success", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = fakeClient(async () => liveRaw());
+    const zod = new ZodError([]);
+    vi.mocked(client.getLive).mockResolvedValueOnce(liveRaw()).mockRejectedValueOnce(zod);
+    const l = vi.fn();
+    live.subscribeLiveSync(l);
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(timers.getTimers()).toHaveLength(1);
+    l.mockClear();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(state()).toMatchObject({ enabled: true, status: "error", error: "Planning Center response not understood" });
+    expect(state().service?.status).toBe("error");
+    expect(timers.getTimers()).toEqual([]);
+    expect(l).toHaveBeenCalledTimes(1);
+    await expectNextCallAfter(client, 10_000); // backed off, still polling
+    expect(state().status).toBe("live");
+    expect(state().error).toBeUndefined();
+    warn.mockRestore();
+  });
+
+  it("a non-auth request failure surfaces the error and clears it on success", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = fakeClient(async () => liveRaw());
+    const failure = new Error("Planning Center request failed (404): x");
+    vi.mocked(client.getLive).mockResolvedValueOnce(liveRaw()).mockRejectedValueOnce(failure).mockRejectedValueOnce(failure);
+    const l = vi.fn();
+    live.subscribeLiveSync(l);
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    l.mockClear();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(state()).toMatchObject({ enabled: true, status: "live", error: failure.message });
+    expect(l).toHaveBeenCalledTimes(1);
+    await expectNextCallAfter(client, 10_000); // same error again: no rebroadcast
+    expect(l).toHaveBeenCalledTimes(1);
+    await expectNextCallAfter(client, 20_000);
+    expect(state().error).toBeUndefined();
+    expect(l).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+
+  it("does not rebroadcast an unchanged poll except a heartbeat", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    const client = fakeClient(async () => liveRaw());
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    const l = vi.fn();
+    live.subscribeLiveSync(l);
+    await vi.advanceTimersByTimeAsync(live.HEARTBEAT_MS - 5000);
+    expect(client.getLive).toHaveBeenCalledTimes(live.HEARTBEAT_MS / 5000);
+    expect(l).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(l).toHaveBeenCalledTimes(1);
+    expect(state().lastPolledAt).toBe(Date.now());
+    vi.mocked(client.getLive).mockResolvedValue(notStarted());
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(l).toHaveBeenCalledTimes(2);
   });
 
   it("notifies subscribers on state changes", async () => {

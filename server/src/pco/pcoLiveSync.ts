@@ -3,6 +3,7 @@
 // current-item timer (source "pco") while the service is live. Read-only and
 // runtime only: off by default, a server restart turns it off.
 
+import { ZodError } from "zod";
 import { CURRENT_ITEM_TIMER_ID, mapPcoLive, type StageServiceView } from "@overlaysys/core";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
 import * as shows from "../shows";
@@ -12,6 +13,18 @@ import { getPcoAuthorization } from "./pcoTokens";
 
 export const POLL_MS = 5000;
 export const MAX_BACKOFF_MS = 60_000;
+/**
+ * An unchanged poll still rebroadcasts this often, refreshing lastPolledAt.
+ * Under the operator's 30 s "stale" threshold (STALE_MS in StagePanel) by a
+ * poll's margin, so a healthy sync never reads as stale between heartbeats.
+ */
+export const HEARTBEAT_MS = 25_000;
+const NOT_UNDERSTOOD = "Planning Center response not understood";
+
+/** A response we couldn't read: schema mismatch or malformed JSON. */
+function isParseFailure(err: unknown): boolean {
+  return err instanceof ZodError || err instanceof SyntaxError || (err instanceof Error && err.name === "ZodError");
+}
 
 type Status = "idle" | "live" | "notStarted" | "ended" | "error";
 
@@ -114,7 +127,10 @@ function driveItemTimer(view: StageServiceView, now: number): void {
     );
     return;
   }
-  clearPcoItemTimer();
+  // Live on an item with no length: PCO owns the item timer (take-based
+  // timers are suppressed), so no countdown of any source may linger.
+  if (view.status === "live") timers.dispatchTimers({ type: "clearItem" }, now);
+  else clearPcoItemTimer();
 }
 
 export async function startLiveSync(
@@ -141,34 +157,63 @@ export async function startLiveSync(
   const gen = generation;
   const c = client;
   let delay = POLL_MS;
+  let lastNotifiedAt = -Infinity;
+  /**
+   * Broadcast only real changes, plus a heartbeat every HEARTBEAT_MS so the
+   * operator's staleness check against lastPolledAt keeps working.
+   */
+  const commit = (next: SyncState, t: number): void => {
+    const changed =
+      next.enabled !== state.enabled ||
+      next.status !== state.status ||
+      next.error !== state.error ||
+      JSON.stringify(next.view) !== JSON.stringify(state.view);
+    state = next;
+    if (changed || t - lastNotifiedAt >= HEARTBEAT_MS) {
+      lastNotifiedAt = t;
+      notify();
+    }
+  };
+  /** Status "error" on the sync and its view; releases the item timer. */
+  const fail = (message: string): void => {
+    clearPcoItemTimer();
+    commit(
+      {
+        ...state,
+        status: "error",
+        error: message,
+        view: state.view ? { ...state.view, status: "error", error: message } : null,
+      },
+      now(),
+    );
+  };
   const poll = async (): Promise<void> => {
     pollTimer = null;
     try {
       const raw = await c.getLive(plan.serviceTypeId, plan.planId);
       if (gen !== generation) return;
-      const view = mapPcoLive(raw);
       const t = now();
-      state = { enabled: true, showId, status: view.status, lastPolledAt: t, view };
+      const view = mapPcoLive(raw, t);
       delay = POLL_MS;
+      commit({ enabled: true, showId, status: view.status, lastPolledAt: t, view }, t);
       driveItemTimer(view, t);
-      notify();
     } catch (err) {
       if (gen !== generation) return;
       if (err instanceof PcoAuthError) {
         // Stop polling but stay enabled so the operator sees why.
-        state = {
-          ...state,
-          status: "error",
-          error: err.message,
-          view: state.view ? { ...state.view, status: "error", error: err.message } : null,
-        };
-        clearPcoItemTimer();
-        notify();
+        fail(err.message);
         return;
       }
-      // Network or server error: keep the last view and status, back off.
       delay = Math.min(delay * 2, MAX_BACKOFF_MS);
       console.warn("[pcoLiveSync] poll failed", err);
+      if (isParseFailure(err)) {
+        // PCO answered with something we can't read: say so, keep trying.
+        fail(NOT_UNDERSTOOD);
+      } else {
+        // Network or server error (5xx, 403, 404…): keep the last view and
+        // status, surface the error, back off.
+        commit({ ...state, error: err instanceof Error ? err.message : String(err) }, now());
+      }
     }
     pollTimer = setTimeout(() => void poll(), delay);
   };

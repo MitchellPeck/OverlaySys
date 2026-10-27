@@ -24,7 +24,7 @@ function raw(over: Partial<PcoLiveRaw> = {}): PcoLiveRaw {
 
 describe("mapPcoLive", () => {
   it("excludes headers from count, index and later length", () => {
-    const v = mapPcoLive(raw());
+    const v = mapPcoLive(raw(), NOW);
     expect(v.status).toBe("live");
     expect(v.itemIndex).toBe(2);
     expect(v.itemCount).toBe(3);
@@ -36,7 +36,7 @@ describe("mapPcoLive", () => {
   });
 
   it("reports notStarted with no current item", () => {
-    const v = mapPcoLive(raw({ currentItemId: null, currentStartedAt: null, nextItemId: null }));
+    const v = mapPcoLive(raw({ currentItemId: null, currentStartedAt: null, nextItemId: null }), NOW);
     expect(v.status).toBe("notStarted");
     expect(v.current).toBeNull();
     expect(v.itemIndex).toBe(0);
@@ -45,7 +45,7 @@ describe("mapPcoLive", () => {
 
   it("treats a current item without a usable start time as not started", () => {
     for (const currentStartedAt of [null, "not a date"]) {
-      const v = mapPcoLive(raw({ currentStartedAt }));
+      const v = mapPcoLive(raw({ currentStartedAt }), NOW);
       expect(v.status).toBe("notStarted");
       expect(v.current).toBeNull();
       expect(v.next).toBeNull();
@@ -54,15 +54,40 @@ describe("mapPcoLive", () => {
   });
 
   it("leaves plannedEndAt undefined when the service time is missing", () => {
-    const v = mapPcoLive(raw({ serviceEndsAt: null }));
+    const v = mapPcoLive(raw({ serviceEndsAt: null }), NOW);
     expect(v.plannedEndAt).toBeUndefined();
     expect(serviceDeltaSec(v, NOW)).toBeNull();
+  });
+
+  it("falls back to the next non-header item when the current item is a header", () => {
+    const v = mapPcoLive(raw({ currentItemId: "h" }), NOW);
+    expect(v.status).toBe("live");
+    expect(v.current).toMatchObject({ id: "a", title: "A", lengthSec: 300 });
+    expect(v.itemIndex).toBe(1);
+    expect(v.next).toEqual({ title: "B" });
+  });
+
+  it("a trailing header with no item after it is not started", () => {
+    const r = raw({ currentItemId: "z" });
+    r.items.push({ id: "z", title: "Closing", sequence: 9, itemType: "header" });
+    const v = mapPcoLive(r, NOW);
+    expect(v.status).toBe("notStarted");
+    expect(v.current).toBeNull();
+  });
+
+  it("reports ended with no current item once the planned end has passed", () => {
+    const none = { currentItemId: null, currentStartedAt: null, nextItemId: null };
+    expect(mapPcoLive(raw({ ...none, serviceEndsAt: iso(NOW - 1) }), NOW).status).toBe("ended");
+    expect(mapPcoLive(raw({ ...none, serviceEndsAt: iso(NOW + 1) }), NOW).status).toBe("notStarted");
+    expect(mapPcoLive(raw({ ...none, serviceEndsAt: null }), NOW).status).toBe("notStarted");
+    // a current item is live even past the planned end
+    expect(mapPcoLive(raw({ serviceEndsAt: iso(NOW - 1) }), NOW).status).toBe("live");
   });
 
   it("leaves lengthSec undefined when the current item has none", () => {
     const r = raw();
     r.items[2] = { id: "b", title: "B", sequence: 3, itemType: "item" };
-    const v = mapPcoLive(r);
+    const v = mapPcoLive(r, NOW);
     expect(v.current?.lengthSec).toBeUndefined();
     // current counts 0 remaining: projected end = now + 900 s; planned = now + 1200 s
     expect(serviceDeltaSec(v, NOW)).toBe(-300);
@@ -71,9 +96,9 @@ describe("mapPcoLive", () => {
 
 describe("serviceDeltaSec", () => {
   it("is positive when the service will run over", () => {
-    expect(serviceDeltaSec(mapPcoLive(raw()), NOW)).toBe(200);
+    expect(serviceDeltaSec(mapPcoLive(raw(), NOW), NOW)).toBe(200);
   });
   it("is null with no current item", () => {
-    expect(serviceDeltaSec(mapPcoLive(raw({ currentItemId: null })), NOW)).toBeNull();
+    expect(serviceDeltaSec(mapPcoLive(raw({ currentItemId: null }), NOW), NOW)).toBeNull();
   });
 });

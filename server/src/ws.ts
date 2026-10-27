@@ -69,7 +69,7 @@ channels.onLiveRow((channel, source) => {
   const syncShowId = pcoLiveSync.getLiveSyncShowId();
   if (syncShowId !== null && source.showId !== syncShowId) pcoLiveSync.stopLiveSync();
   void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
-  void timers.onRowTaken(source).catch((err) => console.warn("[timers] onRowTaken failed", err));
+  void timers.onRowTaken(channel, source).catch((err) => console.warn("[timers] onRowTaken failed", err));
 });
 timers.subscribeTimers(() => {
   stageFeedHub.invalidateAll();
