@@ -9,3 +9,4 @@ export { ImageInput } from "./ImageInput";
 export { VideoInput } from "./VideoInput";
 export { GradientStops } from "./GradientStops";
 export * from "./utils";
+export * from "./stageGeometry";
