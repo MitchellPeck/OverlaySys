@@ -43,6 +43,11 @@ interface JsonApiDoc {
   links?: { next?: string | null };
 }
 
+/** Item length in whole seconds; undefined for missing, zero, negative or non-finite. */
+function parseLengthSec(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : undefined;
+}
+
 function str(v: unknown): string | undefined {
   if (v === null || v === undefined) return undefined;
   if (typeof v === "string") return v.trim() === "" ? undefined : v;
@@ -151,16 +156,12 @@ export function createPcoClient(
 
     const items = itemsRes.data.map((r, i) => {
       const a = r.attributes ?? {};
-      const len = a["length"];
       return {
         id: r.id,
         title: str(a["title"]) ?? "(untitled)",
         sequence: coerceSequence(a["sequence"], i),
         itemType: coerceItemType(a["item_type"]),
-        lengthSec:
-          typeof len === "number" && Number.isFinite(len) && len > 0
-            ? Math.round(len)
-            : undefined,
+        lengthSec: parseLengthSec(a["length"]),
       };
     });
     items.sort((x, y) => x.sequence - y.sequence);
@@ -177,12 +178,14 @@ export function createPcoClient(
       }
     }
 
+    const currentItemId = current?.relationships?.["item"]?.data?.id ?? null;
     return PcoLiveRawSchema.parse({
       planTitle:
         str(liveRes?.attributes?.["title"]) ?? str(liveRes?.attributes?.["series_title"]) ?? "",
       items,
-      currentItemId: current?.relationships?.["item"]?.data?.id ?? null,
-      currentStartedAt: current ? (str(current.attributes?.["live_start_at"]) ?? null) : null,
+      currentItemId,
+      // No current item means no start time either.
+      currentStartedAt: currentItemId && current ? (str(current.attributes?.["live_start_at"]) ?? null) : null,
       nextItemId: next?.relationships?.["item"]?.data?.id ?? null,
       serviceEndsAt,
     });
@@ -251,7 +254,7 @@ export function createPcoClient(
           itemType: coerceItemType(a["item_type"]),
           description: str(a["description"]),
           htmlDetails: str(a["html_details"]),
-          lengthSec: typeof a["length"] === "number" && Number.isFinite(a["length"]) && a["length"] > 0 ? Math.round(a["length"]) : undefined,
+          lengthSec: parseLengthSec(a["length"]),
           song,
           arrangement,
         });

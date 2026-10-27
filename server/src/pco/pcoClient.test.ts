@@ -241,6 +241,29 @@ describe("getLive", () => {
     expect(live.currentStartedAt).toBeNull();
   });
 
+  it("has no current start time when the current_item_time names no item", async () => {
+    const r = routes();
+    const inc = r["/plan-1/live"].included.find((x: any) => x.type === "ItemTime" && x.id === r["/plan-1/live"].data.relationships.current_item_time.data.id);
+    inc.relationships.item = { data: null };
+    const live = await createPcoClient("Bearer x", stubFetch(r).impl).getLive("st", "plan-1");
+    expect(live.currentItemId).toBeNull();
+    expect(live.currentStartedAt).toBeNull();
+  });
+
+  it("has a null serviceEndsAt when no plan time is a service", async () => {
+    const r = routes();
+    r["/plan-1/plan_times"].data = r["/plan-1/plan_times"].data.filter((t: any) => t.attributes.time_type !== "service");
+    const live = await createPcoClient("Bearer x", stubFetch(r).impl).getLive("st", "plan-1");
+    expect(live.serviceEndsAt).toBeNull();
+  });
+
+  it("takes the latest service end regardless of plan_times order", async () => {
+    const r = routes();
+    r["/plan-1/plan_times"].data.reverse();
+    const live = await createPcoClient("Bearer x", stubFetch(r).impl).getLive("st", "plan-1");
+    expect(live.serviceEndsAt).toBe("2026-10-25T19:00:00Z");
+  });
+
   it("coerces a non-integer or negative sequence instead of throwing", async () => {
     const r = routes();
     const items = r["/plan-1/items"].data as { attributes: Record<string, unknown> }[];
@@ -260,4 +283,3 @@ describe("getLive", () => {
     await expect(createPcoClient("Bearer x", impl).getLive("st", "plan-1")).rejects.toBeInstanceOf(PcoAuthError);
   });
 });
-
