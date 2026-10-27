@@ -2,27 +2,13 @@ import { randomUUID } from "node:crypto";
 import {
   BUILT_IN_STAGE_LAYOUTS,
   SPEAKER_LAYOUT,
+  isBuiltInStageLayoutId,
+  stageLayoutMeta,
   type StageLayout,
+  type StageLayoutMeta,
 } from "@overlaysys/core";
 import * as storage from "./storage";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
-
-// Local until Phase 5 Task 2 lands the core equivalents
-// (`StageLayoutMeta`, `isBuiltInStageLayoutId`); switch to those then.
-export interface StageLayoutMeta {
-  id: string;
-  name: string;
-  size: { w: number; h: number };
-  builtIn: boolean;
-}
-
-function isBuiltInStageLayoutId(id: string): boolean {
-  return BUILT_IN_STAGE_LAYOUTS.some((l) => l.id === id);
-}
-
-function metaOf(l: StageLayout, builtIn: boolean): StageLayoutMeta {
-  return { id: l.id, name: l.name, size: l.size, builtIn };
-}
 
 export class ReadOnlyLayoutError extends Error {
   readonly code = "read_only";
@@ -52,8 +38,8 @@ export async function listStageLayoutMetas(): Promise<StageLayoutMeta[]> {
   await ensureLoaded();
   const stored = liveOnly(REGISTRY.values()).sort((a, b) => a.name.localeCompare(b.name));
   return [
-    ...BUILT_IN_STAGE_LAYOUTS.map((l) => metaOf(l, true)),
-    ...stored.map((l) => metaOf(l, false)),
+    ...BUILT_IN_STAGE_LAYOUTS.map((l) => stageLayoutMeta(l)),
+    ...stored.map((l) => stageLayoutMeta(l)),
   ];
 }
 

@@ -164,7 +164,74 @@ export const SPEAKER_LAYOUT: StageLayout = StageLayoutSchema.parse({
   ],
 });
 
-export const BUILT_IN_STAGE_LAYOUTS: StageLayout[] = [SPEAKER_LAYOUT];
+const MESSAGE_BAR_STYLE = { align: "center", vAlign: "middle", color: "#000000", background: "#ffd166", autoFit: true } as const;
+
+/** Lyrics: the live slide dominates; next slide, clock and message bar below. */
+export const LYRICS_LAYOUT: StageLayout = StageLayoutSchema.parse({
+  id: "lyrics",
+  name: "Lyrics",
+  builtIn: true,
+  size: { w: 1920, h: 1080 },
+  background: "#000000",
+  widgets: [
+    { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1872, h: 720 }, props: { showReference: false }, style: { fontSize: 96, align: "center", vAlign: "middle" } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 760, w: 1480, h: 200 }, props: { maxLines: 2 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT" } },
+    { id: "clock", kind: "clock", rect: { x: 1528, y: 760, w: 368, h: 200 }, style: { fontSize: 72, align: "right", vAlign: "middle", autoFit: false } },
+    { id: "message", kind: "message", rect: { x: 24, y: 976, w: 1872, h: 80 }, style: { fontSize: 52, ...MESSAGE_BAR_STYLE } },
+  ],
+});
+
+/** Scripture: reference + verse, the next verse, and a notes sidebar. */
+export const SCRIPTURE_LAYOUT: StageLayout = StageLayoutSchema.parse({
+  id: "scripture",
+  name: "Scripture",
+  builtIn: true,
+  size: { w: 1920, h: 1080 },
+  background: "#000000",
+  widgets: [
+    { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1300, h: 820 }, props: { showReference: true }, style: { fontSize: 64, label: "SCRIPTURE" } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 860, w: 1300, h: 196 }, style: { fontSize: 36, color: "#bbbbbb", label: "NEXT VERSE" } },
+    { id: "notes", kind: "sermonNotes", rect: { x: 1348, y: 24, w: 548, h: 936 }, style: { fontSize: 36, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
+    { id: "message", kind: "message", rect: { x: 1348, y: 976, w: 548, h: 80 }, style: { fontSize: 40, ...MESSAGE_BAR_STYLE } },
+  ],
+});
+
+export const BUILT_IN_STAGE_LAYOUTS: StageLayout[] = [SPEAKER_LAYOUT, LYRICS_LAYOUT, SCRIPTURE_LAYOUT];
+
+export const StageLayoutMetaSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  size: z.object({ w: z.number().positive(), h: z.number().positive() }),
+  builtIn: z.boolean(),
+});
+export type StageLayoutMeta = z.infer<typeof StageLayoutMetaSchema>;
+
+export function stageLayoutMeta(l: StageLayout): StageLayoutMeta {
+  return { id: l.id, name: l.name, size: l.size, builtIn: l.builtIn === true };
+}
+
+export function isBuiltInStageLayoutId(id: string): boolean {
+  return BUILT_IN_STAGE_LAYOUTS.some((l) => l.id === id);
+}
+
+/** A new widget of `kind` with every default taken from the schema. */
+export function defaultStageWidget(kind: StageWidgetKind, id: string, rect: StageRect): StageWidget {
+  return StageWidgetSchema.parse({ id, kind, rect });
+}
+
+/** Palette names, one per widget kind. */
+export const STAGE_WIDGET_LABELS: Record<StageWidgetKind, string> = {
+  currentSlide: "Current slide",
+  nextSlide: "Next slide",
+  rowTitle: "Row title",
+  rowCue: "Row cue",
+  clock: "Clock",
+  timer: "Timer",
+  videoRemaining: "Video remaining",
+  sermonNotes: "Sermon notes",
+  message: "Message",
+  text: "Text",
+};
 
 /** The built-in with this id, else the default. Phase 5 adds stored layouts. */
 export function resolveStageLayout(id: string | undefined): StageLayout {

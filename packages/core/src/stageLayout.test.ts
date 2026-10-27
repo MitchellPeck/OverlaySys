@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_STAGE_LAYOUTS,
   DEFAULT_STAGE_LAYOUT_ID,
+  LYRICS_LAYOUT,
+  SCRIPTURE_LAYOUT,
   SPEAKER_LAYOUT,
+  STAGE_WIDGET_LABELS,
+  type StageWidgetKind,
+  defaultStageWidget,
+  isBuiltInStageLayoutId,
+  stageLayoutMeta,
   StageLayoutSchema,
   StageWidgetSchema,
   resolveStageLayout,
@@ -99,5 +106,49 @@ describe("notes and message widgets", () => {
     const kinds = SPEAKER_LAYOUT.widgets.map((w) => w.kind);
     expect(kinds).toContain("sermonNotes");
     expect(kinds).toContain("message");
+  });
+});
+
+describe("Phase 5 built-ins and helpers", () => {
+  it("ships three read-only built-ins", () => {
+    expect(BUILT_IN_STAGE_LAYOUTS.map((l) => l.id)).toEqual(["speaker", "lyrics", "scripture"]);
+    for (const l of BUILT_IN_STAGE_LAYOUTS) {
+      expect(l.builtIn).toBe(true);
+      expect(StageLayoutSchema.parse(l)).toEqual(l);
+    }
+  });
+  it("lyrics is lyrics-first", () => {
+    const kinds = LYRICS_LAYOUT.widgets.map((w) => w.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["currentSlide", "nextSlide", "clock", "message"]));
+    const cur = LYRICS_LAYOUT.widgets.find((w) => w.kind === "currentSlide")!;
+    expect(cur.rect.w * cur.rect.h).toBeGreaterThan(0.5 * 1920 * 1080 * 0.5);
+  });
+  it("scripture has reference text, next verse and a notes sidebar", () => {
+    const kinds = SCRIPTURE_LAYOUT.widgets.map((w) => w.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["currentSlide", "nextSlide", "sermonNotes", "message"]));
+  });
+  it("widgets of every built-in stay inside the canvas", () => {
+    for (const l of BUILT_IN_STAGE_LAYOUTS)
+      for (const w of l.widgets) {
+        expect(w.rect.x).toBeGreaterThanOrEqual(0);
+        expect(w.rect.y).toBeGreaterThanOrEqual(0);
+        expect(w.rect.x + w.rect.w).toBeLessThanOrEqual(l.size.w);
+        expect(w.rect.y + w.rect.h).toBeLessThanOrEqual(l.size.h);
+      }
+  });
+  it("isBuiltInStageLayoutId", () => {
+    expect(isBuiltInStageLayoutId("lyrics")).toBe(true);
+    expect(isBuiltInStageLayoutId("stage-layout-1234")).toBe(false);
+  });
+  it("defaultStageWidget fills schema defaults for every kind", () => {
+    for (const kind of Object.keys(STAGE_WIDGET_LABELS) as StageWidgetKind[]) {
+      const w = defaultStageWidget(kind, "w1", { x: 0, y: 0, w: 100, h: 50 });
+      expect(w.kind).toBe(kind);
+      expect(w.style.fontSize).toBe(64);
+    }
+    expect(defaultStageWidget("timer", "t", { x: 0, y: 0, w: 1, h: 1 }).props).toMatchObject({ source: "firstActive" });
+  });
+  it("stageLayoutMeta", () => {
+    expect(stageLayoutMeta(SPEAKER_LAYOUT)).toEqual({ id: "speaker", name: "Speaker", size: { w: 1920, h: 1080 }, builtIn: true });
   });
 });
