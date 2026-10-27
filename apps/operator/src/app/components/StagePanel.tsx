@@ -10,7 +10,7 @@ import { getStageSettings } from "@/lib/stageSettingsClient";
 
 const MAX_MESSAGE = 200;
 /** PCO Live reads as stale once its last successful poll is older than this. */
-const STALE_MS = 30_000;
+const STALE_MS = 35_000;
 
 export function StagePanel() {
   const { send } = useWs();

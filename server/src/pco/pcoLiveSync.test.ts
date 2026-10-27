@@ -159,6 +159,57 @@ describe("pcoLiveSync", () => {
     expect(client.getLive).toHaveBeenCalledTimes(1);
   });
 
+  it("auth error clears the pco item timer", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    const client = fakeClient(async () => liveRaw());
+    vi.mocked(client.getLive).mockResolvedValueOnce(liveRaw()).mockRejectedValue(new PcoAuthError());
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(timers.getTimers()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(state().status).toBe("error");
+    expect(timers.getTimers()).toEqual([]);
+  });
+
+  it("a stale in-flight poll resolving after stop changes nothing", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    let resolve!: (r: PcoLiveRaw) => void;
+    const client = fakeClient(() => new Promise<PcoLiveRaw>((r) => (resolve = r)));
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.getLive).toHaveBeenCalledTimes(1);
+    live.stopLiveSync();
+    resolve(liveRaw());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state()).toMatchObject({ enabled: false, showId: null, status: "idle", service: null });
+    expect(timers.getTimers()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(client.getLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("a stop that lands while the show is loading cancels the start", async () => {
+    let release!: (s: Show) => void;
+    vi.mocked(shows.getShow).mockImplementationOnce(() => new Promise<Show>((r) => (release = r)));
+    const client = fakeClient(async () => liveRaw());
+    const started = live.startLiveSync("s1", { client });
+    live.stopLiveSync();
+    release(showWithPlans("s1", ["p1"]));
+    expect(await started).toMatchObject({ ok: false });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(client.getLive).not.toHaveBeenCalled();
+    expect(state()).toMatchObject({ enabled: false, status: "idle" });
+  });
+
+  it("restarting the same show keeps the previous view until the first poll", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    await live.startLiveSync("s1", { client: fakeClient(async () => liveRaw()) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state().service?.status).toBe("live");
+    await live.startLiveSync("s1", { client: fakeClient(() => new Promise(() => {})) });
+    expect(state().service?.status).toBe("live");
+    expect(timers.getTimers()).toHaveLength(1);
+  });
+
   it("drives the item timer while live", async () => {
     useShows(showWithPlans("s1", ["p1"]));
     const client = fakeClient(async () => liveRaw());
@@ -318,7 +369,8 @@ describe("pcoLiveSync", () => {
     const off = live.subscribeLiveSync(l);
     await live.startLiveSync("s1", { client: fakeClient(async () => liveRaw()) });
     await vi.advanceTimersByTimeAsync(0);
-    expect(l.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // One for start, one for the first poll's change.
+    expect(l).toHaveBeenCalledTimes(2);
     off();
   });
 });

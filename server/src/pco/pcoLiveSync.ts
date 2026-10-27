@@ -15,7 +15,7 @@ export const POLL_MS = 5000;
 export const MAX_BACKOFF_MS = 60_000;
 /**
  * An unchanged poll still rebroadcasts this often, refreshing lastPolledAt.
- * Under the operator's 30 s "stale" threshold (STALE_MS in StagePanel) by a
+ * Under the operator's 35 s "stale" threshold (STALE_MS in StagePanel) by a
  * poll's margin, so a healthy sync never reads as stale between heartbeats.
  */
 export const HEARTBEAT_MS = 25_000;
@@ -138,7 +138,12 @@ export async function startLiveSync(
   deps: { client?: PcoClient; now?: () => number } = {},
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const now = deps.now ?? Date.now;
+  // A start/stop that lands while we await the show supersedes this call.
+  const startedAtGeneration = generation;
   const show = await shows.getShow(showId);
+  if (generation !== startedAtGeneration) {
+    return { ok: false, error: "Live sync was changed before it could start." };
+  }
   const plan = show ? pickPlan(show.rows) : null;
   if (!plan) return { ok: false, error: "This show has no Planning Center items." };
   let client = deps.client;
@@ -149,9 +154,18 @@ export async function startLiveSync(
   }
 
   const differentShow = state.enabled && state.showId !== showId;
+  // Restarting the same show keeps what monitors already show (and the item
+  // timer it drives) until the first poll lands.
+  const carry = state.enabled && !differentShow ? state : null;
   cancelLoop();
   if (differentShow) clearPcoItemTimer();
-  state = { enabled: true, showId, status: "idle", lastPolledAt: null, view: null };
+  state = {
+    enabled: true,
+    showId,
+    status: carry?.status ?? "idle",
+    lastPolledAt: carry?.lastPolledAt ?? null,
+    view: carry?.view ?? null,
+  };
   notify();
 
   const gen = generation;
