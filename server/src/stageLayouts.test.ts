@@ -132,6 +132,22 @@ describe("stage layouts registry", () => {
     spy.mockRestore();
   });
 
+  it("first load fails, retry succeeds", async () => {
+    await storage.saveStageLayout(mine());
+    vi.resetModules();
+    const fresh = await import("./stageLayouts");
+    const freshStorage = await import("./storage");
+    const spy = vi
+      .spyOn(freshStorage, "loadAllStageLayouts")
+      .mockRejectedValueOnce(new Error("disk busy"));
+    await expect(fresh.listStageLayoutMetas()).rejects.toThrow("disk busy");
+    // The failed load must not stick: the next call loads again and succeeds.
+    const metas = await fresh.listStageLayoutMetas();
+    expect(metas.map((m) => m.id)).toContain("stage-layout-aaaa1111");
+    expect(spy).toHaveBeenCalledTimes(2);
+    spy.mockRestore();
+  });
+
   it("storage rejects an unsafe id and loadStageLayout reads one file", async () => {
     await expect(
       storage.saveStageLayout({ ...mine(), id: "../x" } as StageLayout),
