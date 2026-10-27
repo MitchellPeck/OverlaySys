@@ -14,3 +14,4 @@ export { StageInspector } from "./StageInspector";
 export { StageWidgetList } from "./StageWidgetList";
 export { StagePalette, STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
 export * from "./stageInspectorLogic";
+export { StageCanvas, type StageCanvasProps } from "./StageCanvas";

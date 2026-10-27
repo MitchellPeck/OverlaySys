@@ -1,6 +1,6 @@
 /** Pure stage-layout geometry: move, resize, snap, align, distribute. All values are canvas px. */
 
-export type StageRect = { x: number; y: number; w: number; h: number };
+import type { StageRect } from "@overlaysys/core";
 
 export const MIN_WIDGET_SIZE = 20;
 export const SNAP_SCREEN_PX = 6;
