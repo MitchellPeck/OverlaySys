@@ -63,7 +63,7 @@ export function decodeTimerSource(v: string): StageTimerSource {
 
 /**
  * Select options for a timer source. A stored source that isn't in the
- * channel / timer lists is appended as "(missing) ..." so it isn't silently lost.
+ * channel / timer lists is appended (flagged as missing) so it isn't silently lost.
  */
 export function timerSourceOptions(
   current: StageTimerSource,
@@ -78,9 +78,15 @@ export function timerSourceOptions(
   ];
   const cur = encodeTimerSource(current);
   if (!opts.some((o) => o.value === cur)) {
-    const name =
-      typeof current === "string" ? current : "channel" in current ? `Channel: ${current.channel}` : `Timer: ${current.timerId}`;
-    opts.push({ value: cur, label: `(missing) ${name}` });
+    // Timer ids are runtime-only (gone after a restart); the widget then shows
+    // the first active timer, so say that rather than print a raw id.
+    const label =
+      typeof current === "string"
+        ? `(missing) ${current}`
+        : "channel" in current
+          ? `(missing) Channel: ${current.channel}`
+          : "Missing timer (falls back to first active)";
+    opts.push({ value: cur, label });
   }
   return opts;
 }

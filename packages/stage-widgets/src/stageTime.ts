@@ -74,11 +74,17 @@ export function serviceProgressText(
   return parts.join(" · ");
 }
 
+/** The first running timer, else the first timer at all. */
+function firstActive(timers: StageTimer[]): StageTimer | undefined {
+  return timers.find((x) => x.running) ?? timers[0];
+}
+
 export function pickStageTimer(timers: StageTimer[], source: StageTimerSource): StageTimer | undefined {
-  if (source === "firstActive") return timers[0];
+  if (source === "firstActive") return firstActive(timers);
   if (source === "currentItem") return timers.find((x) => x.id === CURRENT_ITEM_TIMER_ID);
   if ("channel" in source) return timers.find((x) => x.channel === source.channel);
-  return timers.find((x) => x.id === source.timerId);
+  // Timers live in server memory, so a stored id dies on restart: fall back.
+  return timers.find((x) => x.id === source.timerId) ?? firstActive(timers);
 }
 
 export function videoRemainingSec(v: StageVideo, serverNowMs: number): number {

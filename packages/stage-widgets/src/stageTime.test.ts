@@ -103,5 +103,17 @@ describe("stageTime", () => {
       expect(pickStageTimer(all, { channel: "b" })).toBe(g2);
       expect(pickStageTimer(all, { timerId: "g1" })).toBe(g1);
     });
+    it("firstActive picks the first running timer, else the first", () => {
+      const stopped = { ...base, id: "m", running: false };
+      expect(pickStageTimer([stopped, item, g1], "firstActive")).toBe(item);
+      const stopped2 = { ...g1, running: false };
+      expect(pickStageTimer([stopped, stopped2], "firstActive")).toBe(stopped);
+      expect(pickStageTimer([], "firstActive")).toBeUndefined();
+    });
+    it("a timerId that no longer exists falls back to firstActive", () => {
+      const stopped = { ...base, id: "m", running: false };
+      expect(pickStageTimer([stopped, g1], { timerId: "gone" })).toBe(g1);
+      expect(pickStageTimer([], { timerId: "gone" })).toBeUndefined();
+    });
   });
 });

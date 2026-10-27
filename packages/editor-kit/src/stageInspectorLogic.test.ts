@@ -14,7 +14,15 @@ describe("timer source encoding", () => {
   });
   it("lists options and flags a missing stored source", () => {
     const opts = timerSourceOptions({ timerId: "gone" }, [{ id: "c1", name: "Main" }], [{ id: "t1", label: "Sermon" }]);
-    expect(opts.map((o) => o.label)).toEqual(["First active", "Current item", "Channel: Main", "Timer: Sermon", "(missing) Timer: gone"]);
+    expect(opts.map((o) => o.label)).toEqual([
+      "First active",
+      "Current item",
+      "Channel: Main",
+      "Timer: Sermon",
+      "Missing timer (falls back to first active)",
+    ]);
+    expect(opts.at(-1)!.value).toBe("timer:gone");
+    expect(timerSourceOptions({ channel: "c9" }, [], []).at(-1)!.label).toBe("(missing) Channel: c9");
     expect(timerSourceOptions({ channel: "c1" }, [{ id: "c1", name: "Main" }], [])).toHaveLength(3);
   });
 });
