@@ -1,4 +1,4 @@
-import type { Draft } from "immer";
+import { current, isDraft, type Draft } from "immer";
 import {
   defaultStageWidget,
   type StageLayout,
@@ -6,7 +6,7 @@ import {
   type StageWidget,
   type StageWidgetKind,
 } from "@overlaysys/core";
-import { alignRects, distributeRects, moveRect, type AlignMode } from "@overlaysys/editor-kit";
+import { alignRects, applyStageWidgetPatch, distributeRects, moveRect, type AlignMode, type StageWidgetPatch } from "@overlaysys/editor-kit";
 
 type Recipe = (d: Draft<StageLayout>) => void;
 
@@ -98,19 +98,14 @@ export function distributeWidgets(ids: string[], axis: "x" | "y"): Recipe {
   };
 }
 
-export type WidgetPatch = {
-  rect?: StageRect;
-  style?: Partial<StageWidget["style"]>;
-  props?: Record<string, unknown>;
-};
+export type WidgetPatch = StageWidgetPatch;
 
-/** Shallow-merges `style` and `props`; `rect` replaces. */
+/** Delegates to the shared `applyStageWidgetPatch` (partial rect merge, 20px clamp, undefined removes a key). */
 export function patchWidget(id: string, patch: WidgetPatch): Recipe {
   return (d) => {
-    const w = d.widgets.find((x) => x.id === id);
-    if (!w) return;
-    if (patch.rect) w.rect = patch.rect;
-    if (patch.style) w.style = { ...w.style, ...patch.style };
-    if (patch.props) (w as { props: object }).props = { ...w.props, ...patch.props };
+    const i = d.widgets.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    const w = d.widgets[i]!;
+    d.widgets[i] = applyStageWidgetPatch((isDraft(w) ? current(w) : w) as StageWidget, patch) as Draft<StageWidget>;
   };
 }

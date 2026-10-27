@@ -67,6 +67,18 @@ describe("stageLayoutOps", () => {
     expect(props.seconds).toBe(true);
     for (const k of before) expect(props).toHaveProperty(k);
   });
+  it("patchWidget merges a partial rect and clamps w/h to 20", () => {
+    const l = produce(blank, addWidget("clock", "c"));
+    const p = produce(l, patchWidget("c", { rect: { w: 3 } }));
+    expect(p.widgets[0]!.rect).toEqual({ ...l.widgets[0]!.rect, w: 20 });
+  });
+  it("patchWidget removes a style key set to undefined", () => {
+    const l = produce(blank, addWidget("clock", "c"));
+    const withBg = produce(l, patchWidget("c", { style: { background: "#111111" } }));
+    expect(withBg.widgets[0]!.style.background).toBe("#111111");
+    const cleared = produce(withBg, patchWidget("c", { style: { background: undefined } }));
+    expect("background" in cleared.widgets[0]!.style).toBe(false);
+  });
   it("duplicateWidgets offsets +20 and gets new ids", () => {
     const l = produce(three(), duplicateWidgets(["a"], (o) => `${o}-copy`));
     expect(l.widgets).toHaveLength(4);

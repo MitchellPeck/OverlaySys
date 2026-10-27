@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultStageWidget } from "@overlaysys/core";
 import {
-  applyStageWidgetPatch, decodeTimerSource, encodeTimerSource, moveInOrder, nextSelection, timerSourceOptions,
+  applyStageWidgetPatch, decodeTimerSource, encodeTimerSource, moveInOrder, nextSelection, parseNumberDraft, timerSourceOptions,
 } from "./stageInspectorLogic";
 
 const rect = { x: 0, y: 0, w: 100, h: 100 };
@@ -43,5 +43,24 @@ describe("list helpers", () => {
     expect(nextSelection(["a"], "b", false)).toEqual(["b"]);
     expect(nextSelection(["a"], "b", true)).toEqual(["a", "b"]);
     expect(nextSelection(["a", "b"], "b", true)).toEqual(["a"]);
+  });
+});
+
+describe("parseNumberDraft", () => {
+  it("clamps to bounds", () => {
+    expect(parseNumberDraft("3", { min: 20 })).toBe(20);
+    expect(parseNumberDraft("100", { min: 20 })).toBe(100);
+    expect(parseNumberDraft("-5", { min: 0 })).toBe(0);
+    expect(parseNumberDraft("2", { min: 0, max: 1 })).toBe(1);
+  });
+  it("snaps weight to steps of 100 within 100-900", () => {
+    expect(parseNumberDraft("640", { min: 100, max: 900, step: 100 })).toBe(600);
+    expect(parseNumberDraft("5", { min: 100, max: 900, step: 100 })).toBe(100);
+    expect(parseNumberDraft("1200", { min: 100, max: 900, step: 100 })).toBe(900);
+  });
+  it("rounds ints and rejects junk", () => {
+    expect(parseNumberDraft("3.6", { int: true })).toBe(4);
+    expect(parseNumberDraft("", {})).toBeNull();
+    expect(parseNumberDraft("abc", {})).toBeNull();
   });
 });

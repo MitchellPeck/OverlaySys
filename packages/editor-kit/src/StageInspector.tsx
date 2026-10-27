@@ -1,9 +1,9 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { StageLayout, StageWidget } from "@overlaysys/core";
 import { ColorInput } from "./ColorInput";
 import { FontInput } from "./FontInput";
-import type { AlignMode } from "./stageGeometry";
-import { decodeTimerSource, encodeTimerSource, timerSourceOptions, type StageWidgetPatch } from "./stageInspectorLogic";
+import { MIN_WIDGET_SIZE, type AlignMode } from "./stageGeometry";
+import { decodeTimerSource, encodeTimerSource, parseNumberDraft, timerSourceOptions, type StageWidgetPatch } from "./stageInspectorLogic";
 
 type Props = {
   layout: StageLayout;
@@ -27,12 +27,14 @@ const ALIGN_BUTTONS: { mode: AlignMode; label: string }[] = [
 const NO_FONTS: { family: string; src: string }[] = [];
 const noop = () => {};
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/** `group` renders a div, for rows of buttons (a <label> would forward clicks to the first button). */
+function Row({ label, children, group }: { label: string; children: ReactNode; group?: boolean }) {
+  const Tag = group ? "div" : "label";
   return (
-    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, margin: "4px 0" }}>
+    <Tag style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, margin: "4px 0" }}>
       <span style={{ color: "var(--text-dim, #9099a8)" }}>{label}</span>
       {children}
-    </label>
+    </Tag>
   );
 }
 
@@ -45,18 +47,29 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function NumberField(props: { value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number }) {
+/** Edits a local draft string; commits (parsed + clamped) on blur or Enter. */
+function NumberField(props: { value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number; int?: boolean }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => setDraft(null), [props.value]);
+  function commit() {
+    if (draft === null) return;
+    const n = parseNumberDraft(draft, { min: props.min, max: props.max, step: props.step, int: props.int });
+    setDraft(null);
+    if (n !== null && n !== props.value) props.onChange(n);
+  }
   return (
     <input
       type="number"
-      value={Number.isFinite(props.value) ? props.value : 0}
+      value={draft ?? (Number.isFinite(props.value) ? String(props.value) : "0")}
       min={props.min}
       max={props.max}
       step={props.step}
       style={{ width: 80 }}
-      onChange={(e) => {
-        const n = e.target.valueAsNumber;
-        if (Number.isFinite(n)) props.onChange(n);
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        else if (e.key === "Escape") setDraft(null);
       }}
     />
   );
@@ -140,8 +153,8 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
       <Section title="Rect">
         <Row label="x"><NumberField value={w.rect.x} onChange={(x) => patch({ rect: { x } })} /></Row>
         <Row label="y"><NumberField value={w.rect.y} onChange={(y) => patch({ rect: { y } })} /></Row>
-        <Row label="w"><NumberField value={w.rect.w} min={20} onChange={(v) => patch({ rect: { w: v } })} /></Row>
-        <Row label="h"><NumberField value={w.rect.h} min={20} onChange={(v) => patch({ rect: { h: v } })} /></Row>
+        <Row label="w"><NumberField value={w.rect.w} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { w: v } })} /></Row>
+        <Row label="h"><NumberField value={w.rect.h} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { h: v } })} /></Row>
       </Section>
 
       <Section title="Style">
@@ -153,34 +166,34 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
           <NumberField value={s.fontWeight} min={100} max={900} step={100} onChange={(fontWeight) => setStyle({ fontWeight })} />
         </Row>
         <Row label="Color"><ColorInput value={s.color} onChange={(color) => setStyle({ color })} /></Row>
-        <Row label="Background">
+        <Row group label="Background">
           <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
             {s.background !== undefined ? (
               <>
                 <ColorInput value={s.background} onChange={(background) => setStyle({ background })} />
-                <button type="button" onClick={() => setStyle({ background: undefined })}>none</button>
+                <button type="button" onClick={() => setStyle({ background: undefined })}>Remove</button>
               </>
             ) : (
-              <button type="button" onClick={() => setStyle({ background: "#000000" })}>none (add)</button>
+              <button type="button" onClick={() => setStyle({ background: "#000000" })}>Add background</button>
             )}
           </span>
         </Row>
         <Row label="Padding"><NumberField value={s.padding} min={0} onChange={(padding) => setStyle({ padding })} /></Row>
-        <Row label="Align">
+        <Row group label="Align">
           <Segmented
             value={s.align}
             options={[{ value: "left", label: "L" }, { value: "center", label: "C" }, { value: "right", label: "R" }]}
             onChange={(align) => setStyle({ align })}
           />
         </Row>
-        <Row label="Vertical">
+        <Row group label="Vertical">
           <Segmented
             value={s.vAlign}
             options={[{ value: "top", label: "T" }, { value: "middle", label: "M" }, { value: "bottom", label: "B" }]}
             onChange={(vAlign) => setStyle({ vAlign })}
           />
         </Row>
-        <Row label="Auto-fit"><Check value={s.autoFit} onChange={(autoFit) => setStyle({ autoFit })} /></Row>
+        <Row group label="Auto-fit"><Check value={s.autoFit} onChange={(autoFit) => setStyle({ autoFit })} /></Row>
         <Row label="Label">
           <input
             type="text"
@@ -224,12 +237,12 @@ function renderProps(
 ): ReactNode {
   switch (w.kind) {
     case "currentSlide":
-      return <Row label="Show reference"><Check value={w.props.showReference} onChange={(showReference) => set({ showReference })} /></Row>;
+      return <Row group label="Show reference"><Check value={w.props.showReference} onChange={(showReference) => set({ showReference })} /></Row>;
     case "nextSlide":
       return (
         <>
           <Row label="Max lines">
-            <NumberField value={w.props.maxLines} min={1} max={10} step={1} onChange={(n) => set({ maxLines: Math.max(1, Math.min(10, Math.round(n))) })} />
+            <NumberField value={w.props.maxLines} min={1} max={10} int onChange={(maxLines) => set({ maxLines })} />
           </Row>
           <Row label="Dim opacity">
             <Slider value={w.props.dimOpacity} min={0} max={1} step={0.05} onChange={(dimOpacity) => set({ dimOpacity })} />
@@ -239,8 +252,8 @@ function renderProps(
     case "rowTitle":
       return (
         <>
-          <Row label="Show next"><Check value={w.props.showNext} onChange={(showNext) => set({ showNext })} /></Row>
-          <Row label="Prefer">
+          <Row group label="Show next"><Check value={w.props.showNext} onChange={(showNext) => set({ showNext })} /></Row>
+          <Row group label="Prefer">
             <Segmented
               value={w.props.prefer}
               options={[{ value: "rundown", label: "Rundown" }, { value: "pco", label: "PCO" }]}
@@ -250,18 +263,18 @@ function renderProps(
         </>
       );
     case "rowCue":
-      return <Row label="Include next row"><Check value={w.props.includeNextRow} onChange={(includeNextRow) => set({ includeNextRow })} /></Row>;
+      return <Row group label="Include next row"><Check value={w.props.includeNextRow} onChange={(includeNextRow) => set({ includeNextRow })} /></Row>;
     case "clock":
       return (
         <>
-          <Row label="Format">
+          <Row group label="Format">
             <Segmented
               value={w.props.format}
               options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
               onChange={(format) => set({ format })}
             />
           </Row>
-          <Row label="Seconds"><Check value={w.props.seconds} onChange={(seconds) => set({ seconds })} /></Row>
+          <Row group label="Seconds"><Check value={w.props.seconds} onChange={(seconds) => set({ seconds })} /></Row>
         </>
       );
     case "timer":
@@ -280,7 +293,7 @@ function renderProps(
           <Row label="Warn below (s)"><NumberField value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} /></Row>
           <Row label="Warn color"><ColorInput value={w.props.warnColor} onChange={(warnColor) => set({ warnColor })} /></Row>
           <Row label="Over color"><ColorInput value={w.props.overColor} onChange={(overColor) => set({ overColor })} /></Row>
-          <Row label="Show label"><Check value={w.props.showLabel} onChange={(showLabel) => set({ showLabel })} /></Row>
+          <Row group label="Show label"><Check value={w.props.showLabel} onChange={(showLabel) => set({ showLabel })} /></Row>
         </>
       );
     case "videoRemaining":
@@ -289,19 +302,19 @@ function renderProps(
       return (
         <>
           <Row label="Highlight color"><ColorInput value={w.props.highlightColor} onChange={(highlightColor) => set({ highlightColor })} /></Row>
-          <Row label="Dim past"><Check value={w.props.dimPast} onChange={(dimPast) => set({ dimPast })} /></Row>
-          <Row label="Show counter"><Check value={w.props.showCounter} onChange={(showCounter) => set({ showCounter })} /></Row>
+          <Row group label="Dim past"><Check value={w.props.dimPast} onChange={(dimPast) => set({ dimPast })} /></Row>
+          <Row group label="Show counter"><Check value={w.props.showCounter} onChange={(showCounter) => set({ showCounter })} /></Row>
           <Row label="Anchor"><Slider value={w.props.anchor} min={0} max={1} step={0.01} onChange={(anchor) => set({ anchor })} /></Row>
         </>
       );
     case "message":
-      return <Row label="Flash"><Check value={w.props.flash} onChange={(flash) => set({ flash })} /></Row>;
+      return <Row group label="Flash"><Check value={w.props.flash} onChange={(flash) => set({ flash })} /></Row>;
     case "serviceProgress":
       return (
         <>
-          <Row label="Show position"><Check value={w.props.showPosition} onChange={(showPosition) => set({ showPosition })} /></Row>
-          <Row label="Show end"><Check value={w.props.showEnd} onChange={(showEnd) => set({ showEnd })} /></Row>
-          <Row label="Show delta"><Check value={w.props.showDelta} onChange={(showDelta) => set({ showDelta })} /></Row>
+          <Row group label="Show position"><Check value={w.props.showPosition} onChange={(showPosition) => set({ showPosition })} /></Row>
+          <Row group label="Show end"><Check value={w.props.showEnd} onChange={(showEnd) => set({ showEnd })} /></Row>
+          <Row group label="Show delta"><Check value={w.props.showDelta} onChange={(showDelta) => set({ showDelta })} /></Row>
         </>
       );
     case "text":

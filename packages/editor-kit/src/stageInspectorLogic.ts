@@ -101,3 +101,20 @@ export function nextSelection(current: string[], id: string, additive: boolean):
   if (!additive) return [id];
   return current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
 }
+
+export type NumberBounds = { min?: number; max?: number; int?: boolean; step?: number };
+
+/**
+ * Parse and clamp a typed number draft. Returns null when the text isn't a
+ * finite number (caller reverts to the committed value).
+ */
+export function parseNumberDraft(text: string, b: NumberBounds = {}): number | null {
+  if (text.trim() === "") return null;
+  let n = Number(text);
+  if (!Number.isFinite(n)) return null;
+  if (b.step) n = Math.round(n / b.step) * b.step;
+  else if (b.int) n = Math.round(n);
+  if (b.min !== undefined) n = Math.max(b.min, n);
+  if (b.max !== undefined) n = Math.min(b.max, n);
+  return n;
+}
