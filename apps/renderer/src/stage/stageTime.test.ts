@@ -16,7 +16,7 @@ describe("stageTime", () => {
   });
 
   it("ticks a countdown and freezes a paused one", () => {
-    const running = { label: "x", channel: "c", mode: "countdown" as const, value: "65000" };
+    const running = { id: "t", source: "graphic" as const, overtime: false, running: true, label: "x", channel: "c", mode: "countdown" as const, value: "65000" };
     expect(timerDisplay(running, 5000)).toBe("01:00");
     const paused = { ...running, value: JSON.stringify({ a: 65000, p: 35000 }), format: "M:SS" as const };
     expect(timerDisplay(paused, 60000)).toBe("0:30");

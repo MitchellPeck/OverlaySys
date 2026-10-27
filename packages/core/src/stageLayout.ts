@@ -44,7 +44,9 @@ const base = {
 
 export const StageTimerSourceSchema = z.union([
   z.literal("firstActive"),
+  z.literal("currentItem"),
   z.object({ channel: z.string() }),
+  z.object({ timerId: z.string() }),
 ]);
 export type StageTimerSource = z.infer<typeof StageTimerSourceSchema>;
 
@@ -84,7 +86,15 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
   z.object({
     ...base,
     kind: z.literal("timer"),
-    props: z.object({ source: StageTimerSourceSchema.default("firstActive") }).default({}),
+    props: z
+      .object({
+        source: StageTimerSourceSchema.default("firstActive"),
+        warnBelowSec: z.number().min(0).default(60),
+        warnColor: z.string().default("#ffb703"),
+        overColor: z.string().default("#ef233c"),
+        showLabel: z.boolean().default(false),
+      })
+      .default({}),
   }),
   z.object({
     ...base,

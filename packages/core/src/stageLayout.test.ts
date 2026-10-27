@@ -29,6 +29,28 @@ describe("StageWidgetSchema", () => {
     expect(w.props.source).toEqual({ channel: "program" });
   });
 
+  it("timer widget defaults", () => {
+    const base = { id: "t", kind: "timer", rect: { x: 0, y: 0, w: 10, h: 10 } };
+    const w = StageWidgetSchema.parse({ ...base, props: {} });
+    if (w.kind !== "timer") throw new Error("narrowing");
+    expect(w.props).toEqual({
+      source: "firstActive",
+      warnBelowSec: 60,
+      warnColor: "#ffb703",
+      overColor: "#ef233c",
+      showLabel: false,
+    });
+    for (const source of ["currentItem", { timerId: "x" }]) {
+      const p = StageWidgetSchema.parse({ ...base, props: { source } });
+      if (p.kind !== "timer") throw new Error("narrowing");
+      expect(p.props.source).toEqual(source);
+    }
+  });
+
+  it("Speaker layout still parses", () => {
+    expect(StageLayoutSchema.parse(SPEAKER_LAYOUT)).toEqual(SPEAKER_LAYOUT);
+  });
+
   it("rejects zero-size rects", () => {
     expect(() =>
       StageWidgetSchema.parse({ id: "x", kind: "text", rect: { x: 0, y: 0, w: 0, h: 10 } }),

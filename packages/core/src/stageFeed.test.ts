@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NONE_SLIDE, StageFeedSchema } from "./stageFeed";
+import { NONE_SLIDE, StageFeedSchema, StageTimerSchema } from "./stageFeed";
 import { SPEAKER_LAYOUT } from "./stageLayout";
 
 describe("StageFeedSchema", () => {
@@ -33,5 +33,12 @@ describe("StageFeedSchema", () => {
       serverNow: 1,
     };
     expect(StageFeedSchema.parse(JSON.parse(JSON.stringify(feed)))).toEqual(feed);
+  });
+});
+
+describe("StageTimerSchema", () => {
+  it("standalone timer without channel parses", () => {
+    const t = { id: "a", source: "manual", overtime: true, running: false, label: "x", mode: "countdown", value: "1" };
+    expect(StageTimerSchema.parse(t)).toEqual(t);
   });
 });

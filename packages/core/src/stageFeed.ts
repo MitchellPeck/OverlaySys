@@ -22,8 +22,15 @@ export const StageRowViewSchema = z.object({ title: z.string(), cue: z.string() 
 export type StageRowView = z.infer<typeof StageRowViewSchema>;
 
 export const StageTimerSchema = z.object({
+  id: z.string(),
+  source: z.enum(["graphic", "manual", "item", "pco"]),
+  /** Show +M:SS past zero instead of clamping. */
+  overtime: z.boolean(),
+  running: z.boolean(),
+  /** Instance label. */
   label: z.string(),
-  channel: z.string(),
+  /** Set for graphic-template timers only. */
+  channel: z.string().optional(),
   mode: z.enum(["countdown", "countup"]),
   format: TimeFormatSchema.optional(),
   /** Encoded TimerValue (see timeField.ts). */

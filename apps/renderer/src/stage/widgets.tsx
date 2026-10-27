@@ -260,7 +260,12 @@ export function StageWidgetView({
       );
     case "timer": {
       const src = widget.props.source;
-      const t = src === "firstActive" ? feed.timers[0] : feed.timers.find((x) => x.channel === src.channel);
+      const t =
+        src === "firstActive" || src === "currentItem"
+          ? feed.timers[0]
+          : "channel" in src
+            ? feed.timers.find((x) => x.channel === src.channel)
+            : feed.timers.find((x) => x.id === src.timerId);
       return (
         <Frame widget={widget}>
           <FitBody widget={widget} text={t ? timerDisplay(t, nowMs) : ""} />
