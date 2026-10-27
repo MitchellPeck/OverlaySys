@@ -29,7 +29,10 @@ export function mapPcoLive(raw: PcoLiveRaw): StageServiceView {
     .filter((i) => i.itemType !== "header")
     .sort((a, b) => a.sequence - b.sequence);
   const idx = raw.currentItemId === null ? -1 : items.findIndex((i) => i.id === raw.currentItemId);
-  const cur = idx >= 0 ? items[idx] : undefined;
+  // A current item without a parseable start time can't anchor anything:
+  // treat it as no usable current item.
+  const startedAt = ms(raw.currentStartedAt);
+  const cur = idx >= 0 && startedAt !== undefined ? items[idx] : undefined;
   const plannedEndAt = ms(raw.serviceEndsAt);
   const base = {
     source: "pco" as const,
@@ -38,7 +41,7 @@ export function mapPcoLive(raw: PcoLiveRaw): StageServiceView {
     ...(plannedEndAt !== undefined ? { plannedEndAt } : {}),
   };
 
-  if (!cur) {
+  if (!cur || startedAt === undefined) {
     // Status "ended" is never produced: the raw Live shape (see
     // server/src/pco/__fixtures__/README.md) documents no field that
     // distinguishes a finished session from one not yet started.
@@ -51,7 +54,7 @@ export function mapPcoLive(raw: PcoLiveRaw): StageServiceView {
     current: {
       id: cur.id,
       title: cur.title,
-      startedAt: ms(raw.currentStartedAt) ?? 0,
+      startedAt,
       ...(cur.lengthSec !== undefined ? { lengthSec: cur.lengthSec } : {}),
     },
     next: later[0] ? { title: later[0].title } : null,

@@ -43,6 +43,16 @@ describe("mapPcoLive", () => {
     expect(v.itemCount).toBe(3);
   });
 
+  it("treats a current item without a usable start time as not started", () => {
+    for (const currentStartedAt of [null, "not a date"]) {
+      const v = mapPcoLive(raw({ currentStartedAt }));
+      expect(v.status).toBe("notStarted");
+      expect(v.current).toBeNull();
+      expect(v.next).toBeNull();
+      expect(v.itemIndex).toBe(0);
+    }
+  });
+
   it("leaves plannedEndAt undefined when the service time is missing", () => {
     const v = mapPcoLive(raw({ serviceEndsAt: null }));
     expect(v.plannedEndAt).toBeUndefined();

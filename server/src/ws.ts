@@ -35,6 +35,7 @@ import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
 import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
+import * as pcoLiveSync from "./pco/pcoLiveSync";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
@@ -64,12 +65,19 @@ channels.onAnyChange(() => stageFeedHub.invalidateAll());
 // actually go to air do.
 channels.onLiveRow((channel, source) => {
   if (channel === "preview") return;
+  // Loading a different show ends PCO Live sync for the old one.
+  const syncShowId = pcoLiveSync.getLiveSyncShowId();
+  if (syncShowId !== null && source.showId !== syncShowId) pcoLiveSync.stopLiveSync();
   void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
   void timers.onRowTaken(source).catch((err) => console.warn("[timers] onRowTaken failed", err));
 });
 timers.subscribeTimers(() => {
   stageFeedHub.invalidateAll();
   broadcast(timers.timersStateMessage());
+});
+pcoLiveSync.subscribeLiveSync(() => {
+  stageFeedHub.invalidateAll();
+  broadcast(pcoLiveSync.liveSyncStateMessage());
 });
 stageState.subscribeStageState(() => {
   stageFeedHub.invalidateAll();
@@ -153,7 +161,10 @@ export function handleConnection(
   void stageState
     .stageStateMessage()
     .then(send, () => {})
-    .then(() => send(timers.timersStateMessage()));
+    .then(() => {
+      send(timers.timersStateMessage());
+      send(pcoLiveSync.liveSyncStateMessage());
+    });
 
   ws.on("message", async (raw) => {
     let parsed;
@@ -537,6 +548,14 @@ export function handleConnection(
           break;
         case "timer_adjust":
           timers.dispatchTimers({ type: "adjust", id: parsed.id, deltaMs: parsed.deltaMs });
+          break;
+        case "pco_live_start": {
+          const res = await pcoLiveSync.startLiveSync(parsed.showId);
+          if (!res.ok) send({ type: "error", code: "pco_live", message: res.error });
+          break;
+        }
+        case "pco_live_stop":
+          pcoLiveSync.stopLiveSync();
           break;
         case "save_song": {
           const saved = await songs.saveSong(parsed.song);

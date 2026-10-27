@@ -17,6 +17,7 @@ import {
   type StageFeed,
   type StageLayout,
   type StageRowView,
+  type StageServiceView,
   type StageState,
   type StageTimer,
   type StageTimerInstance,
@@ -37,6 +38,8 @@ export interface StageFeedInputs {
   /** Standalone and item timers, item timer first (reducer order). */
   stageTimers: StageTimerInstance[];
   notes: { notes: SermonNotes; points: NotesPoint[] } | null;
+  /** PCO Live service view; null (or omitted) while sync is off. */
+  service?: StageServiceView | null;
 }
 
 type Cursor = { sectionIdx: number; slideIdx: number };
@@ -255,8 +258,7 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     video: videoOf(followed),
     notes: notesView,
     message: i.stage.message,
-    // Filled from PCO Live sync in a later task.
-    service: null,
+    service: i.service ?? null,
     serverNow: i.now,
   };
 }

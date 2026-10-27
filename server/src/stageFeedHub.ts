@@ -20,6 +20,7 @@ import * as stageLayouts from "./stageLayouts";
 import * as templates from "./templates";
 import * as timers from "./timers";
 import { buildStageFeed } from "./stageFeed";
+import * as pcoLiveSync from "./pco/pcoLiveSync";
 
 export const STAGE_FEED_DEBOUNCE_MS = 50;
 
@@ -92,6 +93,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     stage,
     stageTimers: timers.getTimers(),
     notes,
+    service: pcoLiveSync.getServiceView(),
   });
 }
 

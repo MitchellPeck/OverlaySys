@@ -373,6 +373,22 @@ describe("buildStageFeed", () => {
     });
   });
 
+  it("service passes through unchanged", () => {
+    expect(base(null).service).toBeNull();
+    const service = {
+      source: "pco" as const,
+      planTitle: "Sunday",
+      itemIndex: 2,
+      itemCount: 3,
+      current: { id: "b", title: "B", startedAt: 5, lengthSec: 600 },
+      next: { title: "C" },
+      laterLengthSec: 900,
+      plannedEndAt: 99,
+      status: "live" as const,
+    };
+    expect(base(null, { service }).service).toBe(service);
+  });
+
   it("notes are null without an active set; message passes through", () => {
     const f = base(null, { stage: { ...INITIAL_STAGE_STATE, message: { text: "Wrap up", sentAt: 3 } } });
     expect(f.notes).toBeNull();

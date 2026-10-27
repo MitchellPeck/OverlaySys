@@ -24,6 +24,7 @@ import {
   RowSourceSchema,
   StageFeedSchema,
   StageTimerInstanceSchema,
+  StageServiceViewSchema,
   MAX_TIMER_DURATION_MS,
   type TemplateMeta,
 } from "@overlaysys/core";
@@ -317,6 +318,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     id: z.string(),
     deltaMs: z.number().finite().min(-MAX_TIMER_DURATION_MS).max(MAX_TIMER_DURATION_MS),
   }),
+  /** Start polling PCO Services Live for the show's plan (read-only). */
+  z.object({ type: z.literal("pco_live_start"), showId: z.string() }),
+  z.object({ type: z.literal("pco_live_stop") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -527,6 +531,16 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     nextHeading: z.string().nullable(),
   }),
   z.object({ type: z.literal("timers_state"), timers: z.array(StageTimerInstanceSchema) }),
+  /** PCO Live sync status; `service` is non-null only while enabled. */
+  z.object({
+    type: z.literal("pco_live_state"),
+    enabled: z.boolean(),
+    showId: z.string().nullable(),
+    status: z.enum(["idle", "live", "notStarted", "ended", "error"]),
+    error: z.string().optional(),
+    lastPolledAt: z.number().nullable(),
+    service: StageServiceViewSchema.nullable(),
+  }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
