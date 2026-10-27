@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@overlaysys/core": "workspace:*",
+    "@overlaysys/stage-widgets": "workspace:*",
     "@overlaysys/editor-kit": "workspace:*",
     "@overlaysys/scripture": "workspace:*",
     "@overlaysys/supabase": "workspace:*",

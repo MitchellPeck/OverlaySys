@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@overlaysys/core": "workspace:*",
+    "@overlaysys/stage-widgets": "workspace:*",
     "@overlaysys/template-engine": "workspace:*",
     "@overlaysys/ws-protocol": "workspace:*",
     "react": "^19.0.0",

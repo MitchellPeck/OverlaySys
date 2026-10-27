@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Template, ChannelState, ChannelConfig, StageFeed } from "@overlaysys/core";
-import { StageView } from "./stage/StageView";
-import { serverOffset } from "./stage/stageTime";
+import { StageView, serverOffset } from "@overlaysys/stage-widgets";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
 import { createMirrorSubscription } from "./mirrorSubscription";
