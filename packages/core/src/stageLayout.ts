@@ -143,8 +143,11 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
 export type StageWidget = z.infer<typeof StageWidgetSchema>;
 export type StageWidgetKind = StageWidget["kind"];
 
+/** Filename-safe: stored layouts are written to `<id>.json` under data/stage-layouts. */
+export const STAGE_LAYOUT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
 export const StageLayoutSchema = z.object({
-  id: z.string(),
+  id: z.string().regex(STAGE_LAYOUT_ID_PATTERN, "id must be 1-64 letters, digits, '_' or '-'"),
   name: z.string(),
   size: z.object({ w: z.number().positive(), h: z.number().positive() }).default({ w: 1920, h: 1080 }),
   background: z.string().default("#000000"),
@@ -222,7 +225,7 @@ export const StageLayoutMetaSchema = z.object({
 export type StageLayoutMeta = z.infer<typeof StageLayoutMetaSchema>;
 
 export function stageLayoutMeta(l: StageLayout): StageLayoutMeta {
-  return { id: l.id, name: l.name, size: l.size, builtIn: l.builtIn === true };
+  return { id: l.id, name: l.name, size: { ...l.size }, builtIn: l.builtIn === true };
 }
 
 export function isBuiltInStageLayoutId(id: string): boolean {

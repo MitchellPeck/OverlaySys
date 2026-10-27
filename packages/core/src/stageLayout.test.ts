@@ -164,3 +164,18 @@ describe("Phase 5 built-ins and helpers", () => {
     expect(stageLayoutMeta(SPEAKER_LAYOUT)).toEqual({ id: "speaker", name: "Speaker", size: { w: 1920, h: 1080 }, builtIn: true });
   });
 });
+
+describe("stage layout id safety and meta", () => {
+  it.each(["speaker", "stage-layout-aaaa1111", "draft_1"])("accepts %s", (id) => {
+    expect(StageLayoutSchema.safeParse({ id, name: "x", widgets: [] }).success).toBe(true);
+  });
+  it.each(["../x", "a/b", "", "a.b", "x".repeat(65)])("rejects %j", (id) => {
+    expect(StageLayoutSchema.safeParse({ id, name: "x", widgets: [] }).success).toBe(false);
+  });
+  it("built-in ids pass the schema", () => {
+    for (const l of BUILT_IN_STAGE_LAYOUTS) expect(StageLayoutSchema.safeParse(l).success).toBe(true);
+  });
+  it("stageLayoutMeta copies size", () => {
+    expect(stageLayoutMeta(SPEAKER_LAYOUT).size).not.toBe(SPEAKER_LAYOUT.size);
+  });
+});

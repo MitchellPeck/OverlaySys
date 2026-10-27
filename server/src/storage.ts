@@ -10,6 +10,7 @@ import {
   HotcardSchema,
   ProjectSchema,
   StageLayoutSchema,
+  STAGE_LAYOUT_ID_PATTERN,
   SttSpawnerConfigSchema,
   PcoConfigSchema,
   DEFAULT_PROJECT_ID,
@@ -324,7 +325,20 @@ export async function loadAllStageLayouts(): Promise<StageLayout[]> {
   return readJsonFiles(STAGE_LAYOUTS_DIR(), (raw) => StageLayoutSchema.parse(raw));
 }
 
+/** One stored layout (tombstone included), or null if absent, unreadable or the id is unsafe. */
+export async function loadStageLayout(id: string): Promise<StageLayout | null> {
+  if (!STAGE_LAYOUT_ID_PATTERN.test(id)) return null;
+  try {
+    const raw = await fs.readFile(path.join(STAGE_LAYOUTS_DIR(), `${id}.json`), "utf8");
+    return StageLayoutSchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
 export async function saveStageLayout(layout: StageLayout): Promise<void> {
+  // Defence in depth: the id becomes a filename, so never trust it.
+  if (!STAGE_LAYOUT_ID_PATTERN.test(layout.id)) throw new Error(`Unsafe stage layout id: ${JSON.stringify(layout.id)}`);
   await ensureDir(STAGE_LAYOUTS_DIR());
   const file = path.join(STAGE_LAYOUTS_DIR(), `${layout.id}.json`);
   await writeAtomic(file, JSON.stringify(layout, null, 2));

@@ -287,6 +287,19 @@ describe("syncEngine.sync", () => {
     expect((await remote.getStageLayout(ORG, "stage-layout-aaaa1111"))?.name).toBe("Edited");
   });
 
+  it("propagates a local stage-layout tombstone to remote", async () => {
+    await remote.saveStageLayout(ORG, makeStageLayout({ updatedAt: "2026-05-01T00:00:00Z" }));
+    await local.saveStageLayout(
+      ORG,
+      makeStageLayout({ updatedAt: "2026-05-02T00:00:00Z", deletedAt: "2026-05-02T00:00:00Z" }),
+    );
+    const r = await sync(local, remote, ORG);
+    expect(r.perTable.stageLayouts.pushed).toBe(1);
+    expect(await remote.listStageLayouts(ORG)).toEqual([]);
+    const [row] = await remote.listStageLayoutsSince(ORG, "");
+    expect(row?.deletedAt).toBe("2026-05-02T00:00:00Z");
+  });
+
   it.each([
     ["Postgres 42P01", { code: "42P01", message: 'relation "overlaysys.stage_layouts" does not exist' }],
     ["PostgREST PGRST205", { code: "PGRST205", message: "Could not find the table 'overlaysys.stage_layouts' in the schema cache" }],

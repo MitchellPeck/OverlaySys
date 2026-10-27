@@ -8,6 +8,7 @@ import {
   type StageLayoutMeta,
 } from "@overlaysys/core";
 import * as storage from "./storage";
+import { omit, withoutBuiltIn } from "./stageLayoutOmit";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 export class ReadOnlyLayoutError extends Error {
@@ -21,6 +22,7 @@ export class ReadOnlyLayoutError extends Error {
 // Stored layouts only (tombstones included). Built-ins live in code.
 const REGISTRY = new Map<string, StageLayout>();
 let loaded = false;
+let loading: Promise<void> | null = null;
 
 export async function reloadStageLayouts(): Promise<void> {
   const all = await storage.loadAllStageLayouts();
@@ -29,15 +31,18 @@ export async function reloadStageLayouts(): Promise<void> {
   // Nor may it claim to be built in (a hand-edited file or a sync pull).
   for (const l of all) {
     if (isBuiltInStageLayoutId(l.id)) continue;
-    const { builtIn: _builtIn, ...rest } = l;
-    void _builtIn;
-    REGISTRY.set(l.id, rest);
+    REGISTRY.set(l.id, withoutBuiltIn(l));
   }
   loaded = true;
 }
 
 async function ensureLoaded(): Promise<void> {
-  if (!loaded) await reloadStageLayouts();
+  if (loaded) return;
+  // Concurrent first callers share one load.
+  loading ??= reloadStageLayouts().finally(() => {
+    loading = null;
+  });
+  await loading;
 }
 
 export async function listStageLayoutMetas(): Promise<StageLayoutMeta[]> {
@@ -60,9 +65,7 @@ export async function getStageLayout(id: string): Promise<StageLayout | null> {
 export async function saveStageLayout(layout: StageLayout): Promise<StageLayout> {
   await ensureLoaded();
   if (isBuiltInStageLayoutId(layout.id)) throw new ReadOnlyLayoutError(layout.id);
-  const { builtIn: _builtIn, ...rest } = layout;
-  void _builtIn;
-  const stamped = stampWrite(rest);
+  const stamped = stampWrite(withoutBuiltIn(layout));
   await storage.saveStageLayout(stamped);
   REGISTRY.set(stamped.id, stamped);
   return stamped;
@@ -82,10 +85,7 @@ export async function deleteStageLayout(id: string): Promise<boolean> {
 export async function duplicateStageLayout(id: string): Promise<StageLayout | null> {
   const src = await getStageLayout(id);
   if (!src) return null;
-  const { builtIn: _builtIn, updatedAt: _u, deletedAt: _d, ...rest } = src;
-  void _builtIn;
-  void _u;
-  void _d;
+  const rest = omit(src, ["builtIn", "updatedAt", "deletedAt"]);
   return saveStageLayout({
     ...rest,
     id: `stage-layout-${randomUUID().slice(0, 8)}`,

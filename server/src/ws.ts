@@ -343,6 +343,8 @@ export function handleConnection(
             throw err;
           }
           send({ type: "ack", op: "save_stage_layout", id: saved.id });
+          // Clears previews of the saved layout; that invalidates only if it
+          // removed one, so the single guaranteed invalidate is below.
           stageFeedHub.clearPreviewsForLayout(saved.id);
           broadcast({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
           broadcast({ type: "stage_layout", layout: saved });
@@ -373,12 +375,15 @@ export function handleConnection(
           send({ type: "ack", op: "duplicate_stage_layout", id: copy.id });
           broadcast({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
           broadcast({ type: "stage_layout", layout: copy });
+          stageFeedHub.invalidateAll();
           scheduleSync();
           break;
         }
         case "stage_layout_preview": {
           if (parsed.layout === null) stageFeedHub.clearPreview(parsed.channel, connId);
-          else stageFeedHub.setPreview(parsed.channel, parsed.layout, connId);
+          else if ((await channelConfigs.getChannelConfig(parsed.channel))?.kind !== "stage") {
+            send({ type: "error", code: "not_stage_channel", message: parsed.channel });
+          } else stageFeedHub.setPreview(parsed.channel, parsed.layout, connId);
           break;
         }
         case "list_shows": {

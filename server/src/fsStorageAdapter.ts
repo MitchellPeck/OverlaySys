@@ -29,6 +29,7 @@ import {
   isBuiltInStageLayoutId,
   type Template,
 } from "@overlaysys/core";
+import { withoutBuiltIn } from "./stageLayoutOmit";
 import {
   dataRoot,
   loadAllChannelConfigs,
@@ -43,6 +44,7 @@ import {
   loadProject,
   loadShow,
   loadSong,
+  loadStageLayout,
   loadTemplate,
   saveChannelConfig,
   saveHotcard,
@@ -218,26 +220,22 @@ export class FsStorageAdapter implements StorageAdapter {
   async listStageLayoutsSince(_org: string, _watermark: string): Promise<StageLayout[]> {
     return loadAllStageLayouts();
   }
-  private async findStageLayout(id: string): Promise<StageLayout | null> {
-    return (await loadAllStageLayouts()).find((l) => l.id === id) ?? null;
-  }
   async getStageLayout(_org: string, id: string): Promise<StageLayout | null> {
-    const l = await this.findStageLayout(id);
+    const l = await loadStageLayout(id);
     return l && !l.deletedAt ? l : null;
   }
   async saveStageLayout(_org: string, layout: StageLayout): Promise<void> {
     // Built-ins live in code: never write one (or re-push a pulled one).
     if (isBuiltInStageLayoutId(layout.id)) return;
     // `builtIn` is a code-only flag; a stored layout must never claim it.
-    const { builtIn: _builtIn, ...stored } = layout;
-    void _builtIn;
+    const stored = withoutBuiltIn(layout);
     await saveStageLayout({
       ...stored,
       updatedAt: layout.updatedAt ?? new Date().toISOString(),
     });
   }
   async deleteStageLayout(_org: string, id: string): Promise<boolean> {
-    return softDeleteVia(await this.findStageLayout(id), (l) => saveStageLayout(l));
+    return softDeleteVia(await loadStageLayout(id), (l) => saveStageLayout(l));
   }
 
   // ── Channel configs ────────────────────────────────────────────────────

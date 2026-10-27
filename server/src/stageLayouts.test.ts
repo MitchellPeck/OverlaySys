@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -120,5 +120,26 @@ describe("stage layouts registry", () => {
     expect((await stageLayouts.resolveStageLayout("stage-layout-aaaa1111")).id).toBe("speaker");
     expect((await stageLayouts.resolveStageLayout("unknown")).id).toBe("speaker");
     expect((await stageLayouts.resolveStageLayout(undefined)).id).toBe("speaker");
+  });
+
+  it("concurrent first calls load the store once", async () => {
+    vi.resetModules();
+    const fresh = await import("./stageLayouts");
+    const freshStorage = await import("./storage");
+    const spy = vi.spyOn(freshStorage, "loadAllStageLayouts");
+    await Promise.all([fresh.listStageLayoutMetas(), fresh.getStageLayout("speaker"), fresh.resolveStageLayout("x")]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("storage rejects an unsafe id and loadStageLayout reads one file", async () => {
+    await expect(
+      storage.saveStageLayout({ ...mine(), id: "../x" } as StageLayout),
+    ).rejects.toThrow(/Unsafe/);
+    await expect(fs.stat(path.join(tmpDir, "x.json"))).rejects.toThrow();
+    await storage.saveStageLayout(mine());
+    expect((await storage.loadStageLayout("stage-layout-aaaa1111"))?.name).toBe("Mine");
+    expect(await storage.loadStageLayout("../x")).toBeNull();
+    expect(await storage.loadStageLayout("nope")).toBeNull();
   });
 });

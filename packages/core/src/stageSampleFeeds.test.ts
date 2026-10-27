@@ -40,4 +40,22 @@ describe("sampleStageFeed", () => {
   it("message sample is fresh", () => {
     expect(sampleStageFeed("message", SPEAKER_LAYOUT, now).message).toEqual({ text: "Wrap up", sentAt: now });
   });
+  it("videoTimer has 95 s remaining on the video", () => {
+    const v = sampleStageFeed("videoTimer", SPEAKER_LAYOUT, now).video!;
+    expect(v.status).toBe("playing");
+    expect(v.duration - v.currentTime).toBe(95);
+  });
+  it("pcoLive timer is sourced from pco and anchored at startedAt + length", () => {
+    const f = sampleStageFeed("pcoLive", SPEAKER_LAYOUT, now);
+    const t = f.timers[0]!;
+    expect(t.source).toBe("pco");
+    const cur = f.service!.current!;
+    expect(decodeTimerValue(t.value).anchor).toBe(cur.startedAt + (cur.lengthSec ?? 0) * 1000);
+  });
+  it("scripture carries reference and lines", () => {
+    const f = sampleStageFeed("scripture", SPEAKER_LAYOUT, now);
+    expect(f.current).toMatchObject({ kind: "scripture", reference: "John 3:16" });
+    expect((f.current as { lines: string[] }).lines).toHaveLength(2);
+    expect(f.next).toMatchObject({ kind: "scripture", reference: "John 3:17" });
+  });
 });

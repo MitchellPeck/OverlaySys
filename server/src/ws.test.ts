@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
 import { handleConnection } from "./ws";
@@ -10,7 +10,28 @@ import * as templates from "./templates";
 import * as stageState from "./stageState";
 import * as stageLayouts from "./stageLayouts";
 import * as stageFeedHub from "./stageFeedHub";
-import { SPEAKER_LAYOUT, ShowSchema, SongSchema, StageLayoutSchema } from "@overlaysys/core";
+import * as channelConfigs from "./channelConfigs";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { ChannelConfigSchema, SPEAKER_LAYOUT, ShowSchema, SongSchema, StageLayoutSchema } from "@overlaysys/core";
+
+// Hermetic: the whole file runs against a temp data dir (connect() lazily
+// seeds storage, so the env must stay fixed until everything has settled).
+let dataDir: string;
+let prevDataDir: string | undefined;
+beforeAll(async () => {
+  dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "overlaysys-ws-stage-"));
+  prevDataDir = process.env["OVERLAYSYS_DATA_DIR"];
+  process.env["OVERLAYSYS_DATA_DIR"] = dataDir;
+});
+afterAll(async () => {
+  // Not removed: lazy seeding writes started by connect() can still be in
+  // flight and would reject (ENOENT) into an unhandled error.
+  await new Promise((r) => setTimeout(r, 300));
+  if (prevDataDir === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
+  else process.env["OVERLAYSYS_DATA_DIR"] = prevDataDir;
+});
 
 /**
  * Minimal stand-in for a `ws` socket: an EventEmitter with the readyState +
@@ -173,6 +194,12 @@ describe("ws show writes reconcile the active notes", () => {
 
 describe("ws stage layouts", () => {
   const layout = StageLayoutSchema.parse({ id: "stage-layout-wsws0001", name: "WS", widgets: [] });
+  const stageCh = (id: string) => ChannelConfigSchema.parse({ id, name: id, kind: "stage" });
+  function mockStageChannels(): void {
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) =>
+      id.startsWith("stage-") ? stageCh(id) : null,
+    );
+  }
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -196,6 +223,7 @@ describe("ws stage layouts", () => {
   });
 
   it("sends a stage_layout_previews snapshot on connect", async () => {
+    mockStageChannels();
     const owner = connect();
     await owner.client({ type: "stage_layout_preview", channel: "stage-ws-snap", layout });
     const late = connect();
@@ -207,10 +235,44 @@ describe("ws stage layouts", () => {
   });
 
   it("clears a socket's previews when it closes", async () => {
+    mockStageChannels();
     const sock = connect();
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-prev", layout });
     expect(stageFeedHub.listPreviews()).toContainEqual({ channel: "stage-ws-prev", layoutId: layout.id });
     sock.emit("close");
+    expect(stageFeedHub.listPreviews()).toEqual([]);
+  });
+
+  it("closing one socket keeps another socket's preview on a different channel", async () => {
+    mockStageChannels();
+    const a = connect();
+    const b = connect();
+    await a.client({ type: "stage_layout_preview", channel: "stage-ws-a", layout });
+    await b.client({ type: "stage_layout_preview", channel: "stage-ws-b", layout });
+    a.emit("close");
+    expect(stageFeedHub.listPreviews()).toEqual([{ channel: "stage-ws-b", layoutId: layout.id }]);
+    b.emit("close");
+  });
+
+  it("saving a layout clears its previews", async () => {
+    mockStageChannels();
+    vi.spyOn(stageLayouts, "saveStageLayout").mockImplementation(async (l) => l);
+    vi.spyOn(stageLayouts, "listStageLayoutMetas").mockResolvedValue([]);
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-save", layout });
+    expect(stageFeedHub.listPreviews()).toHaveLength(1);
+    await sock.client({ type: "save_stage_layout", layout });
+    expect(stageFeedHub.listPreviews()).toEqual([]);
+    sock.emit("close");
+  });
+
+  it("stage_layout_preview on a non-stage channel errors not_stage_channel", async () => {
+    vi.spyOn(channelConfigs, "getChannelConfig").mockResolvedValue(
+      ChannelConfigSchema.parse({ id: "program", name: "Program", kind: "graphics" }),
+    );
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "program", layout });
+    expect(sock.sent).toContainEqual({ type: "error", code: "not_stage_channel", message: "program" });
     expect(stageFeedHub.listPreviews()).toEqual([]);
   });
 });
