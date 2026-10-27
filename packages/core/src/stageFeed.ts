@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MediaStatusSchema } from "./channel";
+import { StageServiceViewSchema } from "./pco/pcoLive";
 import { StageLayoutSchema } from "./stageLayout";
 import { TimeFormatSchema } from "./template";
 
@@ -70,6 +71,7 @@ export const StageFeedSchema = z.object({
   video: StageVideoSchema.nullable(),
   notes: StageNotesViewSchema.nullable(),
   message: StageMessageSchema.nullable(),
+  service: StageServiceViewSchema.nullable(),
   serverNow: z.number(),
 });
 export type StageFeed = z.infer<typeof StageFeedSchema>;

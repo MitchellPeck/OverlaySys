@@ -255,6 +255,8 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     video: videoOf(followed),
     notes: notesView,
     message: i.stage.message,
+    // Filled from PCO Live sync in a later task.
+    service: null,
     serverNow: i.now,
   };
 }

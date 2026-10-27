@@ -14,6 +14,7 @@ describe("StageFeedSchema", () => {
       video: null,
       notes: null,
       message: null,
+      service: null,
       serverNow: 1,
     };
     expect(StageFeedSchema.parse(JSON.parse(JSON.stringify(feed)))).toEqual(feed);
@@ -30,6 +31,7 @@ describe("StageFeedSchema", () => {
       video: null,
       notes: { id: "n", title: "Sermon", points: [{ heading: "A", markdown: "# A" }], pointIdx: 0, scrollOffset: 0 },
       message: { text: "Wrap up", sentAt: 5 },
+      service: null,
       serverNow: 1,
     };
     expect(StageFeedSchema.parse(JSON.parse(JSON.stringify(feed)))).toEqual(feed);

@@ -69,7 +69,9 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
   z.object({
     ...base,
     kind: z.literal("rowTitle"),
-    props: z.object({ showNext: z.boolean().default(true) }).default({}),
+    props: z
+      .object({ showNext: z.boolean().default(true), prefer: z.enum(["rundown", "pco"]).default("rundown") })
+      .default({}),
   }),
   z.object({
     ...base,
@@ -118,6 +120,17 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
     ...base,
     kind: z.literal("message"),
     props: z.object({ flash: z.boolean().default(true) }).default({}),
+  }),
+  z.object({
+    ...base,
+    kind: z.literal("serviceProgress"),
+    props: z
+      .object({
+        showPosition: z.boolean().default(true),
+        showEnd: z.boolean().default(true),
+        showDelta: z.boolean().default(true),
+      })
+      .default({}),
   }),
   z.object({
     ...base,
@@ -230,6 +243,7 @@ export const STAGE_WIDGET_LABELS: Record<StageWidgetKind, string> = {
   videoRemaining: "Video remaining",
   sermonNotes: "Sermon notes",
   message: "Message",
+  serviceProgress: "Service progress",
   text: "Text",
 };
 

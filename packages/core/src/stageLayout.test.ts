@@ -148,6 +148,18 @@ describe("Phase 5 built-ins and helpers", () => {
     }
     expect(defaultStageWidget("timer", "t", { x: 0, y: 0, w: 1, h: 1 }).props).toMatchObject({ source: "firstActive" });
   });
+  it("serviceProgress defaults and label", () => {
+    const w = defaultStageWidget("serviceProgress", "s", { x: 0, y: 0, w: 100, h: 50 });
+    if (w.kind !== "serviceProgress") throw new Error("narrowing");
+    expect(w.props).toEqual({ showPosition: true, showEnd: true, showDelta: true });
+    expect(STAGE_WIDGET_LABELS.serviceProgress).toBe("Service progress");
+  });
+  it("rowTitle.prefer defaults to rundown", () => {
+    const w = defaultStageWidget("rowTitle", "r", { x: 0, y: 0, w: 100, h: 50 });
+    if (w.kind !== "rowTitle") throw new Error("narrowing");
+    expect(w.props.prefer).toBe("rundown");
+    expect(w.props.showNext).toBe(true);
+  });
   it("stageLayoutMeta", () => {
     expect(stageLayoutMeta(SPEAKER_LAYOUT)).toEqual({ id: "speaker", name: "Speaker", size: { w: 1920, h: 1080 }, builtIn: true });
   });
