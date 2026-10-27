@@ -543,6 +543,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
+export type PcoLiveStateMessage = Extract<ServerMessage, { type: "pco_live_state" }>;
 
 // ───── Helpers ──────────────────────────────────────────────────────────────
 

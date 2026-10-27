@@ -5,7 +5,7 @@ import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { parseNotesMarkdown, type Span } from "./notesMarkdown";
 import { overflowDirection } from "./notesOverflow";
 import { useFitText } from "./useFitText";
-import { formatClockDisplay, formatRemaining, pickStageTimer, stageTimerView, videoRemainingSec } from "./stageTime";
+import { formatClockDisplay, formatRemaining, pickStageTimer, serviceProgressText, stageTimerView, videoRemainingSec } from "./stageTime";
 
 const EMPTY = "—";
 
@@ -236,6 +236,14 @@ export function StageWidgetView({
         </Frame>
       );
     case "rowTitle": {
+      if (widget.props.prefer === "pco" && feed.service?.current) {
+        const nextTitle = widget.props.showNext && feed.service.next ? `  →  ${feed.service.next.title}` : "";
+        return (
+          <Frame widget={widget}>
+            <FitBody widget={widget} text={`${feed.service.current.title}${nextTitle}`} />
+          </Frame>
+        );
+      }
       const next = widget.props.showNext && feed.nextRow ? `  →  ${feed.nextRow.title}` : "";
       return (
         <Frame widget={widget}>
@@ -305,6 +313,12 @@ export function StageWidgetView({
         </Frame>
       );
     }
+    case "serviceProgress":
+      return (
+        <Frame widget={widget}>
+          <FitBody widget={widget} text={feed.service ? serviceProgressText(feed.service, nowMs, widget.props) : ""} />
+        </Frame>
+      );
     case "text":
       return (
         <Frame widget={widget}>

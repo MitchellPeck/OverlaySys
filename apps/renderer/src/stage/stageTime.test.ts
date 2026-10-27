@@ -1,6 +1,44 @@
 import { describe, expect, it } from "vitest";
-import type { StageTimer } from "@overlaysys/core";
-import { formatClockDisplay, formatRemaining, pickStageTimer, serverOffset, stageTimerView, timerDisplay, videoRemainingSec } from "./stageTime";
+import type { StageServiceView, StageTimer } from "@overlaysys/core";
+import { formatClockDisplay, formatRemaining, pickStageTimer, serverOffset, serviceProgressText, stageTimerView, timerDisplay, videoRemainingSec } from "./stageTime";
+
+describe("serviceProgressText", () => {
+  const NOW = new Date(2026, 9, 27, 10, 0, 0).getTime();
+  const view: StageServiceView = {
+    source: "pco",
+    planTitle: "Sunday",
+    itemIndex: 2,
+    itemCount: 3,
+    current: { id: "b", title: "B", startedAt: NOW - 100_000, lengthSec: 600 },
+    next: { title: "C" },
+    laterLengthSec: 900,
+    plannedEndAt: new Date(2026, 9, 27, 10, 20, 0).getTime(),
+    status: "live",
+  };
+  const all = { showPosition: true, showEnd: true, showDelta: true };
+
+  it("joins position, end and delta", () => {
+    expect(serviceProgressText(view, NOW, all)).toBe("Item 2 of 3 · Ends 10:20 AM · 3 min over");
+    expect(serviceProgressText(view, NOW, all, "24h")).toBe("Item 2 of 3 · Ends 10:20 · 3 min over");
+  });
+
+  it("drops parts", () => {
+    expect(serviceProgressText(view, NOW, { ...all, showDelta: false })).toBe("Item 2 of 3 · Ends 10:20 AM");
+    expect(serviceProgressText({ ...view, plannedEndAt: undefined }, NOW, all)).toBe("Item 2 of 3");
+  });
+
+  it("reports under and on time", () => {
+    const only = { showPosition: false, showEnd: false, showDelta: true };
+    expect(serviceProgressText({ ...view, laterLengthSec: 580 }, NOW, only)).toBe("2 min under");
+    expect(serviceProgressText({ ...view, laterLengthSec: 700 }, NOW, only)).toBe("On time");
+  });
+
+  it("handles non-live statuses", () => {
+    expect(serviceProgressText({ ...view, status: "notStarted", current: null }, NOW, all)).toBe("Service not started");
+    expect(serviceProgressText({ ...view, status: "ended", current: null }, NOW, all)).toBe("Service ended");
+    expect(serviceProgressText({ ...view, status: "error" }, NOW, all)).toBe("");
+  });
+});
 
 describe("stageTime", () => {
   it("serverOffset is server minus local", () => {

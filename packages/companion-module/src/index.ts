@@ -172,9 +172,9 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
 
   /** Re-project timer-driven variables/feedbacks every second while any timer runs. */
   private syncTimerTick(): void {
-    const running = this.state.timers.some(
-      (t) => t.anchor !== null && t.pausedAt === undefined,
-    );
+    const running =
+      this.state.timers.some((t) => t.anchor !== null && t.pausedAt === undefined) ||
+      this.state.pcoLive?.service?.status === "live";
     if (running && !this.timerTick) {
       this.timerTick = setInterval(() => {
         this.setVariableValues(projectVariables(this.state, this.channels));

@@ -65,6 +65,9 @@ function bootstrap(): void {
       case "timers_state":
         store.setStageTimers(msg.timers);
         break;
+      case "pco_live_state":
+        store.setPcoLive(msg);
+        break;
       case "media_playback":
         store.applyMediaPlayback(msg.channel, msg.takenAt, msg.playback);
         break;

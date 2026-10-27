@@ -24,7 +24,7 @@ import type {
   SttInputDevice,
   SttInstallProgress,
 } from "@overlaysys/core";
-import type { ServerMessage } from "@overlaysys/ws-protocol";
+import type { PcoLiveStateMessage, ServerMessage } from "@overlaysys/ws-protocol";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
 
@@ -94,6 +94,7 @@ type StoreState = {
 
   stageState: StageStateMessage | null;
   stageTimers: StageTimerInstance[];
+  pcoLive: PcoLiveStateMessage | null;
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
 
@@ -122,6 +123,7 @@ type StoreState = {
   setSttListeners: (listeners: SttListenerInfo[]) => void;
   setStageState: (m: StageStateMessage | null) => void;
   setStageTimers: (t: StageTimerInstance[]) => void;
+  setPcoLive: (m: PcoLiveStateMessage | null) => void;
   setHotcards: (h: HotcardMeta[]) => void;
   setHotcard: (h: Hotcard) => void;
 
@@ -191,6 +193,7 @@ export const useStore = create<StoreState>((set) => ({
   sttListeners: [],
   stageState: null,
   stageTimers: [],
+  pcoLive: null,
   hotcards: [],
   hotcardCache: {},
   projects: [],
@@ -322,6 +325,7 @@ export const useStore = create<StoreState>((set) => ({
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
   setStageState: (m) => set({ stageState: m }),
   setStageTimers: (t) => set({ stageTimers: t }),
+  setPcoLive: (m) => set({ pcoLive: m }),
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),

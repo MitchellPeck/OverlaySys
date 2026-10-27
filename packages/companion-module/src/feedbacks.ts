@@ -37,7 +37,8 @@ export type FeedbackId =
   | "notes_at_last"
   | "stage_message_showing"
   | "item_timer_warning"
-  | "item_timer_overtime";
+  | "item_timer_overtime"
+  | "pco_live_active";
 
 export type FeedbackOptions = Record<
   string,
@@ -97,6 +98,12 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     id: "item_timer_overtime",
     name: "Item timer overtime",
     description: "True when the current item timer has run past zero (overtime on).",
+    options: [],
+  },
+  {
+    id: "pco_live_active",
+    name: "PCO Live active",
+    description: "True while PCO Live sync is on and the service is live.",
     options: [],
   },
   {
@@ -383,6 +390,8 @@ export function feedbackPredicate(
       const phase = timerPhase(item.mode, timerMs(item, now), item.overtime, ITEM_WARN_MS);
       return phase === (id === "item_timer_warning" ? "warn" : "over");
     }
+    case "pco_live_active":
+      return !!state.pcoLive?.enabled && state.pcoLive.status === "live";
     case "notes_active":
       return (state.stage?.pointCount ?? 0) > 0;
     case "notes_at_first":

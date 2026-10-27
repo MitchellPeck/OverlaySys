@@ -3,8 +3,10 @@ import {
   CURRENT_ITEM_TIMER_ID,
   decodeTimerValue,
   formatSignedTime,
+  serviceDeltaSec,
   timerMs,
   timerPhase,
+  type StageServiceView,
   type StageTimer,
   type StageTimerSource,
   type StageVideo,
@@ -46,6 +48,30 @@ export function stageTimerView(
   const ms = timerMs({ mode: t.mode, anchor: v.anchor, ...(v.pausedAt != null ? { pausedAt: v.pausedAt } : {}) }, serverNowMs);
   const phase = timerPhase(t.mode, ms, t.overtime, warnBelowSec * 1000);
   return { text: t.overtime ? formatSignedTime(ms, t.format ?? "MM:SS") : text, phase };
+}
+
+export function serviceProgressText(
+  view: StageServiceView,
+  nowMs: number,
+  props: { showPosition: boolean; showEnd: boolean; showDelta: boolean },
+  clock: "12h" | "24h" = "12h",
+): string {
+  if (view.status === "notStarted") return "Service not started";
+  if (view.status === "ended") return "Service ended";
+  if (view.status === "error") return "";
+  const parts: string[] = [];
+  if (props.showPosition && view.current) parts.push(`Item ${view.itemIndex} of ${view.itemCount}`);
+  if (props.showEnd && view.plannedEndAt !== undefined) {
+    parts.push(`Ends ${formatClockDisplay(view.plannedEndAt, clock, false)}`);
+  }
+  if (props.showDelta) {
+    const delta = serviceDeltaSec(view, nowMs);
+    if (delta !== null) {
+      const min = Math.round(delta / 60);
+      parts.push(min === 0 ? "On time" : min > 0 ? `${min} min over` : `${-min} min under`);
+    }
+  }
+  return parts.join(" · ");
 }
 
 export function pickStageTimer(timers: StageTimer[], source: StageTimerSource): StageTimer | undefined {

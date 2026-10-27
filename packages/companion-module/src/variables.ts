@@ -5,7 +5,7 @@ import {
   songTitleForChannel,
 } from "./labels";
 import { ITEM_WARN_MS, type CompanionState } from "./types";
-import { CURRENT_ITEM_TIMER_ID, formatSignedTime, formatTime, timerMs, timerPhase } from "@overlaysys/core";
+import { CURRENT_ITEM_TIMER_ID, formatSignedTime, serviceDeltaSec, formatTime, timerMs, timerPhase } from "@overlaysys/core";
 
 export const RUNDOWN_LIMIT = 40;
 
@@ -127,6 +127,9 @@ export function variableDefinitions(
     { variableId: "item_timer", name: "Current item timer (M:SS, +M:SS in overtime)" },
     { variableId: "item_timer_label", name: "Current item timer label" },
     { variableId: "item_overtime", name: "Current item timer is in overtime (true/false)" },
+    { variableId: "service_item", name: "PCO Live current item title" },
+    { variableId: "service_next_item", name: "PCO Live next item title" },
+    { variableId: "service_delta", name: "PCO Live projected overrun in minutes (+over / -under)" },
   );
 
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
@@ -274,7 +277,14 @@ export function projectVariables(
     out.item_overtime = "false";
   }
 
-  const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
+  const service = state.pcoLive?.service ?? null;
+  const deltaSec = service ? serviceDeltaSec(service, now) : null;
+  const deltaMin = deltaSec === null ? null : Math.round(deltaSec / 60);
+  out.service_item = service?.current?.title ?? "";
+  out.service_next_item = service?.next?.title ?? "";
+  out.service_delta = deltaMin === null ? "" : deltaMin > 0 ? `+${deltaMin}` : String(deltaMin);
+
+  const pgmSongId =state.channelStates.get("program")?.songSession?.songId;
   const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;
   const pgmActive = state.channelStates.get("program")?.active ?? null;
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {

@@ -14,6 +14,7 @@ export function StagePanel() {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const stage = useStore((s) => s.stageState);
+  const pcoLive = useStore((s) => s.pcoLive);
   const [presets, setPresets] = useState<string[]>(DEFAULT_MESSAGE_PRESETS);
   const [text, setText] = useState("");
 
@@ -43,10 +44,43 @@ export function StagePanel() {
     send({ type: "stage_message", text: trimmed });
   }
 
+  const following = !!pcoLive?.enabled && !!show && pcoLive.showId === show.id;
+  const service = following ? pcoLive.service : null;
+  const liveLabel =
+    pcoLive?.status === "error" || pcoLive?.error
+      ? null
+      : pcoLive?.status === "live" && service
+        ? `Live · item ${service.itemIndex} of ${service.itemCount}`
+        : pcoLive?.status === "notStarted"
+          ? "Not started"
+          : pcoLive?.status === "ended"
+            ? "Ended"
+            : null;
+
   return (
     <div style={{ flexShrink: 0, borderTop: `1px solid ${colors.border}` }}>
       <PanelHeader title="Stage" />
       <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Follow PCO Live"
+              checked={following}
+              disabled={!show}
+              onChange={(e) =>
+                e.target.checked && show ? send({ type: "pco_live_start", showId: show.id }) : send({ type: "pco_live_stop" })
+              }
+            />
+            Follow PCO Live
+          </label>
+          {pcoLive?.error ? (
+            <div style={{ fontSize: 12, color: colors.errorText }}>{pcoLive.error}</div>
+          ) : following && liveLabel ? (
+            <div style={{ fontSize: 12, color: colors.textDim }}>{liveLabel}</div>
+          ) : null}
+        </div>
         {sets.length === 0 && !hasActive ? (
           <div style={{ fontSize: 12, color: colors.textDim }}>
             No sermon notes in this show

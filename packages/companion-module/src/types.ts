@@ -11,6 +11,7 @@ import type {
   StageState,
   StageTimerInstance,
 } from "@overlaysys/core";
+import type { PcoLiveStateMessage } from "@overlaysys/ws-protocol";
 
 /** Warn threshold for the item-timer variable and feedbacks. */
 export const ITEM_WARN_MS = 60_000;
@@ -49,6 +50,7 @@ export interface CompanionState {
   sttListeners: SttListener[];
   lastError: string | null;
   timers: StageTimerInstance[];
+  pcoLive: PcoLiveStateMessage | null;
   stage: {
     state: StageState;
     pointCount: number;
@@ -77,6 +79,7 @@ export function initialState(): CompanionState {
     sttListeners: [],
     lastError: null,
     timers: [],
+    pcoLive: null,
     stage: null,
   };
 }

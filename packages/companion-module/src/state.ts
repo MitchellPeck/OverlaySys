@@ -28,6 +28,7 @@ export function apply(
         connectionState: "disconnected",
         stage: null,
         timers: [],
+        pcoLive: null,
       };
 
     case "state": {
@@ -126,6 +127,9 @@ export function apply(
 
     case "timers_state":
       return { ...state, timers: evt.timers };
+
+    case "pco_live_state":
+      return { ...state, pcoLive: evt };
 
     case "error":
       return { ...state, lastError: `${evt.code}: ${evt.message}` };

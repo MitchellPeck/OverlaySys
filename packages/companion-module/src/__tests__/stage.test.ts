@@ -122,3 +122,41 @@ describe("companion stage", () => {
     });
   });
 });
+
+describe("companion PCO Live", () => {
+  const NOW = Date.parse("2026-10-27T10:00:00Z");
+  const live = (status: "live" | "notStarted" = "live") =>
+    ({
+      type: "pco_live_state",
+      enabled: true,
+      showId: "s",
+      status,
+      lastPolledAt: NOW,
+      service: {
+        source: "pco",
+        planTitle: "Sunday",
+        itemIndex: 2,
+        itemCount: 3,
+        current: { id: "b", title: "B", startedAt: NOW - 100_000, lengthSec: 600 },
+        next: { title: "C" },
+        laterLengthSec: 900,
+        plannedEndAt: NOW + 1_200_000,
+        status,
+      },
+    }) as const;
+
+  it("projects service variables", () => {
+    const v = projectVariables(apply(initialState(), live()), [], NOW);
+    expect(v.service_item).toBe("B");
+    expect(v.service_next_item).toBe("C");
+    expect(v.service_delta).toBe("+3");
+    const none = projectVariables(initialState(), [], NOW);
+    expect([none.service_item, none.service_next_item, none.service_delta]).toEqual(["", "", ""]);
+  });
+
+  it("pco_live_active is true only while live", () => {
+    expect(feedbackPredicate(apply(initialState(), live()), "pco_live_active", {}, NOW)).toBe(true);
+    expect(feedbackPredicate(apply(initialState(), live("notStarted")), "pco_live_active", {}, NOW)).toBe(false);
+    expect(feedbackPredicate(initialState(), "pco_live_active", {}, NOW)).toBe(false);
+  });
+});
