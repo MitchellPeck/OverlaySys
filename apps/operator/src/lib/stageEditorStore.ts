@@ -13,6 +13,12 @@ type StageEditorState = {
   dirty: boolean;
   history: StageLayout[];
   redoStack: StageLayout[];
+  /**
+   * Set by pushHistory: what the drag's snapshot displaced, so cancelDrag can
+   * drop the entry instead of leaving a no-op undo step. Cleared by any
+   * other history-changing action.
+   */
+  dragUndo: { dirty: boolean; history: StageLayout[]; redoStack: StageLayout[] } | null;
 
   setDraft(l: StageLayout | null): void;
   /** Apply a recipe and push the previous state to undo history. */
@@ -21,6 +27,8 @@ type StageEditorState = {
   applyLive(recipe: (d: Draft<StageLayout>) => void): void;
   /** Snapshot the current draft into history. Use once at drag start. */
   pushHistory(): void;
+  /** A drag was cancelled after pushHistory: pop its entry and restore the pre-drag draft. */
+  cancelDrag(): void;
   undo(): void;
   redo(): void;
   markSaved(): void;
@@ -41,9 +49,10 @@ export const useStageEditor = create<StageEditorState>((set, get) => ({
   dirty: false,
   history: [],
   redoStack: [],
+  dragUndo: null,
 
   setDraft(l) {
-    set({ draft: l, dirty: false, history: [], redoStack: [], selectedIds: [] });
+    set({ draft: l, dirty: false, history: [], redoStack: [], selectedIds: [], dragUndo: null });
   },
 
   commit(recipe) {
@@ -57,6 +66,7 @@ export const useStageEditor = create<StageEditorState>((set, get) => ({
       redoStack: [],
       dirty: true,
       selectedIds: prune(s.selectedIds, next),
+      dragUndo: null,
     }));
   },
 
@@ -71,7 +81,25 @@ export const useStageEditor = create<StageEditorState>((set, get) => ({
   pushHistory() {
     const cur = get().draft;
     if (!cur) return;
-    set((s) => ({ history: [...s.history, cur].slice(-HISTORY_LIMIT), redoStack: [] }));
+    set((s) => ({
+      history: [...s.history, cur].slice(-HISTORY_LIMIT),
+      redoStack: [],
+      dragUndo: { dirty: s.dirty, history: s.history, redoStack: s.redoStack },
+    }));
+  },
+
+  cancelDrag() {
+    const { history, dragUndo, selectedIds } = get();
+    if (!dragUndo || history.length === 0) return;
+    const prev = history[history.length - 1]!;
+    set({
+      draft: prev,
+      history: dragUndo.history,
+      redoStack: dragUndo.redoStack,
+      dirty: dragUndo.dirty,
+      selectedIds: prune(selectedIds, prev),
+      dragUndo: null,
+    });
   },
 
   undo() {
@@ -84,6 +112,7 @@ export const useStageEditor = create<StageEditorState>((set, get) => ({
       redoStack: [...redoStack, draft],
       dirty: true,
       selectedIds: prune(selectedIds, prev),
+      dragUndo: null,
     });
   },
 
@@ -97,6 +126,7 @@ export const useStageEditor = create<StageEditorState>((set, get) => ({
       redoStack: redoStack.slice(0, -1),
       dirty: true,
       selectedIds: prune(selectedIds, next),
+      dragUndo: null,
     });
   },
 

@@ -70,6 +70,43 @@ describe("useStageEditor", () => {
     expect(st().history).toHaveLength(0);
     expect(st().redoStack).toHaveLength(0);
   });
+  it("cancelDrag drops the drag's history entry and restores the pre-drag state", () => {
+    st().commit(addWidget("text", "t1"));
+    st().commit(nudgeWidgets(["t1"], 1, 0));
+    st().undo(); // redoStack has one entry the drag must not lose
+    st().markSaved();
+    const before = st().draft;
+    const hist = st().history.length;
+    const redo = st().redoStack;
+    st().pushHistory();
+    st().applyLive(nudgeWidgets(["t1"], 40, 0));
+    st().cancelDrag();
+    expect(st().draft).toBe(before);
+    expect(st().history).toHaveLength(hist);
+    expect(st().redoStack).toBe(redo);
+    expect(st().dirty).toBe(false);
+  });
+  it("cancelDrag at the history cap restores the entry the snapshot evicted", () => {
+    for (let i = 0; i < 50; i++) st().commit(addWidget("text", `w${i}`));
+    const oldest = st().history[0];
+    st().pushHistory();
+    st().cancelDrag();
+    expect(st().history).toHaveLength(50);
+    expect(st().history[0]).toBe(oldest);
+  });
+  it("cancelDrag without a pending drag push is a no-op", () => {
+    st().commit(addWidget("text", "t1"));
+    const before = st().draft;
+    st().cancelDrag();
+    expect(st().draft).toBe(before);
+    expect(st().history).toHaveLength(1);
+    // A commit after pushHistory ends the drag window too.
+    st().pushHistory();
+    st().commit(nudgeWidgets(["t1"], 1, 0));
+    const after = st().draft;
+    st().cancelDrag();
+    expect(st().draft).toBe(after);
+  });
   it("sampleKind defaults to song", () => {
     expect(st().sampleKind).toBe("song");
   });

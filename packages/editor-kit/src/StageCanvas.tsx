@@ -28,6 +28,12 @@ export type StageCanvasProps = {
   onLive(recipe: (d: Draft<StageLayout>) => void): void;
   /** Snapshot for undo; called once per drag, just before its first actual change. */
   onPushHistory(): void;
+  /**
+   * The browser cancelled a drag after onPushHistory: drop that snapshot and
+   * restore it. Omitted, the canvas re-applies the start rects via onLive
+   * (which leaves a no-op undo step behind).
+   */
+  onCancelDrag?(): void;
   /** The page commits nudgeWidgets(selectedIds, dx, dy). */
   onNudge(dx: number, dy: number): void;
   /**
@@ -234,7 +240,8 @@ export function StageCanvas(props: StageCanvasProps) {
     setGuides([]);
     setMarquee(null);
     if (how === "cancel" && d.kind !== "marquee" && d.pushed) {
-      props.onLive(applyRects(d.kind === "move" ? d.start : { [d.id]: d.start }));
+      if (props.onCancelDrag) props.onCancelDrag();
+      else props.onLive(applyRects(d.kind === "move" ? d.start : { [d.id]: d.start }));
     }
     // A plain click on the background clears the selection (a Shift-click keeps it).
     if (how === "up" && d.kind === "marquee" && !d.started && d.base.length === 0) props.onSelect([], false);

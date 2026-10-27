@@ -96,7 +96,7 @@ function StageLayoutEditor() {
   const sampleKind = useStageEditor((s) => s.sampleKind);
   const canUndo = useStageEditor((s) => s.history.length > 0);
   const canRedo = useStageEditor((s) => s.redoStack.length > 0);
-  const { setDraft, commit, applyLive, pushHistory, undo, redo, markSaved, select, setSampleKind } =
+  const { setDraft, commit, applyLive, pushHistory, cancelDrag, undo, redo, markSaved, select, setSampleKind } =
     useStageEditor.getState();
 
   const [error, setError] = useState<string | null>(null);
@@ -504,6 +504,7 @@ function StageLayoutEditor() {
             onSelect={select}
             onLive={applyLive}
             onPushHistory={pushHistory}
+            onCancelDrag={cancelDrag}
             onNudge={(dx, dy) => commit(nudgeWidgets(useStageEditor.getState().selectedIds, dx, dy))}
             onDropKind={dropKind}
           />
@@ -541,6 +542,7 @@ function CanvasPane({
   onSelect,
   onLive,
   onPushHistory,
+  onCancelDrag,
   onNudge,
   onDropKind,
 }: {
@@ -551,6 +553,7 @@ function CanvasPane({
   onSelect: (ids: string[], additive: boolean) => void;
   onLive: (r: Recipe) => void;
   onPushHistory: () => void;
+  onCancelDrag: () => void;
   onNudge: (dx: number, dy: number) => void;
   onDropKind: (kind: StageWidgetKind, point: { x: number; y: number }) => void;
 }) {
@@ -571,6 +574,7 @@ function CanvasPane({
         onSelect={onSelect}
         onLive={readOnly ? NOOP : onLive}
         onPushHistory={readOnly ? NOOP : onPushHistory}
+        onCancelDrag={readOnly ? NOOP : onCancelDrag}
         onNudge={readOnly ? NOOP : onNudge}
         onDropWidget={readOnly ? undefined : onDropKind}
       />
