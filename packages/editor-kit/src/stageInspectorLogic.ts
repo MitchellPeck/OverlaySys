@@ -7,12 +7,14 @@ import { MIN_WIDGET_SIZE } from "./stageGeometry";
  * `style: { background: undefined }` clears the background).
  */
 export type StageWidgetPatch = {
-  hidden?: boolean;
-  locked?: boolean;
   rect?: Partial<StageRect>;
   style?: { [K in keyof StageWidgetStyle]?: StageWidgetStyle[K] | undefined };
-  props?: Record<string, unknown>;
+  /** Partial props of some widget kind; the caller patches a widget of that kind. */
+  props?: StageWidgetPropsPatch;
 };
+
+/** Partial props of any one widget kind (distributes over the kinds, so unknown keys are rejected). */
+export type StageWidgetPropsPatch = Partial<StageWidget["props"]>;
 
 function mergeDefined<T extends object>(base: T, patch: object | undefined): T {
   if (!patch) return base;
@@ -33,15 +35,12 @@ export function clampRectPatch(r: Partial<StageRect>): Partial<StageRect> {
 
 /** Pure merge of a patch into a widget. Rect w/h are clamped to the minimum size. */
 export function applyStageWidgetPatch(w: StageWidget, patch: StageWidgetPatch): StageWidget {
-  const next = {
+  return {
     ...w,
     rect: patch.rect ? mergeDefined(w.rect, clampRectPatch(patch.rect)) : w.rect,
     style: mergeDefined(w.style, patch.style),
     props: mergeDefined(w.props, patch.props),
   } as StageWidget;
-  if (patch.hidden !== undefined) next.hidden = patch.hidden;
-  if (patch.locked !== undefined) next.locked = patch.locked;
-  return next;
 }
 
 export type TimerSourceOption = { value: string; label: string };
@@ -100,12 +99,6 @@ export function moveInOrder<T extends { id: string }>(items: T[], id: string, to
   const [it] = out.splice(from, 1);
   out.splice(clamped, 0, it!);
   return out;
-}
-
-/** Selection after a click: Shift toggles membership, otherwise replace. */
-export function nextSelection(current: string[], id: string, additive: boolean): string[] {
-  if (!additive) return [id];
-  return current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
 }
 
 export type NumberBounds = { min?: number; max?: number; int?: boolean; step?: number };

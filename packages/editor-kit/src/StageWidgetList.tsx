@@ -1,4 +1,7 @@
+import { Eye, EyeOff, Lock, Unlock } from "lucide-react";
 import { STAGE_WIDGET_LABELS, type StageLayout } from "@overlaysys/core";
+
+const ICON = 14;
 
 type Props = {
   layout: StageLayout;
@@ -45,16 +48,18 @@ export function StageWidgetList({ layout, selectedIds, onSelect, onReorder, onTo
             <button
               type="button"
               title={w.hidden ? "Show" : "Hide"}
+              aria-label={w.hidden ? "Show" : "Hide"}
               onClick={(e) => { e.stopPropagation(); onToggleHidden(w.id); }}
             >
-              {w.hidden ? "🙈" : "👁"}
+              {w.hidden ? <EyeOff size={ICON} aria-hidden /> : <Eye size={ICON} aria-hidden />}
             </button>
             <button
               type="button"
               title={w.locked ? "Unlock" : "Lock"}
+              aria-label={w.locked ? "Unlock" : "Lock"}
               onClick={(e) => { e.stopPropagation(); onToggleLocked(w.id); }}
             >
-              {w.locked ? "🔒" : "🔓"}
+              {w.locked ? <Lock size={ICON} aria-hidden /> : <Unlock size={ICON} aria-hidden />}
             </button>
             <button
               type="button"

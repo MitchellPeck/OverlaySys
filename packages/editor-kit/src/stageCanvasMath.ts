@@ -36,6 +36,24 @@ export function nextMarqueeKey(prev: string | null, ids: readonly string[]): str
   return key === prev ? null : key;
 }
 
+/** Selection for a marquee frame: `base` (the selection a Shift-marquee started with, else []) plus new hits. */
+export function marqueeSelection(base: readonly string[], hits: readonly string[]): string[] {
+  const out = [...base];
+  for (const id of hits) if (!out.includes(id)) out.push(id);
+  return out;
+}
+
+/** Same ids with equal rects. */
+export function sameRects(a: Record<string, StageRect>, b: Record<string, StageRect>): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => {
+    const ra = a[k]!;
+    const rb = b[k];
+    return !!rb && ra.x === rb.x && ra.y === rb.y && ra.w === rb.w && ra.h === rb.h;
+  });
+}
+
 /**
  * Move every start rect by (dx, dy). The primary rect snaps against `others`
  * (threshold 0 disables snapping) and the snap correction is applied to the

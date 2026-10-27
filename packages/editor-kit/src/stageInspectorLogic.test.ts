@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultStageWidget } from "@overlaysys/core";
 import {
-  applyStageWidgetPatch, decodeTimerSource, encodeTimerSource, moveInOrder, nextSelection, parseNumberDraft, timerSourceOptions,
+  applyStageWidgetPatch, decodeTimerSource, encodeTimerSource, moveInOrder, parseNumberDraft, timerSourceOptions,
 } from "./stageInspectorLogic";
 
 const rect = { x: 0, y: 0, w: 100, h: 100 };
@@ -46,11 +46,6 @@ describe("list helpers", () => {
     const l = [{ id: "a" }, { id: "b" }, { id: "c" }];
     expect(moveInOrder(l, "a", 2).map((x) => x.id)).toEqual(["b", "c", "a"]);
     expect(moveInOrder(l, "c", -4).map((x) => x.id)).toEqual(["c", "a", "b"]);
-  });
-  it("nextSelection", () => {
-    expect(nextSelection(["a"], "b", false)).toEqual(["b"]);
-    expect(nextSelection(["a"], "b", true)).toEqual(["a", "b"]);
-    expect(nextSelection(["a", "b"], "b", true)).toEqual(["a"]);
   });
 });
 

@@ -3,11 +3,13 @@ import {
   DRAG_START_SCREEN_PX,
   dragMove,
   dragResize,
+  marqueeSelection,
   nudgeForKey,
   nextMarqueeKey,
   normalizeMarquee,
   pastDragThreshold,
   rectsIntersect,
+  sameRects,
   widgetsInMarquee,
 } from "./stageCanvasMath";
 
@@ -49,6 +51,20 @@ describe("stageCanvasMath", () => {
     expect(nextMarqueeKey("a", [])).toBe("");
   });
 
+  it("a Shift marquee adds its hits to the selection it started with", () => {
+    expect(marqueeSelection([], ["a", "b"])).toEqual(["a", "b"]);
+    expect(marqueeSelection(["c", "a"], ["a", "b"])).toEqual(["c", "a", "b"]);
+    expect(marqueeSelection(["c"], [])).toEqual(["c"]);
+  });
+
+  it("sameRects compares rect maps by value", () => {
+    const a = { x: 1, y: 2, w: 3, h: 4 };
+    expect(sameRects({ a }, { a: { ...a } })).toBe(true);
+    expect(sameRects({ a }, { a: { ...a, x: 2 } })).toBe(false);
+    expect(sameRects({ a }, { a, b: a })).toBe(false);
+    expect(sameRects({ a }, { b: a })).toBe(false);
+  });
+
   it("move applies the delta to every start rect without snapping", () => {
     const start = { a: { x: 100, y: 100, w: 200, h: 100 }, b: { x: 400, y: 400, w: 50, h: 50 } };
     const out = dragMove(start, "a", 13, 7, [], canvas, 0);
@@ -74,6 +90,22 @@ describe("stageCanvasMath", () => {
     const out = dragResize(r, "e", 57, 0, [other], canvas, 6);
     expect(out.rect).toEqual({ x: 100, y: 100, w: 260, h: 100 });
     expect(out.guides).toEqual([{ axis: "x", at: 360 }]);
+  });
+
+  it("resize from a start edge (w / n) snaps that edge and keeps the opposite edge fixed", () => {
+    const r = { x: 100, y: 100, w: 200, h: 100 };
+    const other = { x: 0, y: 0, w: 40, h: 40 }; // right edge 40, bottom 40
+    // w handle: left edge 100 - 57 = 43 snaps to 40; right edge stays at 300.
+    const w = dragResize(r, "w", -57, 0, [other], canvas, 6);
+    expect(w.rect).toEqual({ x: 40, y: 100, w: 260, h: 100 });
+    expect(w.guides).toEqual([{ axis: "x", at: 40 }]);
+    // n handle: top edge 100 - 63 = 37 snaps to 40; bottom stays at 200.
+    const n = dragResize(r, "n", 0, -63, [other], canvas, 6);
+    expect(n.rect).toEqual({ x: 100, y: 40, w: 200, h: 160 });
+    expect(n.guides).toEqual([{ axis: "y", at: 40 }]);
+    // nw snaps both start edges.
+    const nw = dragResize(r, "nw", -57, -63, [other], canvas, 6);
+    expect(nw.rect).toEqual({ x: 40, y: 40, w: 260, h: 160 });
   });
 
   it("resize never shrinks below the minimum and snap is skipped at threshold 0", () => {

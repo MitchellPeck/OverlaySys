@@ -170,3 +170,14 @@ function insertRelative<T extends Layer>(
   }
   return false;
 }
+
+/**
+ * True when keyboard input belongs to a text control (input, textarea, select
+ * or contenteditable), so canvas and page shortcuts must leave the key alone.
+ */
+export function isEditableTarget(el: EventTarget | null | undefined): boolean {
+  const ae = el as { tagName?: unknown; isContentEditable?: unknown } | null | undefined;
+  if (!ae || typeof ae.tagName !== "string") return false;
+  const tag = ae.tagName.toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ae.isContentEditable === true;
+}

@@ -16,7 +16,8 @@
     "@overlaysys/core": "workspace:*",
     "@overlaysys/stage-widgets": "workspace:*",
     "@overlaysys/template-engine": "workspace:*",
-    "immer": "^10.1.1"
+    "immer": "^10.1.1",
+    "lucide-react": "^1.60.0"
   },
   "peerDependencies": {
     "react": "^19.0.0"

@@ -1,10 +1,21 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Draft } from "immer";
-import type { StageFeed, StageLayout, StageRect, StageWidget } from "@overlaysys/core";
+import type { StageFeed, StageLayout, StageRect, StageWidget, StageWidgetKind } from "@overlaysys/core";
 import { StageWidgetView } from "@overlaysys/stage-widgets";
-import { fitScale } from "./utils";
+import { fitScale, isEditableTarget } from "./utils";
 import { SNAP_SCREEN_PX, type Guide, type ResizeHandle } from "./stageGeometry";
-import { dragMove, dragResize, nextMarqueeKey, normalizeMarquee, nudgeForKey, pastDragThreshold, widgetsInMarquee } from "./stageCanvasMath";
+import { STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
+import {
+  dragMove,
+  dragResize,
+  marqueeSelection,
+  nextMarqueeKey,
+  normalizeMarquee,
+  nudgeForKey,
+  pastDragThreshold,
+  sameRects,
+  widgetsInMarquee,
+} from "./stageCanvasMath";
 
 export type StageCanvasProps = {
   layout: StageLayout;
@@ -13,20 +24,35 @@ export type StageCanvasProps = {
   nowMs: number;
   selectedIds: string[];
   onSelect(ids: string[], additive: boolean): void;
+  /** Applies a drag frame to the draft without touching history. */
   onLive(recipe: (d: Draft<StageLayout>) => void): void;
-  onCommit(recipe: (d: Draft<StageLayout>) => void): void;
+  /** Snapshot for undo; called once per drag, just before its first actual change. */
   onPushHistory(): void;
   /** The page commits nudgeWidgets(selectedIds, dx, dy). */
   onNudge(dx: number, dy: number): void;
+  /**
+   * A StagePalette button dropped on the canvas: `point` is in canvas px.
+   * Omit it (e.g. read-only) and the canvas refuses palette drops.
+   */
+  onDropWidget?(kind: StageWidgetKind, point: { x: number; y: number }): void;
 };
 
 type Point = { x: number; y: number };
 
-type DragBase = { pointerId: number; startClient: Point; scale: number; started: boolean };
+type DragBase = {
+  pointerId: number;
+  startClient: Point;
+  /** Latest pointer position, so an Alt press/release can re-run the frame. */
+  lastClient: Point;
+  scale: number;
+  started: boolean;
+};
+/** `pushed`: history was snapshotted (lazily, on the first frame that changes a rect). */
 type DragState =
-  | (DragBase & { kind: "move"; primaryId: string; start: Record<string, StageRect>; others: StageRect[] })
-  | (DragBase & { kind: "resize"; id: string; handle: ResizeHandle; start: StageRect; others: StageRect[] })
-  | (DragBase & { kind: "marquee"; origin: Point; lastIds: string | null });
+  | (DragBase & { kind: "move"; primaryId: string; start: Record<string, StageRect>; others: StageRect[]; pushed: boolean })
+  | (DragBase & { kind: "resize"; id: string; handle: ResizeHandle; start: StageRect; others: StageRect[]; pushed: boolean })
+  /** `base`: the selection a Shift-marquee adds to ([] for a plain marquee). */
+  | (DragBase & { kind: "marquee"; origin: Point; lastIds: string | null; base: string[] });
 
 const HOST_PADDING = 32;
 const SELECT_COLOR = "#4ade80";
@@ -42,13 +68,6 @@ const HANDLES: { handle: ResizeHandle; fx: number; fy: number; cursor: string }[
   { handle: "sw", fx: 0, fy: 1, cursor: "nesw-resize" },
   { handle: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
 ];
-
-function isEditable(el: Element | null): boolean {
-  const ae = el as HTMLElement | null;
-  if (!ae) return false;
-  const tag = ae.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ae.isContentEditable;
-}
 
 function applyRects(rects: Record<string, StageRect>) {
   return (d: Draft<StageLayout>) => {
@@ -102,7 +121,8 @@ export function StageCanvas(props: StageCanvasProps) {
   }
 
   function base(e: React.PointerEvent): DragBase {
-    return { pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY }, scale, started: false };
+    const p = { x: e.clientX, y: e.clientY };
+    return { pointerId: e.pointerId, startClient: p, lastClient: p, scale, started: false };
   }
 
   function onWidgetPointerDown(e: React.PointerEvent, w: StageWidget) {
@@ -119,7 +139,7 @@ export function StageCanvas(props: StageCanvasProps) {
     const start: Record<string, StageRect> = {};
     for (const sw of layout.widgets) if (ids.includes(sw.id) && !sw.locked) start[sw.id] = sw.rect;
     // Locked selected widgets stay put, so they remain snap targets.
-    begin(e, { ...base(e), kind: "move", primaryId: w.id, start, others: otherRects(new Set(Object.keys(start))) });
+    begin(e, { ...base(e), kind: "move", primaryId: w.id, start, others: otherRects(new Set(Object.keys(start))), pushed: false });
   }
 
   function onHandlePointerDown(e: React.PointerEvent, handle: ResizeHandle) {
@@ -132,71 +152,132 @@ export function StageCanvas(props: StageCanvasProps) {
       handle,
       start: resizable.rect,
       others: otherRects(new Set([resizable.id])),
+      pushed: false,
     });
   }
 
   function onBackgroundPointerDown(e: React.PointerEvent) {
     if (e.button !== 0 || !stageRef.current) return;
-    begin(e, { ...base(e), kind: "marquee", origin: toCanvas(e.clientX, e.clientY), lastIds: null });
+    begin(e, {
+      ...base(e),
+      kind: "marquee",
+      origin: toCanvas(e.clientX, e.clientY),
+      lastIds: null,
+      base: e.shiftKey ? [...selectedIds] : [],
+    });
   }
 
   function onPointerMove(e: React.PointerEvent) {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
-    // A pointerup we never saw (e.g. released outside the window) must not leave a drag running.
+    // A pointerup we never saw (e.g. released outside the window) ends the drag, keeping its result.
     if (e.buttons === 0) {
-      endDrag(e, true);
+      endDrag(e, "up");
       return;
     }
-    const dxS = e.clientX - d.startClient.x;
-    const dyS = e.clientY - d.startClient.y;
+    d.lastClient = { x: e.clientX, y: e.clientY };
     if (!d.started) {
-      if (!pastDragThreshold(dxS, dyS)) return;
+      if (!pastDragThreshold(e.clientX - d.startClient.x, e.clientY - d.startClient.y)) return;
       d.started = true;
-      if (d.kind !== "marquee") props.onPushHistory();
     }
-    const dx = dxS / d.scale;
-    const dy = dyS / d.scale;
-    const threshold = e.altKey ? 0 : SNAP_SCREEN_PX / d.scale;
-    if (d.kind === "move") {
-      const out = dragMove(d.start, d.primaryId, dx, dy, d.others, layout.size, threshold);
-      props.onLive(applyRects(out.rects));
-      setGuides(out.guides);
-    } else if (d.kind === "resize") {
-      const out = dragResize(d.start, d.handle, dx, dy, d.others, layout.size, threshold);
-      props.onLive(applyRects({ [d.id]: out.rect }));
-      setGuides(out.guides);
-    } else {
-      const m = normalizeMarquee(d.origin, toCanvas(e.clientX, e.clientY));
+    runFrame(d, e.altKey);
+  }
+
+  /** Apply the drag at `d.lastClient`. Alt disables snapping. */
+  function runFrame(d: DragState, altKey: boolean) {
+    const dx = (d.lastClient.x - d.startClient.x) / d.scale;
+    const dy = (d.lastClient.y - d.startClient.y) / d.scale;
+    const threshold = altKey ? 0 : SNAP_SCREEN_PX / d.scale;
+    if (d.kind === "marquee") {
+      const m = normalizeMarquee(d.origin, toCanvas(d.lastClient.x, d.lastClient.y));
       setMarquee(m);
-      const ids = widgetsInMarquee(layout.widgets, m);
+      const ids = marqueeSelection(d.base, widgetsInMarquee(layout.widgets, m));
       const key = nextMarqueeKey(d.lastIds, ids);
       if (key !== null) {
         d.lastIds = key;
         props.onSelect(ids, false);
       }
+      return;
     }
+    let rects: Record<string, StageRect>;
+    let start: Record<string, StageRect>;
+    if (d.kind === "move") {
+      const out = dragMove(d.start, d.primaryId, dx, dy, d.others, layout.size, threshold);
+      rects = out.rects;
+      start = d.start;
+      setGuides(out.guides);
+    } else {
+      const out = dragResize(d.start, d.handle, dx, dy, d.others, layout.size, threshold);
+      rects = { [d.id]: out.rect };
+      start = { [d.id]: d.start };
+      setGuides(out.guides);
+    }
+    // History is pushed lazily: a drag that never changes a rect leaves no undo step.
+    if (!d.pushed) {
+      if (sameRects(rects, start)) return;
+      d.pushed = true;
+      props.onPushHistory();
+    }
+    props.onLive(applyRects(rects));
   }
 
-  function endDrag(e: React.PointerEvent, cancelled: boolean) {
+  /**
+   * "up": normal release, the live draft is the result. "cancel": the browser
+   * cancelled the gesture, so a started move/resize is put back where it began.
+   * "lost": capture lost without a pointerup; keep what was there.
+   */
+  function endDrag(e: React.PointerEvent, how: "up" | "cancel" | "lost") {
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     hostRef.current?.releasePointerCapture?.(e.pointerId);
     dragRef.current = null;
     setGuides([]);
     setMarquee(null);
-    // A plain click on the background clears the selection. Move/resize
-    // commit nothing here: history was pushed at drag start and the draft is live.
-    if (!cancelled && d.kind === "marquee" && !d.started) props.onSelect([], false);
+    if (how === "cancel" && d.kind !== "marquee" && d.pushed) {
+      props.onLive(applyRects(d.kind === "move" ? d.start : { [d.id]: d.start }));
+    }
+    // A plain click on the background clears the selection (a Shift-click keeps it).
+    if (how === "up" && d.kind === "marquee" && !d.started && d.base.length === 0) props.onSelect([], false);
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    if (isEditable(e.target as Element) || isEditable(document.activeElement)) return;
+    if (e.key === "Alt") {
+      rerunForAlt(true);
+      return;
+    }
+    if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
     if (e.altKey || e.metaKey || e.ctrlKey) return;
     const nudge = nudgeForKey(e.key, e.shiftKey);
     if (!nudge || selectedIds.length === 0) return;
     e.preventDefault();
     props.onNudge(nudge[0], nudge[1]);
+  }
+
+  function onKeyUp(e: React.KeyboardEvent) {
+    if (e.key === "Alt") rerunForAlt(false);
+  }
+
+  /** Pressing or releasing Alt mid-drag toggles snapping without waiting for the pointer to move. */
+  function rerunForAlt(altKey: boolean) {
+    const d = dragRef.current;
+    if (d && d.started && d.kind !== "marquee") runFrame(d, altKey);
+  }
+
+  function isPaletteDrag(e: React.DragEvent): boolean {
+    return !!props.onDropWidget && Array.from(e.dataTransfer.types).includes(STAGE_WIDGET_DRAG_TYPE);
+  }
+
+  function onDragOver(e: React.DragEvent) {
+    if (!isPaletteDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+
+  function onDrop(e: React.DragEvent) {
+    if (!isPaletteDrag(e) || !stageRef.current) return;
+    e.preventDefault();
+    const kind = e.dataTransfer.getData(STAGE_WIDGET_DRAG_TYPE) as StageWidgetKind;
+    if (kind) props.onDropWidget?.(kind, toCanvas(e.clientX, e.clientY));
   }
 
   const line = 1 / scale;
@@ -207,11 +288,14 @@ export function StageCanvas(props: StageCanvasProps) {
       ref={hostRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
       onPointerDown={onBackgroundPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={(e) => endDrag(e, false)}
-      onPointerCancel={(e) => endDrag(e, true)}
-      onLostPointerCapture={(e) => endDrag(e, true)}
+      onPointerUp={(e) => endDrag(e, "up")}
+      onPointerCancel={(e) => endDrag(e, "cancel")}
+      onLostPointerCapture={(e) => endDrag(e, "lost")}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       style={{
         position: "relative",
         width: "100%",

@@ -3,7 +3,14 @@ import type { StageLayout, StageWidget } from "@overlaysys/core";
 import { ColorInput } from "./ColorInput";
 import { FontInput } from "./FontInput";
 import { MIN_WIDGET_SIZE, type AlignMode } from "./stageGeometry";
-import { decodeTimerSource, encodeTimerSource, parseNumberDraft, timerSourceOptions, type StageWidgetPatch } from "./stageInspectorLogic";
+import {
+  decodeTimerSource,
+  encodeTimerSource,
+  parseNumberDraft,
+  timerSourceOptions,
+  type StageWidgetPatch,
+  type StageWidgetPropsPatch,
+} from "./stageInspectorLogic";
 
 type Props = {
   layout: StageLayout;
@@ -145,7 +152,7 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
   const w = selected[0]!;
   const patch = (p: StageWidgetPatch) => onPatch(w.id, p);
   const setStyle = (style: NonNullable<StageWidgetPatch["style"]>) => patch({ style });
-  const setProps = (props: Record<string, unknown>) => patch({ props });
+  const setProps = (props: StageWidgetPropsPatch) => patch({ props });
   const s = w.style;
 
   return (
@@ -231,7 +238,7 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
 
 function renderProps(
   w: StageWidget,
-  set: (props: Record<string, unknown>) => void,
+  set: (props: StageWidgetPropsPatch) => void,
   timerChoices: { id: string; label: string }[],
   channelChoices: { id: string; name: string }[],
 ): ReactNode {

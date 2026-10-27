@@ -15,11 +15,11 @@ import {
 } from "@overlaysys/core";
 import {
   ColorInput,
-  STAGE_WIDGET_DRAG_TYPE,
   StageCanvas,
   StageInspector,
   StagePalette,
   StageWidgetList,
+  isEditableTarget,
   moveInOrder,
 } from "@overlaysys/editor-kit";
 import { Button, colors } from "@overlaysys/ui";
@@ -42,6 +42,7 @@ import {
   centeredRectAt,
   createTrailingThrottle,
   shouldAdoptIncomingLayout,
+  shouldConfirmLinkNavigation,
   sizePresetKey,
   stageEditorShortcut,
 } from "@/lib/stageDesigner";
@@ -55,12 +56,7 @@ const PREVIEW_THROTTLE_MS = 150;
 const NOOP = () => {};
 /** Delay before the one retry of a get_stage_layout that came back not_found. */
 const NOT_FOUND_RETRY_MS = 300;
-
-function isTyping(el: Element | null): boolean {
-  const ae = el as HTMLElement | null;
-  if (!ae) return false;
-  return ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable;
-}
+const UNSAVED_PROMPT = "You have unsaved changes to this stage layout. Leave anyway?";
 
 export default function StageLayoutEditorPage() {
   return (
@@ -203,8 +199,38 @@ function StageLayoutEditor() {
       e.preventDefault();
       e.returnValue = "";
     };
+    // In-app links (Next <Link>, sidebar) navigate client-side, so beforeunload
+    // never fires: catch the click in the capture phase, before Next's handler.
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a) return;
+      const ask = shouldConfirmLinkNavigation({
+        dirty: useStageEditor.getState().dirty,
+        href: a.getAttribute("href") ?? "",
+        currentHref: window.location.href,
+        button: e.button,
+        modified: e.metaKey || e.ctrlKey || e.shiftKey || e.altKey,
+        defaultPrevented: e.defaultPrevented,
+        target: a.getAttribute("target"),
+        download: a.hasAttribute("download"),
+      });
+      if (!ask || window.confirm(UNSAVED_PROMPT)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
     window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty]);
+
+  // A local edit means any save echo we were waiting for is moot (the draft is
+  // dirty, so it won't be adopted anyway); drop the marker so a broadcast that
+  // never arrives can't swallow a later get_stage_layout reply.
+  useEffect(() => {
+    if (dirty) awaitingEchoRef.current = null;
   }, [dirty]);
 
   // ---- Preview on monitor ----
@@ -218,15 +244,13 @@ function StageLayoutEditor() {
     [send],
   );
 
-  // On toggle-on, channel change or reconnect: send at once. Cleanup (toggle-off,
-  // channel change, unmount) clears the old channel's preview.
+  // On toggle-on, channel change or reconnect: send now (through the throttle,
+  // so it fires at once when idle and the next edit still waits its 150 ms).
+  // Cleanup (toggle-off, channel change, unmount) clears the old channel's preview.
   useEffect(() => {
     if (!previewOn || !previewChannel || conn !== "open") return;
     const cur = useStageEditor.getState().draft;
-    if (cur) {
-      lastPreviewRef.current = { channel: previewChannel, layout: cur };
-      send({ type: "stage_layout_preview", channel: previewChannel, layout: cur });
-    }
+    if (cur) previewThrottle.call(previewChannel, cur);
     return () => {
       previewThrottle.cancel();
       lastPreviewRef.current = null;
@@ -257,6 +281,8 @@ function StageLayoutEditor() {
   }
 
   function revert() {
+    // The reply to this fetch must be adopted even if a save echo never came.
+    awaitingEchoRef.current = null;
     setDraft(null);
     send({ type: "get_stage_layout", layoutId });
     fetchedRef.current = layoutId;
@@ -327,7 +353,7 @@ function StageLayoutEditor() {
         a.save();
         return;
       }
-      if (isTyping(e.target as Element) || isTyping(document.activeElement)) return;
+      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
       e.preventDefault();
       if (a.readOnly) return;
       if (action === "undo") a.undo();
@@ -477,7 +503,6 @@ function StageLayoutEditor() {
             readOnly={readOnly}
             onSelect={select}
             onLive={applyLive}
-            onCommit={commit}
             onPushHistory={pushHistory}
             onNudge={(dx, dy) => commit(nudgeWidgets(useStageEditor.getState().selectedIds, dx, dy))}
             onDropKind={dropKind}
@@ -515,7 +540,6 @@ function CanvasPane({
   readOnly,
   onSelect,
   onLive,
-  onCommit,
   onPushHistory,
   onNudge,
   onDropKind,
@@ -526,48 +550,19 @@ function CanvasPane({
   readOnly: boolean;
   onSelect: (ids: string[], additive: boolean) => void;
   onLive: (r: Recipe) => void;
-  onCommit: (r: Recipe) => void;
   onPushHistory: () => void;
   onNudge: (dx: number, dy: number) => void;
   onDropKind: (kind: StageWidgetKind, point: { x: number; y: number }) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
-  const wrapRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), FEED_TICK_MS);
     return () => clearInterval(t);
   }, []);
   const feed = useMemo(() => sampleStageFeed(sampleKind, draft, now), [sampleKind, draft, now]);
 
-  function isPaletteDrag(e: React.DragEvent): boolean {
-    return !readOnly && Array.from(e.dataTransfer.types).includes(STAGE_WIDGET_DRAG_TYPE);
-  }
-
   return (
-    <div
-      ref={wrapRef}
-      style={{ background: colors.bg, minWidth: 0, minHeight: 0, overflow: "hidden" }}
-      onDragOver={(e) => {
-        if (!isPaletteDrag(e)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-      }}
-      onDrop={(e) => {
-        if (!isPaletteDrag(e)) return;
-        e.preventDefault();
-        const kind = e.dataTransfer.getData(STAGE_WIDGET_DRAG_TYPE) as StageWidgetKind;
-        // StageCanvas renders host > stage; the stage's on-screen box is the
-        // scaled canvas, so it converts client coords to canvas px.
-        const stage = wrapRef.current?.firstElementChild?.firstElementChild as HTMLElement | null | undefined;
-        if (!kind || !stage) return;
-        const r = stage.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0) return;
-        onDropKind(kind, {
-          x: ((e.clientX - r.left) * draft.size.w) / r.width,
-          y: ((e.clientY - r.top) * draft.size.h) / r.height,
-        });
-      }}
-    >
+    <div style={{ background: colors.bg, minWidth: 0, minHeight: 0, overflow: "hidden" }}>
       <StageCanvas
         layout={draft}
         feed={feed}
@@ -575,9 +570,9 @@ function CanvasPane({
         selectedIds={selectedIds}
         onSelect={onSelect}
         onLive={readOnly ? NOOP : onLive}
-        onCommit={readOnly ? NOOP : onCommit}
         onPushHistory={readOnly ? NOOP : onPushHistory}
         onNudge={readOnly ? NOOP : onNudge}
+        onDropWidget={readOnly ? undefined : onDropKind}
       />
     </div>
   );
