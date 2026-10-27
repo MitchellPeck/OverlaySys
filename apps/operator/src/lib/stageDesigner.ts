@@ -161,18 +161,36 @@ export function isLocalDraftEdit(
 }
 
 /**
- * Back/forward guard. While dirty the page pushes a same-URL sentinel entry;
- * a popstate with the sentinel armed means it was just popped (it is always
- * the top entry, so only Back can pop it). "back": go on to the page the user
- * was heading for; "repush": they cancelled, re-arm; "none": not ours.
- * `confirm` is only called when there are unsaved changes.
+ * Back/forward guard. While dirty the page pushes a same-URL sentinel entry
+ * and remembers its href (`armedHref`). A popstate that leaves us at that
+ * href, not standing on a sentinel, means ours was just popped (it is the top
+ * entry, so only Back can pop it). Anything else (another URL, e.g. a stale
+ * sentinel left at a layout we have since moved away from, or landing ON a
+ * sentinel) is not ours. "back": go on to where the user was heading;
+ * "repush": they cancelled, re-arm. `confirm` is only called when dirty.
  */
 export function sentinelPopAction(c: {
-  armed: boolean;
+  armedHref: string | null;
+  currentHref: string;
+  /** history.state carries the sentinel flag: we landed on one. */
+  onSentinel: boolean;
   dirty: boolean;
   confirm: () => boolean;
 }): "none" | "back" | "repush" {
-  if (!c.armed) return "none";
+  if (!c.armedHref || c.onSentinel || c.currentHref !== c.armedHref) return "none";
   if (!c.dirty) return "back";
   return c.confirm() ? "back" : "repush";
+}
+
+/**
+ * After a save (draft clean) remove our sentinel so none is left behind: only
+ * when we are still standing on it at the armed href.
+ */
+export function shouldDisarmSentinel(c: {
+  armedHref: string | null;
+  currentHref: string;
+  onSentinel: boolean;
+  dirty: boolean;
+}): boolean {
+  return !c.dirty && !!c.armedHref && c.onSentinel && c.currentHref === c.armedHref;
 }

@@ -29,7 +29,8 @@ afterAll(async () => {
   // Close every socket first so nothing new starts, then let the lazy
   // seeding writes connect() kicked off finish before removing the dir
   // (removing it under an in-flight write would reject with ENOENT).
-  for (const s of sockets) s.emit("close");
+  // Only sockets a test didn't already close, so no close handler runs twice.
+  for (const s of sockets) if (!s.closed) s.emit("close");
   await new Promise((r) => setTimeout(r, 300));
   await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   if (prevDataDir === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
@@ -44,7 +45,15 @@ afterAll(async () => {
 class FakeSocket extends EventEmitter {
   readonly OPEN = 1;
   readyState = 1;
+  /** Set once "close" was emitted (by a test or afterAll). */
+  closed = false;
   sent: ServerMessage[] = [];
+  constructor() {
+    super();
+    this.once("close", () => {
+      this.closed = true;
+    });
+  }
   send(raw: string): void {
     this.sent.push(JSON.parse(raw) as ServerMessage);
   }

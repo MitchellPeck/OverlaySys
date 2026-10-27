@@ -12,6 +12,7 @@ import {
   shouldConfirmLinkNavigation,
   isLocalDraftEdit,
   sentinelPopAction,
+  shouldDisarmSentinel,
   sizePresetKey,
   stageEditorShortcut,
 } from "./stageDesigner";
@@ -243,18 +244,45 @@ describe("isLocalDraftEdit", () => {
 });
 
 describe("sentinelPopAction", () => {
+  const A = "http://x/design/stage/edit?id=a";
+  const B = "http://x/design/stage/edit?id=b";
+  const pop = (o: Partial<Parameters<typeof sentinelPopAction>[0]>) =>
+    sentinelPopAction({ armedHref: A, currentHref: A, onSentinel: false, dirty: true, confirm: () => false, ...o });
   it("does nothing when no sentinel is armed", () => {
     const confirm = vi.fn(() => true);
-    expect(sentinelPopAction({ armed: false, dirty: true, confirm })).toBe("none");
+    expect(pop({ armedHref: null, confirm })).toBe("none");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it("ignores a pop that lands on another URL than the armed one (e.g. a stale sentinel after Duplicate)", () => {
+    const confirm = vi.fn(() => true);
+    expect(pop({ currentHref: B, confirm })).toBe("none");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it("ignores a pop that lands ON a sentinel rather than popping ours", () => {
+    const confirm = vi.fn(() => true);
+    expect(pop({ onSentinel: true, confirm })).toBe("none");
     expect(confirm).not.toHaveBeenCalled();
   });
   it("completes the back navigation without asking when clean", () => {
     const confirm = vi.fn(() => false);
-    expect(sentinelPopAction({ armed: true, dirty: false, confirm })).toBe("back");
+    expect(pop({ dirty: false, confirm })).toBe("back");
     expect(confirm).not.toHaveBeenCalled();
   });
   it("asks when dirty: OK leaves, Cancel re-pushes the sentinel", () => {
-    expect(sentinelPopAction({ armed: true, dirty: true, confirm: () => true })).toBe("back");
-    expect(sentinelPopAction({ armed: true, dirty: true, confirm: () => false })).toBe("repush");
+    expect(pop({ confirm: () => true })).toBe("back");
+    expect(pop({ confirm: () => false })).toBe("repush");
+  });
+});
+
+describe("shouldDisarmSentinel", () => {
+  const A = "http://x/design/stage/edit?id=a";
+  it("disarms once clean while still sitting on our own sentinel", () => {
+    expect(shouldDisarmSentinel({ armedHref: A, currentHref: A, onSentinel: true, dirty: false })).toBe(true);
+  });
+  it("keeps it while dirty, when not armed, or when not on our sentinel", () => {
+    expect(shouldDisarmSentinel({ armedHref: A, currentHref: A, onSentinel: true, dirty: true })).toBe(false);
+    expect(shouldDisarmSentinel({ armedHref: null, currentHref: A, onSentinel: true, dirty: false })).toBe(false);
+    expect(shouldDisarmSentinel({ armedHref: A, currentHref: "http://x/other", onSentinel: true, dirty: false })).toBe(false);
+    expect(shouldDisarmSentinel({ armedHref: A, currentHref: A, onSentinel: false, dirty: false })).toBe(false);
   });
 });

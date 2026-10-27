@@ -43,6 +43,7 @@ import {
   createTrailingThrottle,
   isLocalDraftEdit,
   sentinelPopAction,
+  shouldDisarmSentinel,
   shouldAdoptIncomingLayout,
   shouldConfirmLinkNavigation,
   sizePresetKey,
@@ -59,6 +60,19 @@ const NOOP = () => {};
 /** Delay before the one retry of a get_stage_layout that came back not_found. */
 const NOT_FOUND_RETRY_MS = 300;
 const UNSAVED_PROMPT = "You have unsaved changes to this stage layout. Leave anyway?";
+const SENTINEL_FLAG = "stageUnsavedGuard";
+
+/** The current history entry is an unsaved-changes sentinel. */
+function onSentinelEntry(): boolean {
+  const st = window.history.state as Record<string, unknown> | null;
+  return st?.[SENTINEL_FLAG] === true;
+}
+
+/** Push a same-URL sentinel (keeping Next's state) and return its href. */
+function pushSentinel(): string {
+  window.history.pushState({ ...window.history.state, [SENTINEL_FLAG]: true }, "", window.location.href);
+  return window.location.href;
+}
 
 export default function StageLayoutEditorPage() {
   return (
@@ -230,30 +244,46 @@ function StageLayoutEditor() {
 
   // Browser Back/Forward bypasses both beforeunload and the link catcher.
   // While dirty, push a same-URL sentinel entry (spreading Next's own history
-  // state so its router still treats the entry as this page); popping it asks
-  // before leaving. Pushing also truncates forward history, so Forward can't
-  // leave either. After a save the sentinel stays; Back then just goes on.
-  const sentinelArmedRef = useRef(false);
+  // state so its router still treats the entry as this page) and remember its
+  // href; popping it asks before leaving. Pushing also truncates forward
+  // history, so Forward can't leave either. Once clean (saved/reverted) the
+  // sentinel is popped again, and a new layoutId (Duplicate routes in place)
+  // starts unarmed, so a stale sentinel can never act for another layout.
+  const armedHrefRef = useRef<string | null>(null);
+  function armSentinel() {
+    armedHrefRef.current = pushSentinel();
+  }
   useEffect(() => {
-    if (!dirty || sentinelArmedRef.current) return;
-    window.history.pushState({ ...window.history.state, stageUnsavedGuard: true }, "", window.location.href);
-    sentinelArmedRef.current = true;
-  }, [dirty]);
+    armedHrefRef.current = null;
+  }, [layoutId]);
+  useEffect(() => {
+    if (dirty) {
+      if (!armedHrefRef.current) armSentinel();
+      return;
+    }
+    const disarm = shouldDisarmSentinel({
+      armedHref: armedHrefRef.current,
+      currentHref: window.location.href,
+      onSentinel: onSentinelEntry(),
+      dirty: false,
+    });
+    armedHrefRef.current = null;
+    // Our popstate handler ignores this pop (nothing is armed any more).
+    if (disarm) window.history.back();
+  }, [dirty, layoutId]);
   useEffect(() => {
     const onPopState = () => {
       const action = sentinelPopAction({
-        armed: sentinelArmedRef.current,
+        armedHref: armedHrefRef.current,
+        currentHref: window.location.href,
+        onSentinel: onSentinelEntry(),
         dirty: useStageEditor.getState().dirty,
         confirm: () => window.confirm(UNSAVED_PROMPT),
       });
       if (action === "none") return;
-      sentinelArmedRef.current = false;
-      if (action === "back") {
-        window.history.back();
-      } else {
-        window.history.pushState({ ...window.history.state, stageUnsavedGuard: true }, "", window.location.href);
-        sentinelArmedRef.current = true;
-      }
+      armedHrefRef.current = null;
+      if (action === "back") window.history.back();
+      else armSentinel();
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
