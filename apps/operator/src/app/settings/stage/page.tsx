@@ -9,13 +9,19 @@ import { getStageSettings, putStageSettings } from "@/lib/stageSettingsClient";
 
 export default function StageSettingsPage() {
   const [presets, setPresets] = useState<string[] | null>(null);
+  const [autoItemTimer, setAutoItemTimer] = useState(true);
+  const [itemTimerOvertime, setItemTimerOvertime] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getStageSettings()
-      .then((s) => setPresets(s.messagePresets))
+      .then((s) => {
+        setPresets(s.messagePresets);
+        setAutoItemTimer(s.autoItemTimer);
+        setItemTimerOvertime(s.itemTimerOvertime);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
@@ -37,8 +43,10 @@ export default function StageSettingsPage() {
     setError(null);
     setStatus(null);
     try {
-      const saved = await putStageSettings({ messagePresets: presets });
+      const saved = await putStageSettings({ messagePresets: presets, autoItemTimer, itemTimerOvertime });
       setPresets(saved.messagePresets);
+      setAutoItemTimer(saved.autoItemTimer);
+      setItemTimerOvertime(saved.itemTimerOvertime);
       setStatus("Saved");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -77,6 +85,18 @@ export default function StageSettingsPage() {
                   </Button>
                 </div>
               ))}
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginTop: 8 }}>
+                <input type="checkbox" checked={autoItemTimer} onChange={(e) => setAutoItemTimer(e.target.checked)} />
+                Start item countdown when a row with a length is taken
+              </label>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={itemTimerOvertime}
+                  onChange={(e) => setItemTimerOvertime(e.target.checked)}
+                />
+                Item countdown runs into overtime
+              </label>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <Button onClick={() => setPresets([...presets, ""])}>Add preset</Button>
                 <Button variant="primary" disabled={busy} onClick={save}>

@@ -18,6 +18,7 @@ import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { SongsInShowPanel } from "./SongsInShowPanel";
 import { SermonNotesEditor, NotesSetPicker } from "./SermonNotesEditor";
+import { formatRowLength, parseRowLength } from "@/lib/rowLength";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
 import { VideoThumb } from "@/app/components/VideoThumb";
@@ -717,6 +718,18 @@ function RundownTable({
                     >
                       Edit slides…
                     </button>
+                    <RowLengthInput
+                      value={row.lengthSec}
+                      onCommit={(lengthSec) =>
+                        onUpdate((s) => {
+                          const r = s.rows.find((x) => x.id === row.id);
+                          if (!r) return;
+                          if (lengthSec === undefined) delete r.lengthSec;
+                          else r.lengthSec = lengthSec;
+                          r.lengthSecManual = true;
+                        })
+                      }
+                    />
                     {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
                         <NotesSetPicker
@@ -779,6 +792,18 @@ function RundownTable({
                     >
                       Edit video…
                     </button>
+                    <RowLengthInput
+                      value={row.lengthSec}
+                      onCommit={(lengthSec) =>
+                        onUpdate((s) => {
+                          const r = s.rows.find((x) => x.id === row.id);
+                          if (!r) return;
+                          if (lengthSec === undefined) delete r.lengthSec;
+                          else r.lengthSec = lengthSec;
+                          r.lengthSecManual = true;
+                        })
+                      }
+                    />
                     {notesSets.length > 0 && (
                       <div style={{ width: 160 }}>
                         <NotesSetPicker
@@ -987,6 +1012,10 @@ function RundownRowEditor({
           value={row.notes ?? ""}
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
+        />
+        <RowLengthInput
+          value={row.lengthSec}
+          onCommit={(lengthSec) => patchRow({ lengthSec, lengthSecManual: true })}
         />
         <NotesSetPicker
           sets={sermonNotes}
@@ -1243,6 +1272,10 @@ function SongRowEditor({
           value={row.notes ?? ""}
           onChange={(e) => patchRow({ notes: e.target.value || undefined })}
           placeholder="—"
+        />
+        <RowLengthInput
+          value={row.lengthSec}
+          onCommit={(lengthSec) => patchRow({ lengthSec, lengthSecManual: true })}
         />
         <NotesSetPicker
           sets={sermonNotes}
@@ -1543,3 +1576,34 @@ const addRowBtn: React.CSSProperties = {
   cursor: "pointer",
   width: "100%",
 };
+
+/** "Length" text input: commits on blur when valid, reverts when not. */
+function RowLengthInput({
+  value,
+  onCommit,
+}: {
+  value: number | undefined;
+  onCommit: (sec: number | undefined) => void;
+}) {
+  const [text, setText] = useState(formatRowLength(value));
+  useEffect(() => setText(formatRowLength(value)), [value]);
+  return (
+    <Input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        const parsed = parseRowLength(text);
+        if (!parsed.ok) {
+          setText(formatRowLength(value));
+          return;
+        }
+        if (parsed.sec !== value) onCommit(parsed.sec);
+        setText(formatRowLength(parsed.sec));
+      }}
+      placeholder="Length"
+      title="Length (M:SS) — starts the item countdown when taken"
+      aria-label="Length"
+      style={{ width: 70, marginTop: 4 }}
+    />
+  );
+}
