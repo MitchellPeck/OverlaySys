@@ -29,7 +29,7 @@ import {
   isBuiltInStageLayoutId,
   type Template,
 } from "@overlaysys/core";
-import { withoutBuiltIn } from "./stageLayoutOmit";
+import { withoutBuiltIn } from "./stageLayouts";
 import {
   dataRoot,
   loadAllChannelConfigs,

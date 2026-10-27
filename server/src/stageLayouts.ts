@@ -8,7 +8,7 @@ import {
   type StageLayoutMeta,
 } from "@overlaysys/core";
 import * as storage from "./storage";
-import { omit, withoutBuiltIn } from "./stageLayoutOmit";
+import { omit } from "./omit";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 
 export class ReadOnlyLayoutError extends Error {
@@ -17,6 +17,11 @@ export class ReadOnlyLayoutError extends Error {
     super(`Stage layout "${id}" is built in and read-only; duplicate it to edit`);
     this.name = "ReadOnlyLayoutError";
   }
+}
+
+/** `builtIn` is a code-only flag; a stored layout must never claim it. */
+export function withoutBuiltIn(layout: StageLayout): Omit<StageLayout, "builtIn"> {
+  return omit(layout, ["builtIn"]);
 }
 
 // Stored layouts only (tombstones included). Built-ins live in code.
