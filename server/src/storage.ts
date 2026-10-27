@@ -9,6 +9,7 @@ import {
   SongSchema,
   HotcardSchema,
   ProjectSchema,
+  StageLayoutSchema,
   SttSpawnerConfigSchema,
   PcoConfigSchema,
   DEFAULT_PROJECT_ID,
@@ -20,6 +21,7 @@ import {
   type Song,
   type Hotcard,
   type Project,
+  type StageLayout,
   type SttSpawnerConfig,
   type PcoConfig,
 } from "@overlaysys/core";
@@ -54,6 +56,7 @@ const CHANNELS_DIR = (): string => path.join(dataRoot(), "channels");
 const SONGS_DIR = (): string => path.join(dataRoot(), "songs");
 const HOTCARDS_DIR = (): string => path.join(dataRoot(), "hotcards");
 const PROJECTS_DIR = (): string => path.join(dataRoot(), "projects");
+const STAGE_LAYOUTS_DIR = (): string => path.join(dataRoot(), "stage-layouts");
 const STT_DIR = (): string => path.join(dataRoot(), "stt");
 const STT_CONFIG_FILE = (): string => path.join(STT_DIR(), "config.json");
 const PCO_DIR = (): string => path.join(dataRoot(), "pco");
@@ -312,6 +315,19 @@ export async function deleteHotcard(id: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Stage layouts ────────────────────────────────────────────────────────────────
+
+/** Every stored layout, tombstones included (the registry hides them). */
+export async function loadAllStageLayouts(): Promise<StageLayout[]> {
+  return readJsonFiles(STAGE_LAYOUTS_DIR(), (raw) => StageLayoutSchema.parse(raw));
+}
+
+export async function saveStageLayout(layout: StageLayout): Promise<void> {
+  await ensureDir(STAGE_LAYOUTS_DIR());
+  const file = path.join(STAGE_LAYOUTS_DIR(), `${layout.id}.json`);
+  await writeAtomic(file, JSON.stringify(layout, null, 2));
 }
 
 // Projects ─────────────────────────────────────────────────────────────────────
