@@ -25,6 +25,27 @@ describe("show_list scheduledFor", () => {
   });
 });
 
+describe("timer messages", () => {
+  it("rejects timer_adjust with a non-number deltaMs", () => {
+    expect(() => decodeClient(JSON.stringify({ type: "timer_adjust", id: "t1", deltaMs: "5" }))).toThrow();
+  });
+
+  it("rejects an out-of-range timer_adjust deltaMs", () => {
+    expect(() => decodeClient(JSON.stringify({ type: "timer_adjust", id: "t1", deltaMs: 1e308 }))).toThrow();
+  });
+
+  it("rejects an out-of-range timer_create durationMs", () => {
+    expect(() => decodeClient(JSON.stringify({ type: "timer_create", label: "x", mode: "countdown", durationMs: -1 }))).toThrow();
+    expect(() => decodeClient(JSON.stringify({ type: "timer_create", label: "x", mode: "countdown", durationMs: 86_400_001 }))).toThrow();
+  });
+
+  it("defaults timer_create overtime to true", () => {
+    const msg = decodeClient(JSON.stringify({ type: "timer_create", label: "Talk", mode: "countdown", durationMs: 1000 }));
+    if (msg.type !== "timer_create") throw new Error("wrong type");
+    expect(msg.overtime).toBe(true);
+  });
+});
+
 describe("media messages", () => {
   it("decodes media_take", () => {
     const msg = decodeClient(encode({

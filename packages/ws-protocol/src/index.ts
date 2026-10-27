@@ -21,6 +21,8 @@ import {
   SttInstallProgressSchema,
   RowSourceSchema,
   StageFeedSchema,
+  StageTimerInstanceSchema,
+  MAX_TIMER_DURATION_MS,
   type TemplateMeta,
 } from "@overlaysys/core";
 
@@ -287,6 +289,22 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("notes_overflow"), direction: z.enum(["next", "prev"]), atPoint: z.number().int().nonnegative() }),
   z.object({ type: z.literal("stage_message"), text: z.string().max(200) }),
   z.object({ type: z.literal("stage_message_clear") }),
+  z.object({
+    type: z.literal("timer_create"),
+    label: z.string().max(60),
+    mode: z.enum(["countdown", "countup"]),
+    durationMs: z.number().finite().min(0).max(MAX_TIMER_DURATION_MS).optional(),
+    overtime: z.boolean().default(true),
+  }),
+  z.object({
+    type: z.enum(["timer_start", "timer_pause", "timer_resume", "timer_reset", "timer_delete"]),
+    id: z.string(),
+  }),
+  z.object({
+    type: z.literal("timer_adjust"),
+    id: z.string(),
+    deltaMs: z.number().finite().min(-MAX_TIMER_DURATION_MS).max(MAX_TIMER_DURATION_MS),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -487,6 +505,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     pointHeading: z.string().nullable(),
     nextHeading: z.string().nullable(),
   }),
+  z.object({ type: z.literal("timers_state"), timers: z.array(StageTimerInstanceSchema) }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 

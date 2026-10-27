@@ -31,6 +31,7 @@ import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
+import * as timers from "./timers";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
@@ -61,6 +62,10 @@ channels.onAnyChange(() => stageFeedHub.invalidateAll());
 channels.onLiveRow((channel, source) => {
   if (channel === "preview") return;
   void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
+});
+timers.subscribeTimers(() => {
+  stageFeedHub.invalidateAll();
+  broadcast(timers.timersStateMessage());
 });
 stageState.subscribeStageState(() => {
   stageFeedHub.invalidateAll();
@@ -136,7 +141,10 @@ export function handleConnection(
   const offBroadcast = registerSender(send);
 
   send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now() });
-  void stageState.stageStateMessage().then(send, () => {});
+  void stageState
+    .stageStateMessage()
+    .then(send, () => {})
+    .then(() => send(timers.timersStateMessage()));
 
   ws.on("message", async (raw) => {
     let parsed;
@@ -434,6 +442,32 @@ export function handleConnection(
           break;
         case "stage_message_clear":
           await stageState.dispatchStage({ type: "messageClear" });
+          break;
+        case "timer_create":
+          timers.createTimer({
+            label: parsed.label,
+            mode: parsed.mode,
+            durationMs: parsed.durationMs,
+            overtime: parsed.overtime,
+          });
+          break;
+        case "timer_start":
+          timers.dispatchTimers({ type: "start", id: parsed.id });
+          break;
+        case "timer_pause":
+          timers.dispatchTimers({ type: "pause", id: parsed.id });
+          break;
+        case "timer_resume":
+          timers.dispatchTimers({ type: "resume", id: parsed.id });
+          break;
+        case "timer_reset":
+          timers.dispatchTimers({ type: "reset", id: parsed.id });
+          break;
+        case "timer_delete":
+          timers.dispatchTimers({ type: "delete", id: parsed.id });
+          break;
+        case "timer_adjust":
+          timers.dispatchTimers({ type: "adjust", id: parsed.id, deltaMs: parsed.deltaMs });
           break;
         case "save_song": {
           const saved = await songs.saveSong(parsed.song);
