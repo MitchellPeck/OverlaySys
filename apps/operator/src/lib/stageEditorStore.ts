@@ -2,12 +2,9 @@
 
 import { create } from "zustand";
 import { produce, type Draft } from "immer";
-import type { StageLayout } from "@overlaysys/core";
+import type { StageLayout, StageSampleKind } from "@overlaysys/core";
 
 const HISTORY_LIMIT = 50;
-
-// Local copy; moves to the core export (STAGE_SAMPLE_KINDS) in Task B3.
-export type StageSampleKind = "song" | "scripture" | "notes" | "videoTimer" | "message" | "itemOvertime" | "pcoLive";
 
 type StageEditorState = {
   draft: StageLayout | null;
