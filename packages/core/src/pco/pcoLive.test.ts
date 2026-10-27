@@ -77,6 +77,10 @@ describe("mapPcoLive", () => {
     expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: null }), NOW).next).toEqual({ title: "B" });
   });
 
+  it("ignores a nextItemId that names the current item (sequence fallback)", () => {
+    expect(mapPcoLive(raw({ currentItemId: "a", nextItemId: "a" }), NOW).next).toEqual({ title: "B" });
+  });
+
   it("a trailing header with no item after it is not started", () => {
     const r = raw({ currentItemId: "z" });
     r.items.push({ id: "z", title: "Closing", sequence: 9, itemType: "header" });

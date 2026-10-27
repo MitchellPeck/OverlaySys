@@ -67,8 +67,9 @@ export function mapPcoLive(raw: PcoLiveRaw, now: number): StageServiceView {
   }
   const later = items.slice(idx + 1);
   // Prefer PCO's own idea of the next item when it names a real, non-header
-  // item; else the next by sequence.
-  const pcoNext = raw.nextItemId ? items.find((i) => i.id === raw.nextItemId) : undefined;
+  // item other than the current one; else the next by sequence.
+  const pcoNext =
+    raw.nextItemId && raw.nextItemId !== cur.id ? items.find((i) => i.id === raw.nextItemId) : undefined;
   const next = pcoNext ?? later[0];
   return {
     ...base,
