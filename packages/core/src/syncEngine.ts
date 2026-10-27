@@ -219,6 +219,25 @@ export async function sync(
   return result;
 }
 
+/**
+ * Tables that may not exist remotely yet (stage_layouts needs an apps-portal
+ * migration). A missing table there is skipped rather than counted as an error.
+ */
+const OPTIONAL_TABLES = new Set<SyncEntityKind>(["stageLayouts"]);
+const loggedMissing = new Set<SyncEntityKind>();
+
+export function _resetSyncEngineForTest(): void {
+  loggedMissing.clear();
+}
+
+/** Postgres 42P01 / PostgREST PGRST205, or their messages. */
+function isMissingTableError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const { code, message } = err as { code?: unknown; message?: unknown };
+  if (code === "42P01" || code === "PGRST205") return true;
+  return typeof message === "string" && /relation .* does not exist|could not find the table/i.test(message);
+}
+
 interface ReconcileArgs<T extends { updatedAt?: string; deletedAt?: string }> {
   kind: SyncEntityKind;
   listLocal: () => Promise<T[]>;
@@ -247,6 +266,15 @@ async function reconcileTable<
   try {
     [localRows, remoteRows] = await Promise.all([listLocal(), listRemote()]);
   } catch (err) {
+    if (OPTIONAL_TABLES.has(kind) && isMissingTableError(err)) {
+      // The remote table isn't migrated yet (see
+      // docs/cloud-stage-layouts-migration.md): skip it quietly.
+      if (!loggedMissing.has(kind)) {
+        loggedMissing.add(kind);
+        console.info(`[sync] remote ${kind} table unavailable; skipping until it is migrated`);
+      }
+      return;
+    }
     // List failures abort this table only — the engine keeps reconciling
     // others so a single misconfigured backend doesn't sink the whole
     // pass.

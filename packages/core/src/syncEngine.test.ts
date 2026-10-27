@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import type {
   ChannelConfig,
   Hotcard,
@@ -11,7 +11,7 @@ import type {
   Template,
 } from "./index";
 import { SPEAKER_LAYOUT, StageLayoutSchema } from "./stageLayout";
-import { sync } from "./syncEngine";
+import { _resetSyncEngineForTest, sync } from "./syncEngine";
 
 // In-memory adapter used by every test below. Holds Maps keyed by the
 // entity's primary id (or `${projectId}:${channelId}` for overrides).
@@ -287,15 +287,39 @@ describe("syncEngine.sync", () => {
     expect((await remote.getStageLayout(ORG, "stage-layout-aaaa1111"))?.name).toBe("Edited");
   });
 
-  it("a missing remote stage_layouts table fails only that table", async () => {
+  it.each([
+    ["Postgres 42P01", { code: "42P01", message: 'relation "overlaysys.stage_layouts" does not exist' }],
+    ["PostgREST PGRST205", { code: "PGRST205", message: "Could not find the table 'overlaysys.stage_layouts' in the schema cache" }],
+    ["plain Error", new Error('relation "overlaysys.stage_layouts" does not exist')],
+  ])("a missing remote stage_layouts table (%s) is skipped, not an error", async (_, thrown) => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    _resetSyncEngineForTest();
     remote.listStageLayoutsSince = async () => {
-      throw new Error('relation "overlaysys.stage_layouts" does not exist');
+      throw thrown;
     };
     await local.saveProject(ORG, makeProject({ updatedAt: "2026-05-01T00:00:00Z" }));
     const r = await sync(local, remote, ORG);
-    expect(r.errors).toEqual([expect.objectContaining({ kind: "stageLayouts", id: "(list)" })]);
-    expect(r.errors).toHaveLength(1);
+    expect(r.errors).toEqual([]);
     expect(r.perTable.projects.pushed).toBe(1); // other tables still ran
+    await sync(local, remote, ORG);
+    expect(info).toHaveBeenCalledTimes(1); // logged once, not every pass
+    info.mockRestore();
+  });
+
+  it("other stage_layouts list failures still count as errors", async () => {
+    remote.listStageLayoutsSince = async () => {
+      throw new Error("fetch failed");
+    };
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([expect.objectContaining({ kind: "stageLayouts", id: "(list)", message: "fetch failed" })]);
+  });
+
+  it("a missing table other than stage_layouts is still an error", async () => {
+    remote.listTemplatesSince = async () => {
+      throw { code: "42P01", message: 'relation "overlaysys.templates" does not exist' };
+    };
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([expect.objectContaining({ kind: "templates", id: "(list)" })]);
   });
 
   it("aggregates per-record errors without aborting the pass", async () => {

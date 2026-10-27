@@ -41,7 +41,13 @@ comes from the live schema (a hand-written entry mirroring `templates` is in
 
 ## Until the migration is applied
 
-Each sync pass logs one `stageLayouts (list)` error (the remote table does not
-exist). Nothing else is affected: the engine isolates failures per table, so
-projects, shows, songs, templates and the rest keep syncing, and layouts keep
-working locally.
+The sync engine skips stage layouts: when listing the remote table fails with a
+missing-table error (Postgres `42P01`, PostgREST `PGRST205`, "relation … does not
+exist" or "Could not find the table"), `syncEngine` treats the table as
+unavailable. It is not counted in the pass's errors, so the sync status pill
+stays clean, and the server logs one info line
+(`[sync] remote stageLayouts table unavailable; skipping until it is migrated`)
+per process. Projects, shows, songs, templates and the rest keep syncing, and
+layouts keep working locally; they start syncing on the first pass after the
+migration is applied. Any other stage-layout sync failure is still reported as
+an error.
