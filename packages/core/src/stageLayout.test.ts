@@ -151,7 +151,7 @@ describe("Phase 5 built-ins and helpers", () => {
   it("serviceProgress defaults and label", () => {
     const w = defaultStageWidget("serviceProgress", "s", { x: 0, y: 0, w: 100, h: 50 });
     if (w.kind !== "serviceProgress") throw new Error("narrowing");
-    expect(w.props).toEqual({ showPosition: true, showEnd: true, showDelta: true });
+    expect(w.props).toEqual({ showPosition: true, showEnd: true, showDelta: true, clock: "12h" });
     expect(STAGE_WIDGET_LABELS.serviceProgress).toBe("Service progress");
   });
   it("rowTitle.prefer defaults to rundown", () => {

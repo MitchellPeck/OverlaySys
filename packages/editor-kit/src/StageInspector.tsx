@@ -315,6 +315,13 @@ function renderProps(
           <Row group label="Show position"><Check value={w.props.showPosition} onChange={(showPosition) => set({ showPosition })} /></Row>
           <Row group label="Show end"><Check value={w.props.showEnd} onChange={(showEnd) => set({ showEnd })} /></Row>
           <Row group label="Show delta"><Check value={w.props.showDelta} onChange={(showDelta) => set({ showDelta })} /></Row>
+          <Row group label="End time">
+            <Segmented
+              value={w.props.clock}
+              options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
+              onChange={(clock) => set({ clock })}
+            />
+          </Row>
         </>
       );
     case "text":

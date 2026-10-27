@@ -41,21 +41,20 @@ export function stageTimerView(
   serverNowMs: number,
   warnBelowSec: number,
 ): { text: string; phase: "normal" | "warn" | "over" } {
-  const text = timerDisplay(t, serverNowMs);
-  if (t.mode !== "countdown") return { text, phase: "normal" };
+  if (t.mode !== "countdown") return { text: timerDisplay(t, serverNowMs), phase: "normal" };
   const v = decodeTimerValue(t.value);
-  if (!Number.isFinite(v.anchor)) return { text, phase: "normal" };
+  if (!Number.isFinite(v.anchor)) return { text: timerDisplay(t, serverNowMs), phase: "normal" };
   const ms = timerMs({ mode: t.mode, anchor: v.anchor, ...(v.pausedAt != null ? { pausedAt: v.pausedAt } : {}) }, serverNowMs);
   const phase = timerPhase(t.mode, ms, t.overtime, warnBelowSec * 1000);
-  return { text: t.overtime ? formatSignedTime(ms, t.format ?? "MM:SS") : text, phase };
+  return { text: t.overtime ? formatSignedTime(ms, t.format ?? "MM:SS") : timerDisplay(t, serverNowMs), phase };
 }
 
 export function serviceProgressText(
   view: StageServiceView,
   nowMs: number,
-  props: { showPosition: boolean; showEnd: boolean; showDelta: boolean },
-  clock: "12h" | "24h" = "12h",
+  props: { showPosition: boolean; showEnd: boolean; showDelta: boolean; clock?: "12h" | "24h" },
 ): string {
+  const clock = props.clock ?? "12h";
   if (view.status === "notStarted") return "Service not started";
   if (view.status === "ended") return "Service ended";
   if (view.status === "error") return "";
@@ -67,6 +66,7 @@ export function serviceProgressText(
   if (props.showDelta) {
     const delta = serviceDeltaSec(view, nowMs);
     if (delta !== null) {
+      // Math.round: -90 s reads "1 min under", +90 s reads "2 min over".
       const min = Math.round(delta / 60);
       parts.push(min === 0 ? "On time" : min > 0 ? `${min} min over` : `${-min} min under`);
     }

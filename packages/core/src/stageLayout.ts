@@ -129,6 +129,8 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
         showPosition: z.boolean().default(true),
         showEnd: z.boolean().default(true),
         showDelta: z.boolean().default(true),
+        /** Clock style for the planned end time ("Ends 10:20 AM" vs "Ends 10:20"). */
+        clock: z.enum(["12h", "24h"]).default("12h"),
       })
       .default({}),
   }),

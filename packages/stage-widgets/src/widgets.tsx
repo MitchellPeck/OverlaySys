@@ -9,8 +9,10 @@ import { formatClockDisplay, formatRemaining, pickStageTimer, serviceProgressTex
 
 const EMPTY = "—";
 
-function Frame({ widget, children }: { widget: StageWidget; children: ReactNode }) {
+/** `label` is the caption shown above the body; it defaults to `style.label`. */
+function Frame({ widget, label, children }: { widget: StageWidget; label?: string; children: ReactNode }) {
   const st = widget.style;
+  const caption = st.label || label;
   const box: CSSProperties = {
     position: "absolute",
     left: widget.rect.x,
@@ -28,9 +30,9 @@ function Frame({ widget, children }: { widget: StageWidget; children: ReactNode 
   };
   return (
     <div style={box}>
-      {st.label && (
+      {caption && (
         <div style={{ fontFamily: st.fontFamily, fontSize: 20, fontWeight: 700, letterSpacing: 2, color: "#888", marginBottom: 6 }}>
-          {st.label}
+          {caption}
         </div>
       )}
       {children}
@@ -273,10 +275,9 @@ export function StageWidgetView({
       const color = view?.phase === "over" ? overColor : view?.phase === "warn" ? warnColor : widget.style.color;
       const shown: StageWidget = { ...widget, style: { ...widget.style, color } };
       return (
-        <Frame widget={shown}>
-          {showLabel && t?.label ? (
-            <div style={{ color: "#888", fontFamily: widget.style.fontFamily, fontSize: 24 }}>{t.label}</div>
-          ) : null}
+        // The timer's label goes through Frame's caption slot (style.label wins when both are set),
+        // so FitBody's flex area — which autoFit measures — already excludes it.
+        <Frame widget={shown} label={showLabel ? t?.label : undefined}>
           <FitBody widget={shown} text={view?.text ?? ""} />
         </Frame>
       );

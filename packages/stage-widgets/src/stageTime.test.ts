@@ -19,7 +19,8 @@ describe("serviceProgressText", () => {
 
   it("joins position, end and delta", () => {
     expect(serviceProgressText(view, NOW, all)).toBe("Item 2 of 3 · Ends 10:20 AM · 3 min over");
-    expect(serviceProgressText(view, NOW, all, "24h")).toBe("Item 2 of 3 · Ends 10:20 · 3 min over");
+    expect(serviceProgressText(view, NOW, { ...all, clock: "24h" })).toBe("Item 2 of 3 · Ends 10:20 · 3 min over");
+    expect(serviceProgressText(view, NOW, { ...all, clock: "12h" })).toBe("Item 2 of 3 · Ends 10:20 AM · 3 min over");
   });
 
   it("drops parts", () => {
@@ -31,6 +32,13 @@ describe("serviceProgressText", () => {
     const only = { showPosition: false, showEnd: false, showDelta: true };
     expect(serviceProgressText({ ...view, laterLengthSec: 580 }, NOW, only)).toBe("2 min under");
     expect(serviceProgressText({ ...view, laterLengthSec: 700 }, NOW, only)).toBe("On time");
+  });
+
+  it("rounds the delta half away from under (documented: -90 s is 1 min under, +90 s is 2 min over)", () => {
+    const only = { showPosition: false, showEnd: false, showDelta: true };
+    // delta = laterLengthSec - 700 for this view
+    expect(serviceProgressText({ ...view, laterLengthSec: 610 }, NOW, only)).toBe("1 min under");
+    expect(serviceProgressText({ ...view, laterLengthSec: 790 }, NOW, only)).toBe("2 min over");
   });
 
   it("handles non-live statuses", () => {
@@ -79,6 +87,14 @@ describe("stageTime", () => {
 
     it("shows +MM:SS and over phase past the anchor with overtime", () => {
       expect(stageTimerView(base, 183_000, 60)).toEqual({ text: "+01:23", phase: "over" });
+    });
+    it("formats running overtime in M:SS", () => {
+      expect(stageTimerView({ ...base, format: "M:SS" }, 183_000, 60)).toEqual({ text: "+1:23", phase: "over" });
+    });
+    it("a countup is always the normal phase", () => {
+      const up: StageTimer = { ...base, mode: "countup", value: "100000" };
+      expect(stageTimerView(up, 183_000, 60).phase).toBe("normal");
+      expect(stageTimerView(up, 100_500, 60).phase).toBe("normal");
     });
     it("clamps to zero and warns without overtime", () => {
       expect(stageTimerView({ ...base, overtime: false }, 183_000, 60)).toEqual({ text: "00:00", phase: "warn" });
