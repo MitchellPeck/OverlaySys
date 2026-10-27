@@ -158,6 +158,8 @@ export function handleConnection(
   const offBroadcast = registerSender(send);
 
   send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now() });
+  // Snapshot so a reconnecting designer learns which preview it (or another socket) holds.
+  send({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() });
   void stageState
     .stageStateMessage()
     .then(send, () => {})

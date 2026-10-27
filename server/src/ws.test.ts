@@ -195,6 +195,17 @@ describe("ws stage layouts", () => {
     );
   });
 
+  it("sends a stage_layout_previews snapshot on connect", async () => {
+    const owner = connect();
+    await owner.client({ type: "stage_layout_preview", channel: "stage-ws-snap", layout });
+    const late = connect();
+    expect(late.sent).toContainEqual({
+      type: "stage_layout_previews",
+      previews: [{ channel: "stage-ws-snap", layoutId: layout.id }],
+    });
+    owner.emit("close");
+  });
+
   it("clears a socket's previews when it closes", async () => {
     const sock = connect();
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-prev", layout });

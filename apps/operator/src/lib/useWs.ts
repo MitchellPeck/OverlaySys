@@ -48,6 +48,7 @@ function bootstrap(): void {
           client.send({ type: "subscribe", channel: ch, role: "operator" });
         }
         client.send({ type: "list_templates" });
+        client.send({ type: "list_stage_layouts" });
         client.send({ type: "list_shows" });
         client.send({ type: "list_songs" });
         client.send({ type: "list_hotcards" });
@@ -70,6 +71,12 @@ function bootstrap(): void {
         break;
       case "media_playback":
         store.applyMediaPlayback(msg.channel, msg.takenAt, msg.playback);
+        break;
+      case "stage_layout_list":
+        store.setStageLayouts(msg.layouts);
+        break;
+      case "stage_layout_previews":
+        store.setStageLayoutPreviews(msg.previews);
         break;
       case "template_list":
         store.setTemplates(msg.templates);

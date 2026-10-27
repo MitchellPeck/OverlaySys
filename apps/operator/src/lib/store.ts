@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import type {
   StageTimerInstance,
+  StageLayoutMeta,
   ChannelState,
   MediaPlayback,
   ChannelConfig,
@@ -94,6 +95,9 @@ type StoreState = {
 
   stageState: StageStateMessage | null;
   stageTimers: StageTimerInstance[];
+  stageLayouts: StageLayoutMeta[];
+  /** Server-held preview-on-monitor overrides, one per stage channel. */
+  stageLayoutPreviews: { channel: string; layoutId: string }[];
   pcoLive: PcoLiveStateMessage | null;
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
@@ -123,6 +127,8 @@ type StoreState = {
   setSttListeners: (listeners: SttListenerInfo[]) => void;
   setStageState: (m: StageStateMessage | null) => void;
   setStageTimers: (t: StageTimerInstance[]) => void;
+  setStageLayouts: (l: StageLayoutMeta[]) => void;
+  setStageLayoutPreviews: (p: { channel: string; layoutId: string }[]) => void;
   setPcoLive: (m: PcoLiveStateMessage | null) => void;
   setHotcards: (h: HotcardMeta[]) => void;
   setHotcard: (h: Hotcard) => void;
@@ -193,6 +199,8 @@ export const useStore = create<StoreState>((set) => ({
   sttListeners: [],
   stageState: null,
   stageTimers: [],
+  stageLayouts: [],
+  stageLayoutPreviews: [],
   pcoLive: null,
   hotcards: [],
   hotcardCache: {},
@@ -325,6 +333,8 @@ export const useStore = create<StoreState>((set) => ({
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
   setStageState: (m) => set({ stageState: m }),
   setStageTimers: (t) => set({ stageTimers: t }),
+  setStageLayouts: (l) => set({ stageLayouts: l }),
+  setStageLayoutPreviews: (p) => set({ stageLayoutPreviews: p }),
   setPcoLive: (m) => set({ pcoLive: m }),
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
