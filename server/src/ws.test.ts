@@ -266,6 +266,55 @@ describe("ws stage layouts", () => {
     sock.emit("close");
   });
 
+  it("a quick preview on→off from one socket ends off even if the channel lookup is slow", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
+      await gate;
+      return stageCh(id);
+    });
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race", layout });
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race", layout: null });
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stageFeedHub.listPreviews()).toEqual([]);
+    sock.emit("close");
+  });
+
+  it("a slow preview on that lands after the socket closed is dropped", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
+      await gate;
+      return stageCh(id);
+    });
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race3", layout });
+    sock.emit("close");
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stageFeedHub.listPreviews()).toEqual([]);
+  });
+
+  it("a slow preview on is superseded by a newer on from the same socket", async () => {
+    const other = StageLayoutSchema.parse({ id: "stage-layout-wsws0002", name: "WS2", widgets: [] });
+    const releases: (() => void)[] = [];
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
+      await new Promise<void>((r) => releases.push(r));
+      return stageCh(id);
+    });
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout });
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout: other });
+    releases[1]?.();
+    await new Promise((r) => setTimeout(r, 0));
+    releases[0]?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(stageFeedHub.listPreviews()).toEqual([{ channel: "stage-ws-race2", layoutId: other.id }]);
+    sock.emit("close");
+  });
+
   it("stage_layout_preview on a non-stage channel errors not_stage_channel", async () => {
     vi.spyOn(channelConfigs, "getChannelConfig").mockResolvedValue(
       ChannelConfigSchema.parse({ id: "program", name: "Program", kind: "graphics" }),

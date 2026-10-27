@@ -155,6 +155,8 @@ export function handleConnection(
 ): void {
   const subscriptions = new Map<string, () => void>();
   const connId = randomUUID();
+  const previewSeq = new Map<string, number>();
+  let closed = false;
   let registeredAudioSourceId: string | null = null;
 
   function send(msg: ServerMessage): void {
@@ -380,8 +382,18 @@ export function handleConnection(
           break;
         }
         case "stage_layout_preview": {
-          if (parsed.layout === null) stageFeedHub.clearPreview(parsed.channel, connId);
-          else if ((await channelConfigs.getChannelConfig(parsed.channel))?.kind !== "stage") {
+          // Per-channel sequence, bumped synchronously before any await, so a
+          // slow channel lookup can't apply an older "on" after a newer
+          // on/off from this socket (or after the socket closed).
+          const seq = (previewSeq.get(parsed.channel) ?? 0) + 1;
+          previewSeq.set(parsed.channel, seq);
+          if (parsed.layout === null) {
+            stageFeedHub.clearPreview(parsed.channel, connId);
+            break;
+          }
+          const cfg = await channelConfigs.getChannelConfig(parsed.channel);
+          if (closed || previewSeq.get(parsed.channel) !== seq) break;
+          if (cfg?.kind !== "stage") {
             send({ type: "error", code: "not_stage_channel", message: parsed.channel });
           } else stageFeedHub.setPreview(parsed.channel, parsed.layout, connId);
           break;
@@ -1040,6 +1052,7 @@ export function handleConnection(
   });
 
   ws.on("close", () => {
+    closed = true;
     stageFeedHub.clearPreviewsByOwner(connId);
     if (registeredAudioSourceId) {
       sttListener.disconnect(registeredAudioSourceId);
