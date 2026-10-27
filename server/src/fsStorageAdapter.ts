@@ -26,6 +26,7 @@ import {
   type Song,
   type StorageAdapter,
   type StageLayout,
+  isBuiltInStageLayoutId,
   type Template,
 } from "@overlaysys/core";
 import {
@@ -225,8 +226,13 @@ export class FsStorageAdapter implements StorageAdapter {
     return l && !l.deletedAt ? l : null;
   }
   async saveStageLayout(_org: string, layout: StageLayout): Promise<void> {
+    // Built-ins live in code: never write one (or re-push a pulled one).
+    if (isBuiltInStageLayoutId(layout.id)) return;
+    // `builtIn` is a code-only flag; a stored layout must never claim it.
+    const { builtIn: _builtIn, ...stored } = layout;
+    void _builtIn;
     await saveStageLayout({
-      ...layout,
+      ...stored,
       updatedAt: layout.updatedAt ?? new Date().toISOString(),
     });
   }

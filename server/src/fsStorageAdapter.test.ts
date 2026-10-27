@@ -83,4 +83,19 @@ describe("FsStorageAdapter stage layouts", () => {
     expect((await adapter.getStageLayout("org", "stage-layout-aaaa1111"))?.name).toBe("Mine");
     expect(await adapter.deleteStageLayout("org", "nope")).toBe(false);
   });
+
+  it("strips builtIn from a stored layout", async () => {
+    const adapter = new FsStorageAdapter();
+    const l = StageLayoutSchema.parse({ ...SPEAKER_LAYOUT, id: "custom", builtIn: true });
+    await adapter.saveStageLayout("org", l);
+    const stored = (await adapter.listStageLayoutsSince("org", "")).find((x) => x.id === "custom");
+    expect(stored).toBeDefined();
+    expect(stored?.builtIn).toBeUndefined();
+  });
+
+  it("saving a built-in id writes nothing", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.saveStageLayout("org", StageLayoutSchema.parse({ ...SPEAKER_LAYOUT, id: "speaker" }));
+    expect(await adapter.listStageLayoutsSince("org", "")).toEqual([]);
+  });
 });

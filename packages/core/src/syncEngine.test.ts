@@ -291,9 +291,11 @@ describe("syncEngine.sync", () => {
     remote.listStageLayoutsSince = async () => {
       throw new Error('relation "overlaysys.stage_layouts" does not exist');
     };
+    await local.saveProject(ORG, makeProject({ updatedAt: "2026-05-01T00:00:00Z" }));
     const r = await sync(local, remote, ORG);
     expect(r.errors).toEqual([expect.objectContaining({ kind: "stageLayouts", id: "(list)" })]);
-    expect(r.perTable.templates.pushed + r.perTable.templates.pulled).toBeGreaterThanOrEqual(0);
+    expect(r.errors).toHaveLength(1);
+    expect(r.perTable.projects.pushed).toBe(1); // other tables still ran
   });
 
   it("aggregates per-record errors without aborting the pass", async () => {
