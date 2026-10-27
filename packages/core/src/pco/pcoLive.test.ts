@@ -60,7 +60,7 @@ describe("mapPcoLive", () => {
   });
 
   it("falls back to the next non-header item when the current item is a header", () => {
-    const v = mapPcoLive(raw({ currentItemId: "h" }), NOW);
+    const v = mapPcoLive(raw({ currentItemId: "h", nextItemId: null }), NOW);
     expect(v.status).toBe("live");
     expect(v.current).toMatchObject({ id: "a", title: "A", lengthSec: 300 });
     expect(v.itemIndex).toBe(1);
