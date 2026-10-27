@@ -13,6 +13,7 @@ import {
   ProjectSchema,
   ShowSchema,
   SongSchema,
+  StageLayoutSchema,
   TemplateSchema,
   type ChannelConfig,
   type Hotcard,
@@ -20,6 +21,7 @@ import {
   type ProjectChannelOverride,
   type Show,
   type Song,
+  type StageLayout,
   type StorageAdapter,
   type Template,
 } from "@overlaysys/core";
@@ -267,6 +269,23 @@ export class CloudStorageAdapter implements StorageAdapter {
     return this.softDeletePayload(orgId, "templates", id);
   }
 
+  async listStageLayouts(orgId: string): Promise<StageLayout[]> {
+    return this.queryPayloadTable(orgId, "stage_layouts", false, StageLayoutSchema);
+  }
+  async listStageLayoutsSince(orgId: string, _watermark: string): Promise<StageLayout[]> {
+    void _watermark;
+    return this.queryPayloadTable(orgId, "stage_layouts", true, StageLayoutSchema);
+  }
+  async getStageLayout(orgId: string, id: string): Promise<StageLayout | null> {
+    return this.getPayload(orgId, "stage_layouts", id, StageLayoutSchema);
+  }
+  async saveStageLayout(orgId: string, l: StageLayout): Promise<void> {
+    return this.savePayload(orgId, "stage_layouts", l);
+  }
+  async deleteStageLayout(orgId: string, id: string): Promise<boolean> {
+    return this.softDeletePayload(orgId, "stage_layouts", id);
+  }
+
   async listChannelConfigs(orgId: string): Promise<ChannelConfig[]> {
     return this.queryPayloadTable(
       orgId,
@@ -389,7 +408,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async queryPayloadTable<T>(
     orgId: string,
-    table: "songs" | "templates" | "channel_configs",
+    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
     includeTombstones: boolean,
     schema: { safeParse: (raw: unknown) => { success: boolean; data?: T } },
   ): Promise<T[]> {
@@ -415,7 +434,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async getPayload<T>(
     orgId: string,
-    table: "songs" | "templates" | "channel_configs",
+    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
     id: string,
     schema: { safeParse: (raw: unknown) => { success: boolean; data?: T } },
   ): Promise<T | null> {
@@ -438,7 +457,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async savePayload(
     orgId: string,
-    table: "songs" | "templates" | "channel_configs",
+    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
     entity: { id: string; updatedAt?: string; deletedAt?: string },
   ): Promise<void> {
     const { error } = await this.client.from(table).upsert(
@@ -458,7 +477,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async softDeletePayload(
     orgId: string,
-    table: "songs" | "templates" | "channel_configs",
+    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
     id: string,
   ): Promise<boolean> {
     const { error } = await this.client

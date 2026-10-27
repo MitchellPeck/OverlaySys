@@ -25,6 +25,7 @@ import {
   type Show,
   type Song,
   type StorageAdapter,
+  type StageLayout,
   type Template,
 } from "@overlaysys/core";
 import {
@@ -34,6 +35,7 @@ import {
   loadAllProjects,
   loadAllShows,
   loadAllSongs,
+  loadAllStageLayouts,
   loadAllTemplates,
   loadChannelConfig,
   loadHotcard,
@@ -46,6 +48,7 @@ import {
   saveProject,
   saveShow,
   saveSong,
+  saveStageLayout,
   saveTemplate,
 } from "./storage";
 
@@ -205,6 +208,30 @@ export class FsStorageAdapter implements StorageAdapter {
   }
   async deleteTemplate(_org: string, id: string): Promise<boolean> {
     return softDeleteVia(await loadTemplate(id), (t) => saveTemplate(t));
+  }
+
+  // ── Stage layouts ──────────────────────────────────────────────────────
+  async listStageLayouts(_org: string): Promise<StageLayout[]> {
+    return live(await loadAllStageLayouts());
+  }
+  async listStageLayoutsSince(_org: string, _watermark: string): Promise<StageLayout[]> {
+    return loadAllStageLayouts();
+  }
+  private async findStageLayout(id: string): Promise<StageLayout | null> {
+    return (await loadAllStageLayouts()).find((l) => l.id === id) ?? null;
+  }
+  async getStageLayout(_org: string, id: string): Promise<StageLayout | null> {
+    const l = await this.findStageLayout(id);
+    return l && !l.deletedAt ? l : null;
+  }
+  async saveStageLayout(_org: string, layout: StageLayout): Promise<void> {
+    await saveStageLayout({
+      ...layout,
+      updatedAt: layout.updatedAt ?? new Date().toISOString(),
+    });
+  }
+  async deleteStageLayout(_org: string, id: string): Promise<boolean> {
+    return softDeleteVia(await this.findStageLayout(id), (l) => saveStageLayout(l));
   }
 
   // ── Channel configs ────────────────────────────────────────────────────

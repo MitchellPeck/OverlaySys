@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ShowSchema, type Show } from "@overlaysys/core";
+import { SPEAKER_LAYOUT, ShowSchema, StageLayoutSchema, type Show } from "@overlaysys/core";
 import * as storage from "./storage";
 import { FsStorageAdapter } from "./fsStorageAdapter";
 
@@ -55,5 +55,32 @@ describe("FsStorageAdapter.saveShow keeps local sermon notes", () => {
   it("a brand-new show saves as-is", async () => {
     await new FsStorageAdapter().saveShow("org", makeShow());
     expect((await storage.loadShow("show-1"))?.sermonNotes).toBeUndefined();
+  });
+});
+
+describe("FsStorageAdapter stage layouts", () => {
+  it("save -> listStageLayoutsSince round-trips and includes tombstones; list hides them", async () => {
+    const adapter = new FsStorageAdapter();
+    const base = StageLayoutSchema.parse({
+      ...SPEAKER_LAYOUT,
+      id: "stage-layout-aaaa1111",
+      name: "Mine",
+    });
+    await adapter.saveStageLayout("org", base);
+    await adapter.saveStageLayout("org", { ...base, id: "stage-layout-bbbb2222", name: "Gone" });
+
+    expect((await adapter.listStageLayouts("org")).map((l) => l.id).sort()).toEqual([
+      "stage-layout-aaaa1111",
+      "stage-layout-bbbb2222",
+    ]);
+    expect(await adapter.deleteStageLayout("org", "stage-layout-bbbb2222")).toBe(true);
+
+    expect((await adapter.listStageLayouts("org")).map((l) => l.id)).toEqual(["stage-layout-aaaa1111"]);
+    const since = await adapter.listStageLayoutsSince("org", "");
+    expect(since.map((l) => l.id).sort()).toEqual(["stage-layout-aaaa1111", "stage-layout-bbbb2222"]);
+    expect(since.find((l) => l.id === "stage-layout-bbbb2222")?.deletedAt).toBeTruthy();
+    expect(await adapter.getStageLayout("org", "stage-layout-bbbb2222")).toBeNull();
+    expect((await adapter.getStageLayout("org", "stage-layout-aaaa1111"))?.name).toBe("Mine");
+    expect(await adapter.deleteStageLayout("org", "nope")).toBe(false);
   });
 });

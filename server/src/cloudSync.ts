@@ -15,6 +15,7 @@ import {
 } from "@overlaysys/supabase";
 import { FsStorageAdapter } from "./fsStorageAdapter";
 import { broadcast } from "./broadcast";
+import { listStageLayoutMetas, reloadStageLayouts } from "./stageLayouts";
 import {
   listTemplateMetas,
   reloadTemplates,
@@ -242,6 +243,10 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
       await reloadTemplates();
       broadcast({ type: "template_list", templates: await listTemplateMetas() });
     }
+    if (touched("stageLayouts")) {
+      await reloadStageLayouts();
+      broadcast({ type: "stage_layout_list", layouts: await listStageLayoutMetas() });
+    }
     if (touched("shows")) {
       await reloadShows();
       broadcast({ type: "show_list", shows: await listShowMetas() });
@@ -267,7 +272,13 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
     }
     // Confidence monitors render rows, songs and templates and read channel
     // configs (kind, follows, layout) — rebuild them against pulled data.
-    if (touched("templates") || touched("shows") || touched("songs") || touched("channelConfigs")) {
+    if (
+      touched("templates") ||
+      touched("stageLayouts") ||
+      touched("shows") ||
+      touched("songs") ||
+      touched("channelConfigs")
+    ) {
       stageFeedHub.invalidateAll();
     }
     // Pulled shows may have changed or removed the active sermon notes.

@@ -6,9 +6,11 @@ import type {
   ProjectChannelOverride,
   Show,
   Song,
+  StageLayout,
   StorageAdapter,
   Template,
 } from "./index";
+import { SPEAKER_LAYOUT, StageLayoutSchema } from "./stageLayout";
 import { sync } from "./syncEngine";
 
 // In-memory adapter used by every test below. Holds Maps keyed by the
@@ -23,6 +25,7 @@ function makeMemAdapter(): StorageAdapter {
   const hotcards = new Map<string, Hotcard>();
   const songs = new Map<string, Song>();
   const templates = new Map<string, Template>();
+  const stageLayouts = new Map<string, StageLayout>();
   const channels = new Map<string, ChannelConfig>();
   const overrides = new Map<string, ProjectChannelOverride>();
 
@@ -70,6 +73,14 @@ function makeMemAdapter(): StorageAdapter {
     },
     deleteTemplate: async (_, id) => templates.delete(id),
 
+    listStageLayouts: async () => live([...stageLayouts.values()]),
+    listStageLayoutsSince: async () => [...stageLayouts.values()],
+    getStageLayout: async (_, id) => stageLayouts.get(id) ?? null,
+    saveStageLayout: async (_, l) => {
+      stageLayouts.set(l.id, l);
+    },
+    deleteStageLayout: async (_, id) => stageLayouts.delete(id),
+
     listChannelConfigs: async () => live([...channels.values()]),
     listChannelConfigsSince: async () => [...channels.values()],
     getChannelConfig: async (_, id) => channels.get(id) ?? null,
@@ -102,6 +113,15 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+}
+
+function makeStageLayout(overrides: Partial<StageLayout> = {}): StageLayout {
+  return StageLayoutSchema.parse({
+    ...SPEAKER_LAYOUT,
+    id: "stage-layout-aaaa1111",
+    name: "Mine",
+    ...overrides,
+  });
 }
 
 function makeChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
@@ -249,6 +269,31 @@ describe("syncEngine.sync", () => {
     expect(localOv).toHaveLength(2);
     const remoteOv = await remote.listProjectChannelOverrides(ORG);
     expect(remoteOv).toHaveLength(2);
+  });
+
+  it("pulls a remote-only stage layout and pushes a newer local one", async () => {
+    await remote.saveStageLayout(ORG, makeStageLayout({ updatedAt: "2026-05-01T00:00:00Z" }));
+    let r = await sync(local, remote, ORG);
+    expect(r.perTable.stageLayouts.pulled).toBe(1);
+    expect(r.perTable.stageLayouts.pushed).toBe(0);
+    expect(await local.getStageLayout(ORG, "stage-layout-aaaa1111")).not.toBeNull();
+
+    await local.saveStageLayout(
+      ORG,
+      makeStageLayout({ name: "Edited", updatedAt: "2026-05-02T00:00:00Z" }),
+    );
+    r = await sync(local, remote, ORG);
+    expect(r.perTable.stageLayouts.pushed).toBe(1);
+    expect((await remote.getStageLayout(ORG, "stage-layout-aaaa1111"))?.name).toBe("Edited");
+  });
+
+  it("a missing remote stage_layouts table fails only that table", async () => {
+    remote.listStageLayoutsSince = async () => {
+      throw new Error('relation "overlaysys.stage_layouts" does not exist');
+    };
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([expect.objectContaining({ kind: "stageLayouts", id: "(list)" })]);
+    expect(r.perTable.templates.pushed + r.perTable.templates.pulled).toBeGreaterThanOrEqual(0);
   });
 
   it("aggregates per-record errors without aborting the pass", async () => {

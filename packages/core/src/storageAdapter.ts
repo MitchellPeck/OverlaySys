@@ -3,6 +3,7 @@ import type { Show } from "./show";
 import type { Hotcard } from "./hotcard";
 import type { Song } from "./song";
 import type { Template } from "./template";
+import type { StageLayout } from "./stageLayout";
 import type { ChannelConfig, ProjectChannelOverride } from "./channelConfig";
 
 /**
@@ -66,6 +67,13 @@ export interface StorageAdapter {
   getTemplate(orgId: string, id: string): Promise<Template | null>;
   saveTemplate(orgId: string, template: Template): Promise<void>;
   deleteTemplate(orgId: string, id: string): Promise<boolean>;
+
+  // ── Stage layouts (org library — no project scoping) ───────────────────
+  listStageLayouts(orgId: string): Promise<StageLayout[]>;
+  listStageLayoutsSince(orgId: string, watermark: string): Promise<StageLayout[]>;
+  getStageLayout(orgId: string, id: string): Promise<StageLayout | null>;
+  saveStageLayout(orgId: string, l: StageLayout): Promise<void>;
+  deleteStageLayout(orgId: string, id: string): Promise<boolean>;
 
   // ── Channels (org library, configured online, synced to devices) ──────
   //

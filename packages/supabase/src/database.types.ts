@@ -158,6 +158,27 @@ export interface Database {
         };
         Relationships: [];
       };
+      stage_layouts: {
+        Row: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       asset_index: {
         Row: {
           sha256: string;

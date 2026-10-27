@@ -22,6 +22,7 @@ import type {
   ProjectChannelOverride,
   Show,
   Song,
+  StageLayout,
   StorageAdapter,
   Template,
 } from "./index";
@@ -75,6 +76,7 @@ export type SyncEntityKind =
   | "hotcards"
   | "songs"
   | "templates"
+  | "stageLayouts"
   | "channelConfigs"
   | "projectChannelOverrides";
 
@@ -124,6 +126,7 @@ export async function sync(
       hotcards: { pulled: 0, pushed: 0 },
       songs: { pulled: 0, pushed: 0 },
       templates: { pulled: 0, pushed: 0 },
+      stageLayouts: { pulled: 0, pushed: 0 },
       channelConfigs: { pulled: 0, pushed: 0 },
       projectChannelOverrides: { pulled: 0, pushed: 0 },
     },
@@ -180,6 +183,16 @@ export async function sync(
     keyOf: (t) => t.id,
     pushToRemote: (t) => remote.saveTemplate(orgId, t),
     pushToLocal: (t) => local.saveTemplate(orgId, t),
+    result,
+  });
+
+  await reconcileTable<StageLayout>({
+    kind: "stageLayouts",
+    listLocal: () => local.listStageLayoutsSince(orgId, ""),
+    listRemote: () => remote.listStageLayoutsSince(orgId, ""),
+    keyOf: (l) => l.id,
+    pushToRemote: (l) => remote.saveStageLayout(orgId, l),
+    pushToLocal: (l) => local.saveStageLayout(orgId, l),
     result,
   });
 
