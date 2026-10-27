@@ -256,9 +256,13 @@ function StageLayoutEditor() {
   useEffect(() => {
     armedHrefRef.current = null;
   }, [layoutId]);
+  const draftId = draft?.id ?? null;
   useEffect(() => {
     if (dirty) {
-      if (!armedHrefRef.current) armSentinel();
+      // On the first render after an in-place layout switch, `dirty` still
+      // belongs to the previous draft; arming here would push a sentinel at
+      // the new URL (and drop Forward history) for no unsaved work.
+      if (!armedHrefRef.current && draftId === layoutId) armSentinel();
       return;
     }
     const disarm = shouldDisarmSentinel({
@@ -270,7 +274,7 @@ function StageLayoutEditor() {
     armedHrefRef.current = null;
     // Our popstate handler ignores this pop (nothing is armed any more).
     if (disarm) window.history.back();
-  }, [dirty, layoutId]);
+  }, [dirty, layoutId, draftId]);
   useEffect(() => {
     const onPopState = () => {
       const action = sentinelPopAction({
