@@ -7,7 +7,7 @@ import type { FetchLike } from "@overlaysys/scripture";
 import { initScripture, registerScriptureRoutes, getScriptureRegistry } from "../scripture";
 import { _setApiBibleFetchForTest, ensureApiBible, getApiBibleStatus, initApiBible } from "./config";
 import { registerApiBibleRoutes } from "./routes";
-import { _setFumsFetchForTest } from "./fums";
+import { _flushFumsForTest, _setFumsFetchForTest } from "./fums";
 
 const KEY = "secret-key-123";
 let tmp: string;
@@ -139,7 +139,7 @@ describe("API.Bible config", () => {
     const body = res.json();
     expect(body.source).toMatchObject({ provider: "api.bible", bibleId: "B", usageTokens: ["tok"] });
     expect(typeof body.source.fetchedAt).toBe("string");
-    await new Promise((r) => setTimeout(r, 10));
+    await _flushFumsForTest();
     expect(fumsCalls.some((u) => u.includes("t=tok"))).toBe(true);
     await a.close();
   });
@@ -158,7 +158,7 @@ describe("API.Bible config", () => {
     const a = await app();
     const res = await a.inject({ method: "POST", url: "/api/scripture/usage", payload: { tokens: ["x", 5, ""] } });
     expect(res.statusCode).toBe(200);
-    await new Promise((r) => setTimeout(r, 10));
+    await _flushFumsForTest();
     expect(fumsCalls).toHaveLength(1);
     expect(fumsCalls[0]).toContain("t=x");
     expect(fumsCalls[0]).not.toContain("t=5");

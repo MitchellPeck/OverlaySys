@@ -12,6 +12,8 @@ const sessionId = randomUUID();
 let deviceIdCache: string | null = null;
 let fetchOverride: ((url: string) => Promise<unknown>) | null = null;
 
+const inflight = new Set<Promise<void>>();
+
 const deviceFile = () => path.join(dataRoot(), "settings", "api-bible-device.json");
 
 async function deviceId(): Promise<string> {
@@ -37,14 +39,25 @@ export function fumsUrl(tokens: string[], dId: string, sId: string): string {
 }
 
 /** Report one view per token. Never rejects — usage reporting must not break a take. */
-export async function reportViews(tokens: string[]): Promise<void> {
-  if (tokens.length === 0) return;
+export function reportViews(tokens: string[]): Promise<void> {
+  if (tokens.length === 0) return Promise.resolve();
+  const p = doReport(tokens).finally(() => inflight.delete(p));
+  inflight.add(p);
+  return p;
+}
+
+async function doReport(tokens: string[]): Promise<void> {
   try {
     const url = fumsUrl(tokens, await deviceId(), sessionId);
     await (fetchOverride ?? ((u: string) => fetch(u)))(url);
   } catch (e) {
     console.debug("[api-bible] FUMS report failed", e instanceof Error ? e.message : e);
   }
+}
+
+/** @internal Resolves once every fire-and-forget report started so far has settled. */
+export async function _flushFumsForTest(): Promise<void> {
+  while (inflight.size > 0) await Promise.all([...inflight]);
 }
 
 /** @internal */
