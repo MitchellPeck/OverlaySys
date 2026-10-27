@@ -53,6 +53,8 @@ import { isCloudMode } from "@/lib/mode";
 const FEED_TICK_MS = 250;
 const PREVIEW_THROTTLE_MS = 150;
 const NOOP = () => {};
+/** Delay before the one retry of a get_stage_layout that came back not_found. */
+const NOT_FOUND_RETRY_MS = 300;
 
 function isTyping(el: Element | null): boolean {
   const ae = el as HTMLElement | null;
@@ -134,6 +136,11 @@ function StageLayoutEditor() {
     awaitingEchoRef.current = null;
     setDraft(null);
     setError(null);
+    const notFound = `Layout "${layoutId}" not found.`;
+    // Create-then-route can open the editor before the new layout is
+    // readable: retry the fetch once before reporting it missing.
+    let retried = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const off = getClient().on((msg) => {
       if (msg.type === "stage_layout") {
         const dup = duplicateRef.current;
@@ -149,7 +156,10 @@ function StageLayoutEditor() {
           msg.layout,
         );
         if (awaitingEchoRef.current === msg.layout.id) awaitingEchoRef.current = null;
-        if (adopt) setDraft(msg.layout);
+        if (adopt) {
+          setDraft(msg.layout);
+          setError((e) => (e === notFound ? null : e));
+        }
       } else if (msg.type === "ack") {
         if (msg.op === "save_stage_layout" && msg.id === layoutId) {
           const sent = savingRef.current;
@@ -164,14 +174,20 @@ function StageLayoutEditor() {
           duplicateRef.current = { pending: false, copyId: msg.id };
         }
       } else if (msg.type === "error" && msg.message === layoutId) {
-        if (msg.code === "not_found") setError(`Layout "${layoutId}" not found.`);
+        if (msg.code === "not_found" && !retried) {
+          retried = true;
+          retryTimer = setTimeout(() => send({ type: "get_stage_layout", layoutId }), NOT_FOUND_RETRY_MS);
+        } else if (msg.code === "not_found") setError(notFound);
         else if (msg.code === "read_only") setError("Built-in layouts are read-only. Duplicate to edit.");
         savingRef.current = null;
         duplicateRef.current = { pending: false, copyId: null };
       }
     });
-    return off;
-  }, [layoutId, setDraft, markSaved, router]);
+    return () => {
+      off();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [layoutId, setDraft, markSaved, router, send]);
 
   useEffect(() => {
     if (conn !== "open") return;
@@ -301,12 +317,18 @@ function StageLayoutEditor() {
   keyActions.current = { save, undo, redo, deleteSelection, duplicateSelection, readOnly };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (isTyping(e.target as Element) || isTyping(document.activeElement)) return;
       const action = stageEditorShortcut(e);
       if (!action) return;
-      e.preventDefault();
       const a = keyActions.current;
-      if (action === "save") a.save();
+      // Save works from inside an inspector input too, and must never fall
+      // through to the browser's Save Page dialog.
+      if (action === "save") {
+        e.preventDefault();
+        a.save();
+        return;
+      }
+      if (isTyping(e.target as Element) || isTyping(document.activeElement)) return;
+      e.preventDefault();
       if (a.readOnly) return;
       if (action === "undo") a.undo();
       else if (action === "redo") a.redo();

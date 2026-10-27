@@ -59,6 +59,9 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
   const notStarted = t.anchor == null;
   const paused = !notStarted && t.pausedAt != null;
   const running = !notStarted && !paused;
+  // The next PCO poll would revert a manual nudge, so don't offer one.
+  const pco = t.source === "pco";
+  const pcoTitle = pco ? "Driven by Planning Center Live" : undefined;
 
   return (
     <div style={{ padding: 10, background: colors.panel2, border: `1px solid ${colors.border}`, borderRadius: radius.md }}>
@@ -83,13 +86,31 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
             <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Resume
           </Button>
         )}
-        <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_reset", id: t.id })}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pco}
+          title={pcoTitle}
+          onClick={() => send({ type: "timer_reset", id: t.id })}
+        >
           <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_adjust", id: t.id, deltaMs: -60_000 })}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pco}
+          title={pcoTitle}
+          onClick={() => send({ type: "timer_adjust", id: t.id, deltaMs: -60_000 })}
+        >
           −1 min
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_adjust", id: t.id, deltaMs: 60_000 })}>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={pco}
+          title={pcoTitle}
+          onClick={() => send({ type: "timer_adjust", id: t.id, deltaMs: 60_000 })}
+        >
           +1 min
         </Button>
         <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_delete", id: t.id })}>
@@ -106,8 +127,10 @@ function NewStageTimerForm({ send }: { send: Send }) {
   const [duration, setDuration] = useState("5:00");
   const [overtime, setOvertime] = useState(true);
 
+  const countdown = mode === "countdown";
   const durationMs = parseDuration(duration);
-  const invalid = durationMs == null;
+  // Only a countdown has a duration; a count-up timer ignores the field.
+  const invalid = countdown && durationMs == null;
 
   function create(): void {
     if (invalid) return;
@@ -115,7 +138,7 @@ function NewStageTimerForm({ send }: { send: Send }) {
       type: "timer_create",
       label: label.trim() || "Timer",
       mode,
-      ...(mode === "countdown" ? { durationMs } : {}),
+      ...(countdown && durationMs != null ? { durationMs } : {}),
       overtime,
     });
     setLabel("");
@@ -130,13 +153,15 @@ function NewStageTimerForm({ send }: { send: Send }) {
           <option value="countdown">Countdown</option>
           <option value="countup">Count up</option>
         </Select>
-        <Input
-          aria-label="Duration"
-          placeholder="M:SS"
-          value={duration}
-          invalid={invalid}
-          onChange={(e) => setDuration(e.target.value)}
-        />
+        {countdown && (
+          <Input
+            aria-label="Duration"
+            placeholder="M:SS"
+            value={duration}
+            invalid={invalid}
+            onChange={(e) => setDuration(e.target.value)}
+          />
+        )}
       </div>
       <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
         <input type="checkbox" checked={overtime} onChange={(e) => setOvertime(e.target.checked)} />

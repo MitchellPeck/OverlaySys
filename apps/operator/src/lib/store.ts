@@ -99,6 +99,8 @@ type StoreState = {
   /** Server-held preview-on-monitor overrides, one per stage channel. */
   stageLayoutPreviews: { channel: string; layoutId: string }[];
   pcoLive: PcoLiveStateMessage | null;
+  /** Why the last pco_live_start was refused; cleared on toggle or once sync is enabled. */
+  pcoLiveStartError: string | null;
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
 
@@ -130,6 +132,7 @@ type StoreState = {
   setStageLayouts: (l: StageLayoutMeta[]) => void;
   setStageLayoutPreviews: (p: { channel: string; layoutId: string }[]) => void;
   setPcoLive: (m: PcoLiveStateMessage | null) => void;
+  setPcoLiveStartError: (e: string | null) => void;
   setHotcards: (h: HotcardMeta[]) => void;
   setHotcard: (h: Hotcard) => void;
 
@@ -202,6 +205,7 @@ export const useStore = create<StoreState>((set) => ({
   stageLayouts: [],
   stageLayoutPreviews: [],
   pcoLive: null,
+  pcoLiveStartError: null,
   hotcards: [],
   hotcardCache: {},
   projects: [],
@@ -335,7 +339,8 @@ export const useStore = create<StoreState>((set) => ({
   setStageTimers: (t) => set({ stageTimers: t }),
   setStageLayouts: (l) => set({ stageLayouts: l }),
   setStageLayoutPreviews: (p) => set({ stageLayoutPreviews: p }),
-  setPcoLive: (m) => set({ pcoLive: m }),
+  setPcoLive: (m) => set((s) => ({ pcoLive: m, pcoLiveStartError: m?.enabled ? null : s.pcoLiveStartError })),
+  setPcoLiveStartError: (e) => set({ pcoLiveStartError: e }),
   setHotcards: (h) => set({ hotcards: h }),
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),

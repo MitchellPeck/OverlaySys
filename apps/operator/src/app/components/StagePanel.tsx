@@ -9,14 +9,27 @@ import { useWs } from "@/lib/useWs";
 import { getStageSettings } from "@/lib/stageSettingsClient";
 
 const MAX_MESSAGE = 200;
+/** PCO Live reads as stale once its last successful poll is older than this. */
+const STALE_MS = 30_000;
 
 export function StagePanel() {
   const { send } = useWs();
   const show = useStore((s) => s.show);
   const stage = useStore((s) => s.stageState);
   const pcoLive = useStore((s) => s.pcoLive);
+  const startError = useStore((s) => s.pcoLiveStartError);
   const [presets, setPresets] = useState<string[]>(DEFAULT_MESSAGE_PRESETS);
   const [text, setText] = useState("");
+  const [now, setNow] = useState(() => Date.now());
+
+  // Re-evaluate staleness while syncing; the server only rebroadcasts on
+  // change or a heartbeat, so lastPolledAt can't drive re-renders by itself.
+  const syncing = !!pcoLive?.enabled;
+  useEffect(() => {
+    if (!syncing) return;
+    const id = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, [syncing]);
 
   useEffect(() => {
     let alive = true;
@@ -56,6 +69,8 @@ export function StagePanel() {
           : pcoLive?.status === "ended"
             ? "Ended"
             : null;
+  const stale =
+    following && pcoLive.lastPolledAt !== null && now - pcoLive.lastPolledAt > STALE_MS;
 
   return (
     <div style={{ flexShrink: 0, borderTop: `1px solid ${colors.border}` }}>
@@ -69,17 +84,26 @@ export function StagePanel() {
               aria-label="Follow PCO Live"
               checked={following}
               disabled={!show}
-              onChange={(e) =>
-                e.target.checked && show ? send({ type: "pco_live_start", showId: show.id }) : send({ type: "pco_live_stop" })
-              }
+              onChange={(e) => {
+                useStore.getState().setPcoLiveStartError(null);
+                if (e.target.checked && show) send({ type: "pco_live_start", showId: show.id });
+                else send({ type: "pco_live_stop" });
+              }}
             />
             Follow PCO Live
           </label>
-          {pcoLive?.error ? (
+          {startError ? (
+            <div style={{ fontSize: 12, color: colors.errorText }}>{startError}</div>
+          ) : pcoLive?.error ? (
             <div style={{ fontSize: 12, color: colors.errorText }}>{pcoLive.error}</div>
           ) : following && liveLabel ? (
             <div style={{ fontSize: 12, color: colors.textDim }}>{liveLabel}</div>
           ) : null}
+          {stale && (
+            <div style={{ fontSize: 12, color: colors.warn }}>
+              stale · last update {Math.round((now - pcoLive.lastPolledAt!) / 1000)} s ago
+            </div>
+          )}
         </div>
         {sets.length === 0 && !hasActive ? (
           <div style={{ fontSize: 12, color: colors.textDim }}>

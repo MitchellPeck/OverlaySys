@@ -161,7 +161,9 @@ function bootstrap(): void {
         store.setSttInstallProgress(msg.progress);
         break;
       case "error":
-        console.warn("[server error]", msg);
+        // A refused "Follow PCO Live" is shown next to its toggle.
+        if (msg.code === "pco_live") store.setPcoLiveStartError(msg.message);
+        else console.warn("[server error]", msg);
         break;
     }
   });
