@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { SPEAKER_LAYOUT } from "@overlaysys/core";
 import { decodeClient, decodeServer, encode, PROTOCOL_VERSION } from "./index";
 
 describe("show_list scheduledFor", () => {
@@ -135,5 +136,23 @@ describe("stt_levels_subscribe", () => {
       type: "stt_levels_subscribe",
       on: true,
     });
+  });
+});
+
+describe("stage layout messages", () => {
+  it("parses save_stage_layout with the Speaker layout", () => {
+    const m = decodeClient(JSON.stringify({ type: "save_stage_layout", layout: SPEAKER_LAYOUT }));
+    expect(m.type).toBe("save_stage_layout");
+  });
+  it("parses stage_layout_preview with a null layout", () => {
+    const m = decodeClient(JSON.stringify({ type: "stage_layout_preview", channel: "stage1", layout: null }));
+    expect(m.type).toBe("stage_layout_preview");
+  });
+  it("decodes stage_layout_previews", () => {
+    const msg = decodeServer(
+      encode({ type: "stage_layout_previews", previews: [{ channel: "stage1", layoutId: "draft" }] }),
+    );
+    if (msg.type !== "stage_layout_previews") throw new Error("wrong type");
+    expect(msg.previews[0]!.layoutId).toBe("draft");
   });
 });

@@ -7,6 +7,8 @@ import {
   MediaStatusSchema,
   MediaPlaybackSchema,
   TemplateSchema,
+  StageLayoutSchema,
+  StageLayoutMetaSchema,
   ShowSchema,
   StageStateSchema,
   SongSchema,
@@ -66,6 +68,16 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("save_template"), template: TemplateSchema }),
   z.object({ type: z.literal("delete_template"), templateId: z.string() }),
   z.object({ type: z.literal("duplicate_template"), templateId: z.string() }),
+  z.object({ type: z.literal("list_stage_layouts") }),
+  z.object({ type: z.literal("get_stage_layout"), layoutId: z.string() }),
+  z.object({ type: z.literal("save_stage_layout"), layout: StageLayoutSchema }),
+  z.object({ type: z.literal("delete_stage_layout"), layoutId: z.string() }),
+  z.object({ type: z.literal("duplicate_stage_layout"), layoutId: z.string() }),
+  z.object({
+    type: z.literal("stage_layout_preview"),
+    channel: z.string(),
+    layout: StageLayoutSchema.nullable(),
+  }),
   z.object({ type: z.literal("list_shows") }),
   z.object({ type: z.literal("get_show"), showId: z.string() }),
   z.object({ type: z.literal("save_show"), show: ShowSchema }),
@@ -348,6 +360,15 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("template"),
     template: TemplateSchema,
+  }),
+  z.object({
+    type: z.literal("stage_layout_list"),
+    layouts: z.array(StageLayoutMetaSchema),
+  }),
+  z.object({ type: z.literal("stage_layout"), layout: StageLayoutSchema }),
+  z.object({
+    type: z.literal("stage_layout_previews"),
+    previews: z.array(z.object({ channel: z.string(), layoutId: z.string() })),
   }),
   z.object({
     type: z.literal("show_list"),

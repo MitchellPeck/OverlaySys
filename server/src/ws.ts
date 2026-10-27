@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { WebSocket } from "ws";
 import type { FastifyBaseLogger } from "fastify";
@@ -9,6 +10,7 @@ import {
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
 import {
+  isBuiltInStageLayoutId,
   resolveArrangement,
   resolveIntroTake,
   resolveOutroTake,
@@ -31,6 +33,7 @@ import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
+import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
@@ -128,12 +131,17 @@ sttInstaller.subscribeInstall((progress) => {
   })();
 });
 
+stageFeedHub.subscribePreviews(() =>
+  broadcast({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() }),
+);
+
 export function handleConnection(
   ws: WebSocket,
   _req: IncomingMessage,
   log: FastifyBaseLogger,
 ): void {
   const subscriptions = new Map<string, () => void>();
+  const connId = randomUUID();
   let registeredAudioSourceId: string | null = null;
 
   function send(msg: ServerMessage): void {
@@ -293,6 +301,66 @@ export function handleConnection(
           const list = await templates.listTemplateMetas();
           broadcast({ type: "template_list", templates: list });
           broadcast({ type: "template", template: copy });
+          break;
+        }
+        case "list_stage_layouts": {
+          send({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
+          break;
+        }
+        case "get_stage_layout": {
+          const layout = await stageLayouts.getStageLayout(parsed.layoutId);
+          if (!layout) send({ type: "error", code: "not_found", message: parsed.layoutId });
+          else send({ type: "stage_layout", layout });
+          break;
+        }
+        case "save_stage_layout": {
+          let saved;
+          try {
+            saved = await stageLayouts.saveStageLayout(parsed.layout);
+          } catch (err) {
+            if (err instanceof stageLayouts.ReadOnlyLayoutError) {
+              send({ type: "error", code: "read_only", message: parsed.layout.id });
+              break;
+            }
+            throw err;
+          }
+          send({ type: "ack", op: "save_stage_layout", id: saved.id });
+          stageFeedHub.clearPreviewsForLayout(saved.id);
+          broadcast({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
+          broadcast({ type: "stage_layout", layout: saved });
+          stageFeedHub.invalidateAll();
+          scheduleSync();
+          break;
+        }
+        case "delete_stage_layout": {
+          const ok = await stageLayouts.deleteStageLayout(parsed.layoutId);
+          if (!ok && isBuiltInStageLayoutId(parsed.layoutId)) {
+            send({ type: "error", code: "read_only", message: parsed.layoutId });
+            break;
+          }
+          send({ type: "ack", op: "delete_stage_layout", id: parsed.layoutId });
+          if (ok) {
+            broadcast({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
+            stageFeedHub.invalidateAll();
+            scheduleSync();
+          }
+          break;
+        }
+        case "duplicate_stage_layout": {
+          const copy = await stageLayouts.duplicateStageLayout(parsed.layoutId);
+          if (!copy) {
+            send({ type: "error", code: "not_found", message: parsed.layoutId });
+            break;
+          }
+          send({ type: "ack", op: "duplicate_stage_layout", id: copy.id });
+          broadcast({ type: "stage_layout_list", layouts: await stageLayouts.listStageLayoutMetas() });
+          broadcast({ type: "stage_layout", layout: copy });
+          scheduleSync();
+          break;
+        }
+        case "stage_layout_preview": {
+          if (parsed.layout === null) stageFeedHub.clearPreview(parsed.channel, connId);
+          else stageFeedHub.setPreview(parsed.channel, parsed.layout, connId);
           break;
         }
         case "list_shows": {
@@ -941,6 +1009,7 @@ export function handleConnection(
   });
 
   ws.on("close", () => {
+    stageFeedHub.clearPreviewsByOwner(connId);
     if (registeredAudioSourceId) {
       sttListener.disconnect(registeredAudioSourceId);
     }

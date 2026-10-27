@@ -8,7 +8,9 @@ import * as songs from "./songs";
 import * as songSession from "./songSession";
 import * as templates from "./templates";
 import * as stageState from "./stageState";
-import { ShowSchema, SongSchema } from "@overlaysys/core";
+import * as stageLayouts from "./stageLayouts";
+import * as stageFeedHub from "./stageFeedHub";
+import { SPEAKER_LAYOUT, ShowSchema, SongSchema, StageLayoutSchema } from "@overlaysys/core";
 
 /**
  * Minimal stand-in for a `ws` socket: an EventEmitter with the readyState +
@@ -166,5 +168,38 @@ describe("ws show writes reconcile the active notes", () => {
     expect(stageState.getStageState().notes).toBeNull();
     const last = sock.sent.filter((m) => m.type === "stage_state").at(-1);
     expect(last).toMatchObject({ state: { notes: null } });
+  });
+});
+
+describe("ws stage layouts", () => {
+  const layout = StageLayoutSchema.parse({ id: "stage-layout-wsws0001", name: "WS", widgets: [] });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("save_stage_layout acks and broadcasts list and layout", async () => {
+    vi.spyOn(stageLayouts, "saveStageLayout").mockImplementation(async (l) => l);
+    vi.spyOn(stageLayouts, "listStageLayoutMetas").mockResolvedValue([]);
+    const sock = connect();
+    await sock.client({ type: "save_stage_layout", layout });
+    expect(sock.sent).toContainEqual({ type: "ack", op: "save_stage_layout", id: layout.id });
+    expect(sock.sent.some((m) => m.type === "stage_layout_list")).toBe(true);
+    expect(sock.sent.some((m) => m.type === "stage_layout" && m.layout.id === layout.id)).toBe(true);
+  });
+
+  it("save_stage_layout of a built-in id errors read_only", async () => {
+    const sock = connect();
+    await sock.client({ type: "save_stage_layout", layout: SPEAKER_LAYOUT });
+    await vi.waitFor(() =>
+      expect(sock.sent.some((m) => m.type === "error" && m.code === "read_only")).toBe(true),
+    );
+  });
+
+  it("clears a socket's previews when it closes", async () => {
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-prev", layout });
+    expect(stageFeedHub.listPreviews()).toContainEqual({ channel: "stage-ws-prev", layoutId: layout.id });
+    sock.emit("close");
+    expect(stageFeedHub.listPreviews()).toEqual([]);
   });
 });

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ChannelConfigSchema, INITIAL_STAGE_STATE, ShowSchema, type ChannelConfig, type Template } from "@overlaysys/core";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { ChannelConfigSchema, INITIAL_STAGE_STATE, SPEAKER_LAYOUT, StageLayoutSchema, ShowSchema, type ChannelConfig, type Template } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
@@ -7,6 +10,7 @@ import * as songs from "./songs";
 import * as templates from "./templates";
 import * as stageState from "./stageState";
 import * as hub from "./stageFeedHub";
+import * as stageLayouts from "./stageLayouts";
 
 const configs = new Map<string, ChannelConfig>();
 
@@ -44,6 +48,62 @@ describe("stageFeedHub", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  describe("stage layouts", () => {
+    let tmpDir: string;
+    let prev: string | undefined;
+    beforeEach(async () => {
+      tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "overlaysys-hub-layouts-"));
+      prev = process.env["OVERLAYSYS_DATA_DIR"];
+      process.env["OVERLAYSYS_DATA_DIR"] = tmpDir;
+      await stageLayouts.reloadStageLayouts();
+      cfg({ id: "stage1", name: "Stage 1", kind: "stage", layoutId: "stage-layout-aaaa1111" });
+    });
+    afterEach(async () => {
+      hub.clearPreviewsByOwner("sockA");
+      if (prev === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
+      else process.env["OVERLAYSYS_DATA_DIR"] = prev;
+      await stageLayouts.reloadStageLayouts();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    });
+    const mineDraft = () =>
+      StageLayoutSchema.parse({ id: "stage-layout-aaaa1111", name: "Mine", widgets: [] });
+
+    it("uses a stored layout named by the channel", async () => {
+      await stageLayouts.saveStageLayout(mineDraft());
+      expect((await hub.computeFeed("stage1"))!.layout.name).toBe("Mine");
+    });
+
+    it("falls back to Speaker when the stored layout is deleted", async () => {
+      await stageLayouts.saveStageLayout(mineDraft());
+      await stageLayouts.deleteStageLayout("stage-layout-aaaa1111");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+    });
+
+    it("a preview override wins until cleared by its owner only", async () => {
+      hub.setPreview("stage1", { ...SPEAKER_LAYOUT, id: "draft", name: "Draft", builtIn: undefined }, "sockA");
+      expect((await hub.computeFeed("stage1"))!.layout.name).toBe("Draft");
+      hub.clearPreview("stage1", "sockB");
+      expect((await hub.computeFeed("stage1"))!.layout.name).toBe("Draft");
+      hub.clearPreviewsByOwner("sockA");
+      expect((await hub.computeFeed("stage1"))!.layout.id).not.toBe("draft");
+    });
+
+    it("saving a layout clears previews of that layout id", async () => {
+      hub.setPreview("stage1", mineDraft(), "sockA");
+      hub.clearPreviewsForLayout(mineDraft().id);
+      expect(hub.listPreviews()).toEqual([]);
+    });
+
+    it("notifies preview subscribers on every mutation", () => {
+      const calls: number[] = [];
+      const off = hub.subscribePreviews(() => calls.push(hub.listPreviews().length));
+      hub.setPreview("stage1", mineDraft(), "sockA");
+      hub.clearPreview("stage1", "sockA");
+      off();
+      expect(calls).toEqual([1, 0]);
+    });
   });
 
   it("returns null for graphics channels", async () => {

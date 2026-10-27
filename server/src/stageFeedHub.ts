@@ -5,9 +5,9 @@
 
 import {
   DEFAULT_STAGE_FOLLOWS,
-  resolveStageLayout,
   type ChannelState,
   type Song,
+  type StageLayout,
   type StageFeed,
   type Template,
 } from "@overlaysys/core";
@@ -16,6 +16,7 @@ import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as stageState from "./stageState";
+import * as stageLayouts from "./stageLayouts";
 import * as templates from "./templates";
 import * as timers from "./timers";
 import { buildStageFeed } from "./stageFeed";
@@ -81,7 +82,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
   const notes = await stageState.activeNotes(stage);
 
   return buildStageFeed({
-    layout: resolveStageLayout(cfg.layoutId),
+    layout: previews.get(channel)?.layout ?? (await stageLayouts.resolveStageLayout(cfg.layoutId)),
     followed,
     allStates,
     show,
@@ -140,4 +141,64 @@ export function invalidateAll(): void {
       }, STAGE_FEED_DEBOUNCE_MS),
     );
   }
+}
+
+// Designer "preview on monitor" overrides: one per stage channel, held in
+// memory and owned by the socket that set it.
+const previews = new Map<string, { layout: StageLayout; ownerId: string }>();
+const previewListeners = new Set<() => void>();
+
+function previewsChanged(): void {
+  for (const l of previewListeners) {
+    try {
+      l();
+    } catch (err) {
+      console.warn("[stageFeedHub] preview listener failed", err);
+    }
+  }
+  invalidateAll();
+}
+
+/** Replaces any existing preview on the channel (the last designer wins). */
+export function setPreview(channel: string, layout: StageLayout, ownerId: string): void {
+  previews.set(channel, { layout, ownerId });
+  previewsChanged();
+}
+
+/** Only the owner can clear; anyone else is a no-op. */
+export function clearPreview(channel: string, ownerId: string): void {
+  if (previews.get(channel)?.ownerId !== ownerId) return;
+  previews.delete(channel);
+  previewsChanged();
+}
+
+export function clearPreviewsByOwner(ownerId: string): void {
+  let changed = false;
+  for (const [channel, p] of previews) {
+    if (p.ownerId === ownerId) {
+      previews.delete(channel);
+      changed = true;
+    }
+  }
+  if (changed) previewsChanged();
+}
+
+export function clearPreviewsForLayout(layoutId: string): void {
+  let changed = false;
+  for (const [channel, p] of previews) {
+    if (p.layout.id === layoutId) {
+      previews.delete(channel);
+      changed = true;
+    }
+  }
+  if (changed) previewsChanged();
+}
+
+export function listPreviews(): { channel: string; layoutId: string }[] {
+  return [...previews].map(([channel, p]) => ({ channel, layoutId: p.layout.id }));
+}
+
+export function subscribePreviews(listener: () => void): () => void {
+  previewListeners.add(listener);
+  return () => previewListeners.delete(listener);
 }

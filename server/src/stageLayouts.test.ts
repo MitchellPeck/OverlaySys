@@ -66,6 +66,14 @@ describe("stage layouts registry", () => {
     expect(raw.name).toBe("Mine");
   });
 
+  it("strips builtIn from a stored file on load", async () => {
+    await storage.saveStageLayout(mine({ builtIn: true }));
+    await stageLayouts.reloadStageLayouts();
+    const metas = await stageLayouts.listStageLayoutMetas();
+    expect(metas.find((m) => m.id === "stage-layout-aaaa1111")?.builtIn).toBe(false);
+    expect((await stageLayouts.getStageLayout("stage-layout-aaaa1111"))!.builtIn).toBeUndefined();
+  });
+
   it("strips builtIn on save", async () => {
     const saved = await stageLayouts.saveStageLayout(mine({ builtIn: true }));
     expect(saved.builtIn).toBeUndefined();

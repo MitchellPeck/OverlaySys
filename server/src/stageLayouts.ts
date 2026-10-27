@@ -26,7 +26,13 @@ export async function reloadStageLayouts(): Promise<void> {
   const all = await storage.loadAllStageLayouts();
   REGISTRY.clear();
   // A stored file must never shadow a built-in id.
-  for (const l of all) if (!isBuiltInStageLayoutId(l.id)) REGISTRY.set(l.id, l);
+  // Nor may it claim to be built in (a hand-edited file or a sync pull).
+  for (const l of all) {
+    if (isBuiltInStageLayoutId(l.id)) continue;
+    const { builtIn: _builtIn, ...rest } = l;
+    void _builtIn;
+    REGISTRY.set(l.id, rest);
+  }
   loaded = true;
 }
 
