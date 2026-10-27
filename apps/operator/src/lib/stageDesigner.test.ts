@@ -10,6 +10,7 @@ import {
   centeredRectAt,
   createTrailingThrottle,
   shouldConfirmLinkNavigation,
+  isLocalDraftEdit,
   sizePresetKey,
   stageEditorShortcut,
 } from "./stageDesigner";
@@ -211,5 +212,31 @@ describe("shouldConfirmLinkNavigation", () => {
     expect(click({ href: "mailto:a@b.c" })).toBe(false);
     expect(click({ href: "#top" })).toBe(false);
     expect(click({ href: "/design/stage/edit?id=abc#x" })).toBe(false);
+  });
+});
+
+describe("isLocalDraftEdit", () => {
+  const a = StageLayoutSchema.parse({ id: "l", name: "A", widgets: [] }) as StageLayout;
+  const b = { ...a, name: "B" };
+  it("is a local edit when the draft changes and stays dirty (even if it was already dirty)", () => {
+    expect(isLocalDraftEdit({ draft: a, dirty: true }, { draft: b, dirty: true })).toBe(true);
+    expect(isLocalDraftEdit({ draft: a, dirty: false }, { draft: b, dirty: true })).toBe(true);
+  });
+  it("is not when the draft is unchanged, cleared or adopted clean", () => {
+    expect(isLocalDraftEdit({ draft: a, dirty: true }, { draft: a, dirty: true })).toBe(false);
+    expect(isLocalDraftEdit({ draft: a, dirty: true }, { draft: null, dirty: false })).toBe(false);
+    expect(isLocalDraftEdit({ draft: a, dirty: false }, { draft: b, dirty: false })).toBe(false);
+  });
+  it("catches a commit made while a save was in flight (dirty never went clean)", () => {
+    useStageEditor.getState().setDraft(a);
+    useStageEditor.getState().commit((d) => {
+      d.name = "edited";
+    });
+    const prev = useStageEditor.getState();
+    // ack arrives for an older draft: markSaved is skipped, dirty stays true
+    useStageEditor.getState().commit((d) => {
+      d.name = "edited again";
+    });
+    expect(isLocalDraftEdit(prev, useStageEditor.getState())).toBe(true);
   });
 });

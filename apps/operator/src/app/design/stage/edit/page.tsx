@@ -41,6 +41,7 @@ import {
   STAGE_SIZE_PRESETS,
   centeredRectAt,
   createTrailingThrottle,
+  isLocalDraftEdit,
   shouldAdoptIncomingLayout,
   shouldConfirmLinkNavigation,
   sizePresetKey,
@@ -228,10 +229,16 @@ function StageLayoutEditor() {
 
   // A local edit means any save echo we were waiting for is moot (the draft is
   // dirty, so it won't be adopted anyway); drop the marker so a broadcast that
-  // never arrives can't swallow a later get_stage_layout reply.
-  useEffect(() => {
-    if (dirty) awaitingEchoRef.current = null;
-  }, [dirty]);
+  // never arrives can't swallow a later get_stage_layout reply. Every edit
+  // counts, not just clean→dirty: edits made while a save was in flight leave
+  // the draft dirty through the ack.
+  useEffect(
+    () =>
+      useStageEditor.subscribe((next, prev) => {
+        if (isLocalDraftEdit(prev, next)) awaitingEchoRef.current = null;
+      }),
+    [],
+  );
 
   // ---- Preview on monitor ----
   const lastPreviewRef = useRef<{ channel: string; layout: StageLayout } | null>(null);

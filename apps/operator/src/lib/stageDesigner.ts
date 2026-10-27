@@ -146,3 +146,16 @@ export function centeredRectAt(p: { x: number; y: number }, w: number, h: number
   const y = Math.max(0, Math.min(canvas.h - rh, p.y - rh / 2));
   return { x: Math.round(x), y: Math.round(y), w: rw, h: rh };
 }
+
+/**
+ * A store transition that is a local edit: the draft object changed and the
+ * result is dirty. Covers edits made while already dirty (e.g. while a save
+ * was in flight), which a clean→dirty watch misses. Adopting a server copy
+ * (setDraft, clean) is not an edit.
+ */
+export function isLocalDraftEdit(
+  prev: { draft: StageLayout | null; dirty: boolean },
+  next: { draft: StageLayout | null; dirty: boolean },
+): boolean {
+  return next.draft !== prev.draft && next.draft !== null && next.dirty;
+}
