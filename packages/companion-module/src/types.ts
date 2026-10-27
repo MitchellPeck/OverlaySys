@@ -49,6 +49,8 @@ export interface CompanionState {
   sttSpawner: SttSpawnerStatus | null;
   sttListeners: SttListener[];
   lastError: string | null;
+  /** serverTime (from hello) minus local Date.now(); corrects clock skew for timers. */
+  serverTimeOffsetMs: number;
   timers: StageTimerInstance[];
   pcoLive: PcoLiveStateMessage | null;
   stage: {
@@ -78,8 +80,14 @@ export function initialState(): CompanionState {
     sttSpawner: null,
     sttListeners: [],
     lastError: null,
+    serverTimeOffsetMs: 0,
     timers: [],
     pcoLive: null,
     stage: null,
   };
+}
+
+/** Current time on the server's clock, as best we know it. */
+export function serverNow(state: CompanionState): number {
+  return Date.now() + state.serverTimeOffsetMs;
 }

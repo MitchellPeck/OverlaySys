@@ -4,7 +4,7 @@ import {
   runEntrypoint,
 } from "@companion-module/base";
 import { Connection } from "./connection.js";
-import { apply, type ReducerEvent } from "./state.js";
+import { apply, hasRunningWork, type ReducerEvent } from "./state.js";
 import { initialState, type CompanionState } from "./types.js";
 import {
   dispatchAction,
@@ -64,6 +64,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
       this.currentConfig.channels || defaultConfig.channels,
     );
     this.connection?.stop();
+    this.applyEvent({ type: "local_reset_live" });
     this.openConnection();
     this.refreshAll();
   }
@@ -172,9 +173,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
 
   /** Re-project timer-driven variables/feedbacks every second while any timer runs. */
   private syncTimerTick(): void {
-    const running =
-      this.state.timers.some((t) => t.anchor !== null && t.pausedAt === undefined) ||
-      this.state.pcoLive?.service?.status === "live";
+    const running = hasRunningWork(this.state);
     if (running && !this.timerTick) {
       this.timerTick = setInterval(() => {
         this.setVariableValues(projectVariables(this.state, this.channels));

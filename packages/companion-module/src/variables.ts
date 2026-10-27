@@ -4,8 +4,15 @@ import {
   sectionDisplayLabel,
   songTitleForChannel,
 } from "./labels";
-import { ITEM_WARN_MS, type CompanionState } from "./types";
-import { CURRENT_ITEM_TIMER_ID, formatSignedTime, serviceDeltaSec, formatTime, timerMs, timerPhase } from "@overlaysys/core";
+import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
+import {
+  CURRENT_ITEM_TIMER_ID,
+  formatSignedTime,
+  formatTime,
+  serviceDeltaSec,
+  timerMs,
+  timerPhase,
+} from "@overlaysys/core";
 
 export const RUNDOWN_LIMIT = 40;
 
@@ -176,7 +183,7 @@ function rowMatchesPgm(
 export function projectVariables(
   state: CompanionState,
   channels: string[],
-  now: number = Date.now(),
+  now: number = serverNow(state),
 ): Record<string, string> {
   const out: Record<string, string> = {};
 
@@ -284,7 +291,7 @@ export function projectVariables(
   out.service_next_item = service?.next?.title ?? "";
   out.service_delta = deltaMin === null ? "" : deltaMin > 0 ? `+${deltaMin}` : String(deltaMin);
 
-  const pgmSongId =state.channelStates.get("program")?.songSession?.songId;
+  const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
   const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;
   const pgmActive = state.channelStates.get("program")?.active ?? null;
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {

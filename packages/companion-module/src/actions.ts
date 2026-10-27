@@ -71,6 +71,13 @@ export type ActionId =
   | "stage_timer_reset"
   | "stage_timer_adjust";
 
+const TIMER_MESSAGE_FOR_ACTION = {
+  stage_timer_start: "timer_start",
+  stage_timer_pause: "timer_pause",
+  stage_timer_resume: "timer_resume",
+  stage_timer_reset: "timer_reset",
+} as const;
+
 export type ActionOptions = Record<
   string,
   string | number | boolean | undefined
@@ -639,7 +646,7 @@ export function dispatchAction(
     case "stage_timer_resume":
     case "stage_timer_reset": {
       const timerId = str("timer", CURRENT_ITEM_TIMER_ID) || CURRENT_ITEM_TIMER_ID;
-      messages.push({ type: `timer_${id.slice("stage_timer_".length)}` as "timer_start", id: timerId });
+      messages.push({ type: TIMER_MESSAGE_FOR_ACTION[id], id: timerId });
       break;
     }
     case "stage_timer_adjust": {

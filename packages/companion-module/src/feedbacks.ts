@@ -5,7 +5,7 @@ import type {
   CompanionInputFieldNumber,
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
-import { ITEM_WARN_MS, type CompanionState } from "./types";
+import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
 import { CURRENT_ITEM_TIMER_ID, timerMs, timerPhase } from "@overlaysys/core";
 
 export type FeedbackId =
@@ -380,7 +380,7 @@ export function feedbackPredicate(
   state: CompanionState,
   id: FeedbackId,
   options: FeedbackOptions,
-  now: number = Date.now(),
+  now: number = serverNow(state),
 ): boolean {
   switch (id) {
     case "item_timer_warning":

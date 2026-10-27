@@ -5,6 +5,7 @@ export type LocalEvent =
   | { type: "local_connected" }
   | { type: "local_reconnecting" }
   | { type: "local_disconnected" }
+  | { type: "local_reset_live" }
   | { type: "local_load_show"; showId: string }
   | { type: "local_clear_loaded_show" }
   | { type: "local_cursor_set"; rowId: string }
@@ -20,7 +21,18 @@ export function apply(
     case "local_connected":
       return { ...state, connected: true, connectionState: "connected" };
     case "local_reconnecting":
-      return { ...state, connected: false, connectionState: "reconnecting" };
+      // Drop live timer/PCO data so the 1 s tick never projects stale values.
+      return {
+        ...state,
+        connected: false,
+        connectionState: "reconnecting",
+        timers: [],
+        pcoLive: null,
+      };
+    case "local_reset_live":
+      return { ...state, timers: [], pcoLive: null };
+    case "hello":
+      return { ...state, serverTimeOffsetMs: evt.serverTime - Date.now() };
     case "local_disconnected":
       return {
         ...state,
@@ -162,4 +174,12 @@ export function apply(
     default:
       return state;
   }
+}
+
+/** True when something on screen changes with time alone (running timer or live PCO service). */
+export function hasRunningWork(state: CompanionState): boolean {
+  return (
+    state.timers.some((t) => t.anchor !== null && t.pausedAt === undefined) ||
+    state.pcoLive?.service?.status === "live"
+  );
 }
