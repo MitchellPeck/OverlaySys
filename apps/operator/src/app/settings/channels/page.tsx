@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChannelConfig, ChannelKind, ChannelRenderMode } from "@overlaysys/core";
-import { BUILT_IN_STAGE_LAYOUTS, DEFAULT_STAGE_FOLLOWS } from "@overlaysys/core";
+import { DEFAULT_STAGE_FOLLOWS } from "@overlaysys/core";
+import Link from "next/link";
+import { layoutPickerModel } from "@/lib/stageLayoutPicker";
 import { Button, IconButton, Input, Panel, Select, colors, radius } from "@overlaysys/ui";
 import type { ProjectChannelOverride } from "@overlaysys/core";
 import { useWs } from "@/lib/useWs";
@@ -131,6 +133,11 @@ export default function ChannelsPage() {
       send({ type: "list_channels" });
     }
   }, [useCloudBackend, conn, send]);
+
+  // Stage layouts feed the per-channel layout picker (desktop only).
+  useEffect(() => {
+    if (!isCloudMode() && conn === "open") send({ type: "list_stage_layouts" });
+  }, [conn, send]);
 
   // Project-channel overrides come from a separate table; re-fetch when
   // the currentProjectId changes so the override editors track the active
@@ -389,6 +396,8 @@ function ChannelRow({
   onClearOverride: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ChannelConfig>(config);
+  const stageLayouts = useStore((s) => s.stageLayouts);
+  const layoutModel = layoutPickerModel(stageLayouts, draft.layoutId);
   const lastSyncedRef = useRef<ChannelConfig>(config);
   useEffect(() => {
     if (JSON.stringify(draft) === JSON.stringify(lastSyncedRef.current)) {
@@ -468,16 +477,24 @@ function ChannelRow({
                 ))}
               </Select>
               <Select
-                value={draft.layoutId ?? BUILT_IN_STAGE_LAYOUTS[0]!.id}
+                value={layoutModel.value}
                 onChange={(e) => patch({ layoutId: e.target.value })}
-                title="Stage layout"
+                title={layoutModel.missingId ? "This layout no longer exists; the channel falls back to Speaker" : "Stage layout"}
               >
-                {BUILT_IN_STAGE_LAYOUTS.map((l) => (
+                {layoutModel.options.map((l) => (
                   <option key={l.id} value={l.id}>
-                    {l.name}
+                    {l.label}
                   </option>
                 ))}
               </Select>
+              {!isCloudMode() && !layoutModel.missingId && (
+                <Link
+                  href={`/design/stage/edit?id=${encodeURIComponent(layoutModel.value)}`}
+                  style={{ fontSize: 12, color: colors.textDim }}
+                >
+                  Edit
+                </Link>
+              )}
             </>
           )}
           <div style={{ display: "flex", gap: 4 }}>

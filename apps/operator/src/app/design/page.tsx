@@ -1,17 +1,19 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 import { v4 as uuid } from "uuid";
 import { blankTemplate } from "@overlaysys/editor-kit";
-import { Button, colors } from "@overlaysys/ui";
+import { Button, colors, radius } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { downloadJson } from "@/lib/download";
 import { ManagementList } from "@/app/components/ManagementList";
 import { isCloudMode } from "@/lib/mode";
-import type { TemplateMeta } from "@overlaysys/core";
+import { StageLayoutSchema } from "@overlaysys/core";
+import type { StageLayoutMeta, TemplateMeta } from "@overlaysys/core";
+import { channelsUsingLayout } from "@/lib/stageLayoutPicker";
 import {
   deleteTemplateCloud,
   getTemplateCloud,
@@ -20,6 +22,114 @@ import {
 } from "@/lib/cloudData";
 
 export default function DesignIndexPage() {
+  return (
+    <Suspense fallback={null}>
+      <DesignTabs />
+    </Suspense>
+  );
+}
+
+function DesignTabs() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const cloud = isCloudMode();
+  const tab = !cloud && searchParams?.get("tab") === "stage" ? "stage" : "graphics";
+  const select = (t: "graphics" | "stage") => router.replace(t === "stage" ? "/design?tab=stage" : "/design");
+  return (
+    <>
+      {!cloud && (
+        <div style={{ display: "flex", gap: 0, padding: "12px 24px 0" }} role="tablist" aria-label="Design type">
+          {(["graphics", "stage"] as const).map((t, i) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => select(t)}
+              style={{
+                padding: "6px 16px",
+                fontSize: 13,
+                cursor: "pointer",
+                border: `1px solid ${colors.border}`,
+                borderRadius: i === 0 ? `${radius.md}px 0 0 ${radius.md}px` : `0 ${radius.md}px ${radius.md}px 0`,
+                marginLeft: i === 0 ? 0 : -1,
+                background: tab === t ? colors.accent : "transparent",
+                color: tab === t ? "#fff" : colors.text,
+              }}
+            >
+              {t === "graphics" ? "Graphics" : "Stage layouts"}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === "stage" ? <StageLayoutsList /> : <GraphicsList />}
+    </>
+  );
+}
+
+function StageLayoutsList() {
+  const router = useRouter();
+  const { send } = useWs();
+  const conn = useStore((s) => s.conn);
+  const layouts = useStore((s) => s.stageLayouts);
+  const channels = useStore((s) => s.channelConfigs);
+
+  useEffect(() => {
+    if (conn === "open") {
+      send({ type: "list_stage_layouts" });
+      send({ type: "list_channels" });
+    }
+  }, [conn, send]);
+
+  async function createLayout(name: string): Promise<string> {
+    if (conn !== "open") throw new Error("WS not connected");
+    const id = `stage-layout-${uuid().slice(0, 8)}`;
+    send({ type: "save_stage_layout", layout: StageLayoutSchema.parse({ id, name, widgets: [] }) });
+    return id;
+  }
+
+  return (
+    <ManagementList<StageLayoutMeta>
+      title="Stage layouts"
+      entityNoun="stage layout"
+      items={layouts}
+      disabled={conn !== "open"}
+      createFn={createLayout}
+      onCreated={(id) => router.push(`/design/stage/edit?id=${encodeURIComponent(id)}`)}
+      deleteFn={async (l) => {
+        send({ type: "delete_stage_layout", layoutId: l.id });
+      }}
+      rowKey={(l) => l.id}
+      rowHref={(l) => `/design/stage/edit?id=${encodeURIComponent(l.id)}`}
+      rowPrimary={(l) => l.name}
+      rowSecondary={(l) => `${l.size.w}×${l.size.h}${l.builtIn ? " · built-in" : ""}`}
+      rowActions={(l) => (
+        <Button
+          onClick={() => send({ type: "duplicate_stage_layout", layoutId: l.id })}
+          size="sm"
+          style={{ width: 84 }}
+          disabled={conn !== "open"}
+        >
+          Duplicate
+        </Button>
+      )}
+      canDelete={(l) => !l.builtIn}
+      cannotDeleteReason={() => "Built-in layouts can't be deleted"}
+      deleteConfirmDetails={(l) => {
+        const using = channelsUsingLayout(channels, l.id);
+        return (
+          <>
+            {using.length > 0 && <>Used by: {using.map((c) => c.name || c.id).join(", ")}. </>}
+            They will fall back to Speaker.
+          </>
+        );
+      }}
+      itemDisplayName={(l) => l.name || l.id}
+      emptyMessage={<span style={{ color: colors.textDim, fontSize: 13 }}>(loading…)</span>}
+    />
+  );
+}
+
+function GraphicsList() {
   const router = useRouter();
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
