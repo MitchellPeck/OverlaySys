@@ -33,6 +33,7 @@ import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
+import { stageFollowedChannels } from "./stageFollowed";
 import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 import * as pcoLiveSync from "./pco/pcoLiveSync";
@@ -68,7 +69,10 @@ channels.onLiveRow((channel, source) => {
   // Loading a different show ends PCO Live sync for the old one.
   const syncShowId = pcoLiveSync.getLiveSyncShowId();
   if (syncShowId !== null && source.showId !== syncShowId) pcoLiveSync.stopLiveSync();
-  void stageState.onRowTaken(source).catch((err) => console.warn("[stageState] onRowTaken failed", err));
+  // Only takes a stage monitor can see move the pastor's notes.
+  void stageFollowedChannels()
+    .then((followed) => (followed.has(channel) ? stageState.onRowTaken(source) : undefined))
+    .catch((err) => console.warn("[stageState] onRowTaken failed", err));
   void timers.onRowTaken(channel, source).catch((err) => console.warn("[timers] onRowTaken failed", err));
 });
 timers.subscribeTimers(() => {
