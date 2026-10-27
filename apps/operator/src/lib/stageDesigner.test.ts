@@ -11,6 +11,7 @@ import {
   createTrailingThrottle,
   shouldConfirmLinkNavigation,
   isLocalDraftEdit,
+  sentinelPopAction,
   sizePresetKey,
   stageEditorShortcut,
 } from "./stageDesigner";
@@ -238,5 +239,22 @@ describe("isLocalDraftEdit", () => {
       d.name = "edited again";
     });
     expect(isLocalDraftEdit(prev, useStageEditor.getState())).toBe(true);
+  });
+});
+
+describe("sentinelPopAction", () => {
+  it("does nothing when no sentinel is armed", () => {
+    const confirm = vi.fn(() => true);
+    expect(sentinelPopAction({ armed: false, dirty: true, confirm })).toBe("none");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it("completes the back navigation without asking when clean", () => {
+    const confirm = vi.fn(() => false);
+    expect(sentinelPopAction({ armed: true, dirty: false, confirm })).toBe("back");
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it("asks when dirty: OK leaves, Cancel re-pushes the sentinel", () => {
+    expect(sentinelPopAction({ armed: true, dirty: true, confirm: () => true })).toBe("back");
+    expect(sentinelPopAction({ armed: true, dirty: true, confirm: () => false })).toBe("repush");
   });
 });

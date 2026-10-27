@@ -42,6 +42,7 @@ import {
   centeredRectAt,
   createTrailingThrottle,
   isLocalDraftEdit,
+  sentinelPopAction,
   shouldAdoptIncomingLayout,
   shouldConfirmLinkNavigation,
   sizePresetKey,
@@ -226,6 +227,37 @@ function StageLayoutEditor() {
       document.removeEventListener("click", onClick, true);
     };
   }, [dirty]);
+
+  // Browser Back/Forward bypasses both beforeunload and the link catcher.
+  // While dirty, push a same-URL sentinel entry (spreading Next's own history
+  // state so its router still treats the entry as this page); popping it asks
+  // before leaving. Pushing also truncates forward history, so Forward can't
+  // leave either. After a save the sentinel stays; Back then just goes on.
+  const sentinelArmedRef = useRef(false);
+  useEffect(() => {
+    if (!dirty || sentinelArmedRef.current) return;
+    window.history.pushState({ ...window.history.state, stageUnsavedGuard: true }, "", window.location.href);
+    sentinelArmedRef.current = true;
+  }, [dirty]);
+  useEffect(() => {
+    const onPopState = () => {
+      const action = sentinelPopAction({
+        armed: sentinelArmedRef.current,
+        dirty: useStageEditor.getState().dirty,
+        confirm: () => window.confirm(UNSAVED_PROMPT),
+      });
+      if (action === "none") return;
+      sentinelArmedRef.current = false;
+      if (action === "back") {
+        window.history.back();
+      } else {
+        window.history.pushState({ ...window.history.state, stageUnsavedGuard: true }, "", window.location.href);
+        sentinelArmedRef.current = true;
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   // A local edit means any save echo we were waiting for is moot (the draft is
   // dirty, so it won't be adopted anyway); drop the marker so a broadcast that

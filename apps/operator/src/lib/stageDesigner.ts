@@ -159,3 +159,20 @@ export function isLocalDraftEdit(
 ): boolean {
   return next.draft !== prev.draft && next.draft !== null && next.dirty;
 }
+
+/**
+ * Back/forward guard. While dirty the page pushes a same-URL sentinel entry;
+ * a popstate with the sentinel armed means it was just popped (it is always
+ * the top entry, so only Back can pop it). "back": go on to the page the user
+ * was heading for; "repush": they cancelled, re-arm; "none": not ours.
+ * `confirm` is only called when there are unsaved changes.
+ */
+export function sentinelPopAction(c: {
+  armed: boolean;
+  dirty: boolean;
+  confirm: () => boolean;
+}): "none" | "back" | "repush" {
+  if (!c.armed) return "none";
+  if (!c.dirty) return "back";
+  return c.confirm() ? "back" : "repush";
+}
