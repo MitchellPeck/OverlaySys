@@ -8,6 +8,7 @@ import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { channelHasContent, onAirCaption } from "@/lib/onAir";
 import { useTakeFeedback } from "../hooks/useTakeFeedback";
+import { monitorColumns } from "./Monitors";
 
 /** Messages that empty a channel: graphics/song/scripture via clear, plus any media. */
 function clearMessages(st: ChannelState | undefined, channel: string): ClientMessage[] {
@@ -20,7 +21,7 @@ function clearMessages(st: ChannelState | undefined, channel: string): ClientMes
  * "What's on air" under the monitors: program and preview captions with the
  * one action each needs (Clear / Take), plus Clear all.
  */
-export function OnAirStrip() {
+export function OnAirStrip({ compact = false }: { compact?: boolean }) {
   const { send } = useWs();
   const channelStates = useStore((s) => s.channelStates);
   const show = useStore((s) => s.show);
@@ -71,26 +72,17 @@ export function OnAirStrip() {
       role="region"
       aria-label="On air"
       style={{
-        display: "flex",
-        flexWrap: "wrap",
+        // Same columns as <Monitors> (PVW left, PGM right) so each slot's
+        // controls sit under its own monitor.
+        display: "grid",
+        gridTemplateColumns: monitorColumns(compact),
+        columnGap: 12,
         alignItems: "center",
-        gap: `${space[2]}px ${space[4]}px`,
         padding: "0 12px 12px",
         fontSize: 12,
         flexShrink: 0,
       }}
     >
-      <Slot label="PGM" tone={colors.onair} caption={pgmCaption}>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={disconnected || !channelHasContent(pgm)}
-          title={offline}
-          onClick={blurAfter(() => clearMessages(pgm, "program").forEach(send))}
-        >
-          Clear
-        </Button>
-      </Slot>
       <Slot label="PVW" tone={colors.ok} caption={pvwCaption}>
         <Button
           size="sm"
@@ -108,16 +100,29 @@ export function OnAirStrip() {
           </span>
         )}
       </Slot>
-      <Button
-        size="sm"
-        variant="danger"
-        disabled={disconnected || !anyContent}
-        title={offline ?? "Clear every channel"}
-        onClick={blurAfter(() => void clearAll())}
-        style={{ marginLeft: "auto" }}
-      >
-        Clear all
-      </Button>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `${space[2]}px ${space[4]}px`, minWidth: 0 }}>
+        <Slot label="PGM" tone={colors.onair} caption={pgmCaption}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disconnected || !channelHasContent(pgm)}
+            title={offline}
+            onClick={blurAfter(() => clearMessages(pgm, "program").forEach(send))}
+          >
+            Clear
+          </Button>
+        </Slot>
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={disconnected || !anyContent}
+          title={offline ?? "Clear every channel"}
+          onClick={blurAfter(() => void clearAll())}
+          style={{ marginLeft: "auto" }}
+        >
+          Clear all
+        </Button>
+      </div>
       {dialog}
     </div>
   );

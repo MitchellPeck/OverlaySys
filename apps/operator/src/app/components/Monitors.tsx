@@ -6,6 +6,11 @@ import { useStore } from "@/lib/store";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { ChannelPreview } from "./ChannelPreview";
 
+/** PVW / PGM column template, shared with OnAirStrip so its controls sit under their monitor. */
+export function monitorColumns(compact: boolean): string {
+  return compact ? "repeat(2, minmax(0, 240px))" : "repeat(2, minmax(0, 1fr))";
+}
+
 /** Large PVW / PGM monitors. `compact` shrinks them while a song is live. */
 export function Monitors({ compact }: { compact: boolean }) {
   const configs = useResolvedChannelConfigs();
@@ -15,7 +20,7 @@ export function Monitors({ compact }: { compact: boolean }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: compact ? "repeat(2, minmax(0, 240px))" : "repeat(2, minmax(0, 1fr))",
+        gridTemplateColumns: monitorColumns(compact),
         gap: 12,
         padding: 12,
         flexShrink: 0,

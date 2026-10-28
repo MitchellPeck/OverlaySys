@@ -90,7 +90,7 @@ function ShowPageLocal() {
         </section>
         <section style={columnStyle}>
           <Monitors compact={songModeActive} />
-          <OnAirStrip />
+          <OnAirStrip compact={songModeActive} />
           <StageArea />
         </section>
         <section style={columnStyle}>
