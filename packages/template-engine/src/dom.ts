@@ -256,8 +256,18 @@ export function revealClipPath(
   }
 }
 
+/**
+ * The `display` a layer's node should have. A visible text layer stays the
+ * flex column applyTextStyle set up — its horizontal alignment relies on the
+ * span stretching across it — so it can't be reset to "" (block).
+ */
+export function layerDisplay(layer: Pick<Layer, "type" | "visible">): string {
+  if (!layer.visible) return "none";
+  return layer.type === "text" ? "flex" : "";
+}
+
 export function applyVisibility(el: HTMLElement, layer: Layer): void {
-  el.style.display = layer.visible ? "" : "none";
+  el.style.display = layerDisplay(layer);
 }
 
 function groupMaskCss(layer: Extract<Layer, { type: "group" }>): string {
