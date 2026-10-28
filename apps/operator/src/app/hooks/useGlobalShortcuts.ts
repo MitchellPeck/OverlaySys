@@ -10,7 +10,7 @@ import {
   escapeMessages,
   hasCommandModifier,
   hotcardForEvent,
-  hotcardRoute,
+  hotcardFireMessage,
   hotkeyForEvent,
   isIgnoredRepeat,
   shouldIgnoreGlobalKey,
@@ -69,7 +69,7 @@ export function useGlobalShortcuts(): void {
           return;
         }
         const action = e.shiftKey ? "cue" : "take";
-        send({ type: action, channel: hotcardRoute(full.channelHint, action), templateId: full.templateId, data: full.data });
+        send(hotcardFireMessage(full, action));
         return;
       }
 
@@ -110,7 +110,7 @@ export function useGlobalShortcuts(): void {
         } else if (row && row.kind === "song" && show) {
           send({ type: "song_take", channel: songCueChannel(row, show, caches), showId: show.id, songRowId: row.id });
         } else if (hotcard) {
-          send({ type: "cue", channel: hotcardRoute(hotcard.channelHint, "cue"), templateId: hotcard.templateId, data: hotcard.data });
+          send(hotcardFireMessage(hotcard, "cue"));
         }
       } else if (e.code === "Space") {
         e.preventDefault();
@@ -131,7 +131,7 @@ export function useGlobalShortcuts(): void {
             send(videoRowTakeMessage(row, show?.id));
           }
         } else if (hotcard) {
-          send({ type: "take", channel: hotcardRoute(hotcard.channelHint, "take"), templateId: hotcard.templateId, data: hotcard.data });
+          send(hotcardFireMessage(hotcard, "take"));
         }
       } else if (e.code === "Escape") {
         e.preventDefault();

@@ -115,3 +115,15 @@ export function initialHotkeyAssignments<T extends Keyed>(cards: readonly T[]): 
   }
   return out;
 }
+
+/**
+ * Which channel a hotcard fires on (Default D7a). The card's hint is the
+ * default output for Take only; Cue always goes to Preview, so a card can
+ * never reach air from Cue/Shift+F. A hint of Program or Preview (from
+ * before this rule) or none means Take goes to Program.
+ */
+export function hotcardRoute(hint: string | undefined, action: "cue" | "take"): string {
+  if (action === "cue") return "preview";
+  if (!hint || hint === "preview" || hint === "program") return "program";
+  return hint;
+}

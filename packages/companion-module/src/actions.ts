@@ -1,6 +1,6 @@
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import type { RundownRow } from "@overlaysys/core";
-import { pickNextShow, CURRENT_ITEM_TIMER_ID } from "@overlaysys/core";
+import { pickNextShow, CURRENT_ITEM_TIMER_ID, hotcardRoute } from "@overlaysys/core";
 import type {
   CompanionActionDefinitions,
   CompanionInputFieldDropdown,
@@ -285,7 +285,10 @@ export function dispatchAction(
       const hid = str("hotcardId");
       const payload = state.hotcardCache.get(hid);
       if (!payload) break;
-      const channel = str("channel") || payload.channelHint || "program";
+      // An explicit channel on the button wins; otherwise the card's
+      // default output, where a legacy "preview" hint must not redirect a
+      // Take (Default D7a, same rule as the operator).
+      const channel = str("channel") || hotcardRoute(payload.channelHint, "take");
       messages.push({
         type: "take",
         channel,

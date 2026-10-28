@@ -3,6 +3,7 @@ import type { ChannelState, HotcardMeta, SongSessionSummary } from "@overlaysys/
 import {
   escapeMessages,
   hasCommandModifier,
+  hotcardFireMessage,
   hotcardForEvent,
   hotcardRoute,
   hotkeyForEvent,
@@ -167,5 +168,18 @@ describe("hotcardRoute (Default D7a: the hint is Take's default output; Cue is a
   ];
   it.each(table)("hint %s, %s → %s", (hint, action, expected) => {
     expect(hotcardRoute(hint, action)).toBe(expected);
+  });
+});
+
+describe("hotcardFireMessage (used by the Hotcards panel, the stage panel and the keys)", () => {
+  const card = { templateId: "l3", data: { name: "Sam" } };
+  it("a Program-hinted card's Cue stays on preview; its Take goes to program", () => {
+    expect(hotcardFireMessage({ ...card, channelHint: "program" }, "cue")).toEqual({ type: "cue", channel: "preview", templateId: "l3", data: { name: "Sam" } });
+    expect(hotcardFireMessage({ ...card, channelHint: "program" }, "take")).toEqual({ type: "take", channel: "program", templateId: "l3", data: { name: "Sam" } });
+  });
+  it("a legacy Preview hint doesn't stop a Take reaching program; another output is honoured", () => {
+    expect(hotcardFireMessage({ ...card, channelHint: "preview" }, "take")).toMatchObject({ type: "take", channel: "program" });
+    expect(hotcardFireMessage({ ...card, channelHint: "stage" }, "take")).toMatchObject({ type: "take", channel: "stage" });
+    expect(hotcardFireMessage({ ...card, channelHint: "stage" }, "cue")).toMatchObject({ type: "cue", channel: "preview" });
   });
 });

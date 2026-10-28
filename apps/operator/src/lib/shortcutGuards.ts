@@ -1,4 +1,4 @@
-import { hotcardForKey, HotkeySchema, type ChannelState, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
+import { hotcardForKey, hotcardRoute, HotkeySchema, type ChannelState, type Hotcard, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { clearChannelMessages } from "./onAir";
 
@@ -82,14 +82,16 @@ export function escapeMessages(store: { channelStates: Record<string, ChannelSta
   return clearChannelMessages(store.channelStates["program"], "program");
 }
 
+// Shared with the Companion module, so it lives in core.
+export { hotcardRoute };
+
 /**
- * Which channel a hotcard fires on (Default D7a). The card's hint is the
- * default output for Take only; Cue always goes to Preview, so a card can
- * never reach air from Cue/Shift+F. A hint of Program or Preview (from
- * before this rule) or none means Take goes to Program.
+ * The cue/take message for a hotcard, routed by `hotcardRoute`. Every
+ * operator surface that fires a hotcard (panel, stage, keys) builds it here.
  */
-export function hotcardRoute(hint: string | undefined, action: "cue" | "take"): string {
-  if (action === "cue") return "preview";
-  if (!hint || hint === "preview" || hint === "program") return "program";
-  return hint;
+export function hotcardFireMessage(
+  h: Pick<Hotcard, "channelHint" | "templateId" | "data">,
+  action: "cue" | "take",
+): ClientMessage {
+  return { type: action, channel: hotcardRoute(h.channelHint, action), templateId: h.templateId, data: h.data };
 }

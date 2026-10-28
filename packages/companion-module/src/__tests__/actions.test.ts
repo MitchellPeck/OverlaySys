@@ -137,6 +137,24 @@ describe("dispatchAction — hotcard", () => {
     expect((r.messages[0] as { channel: string }).channel).toBe("program");
   });
 
+  it("fire_hotcard: a legacy 'preview' hint doesn't redirect the Take off air (Default D7a)", () => {
+    const s = apply(initialState(), {
+      type: "hotcard",
+      hotcard: { id: "h1", name: "L3", templateId: "tpl-1", data: {}, channelHint: "preview" },
+    });
+    const r = dispatchAction(s, "fire_hotcard", { hotcardId: "h1" });
+    expect(r.messages[0]).toMatchObject({ type: "take", channel: "program" });
+  });
+
+  it("fire_hotcard uses a non-PVW/PGM default output", () => {
+    const s = apply(initialState(), {
+      type: "hotcard",
+      hotcard: { id: "h1", name: "L3", templateId: "tpl-1", data: {}, channelHint: "stage" },
+    });
+    const r = dispatchAction(s, "fire_hotcard", { hotcardId: "h1" });
+    expect(r.messages[0]).toMatchObject({ type: "take", channel: "stage" });
+  });
+
   it("fire_hotcard is a no-op when hotcard payload not cached", () => {
     const r = dispatchAction(initialState(), "fire_hotcard", {
       hotcardId: "h1",

@@ -13,6 +13,7 @@ import { useWs } from "@/lib/useWs";
 import { formatClock, onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
 import { editedFieldKeys, effectiveRowData, graphicRowMessage, upNextRows } from "@/lib/rowData";
 import { shortcutHint, stageModeFor, type StageMode } from "@/lib/stageMode";
+import { hotcardFireMessage } from "@/lib/shortcutGuards";
 import { SongModePanel } from "./SongModePanel";
 import { SongTakeStrip } from "./SongTakeStrip";
 import { ScriptureTakeStrip } from "./ScriptureTakeStrip";
@@ -102,7 +103,8 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
       send({ type: "get_hotcard", hotcardId: id });
       return null;
     }
-    return { type: target === "preview" ? "cue" : "take", channel: h.channelHint ?? target, templateId: h.templateId, data: h.data };
+    // Cue never goes to air, whatever the card's hint (LM-2, Default D7a).
+    return hotcardFireMessage(h, target === "preview" ? "cue" : "take");
   }
 
   switch (mode.kind) {
