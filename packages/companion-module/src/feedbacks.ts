@@ -6,6 +6,7 @@ import type {
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
 import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
+import { sttSilentSec, videoInfo } from "./live";
 import { CURRENT_ITEM_TIMER_ID, timerMs, timerPhase } from "@overlaysys/core";
 
 export type FeedbackId =
@@ -38,7 +39,11 @@ export type FeedbackId =
   | "stage_message_showing"
   | "item_timer_warning"
   | "item_timer_overtime"
-  | "pco_live_active";
+  | "pco_live_active"
+  | "video_remaining_below"
+  | "video_errored"
+  | "output_offline"
+  | "stt_silent";
 
 export type FeedbackOptions = Record<
   string,
@@ -59,11 +64,38 @@ export interface FeedbackDefinition {
       | "kind_ordinal"
       | "sub_take"
       | "row_kind"
-      | "slide";
+      | "slide"
+      | "seconds";
   }[];
 }
 
 export const feedbackDefinitions: FeedbackDefinition[] = [
+  {
+    id: "video_remaining_below",
+    name: "Video remaining below N seconds",
+    description: "True while the chosen channel's video has N seconds or less left (playing or paused).",
+    options: [{ id: "channel", type: "channel" }, { id: "seconds", type: "seconds" }],
+  },
+  {
+    id: "video_errored",
+    name: "Video errored",
+    description: "True when the chosen channel's video failed to load or play.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "output_offline",
+    name: "Output offline",
+    description:
+      "True when no renderer window (OBS browser source, output window) is connected to the chosen channel. " +
+      "Stays false until the server reports outputs.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  {
+    id: "stt_silent",
+    name: "STT silent while a song is live",
+    description: "True when a song is live and speech-to-text hasn't heard anything for more than N seconds.",
+    options: [{ id: "seconds", type: "seconds" }],
+  },
   {
     id: "notes_active",
     name: "Pastor notes active",
@@ -392,6 +424,19 @@ export function feedbackPredicate(
     }
     case "pco_live_active":
       return !!state.pcoLive?.enabled && state.pcoLive.status === "live";
+    case "video_remaining_below": {
+      const v = videoInfo(state, String(options.channel ?? ""));
+      if (!v || v.durationSec <= 0 || v.status === "ended" || v.status === "error") return false;
+      return v.remainingSec <= Number(options.seconds ?? 10);
+    }
+    case "video_errored":
+      return videoInfo(state, String(options.channel ?? ""))?.status === "error";
+    case "output_offline":
+      return state.outputs !== null && (state.outputs[String(options.channel ?? "")]?.count ?? 0) === 0;
+    case "stt_silent": {
+      const silent = sttSilentSec(state);
+      return silent !== null && silent > Number(options.seconds ?? 10);
+    }
     case "notes_active":
       return (state.stage?.pointCount ?? 0) > 0;
     case "notes_at_first":
@@ -612,6 +657,16 @@ const slideInputF: CompanionInputFieldNumber = {
   step: 1,
 };
 
+const secondsInputF: CompanionInputFieldNumber = {
+  id: "seconds",
+  type: "number",
+  label: "Seconds",
+  default: 10,
+  min: 0,
+  max: 3600,
+  step: 1,
+};
+
 const rowIndexInputF: CompanionInputFieldNumber = {
   id: "rowIndex",
   type: "number",
@@ -677,6 +732,8 @@ export function feedbackDefinitionsForSDK(
           return rowKindInputF;
         case "slide":
           return slideInputF;
+        case "seconds":
+          return secondsInputF;
       }
     });
     defs[d.id] = {

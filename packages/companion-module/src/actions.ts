@@ -69,7 +69,10 @@ export type ActionId =
   | "stage_timer_pause"
   | "stage_timer_resume"
   | "stage_timer_reset"
-  | "stage_timer_adjust";
+  | "stage_timer_adjust"
+  | "panic"
+  | "create_countdown"
+  | "cursor_prev";
 
 const TIMER_MESSAGE_FOR_ACTION = {
   stage_timer_start: "timer_start",
@@ -465,9 +468,29 @@ export function dispatchAction(
         delta: num("delta", 1),
       });
       break;
+    case "cursor_prev":
+      localEvents.push({ type: "local_cursor_advance", delta: -1 });
+      break;
     case "cursor_set":
       localEvents.push({ type: "local_cursor_set", rowId: str("rowId") });
       break;
+    case "panic":
+      // Every channel, graphics out and video hard-cut, in one server step.
+      messages.push({ type: "clear_all_channels", cutVideo: opts["keepVideo"] !== true });
+      break;
+    case "create_countdown": {
+      const totalMs = Math.round((num("minutes", 5) * 60 + num("seconds", 0)) * 1000);
+      if (!Number.isFinite(totalMs) || totalMs <= 0) break;
+      messages.push({
+        type: "timer_create",
+        label: (str("label") || "Countdown").slice(0, 60),
+        mode: "countdown",
+        durationMs: totalMs,
+        overtime: opts["overtime"] !== false,
+        start: opts["start"] !== false,
+      });
+      break;
+    }
     case "cursor_set_by_index": {
       const show = state.loadedShowId
         ? state.showCache.get(state.loadedShowId)
@@ -1109,6 +1132,34 @@ export function actionDefinitions(
       name: "Cursor: advance",
       options: [deltaInput],
       callback: wrap("cursor_advance"),
+    },
+    cursor_prev: {
+      name: "Cursor: back one row",
+      options: [],
+      callback: wrap("cursor_prev"),
+    },
+    panic: {
+      name: "Panic: clear ALL channels (graphics + cut video)",
+      options: [
+        {
+          id: "keepVideo",
+          type: "checkbox",
+          label: "Leave video playing",
+          default: false,
+        },
+      ],
+      callback: wrap("panic"),
+    },
+    create_countdown: {
+      name: "Stage timer: create countdown",
+      options: [
+        { id: "label", type: "textinput", label: "Label", default: "Countdown" },
+        { id: "minutes", type: "number", label: "Minutes", default: 5, min: 0, max: 1440, step: 1 },
+        { id: "seconds", type: "number", label: "Seconds", default: 0, min: 0, max: 59, step: 1 },
+        { id: "overtime", type: "checkbox", label: "Count into overtime past zero", default: true },
+        { id: "start", type: "checkbox", label: "Start immediately", default: true },
+      ],
+      callback: wrap("create_countdown"),
     },
     cursor_set: {
       name: "Cursor: set to row (by row ID)",

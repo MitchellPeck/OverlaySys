@@ -16,7 +16,10 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 | Host | `127.0.0.1` | OverlaySys server host |
 | Port | `4000` | OverlaySys WS port |
 | Channels to subscribe | `program,preview` | Channel IDs to subscribe to and surface as variables |
+| LAN token | `` | Only when the server sets `OVERLAYSYS_TOKEN` (see the main README, "LAN security") |
 | Loaded show ID | `` | Persisted across restarts; usually set via the **Load Show** action |
+
+The module pings the server every 5 s and reconnects if it hears nothing for 10 s (first retry after 250 ms, backing off to 10 s). If the server speaks a different protocol version, a warning is logged: update the older side.
 
 ## Actions
 
@@ -36,6 +39,7 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 | Take row at cursor | channel | Take whichever row the cursor is on |
 | Take row (song-aware) | row (cursor / index / ID), song part, channel or PVW → PGM | One action for a line that may be a song or a regular item: a song row fires the chosen sub-take (intro / lyrics / outro, like **Song: take sub-take**); any other row takes exactly like **Take row**. Channel blank = the song's cascade channel or the row's channel hint. With PVW → PGM on, graphics cue then promote and song lyrics use song PVW → PGM; song intro/outro have no preview stage and go straight to the To channel |
 | Cursor: advance | delta | Move the cursor ±N rows (clamped) |
+| Cursor: back one row | — | Same as Cursor: advance −1 |
 | Cursor: set to row (by row ID) | row | Jump the cursor to a specific row by UUID |
 | Cursor: set to row (by index) | rowIndex | Jump the cursor to the Nth row of the loaded show |
 | Song: take row | show, songRow, channel | Take a song row from any show |
@@ -48,6 +52,8 @@ Connects Bitfocus Companion to an OverlaySys server over WebSocket.
 | Song: set trust mode | channel, trustMode | song_set_trust |
 | STT: start spawner | — | stt_spawner_start |
 | STT: stop spawner | — | stt_spawner_stop |
+| Panic: clear ALL channels | leave video playing (off) | Every channel's graphic out and every video hard-cut, in one server step (mirrors follow their source) |
+| Stage timer: create countdown | label, minutes, seconds, overtime, start | Creates a stage countdown timer and (by default) starts it |
 
 Data input fields parse `key=value` lines into a record. Empty values are allowed; lines without `=` are ignored.
 
@@ -73,9 +79,14 @@ Per configured channel `<c>` (e.g. `program`, `preview`):
 - `<c>_song_queued_title` — the song armed by its intro on that channel (empty when none)
 - `<c>_song_title`, `<c>_song_section`, `<c>_song_slide_idx`, `<c>_song_slide_text`, `<c>_song_blanked`, `<c>_song_trust_mode`
 
+- `<c>_outputs` — how many renderer windows (OBS browser sources, output windows) are connected to the channel; empty until the server reports
+- `<c>_video_title`, `<c>_video_status`, `<c>_video_elapsed` / `<c>_video_remaining` (M:SS), `<c>_video_remaining_sec`, `<c>_video_progress` (0–100) — the channel's video. Updated about once a second.
+
 Global:
 
 - `connection_state` (connected / disconnected / reconnecting)
+- `server_version`
+- `stt_confidence` (0–100, last suggestion), `stt_last_heard` (last text heard), `stt_silent_sec` (seconds since STT heard anything while a song is live; empty when no song is live)
 - `last_error`
 - `stt_running`, `stt_listener_count`
 - `loaded_show_id`, `loaded_show_name`, `loaded_show_row_count`
@@ -98,7 +109,9 @@ changes. If two field keys sanitize to the same id, the later one wins.
 
 ## Feedbacks
 
-`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `song_active`, `song_queued`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same), `cursor_row_kind_is` (true when the cursor row is the chosen type), `row_at_index_kind_is` (same, for the Nth row).
+`channel_is_live`, `channel_is_blank`, `hotcard_on_air`, `video_on_air`, `video_paused`, `video_remaining_below` (channel, seconds), `video_errored`, `output_offline` (no renderer window connected to the channel), `stt_silent` (a song is live and STT has heard nothing for more than N seconds), `song_active`, `song_queued`, `song_trust_on`, `song_section_is` (input: `kind:ordinal`, e.g. `chorus:2`), `stt_running`, `connection_lost`, `show_loaded`, `row_is_cursor` (by UUID), `row_is_active` (by UUID), `row_at_index_is_cursor` (by 1-based index — survives show changes), `row_at_index_is_active` (same), `cursor_row_kind_is` (true when the cursor row is the chosen type), `row_at_index_kind_is` (same, for the Nth row).
+
+Presets include **PANIC** (clear every channel), **PGM output status** (red when no output is connected), **PGM video countdown** (remaining time, red under 10 s, amber on error), **Start a 5-minute countdown**, and **STT status** (red when silent for 15 s during a song).
 
 ### Intro, then section buttons
 

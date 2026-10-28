@@ -5,6 +5,7 @@ import {
   songTitleForChannel,
 } from "./labels";
 import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
+import { sttVariables, videoVariables } from "./live";
 import {
   CURRENT_ITEM_TIMER_ID,
   formatSignedTime,
@@ -100,6 +101,13 @@ export function variableDefinitions(
       { variableId: `${c}_scripture_slide`, name: `${c} scripture slide (n/total)` },
       { variableId: `${c}_scripture_text`, name: `${c} scripture slide text` },
       { variableId: `${c}_scripture_queued_ref`, name: `${c} scripture queued by its intro (reference)` },
+      { variableId: `${c}_outputs`, name: `${c} connected output windows (count)` },
+      { variableId: `${c}_video_title`, name: `${c} video title` },
+      { variableId: `${c}_video_status`, name: `${c} video status (loading/playing/paused/ended/error)` },
+      { variableId: `${c}_video_elapsed`, name: `${c} video elapsed (M:SS)` },
+      { variableId: `${c}_video_remaining`, name: `${c} video remaining (M:SS)` },
+      { variableId: `${c}_video_remaining_sec`, name: `${c} video remaining (seconds)` },
+      { variableId: `${c}_video_progress`, name: `${c} video progress (0-100)` },
     );
     for (let i = 1; i <= 10; i++) {
       defs.push({
@@ -115,6 +123,10 @@ export function variableDefinitions(
 
   defs.push(
     { variableId: "connection_state", name: "WebSocket connection state" },
+    { variableId: "server_version", name: "OverlaySys server version" },
+    { variableId: "stt_confidence", name: "STT last suggestion confidence (0-100)" },
+    { variableId: "stt_last_heard", name: "STT last heard text" },
+    { variableId: "stt_silent_sec", name: "Seconds since STT heard anything while a song is live" },
     { variableId: "last_error", name: "Last server-reported error" },
     { variableId: "stt_running", name: "STT spawner running (yes/no)" },
     { variableId: "stt_listener_count", name: "Online STT listeners" },
@@ -233,7 +245,10 @@ export function projectVariables(
     out[`${c}_scripture_slide`] = scr ? `${scr.slideIdx + 1}/${scr.slideCount}` : "";
     out[`${c}_scripture_text`] = scr?.text ?? "";
     out[`${c}_scripture_queued_ref`] = ch?.queuedScripture?.reference ?? "";
+    out[`${c}_outputs`] = state.outputs ? String(state.outputs[c]?.count ?? 0) : "";
   }
+  Object.assign(out, videoVariables(state, channels), sttVariables(state));
+  out.server_version = state.serverVersion ?? "";
 
   out.connection_state = state.connectionState;
   out.last_error = state.lastError ?? "";

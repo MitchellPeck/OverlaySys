@@ -11,7 +11,8 @@ import type {
   StageState,
   StageTimerInstance,
 } from "@overlaysys/core";
-import type { PcoLiveStateMessage } from "@overlaysys/ws-protocol";
+import type { MediaPlayback } from "@overlaysys/core";
+import type { OutputsState, PcoLiveStateMessage } from "@overlaysys/ws-protocol";
 
 /** Warn threshold for the item-timer variable and feedbacks. */
 export const ITEM_WARN_MS = 60_000;
@@ -60,6 +61,23 @@ export interface CompanionState {
     pointHeading: string | null;
     nextHeading: string | null;
   } | null;
+  /** Connected renderer windows per channel; null until the server reports (or an older server). */
+  outputs: OutputsState | null;
+  /** Latest ~4 Hz playback tick per channel. */
+  mediaPlayback: Map<string, { takenAt: number; playback: MediaPlayback }>;
+  /** From hello; null for servers that don't send it. */
+  serverVersion: string | null;
+  /** Server's protocol major (hello), for the mismatch warning. */
+  serverProtocolVersion: number | null;
+  stt: {
+    /** Confidence of the last suggestion (0–1); null before any. */
+    confidence: number | null;
+    lastHypothesis: string;
+    /** Local time of the last stt_match. */
+    lastMatchAt: number | null;
+  };
+  /** Local time a song session went live on any subscribed channel; null when none is live. */
+  songLiveSince: number | null;
 }
 
 export function initialState(): CompanionState {
@@ -84,6 +102,12 @@ export function initialState(): CompanionState {
     timers: [],
     pcoLive: null,
     stage: null,
+    outputs: null,
+    mediaPlayback: new Map(),
+    serverVersion: null,
+    serverProtocolVersion: null,
+    stt: { confidence: null, lastHypothesis: "", lastMatchAt: null },
+    songLiveSince: null,
   };
 }
 

@@ -20,6 +20,8 @@ import {
 } from "./feedbacks.js";
 import { projectVariables, variableDefinitions } from "./variables.js";
 import { presetDefinitions } from "./presets.js";
+import { sttVariables, videoVariables } from "./live.js";
+import { protocolMismatch, PROTOCOL_VERSION } from "@overlaysys/ws-protocol";
 import {
   configFields,
   defaultConfig,
@@ -33,6 +35,8 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   private timerTick: ReturnType<typeof setInterval> | null = null;
   private channels: string[] = ["program", "preview"];
   private currentConfig: ModuleConfig = { ...defaultConfig };
+  /** Last values pushed for the high-rate (video / STT) variables, to send only changes. */
+  private fastValues: Record<string, string> = {};
 
   async init(config: ModuleConfig): Promise<void> {
     this.currentConfig = { ...defaultConfig, ...config };
@@ -97,6 +101,8 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
           this.connection?.send({ type: "list_hotcards" });
           this.connection?.send({ type: "list_channels" });
           this.connection?.send({ type: "stt_spawner_get_config" });
+          // STT suggestions are opt-in (STT confidence / silence variables).
+          this.connection?.send({ type: "stt_match_subscribe", on: true });
           if (this.state.loadedShowId) {
             this.connection?.send({
               type: "get_show",
@@ -113,8 +119,20 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
           this.applyEvent({ type: "local_reconnecting" });
         },
         onMessage: (msg) => {
-          // ~4 Hz playback ticks carry nothing Companion renders; skip the full refresh.
-          if (msg.type === "media_playback") return;
+          // ~4 Hz playback ticks and several-per-second STT suggestions only
+          // move the video / STT variables: update those when their
+          // whole-second values change, skip the full refresh.
+          if (msg.type === "media_playback" || msg.type === "stt_match") {
+            this.state = apply(this.state, msg);
+            this.pushFastValues();
+            return;
+          }
+          if (msg.type === "hello" && protocolMismatch(msg.protocolVersion)) {
+            this.log(
+              "warn",
+              `server speaks protocol v${msg.protocolVersion}, this module v${PROTOCOL_VERSION} — update the older side; some actions may not work`,
+            );
+          }
           this.applyEvent(msg);
           if (msg.type === "hotcard_list") {
             for (const h of msg.hotcards) {
@@ -167,9 +185,22 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   }
 
   private refreshDynamic(): void {
-    this.setVariableValues(projectVariables(this.state, this.channels));
+    const all = projectVariables(this.state, this.channels);
+    this.setVariableValues(all);
+    this.fastValues = { ...videoVariables(this.state, this.channels), ...sttVariables(this.state) };
     this.checkFeedbacks();
     this.syncTimerTick();
+  }
+
+  /** Push only the video / STT variables that changed since last time. */
+  private pushFastValues(): void {
+    const next = { ...videoVariables(this.state, this.channels), ...sttVariables(this.state) };
+    const changed: Record<string, string> = {};
+    for (const [k, v] of Object.entries(next)) if (this.fastValues[k] !== v) changed[k] = v;
+    if (Object.keys(changed).length === 0) return;
+    this.fastValues = next;
+    this.setVariableValues(changed);
+    this.checkFeedbacks("video_remaining_below", "video_errored", "stt_silent");
   }
 
   /** Re-project timer-driven variables/feedbacks every second while any timer runs. */
@@ -178,7 +209,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
     if (running && !this.timerTick) {
       this.timerTick = setInterval(() => {
         this.setVariableValues(projectVariables(this.state, this.channels));
-        this.checkFeedbacks("item_timer_warning", "item_timer_overtime");
+        this.checkFeedbacks("item_timer_warning", "item_timer_overtime", "stt_silent");
       }, 1000);
     } else if (!running && this.timerTick) {
       clearInterval(this.timerTick);
