@@ -11,7 +11,7 @@ import * as templates from "./templates";
 import * as slidesSession from "./slidesSession";
 // [/P3.9]
 // [P3.12]
-import { convertSongToDeck, undoConversion } from "./decksConvert";
+import { SongNotFoundError, convertSongToDeck, undoConversion } from "./decksConvert";
 import * as songs from "./songs";
 // [/P3.12]
 
@@ -206,8 +206,14 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
           titleSlide: msg.titleSlide,
           ...(msg.licensing ? { licensing: msg.licensing } : {}),
         });
-      } catch {
-        send({ type: "error", code: "not_found", message: msg.songId });
+      } catch (err) {
+        if (err instanceof SongNotFoundError) {
+          send({ type: "error", code: "not_found", message: msg.songId });
+          return;
+        }
+        send({ type: "error", code: "handler_error", message: err instanceof Error ? err.message : String(err) });
+        // A failed convert rolls back, or (ConvertRollbackError) keeps its undo record; lists may have moved either way.
+        await broadcastConvertChanges(null, []);
         return;
       }
       send({
@@ -223,7 +229,15 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       return;
     }
     case "undo_convert_song": {
-      const res = await undoConversion(msg.conversionId);
+      let res: Awaited<ReturnType<typeof undoConversion>>;
+      try {
+        res = await undoConversion(msg.conversionId);
+      } catch (err) {
+        // The undo record is kept, so the operator can try again.
+        send({ type: "error", code: "handler_error", message: err instanceof Error ? err.message : String(err) });
+        await broadcastConvertChanges(null, []);
+        return;
+      }
       if (!res) {
         send({ type: "error", code: "not_found", message: msg.conversionId });
         return;

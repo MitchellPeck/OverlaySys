@@ -338,5 +338,52 @@ describe("convert handlers", () => {
       { type: "error", code: "not_found", message: "nope" },
     ]);
   });
+
+  it("a write failure replies handler_error (not not_found); a failed undo can be retried", async () => {
+    const songs = await import("./songs");
+    const itemMappings = await import("./pco/itemMappings");
+    await songs.reloadSongs();
+    await itemMappings.reloadItemMappings();
+    // Placeholder lyrics only.
+    await songs.saveSong({
+      id: "song-y",
+      title: "Placeholder Y",
+      sections: [{ id: "v", kind: "verse", label: "Verse", slides: [{ id: "a", lines: ["Line A"] }] }],
+      defaultArrangement: ["v"],
+      customFields: {},
+    });
+    await shows.saveShow({
+      id: "sh2",
+      name: "Undated show",
+      projectId: "default",
+      rows: [{ kind: "song", id: "r1", songId: "song-y", lyricTemplateId: "t" }],
+      songs: [{ songId: "song-y" }],
+    });
+
+    const spy = vi.spyOn(decks, "saveDeck").mockRejectedValueOnce(new Error("disk full"));
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-y", titleSlide: false }, send);
+    spy.mockRestore();
+    expect(sent).toEqual([{ type: "error", code: "handler_error", message: "disk full" }]);
+    expect(await songs.getSong("song-y")).not.toBeNull();
+    expect((await shows.getShow("sh2"))!.rows[0]).toMatchObject({ kind: "song" });
+
+    sent = [];
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-y", titleSlide: false }, send);
+    const reply = sent[0];
+    const conversionId = reply?.type === "song_converted" ? reply.conversionId : "";
+    expect(conversionId).not.toBe("");
+
+    sent = [];
+    const undoSpy = vi.spyOn(songs, "saveSong").mockRejectedValueOnce(new Error("disk full"));
+    await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
+    undoSpy.mockRestore();
+    expect(sent).toEqual([{ type: "error", code: "handler_error", message: "disk full" }]);
+
+    sent = [];
+    await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
+    expect(sent).toEqual([
+      { type: "song_convert_undone", conversionId, songId: "song-y", restoredShows: 1, skippedShows: 0 },
+    ]);
+  });
 });
 // [/P3.12]

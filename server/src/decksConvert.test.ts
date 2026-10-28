@@ -7,9 +7,44 @@ import { PCO_SONG_ID_KEY, type Show, type Song, type Template } from "@overlaysy
 // CCLI usage logging writes to the data dir; keep tests off disk.
 vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
 
+// Stubbed write failures: each counter, when set, lets that many calls through and fails the next one only.
+const fail = vi.hoisted(() => ({
+  saveShowAfter: null as number | null,
+  upsertMappingAfter: null as number | null,
+}));
+function tick(key: keyof typeof fail): void {
+  const n = fail[key];
+  if (n === null) return;
+  if (n <= 0) {
+    fail[key] = null; // one-shot
+    throw new Error(`stubbed ${key} failure`);
+  }
+  fail[key] = n - 1;
+}
+vi.mock("./shows", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./shows")>();
+  return {
+    ...orig,
+    saveShow: async (s: Show) => {
+      tick("saveShowAfter");
+      return orig.saveShow(s);
+    },
+  };
+});
+vi.mock("./pco/itemMappings", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./pco/itemMappings")>();
+  return {
+    ...orig,
+    upsertItemMapping: async (m: Parameters<typeof orig.upsertItemMapping>[0]) => {
+      tick("upsertMappingAfter");
+      return orig.upsertItemMapping(m);
+    },
+  };
+});
+
 import * as channels from "./channels";
 import * as decks from "./decks";
-import { convertSongToDeck, undoConversion } from "./decksConvert";
+import { ConvertRollbackError, SongNotFoundError, convertSongToDeck, undoConversion } from "./decksConvert";
 import * as itemMappings from "./pco/itemMappings";
 import * as shows from "./shows";
 import * as songSession from "./songSession";
@@ -53,6 +88,8 @@ function show(id: string, scheduledFor: string | undefined, extraRows: Show["row
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(async () => {
+  fail.saveShowAfter = null;
+  fail.upsertMappingAfter = null;
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "overlaysys-conv-"));
   prevData = process.env["OVERLAYSYS_DATA_DIR"];
   prevFix = process.env["OVERLAYSYS_FIXTURES_DIR"];
@@ -96,7 +133,14 @@ describe("convertSongToDeck", () => {
 
     for (const id of ["next", "undated"]) {
       const s = (await shows.getShow(id))!;
-      expect(s.rows[0]).toEqual({ kind: "slides", id: `${id}-r1`, deckId: res.deck.id, lengthSec: 200 });
+      // channelHint pins the ShowSong channelOverride the song row resolved to.
+      expect(s.rows[0]).toEqual({
+        kind: "slides",
+        id: `${id}-r1`,
+        deckId: res.deck.id,
+        channelHint: "program",
+        lengthSec: 200,
+      });
       expect(s.songs).toEqual([]);
     }
 
@@ -162,7 +206,68 @@ describe("convertSongToDeck", () => {
   });
 
   it("throws for an unknown song", async () => {
-    await expect(convertSongToDeck("nope", { titleSlide: false, today: TODAY })).rejects.toThrow();
+    await expect(convertSongToDeck("nope", { titleSlide: false, today: TODAY })).rejects.toBeInstanceOf(
+      SongNotFoundError,
+    );
+  });
+
+  it("a song row routed via the song default to lower stays on lower", async () => {
+    await songs.saveSong({ ...song, defaultChannel: "lower" });
+    await shows.saveShow({ ...show("next", "2026-11-01"), songs: [{ songId: song.id }] });
+    await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    const s = (await shows.getShow("next"))!;
+    expect(s.rows[0]).toMatchObject({ kind: "slides", channelHint: "lower" });
+  });
+
+  it("a row routed via the show's per-song override keeps that channel", async () => {
+    // The fixture shows carry channelOverride "program" on their ShowSong.
+    await shows.saveShow({ ...show("next", "2026-11-01"), songs: [{ songId: song.id, channelOverride: "side" }] });
+    await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    expect((await shows.getShow("next"))!.rows[0]).toMatchObject({ kind: "slides", channelHint: "side" });
+  });
+});
+
+async function expectUnconverted(): Promise<void> {
+  const restored = await songs.getSong(song.id);
+  expect(restored).not.toBeNull();
+  expect(restored!.customFields["converted_to_deck"]).toBeUndefined();
+  for (const id of ["past", "next", "undated"]) {
+    expect((await shows.getShow(id))!.rows[0]).toMatchObject({ kind: "song", songId: song.id });
+  }
+  expect(await itemMappings.listItemMappings()).toEqual([]);
+  expect(await decks.listDecks()).toEqual([]);
+}
+
+describe("convert failure safety", () => {
+  it("a write failing partway rolls the conversion back", async () => {
+    fail.saveShowAfter = 1; // the second show save fails
+    await expect(convertSongToDeck(song.id, { titleSlide: false, today: TODAY })).rejects.toThrow(
+      "stubbed saveShowAfter failure",
+    );
+    fail.saveShowAfter = null;
+    await expectUnconverted();
+  });
+
+  it("when the rollback fails too, the conversion can still be undone by id", async () => {
+    fail.upsertMappingAfter = 0; // convert fails at the first mapping write
+    fail.saveShowAfter = 2; // both show rewrites land, then the rollback's first show restore fails
+    const err = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConvertRollbackError);
+    fail.saveShowAfter = null;
+    fail.upsertMappingAfter = null;
+    const out = await undoConversion((err as ConvertRollbackError).conversionId);
+    expect(out).toMatchObject({ songId: song.id, restoredShows: 2, skippedShows: 0 });
+    await expectUnconverted();
+  });
+
+  it("a failed undo keeps its record and can be retried", async () => {
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    fail.saveShowAfter = 1; // the first show restore lands, the second fails
+    await expect(undoConversion(res.conversionId)).rejects.toThrow("stubbed saveShowAfter failure");
+    fail.saveShowAfter = null;
+    const out = await undoConversion(res.conversionId);
+    expect(out).toMatchObject({ songId: song.id, restoredShows: 2, skippedShows: 0 });
+    await expectUnconverted();
   });
 });
 
@@ -207,6 +312,20 @@ describe("undoConversion", () => {
     // The edited show still uses the deck, so the deck stays.
     expect(await decks.getDeck(res.deck.id)).not.toBeNull();
     expect((await shows.getShow("undated"))!.rows[0]).toMatchObject({ kind: "song" });
+  });
+
+  it("undo keeps the deck when a show outside the conversion now uses it", async () => {
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    await shows.saveShow({
+      id: "other",
+      name: "other",
+      projectId: "default",
+      rows: [{ kind: "slides", id: "o1", deckId: res.deck.id }],
+      songs: [],
+    });
+    const out = await undoConversion(res.conversionId);
+    expect(out).toMatchObject({ restoredShows: 2, skippedShows: 0 });
+    expect(await decks.getDeck(res.deck.id)).not.toBeNull();
   });
 
   it("undo with an unknown id returns null", async () => {

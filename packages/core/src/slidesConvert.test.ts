@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ShowSong, SongRow } from "./show";
 import type { Song } from "./song";
+import type { Template } from "./template";
 import { convertedDeckId, deckFromSong, isUpcomingShow, songRowToSlidesRow } from "./slidesConvert";
 
 // Placeholder lyrics only.
@@ -123,6 +124,27 @@ describe("songRowToSlidesRow", () => {
     const showSong: ShowSong = { songId: song.id, arrangement: ["c"] };
     const { row } = songRowToSlidesRow(base, showSong, song, deck, sectionSlideIds);
     expect(row.slideIds).toEqual(["s3"]);
+  });
+
+  it("pins the resolved song channel when the row has no channelHint", () => {
+    const { channelHint: _h, ...noHint } = base;
+    void _h;
+    const viaSong = songRowToSlidesRow(noHint, undefined, { ...song, defaultChannel: "lower" }, deck, sectionSlideIds);
+    expect(viaSong.row.channelHint).toBe("lower");
+    const viaShow = songRowToSlidesRow(
+      noHint,
+      { songId: song.id, channelOverride: "side" },
+      { ...song, defaultChannel: "lower" },
+      deck,
+      sectionSlideIds,
+    );
+    expect(viaShow.row.channelHint).toBe("side");
+    const viaTemplate = songRowToSlidesRow(noHint, undefined, song, deck, sectionSlideIds, {
+      defaultChannel: "tpl-ch",
+    } as Template);
+    expect(viaTemplate.row.channelHint).toBe("tpl-ch");
+    const none = songRowToSlidesRow(noHint, undefined, song, deck, sectionSlideIds);
+    expect(none.row.channelHint).toBeUndefined();
   });
 
   it("warns on an unmapped section", () => {

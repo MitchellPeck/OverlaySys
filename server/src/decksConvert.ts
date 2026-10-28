@@ -2,6 +2,12 @@
 // in UPCOMING shows to slides rows, remember the PCO mapping and tombstone
 // the song. Past shows and any row live on air are left alone. Undo is kept
 // in memory for the life of the process.
+//
+// Failure safety: everything is computed before the first write, and the
+// undo record is registered before the first write and filled in as each
+// write lands. A failure partway through rolls back what landed; if the
+// rollback itself fails, the record stays so Undo can be retried. Undo keeps
+// its record until it has finished, so a failed Undo can be retried too.
 
 import { randomUUID } from "node:crypto";
 import {
@@ -28,13 +34,35 @@ import * as shows from "./shows";
 import * as songs from "./songs";
 import * as templates from "./templates";
 
-type ShowSnapshot = { before: Show; after: Show };
+/** The song to convert doesn't exist (or is already deleted). */
+export class SongNotFoundError extends Error {
+  constructor(songId: string) {
+    super(`Song not found: ${songId}`);
+    this.name = "SongNotFoundError";
+  }
+}
+
+/** Convert failed partway and the automatic rollback failed too; Undo with `conversionId`. */
+export class ConvertRollbackError extends Error {
+  constructor(
+    readonly conversionId: string,
+    cause: unknown,
+  ) {
+    super(`Convert failed and could not be rolled back (${String(cause)}); undo ${conversionId} to retry`);
+    this.name = "ConvertRollbackError";
+  }
+}
+
+type ShowSnapshot = { before: Show; after: Show; restored?: boolean };
 type MappingSnapshot = { key: string; previous: PcoItemMapping | "absent" };
 type ConversionSnapshot = {
   song: Song;
   deckId: string;
+  /** Filled in as each write lands. */
+  deckSaved: boolean;
   shows: ShowSnapshot[];
   mappings: MappingSnapshot[];
+  songTouched: boolean;
 };
 
 const CONVERSIONS = new Map<string, ConversionSnapshot>();
@@ -63,10 +91,11 @@ export async function convertSongToDeck(
   changedShowIds: string[];
 }> {
   const song = await songs.getSong(songId);
-  if (!song) throw new Error(`Song not found: ${songId}`);
+  if (!song) throw new SongNotFoundError(songId);
   const today = opts.today ?? toISODate(new Date());
   const allTemplates = await templates.listTemplates();
 
+  // ── Plan: compute everything before writing anything. ──
   let titleSlide: { templateId: string; data: Record<string, string> } | undefined;
   if (opts.titleSlide) {
     const syntheticRow: SongRow = {
@@ -87,13 +116,10 @@ export async function convertSongToDeck(
     ...(titleSlide ? { titleSlide } : {}),
     ...(allTemplates[0] ? { fallbackTemplateId: allTemplates[0].id } : {}),
   });
-  const deck = await decks.saveDeck(built.deck);
 
-  // Rewrite upcoming shows.
   const onAir = rowsOnAir();
   const warnings: string[] = [];
-  const showSnaps: ShowSnapshot[] = [];
-  let rowCount = 0;
+  const plannedShows: { before: Show; next: Show; rows: number }[] = [];
   for (const meta of await shows.listShowMetas()) {
     const current = await shows.getShow(meta.id);
     if (!current || !isUpcomingShow(current, today)) continue;
@@ -106,24 +132,25 @@ export async function convertSongToDeck(
         warnings.push(`${current.name}: a row is on air, so it stays a song row`);
         return r;
       }
-      const out = songRowToSlidesRow(r, showSong, song, deck, built.sectionSlideIds);
+      const lyricTemplate = allTemplates.find((t) => t.id === r.lyricTemplateId);
+      const out = songRowToSlidesRow(r, showSong, song, built.deck, built.sectionSlideIds, lyricTemplate);
       if (out.warning) warnings.push(`${current.name}: ${out.warning}`);
       changed++;
       return out.row;
     });
     if (changed === 0) continue;
     const stillUsed = rows.some((r) => r.kind === "song" && r.songId === song.id);
-    const next: Show = {
-      ...current,
-      rows,
-      songs: stillUsed ? current.songs : current.songs.filter((s) => s.songId !== song.id),
-    };
-    const after = await shows.saveShow(next);
-    showSnaps.push({ before: current, after });
-    rowCount += changed;
+    plannedShows.push({
+      before: current,
+      next: {
+        ...current,
+        rows,
+        songs: stillUsed ? current.songs : current.songs.filter((s) => s.songId !== song.id),
+      },
+      rows: changed,
+    });
   }
 
-  // Remember the PCO mapping.
   const pcoSongId = song.customFields[PCO_SONG_ID_KEY];
   const { songKey, titleKey } = mappingKeysFor({
     title: song.title,
@@ -131,27 +158,54 @@ export async function convertSongToDeck(
   } as Parameters<typeof mappingKeysFor>[0]);
   const keys = songKey ? [titleKey, songKey] : [titleKey];
   const existing = await itemMappings.listItemMappings({ includeDeleted: true });
-  const mapSnaps: MappingSnapshot[] = [];
-  for (const key of keys) {
-    const prev = existing.find((m) => m.id === key);
-    mapSnaps.push({ key, previous: prev ? { ...prev } : "absent" });
-    await itemMappings.upsertItemMapping({ key, kind: "slides", deckId: deck.id });
-  }
 
-  // Save the song once with the pointer, then tombstone it.
-  await songs.saveSong({ ...song, customFields: { ...song.customFields, [CONVERTED_TO_DECK_KEY]: deck.id } });
-  await songs.deleteSong(song.id);
-
+  // ── Write: the undo record exists before the first write. ──
   const conversionId = randomUUID();
-  CONVERSIONS.set(conversionId, { song, deckId: deck.id, shows: showSnaps, mappings: mapSnaps });
+  const snap: ConversionSnapshot = {
+    song,
+    deckId: built.deck.id,
+    deckSaved: false,
+    shows: [],
+    mappings: [],
+    songTouched: false,
+  };
+  CONVERSIONS.set(conversionId, snap);
+
+  let deck: Deck;
+  let rowCount = 0;
+  try {
+    deck = await decks.saveDeck(built.deck);
+    snap.deckSaved = true;
+    for (const p of plannedShows) {
+      const after = await shows.saveShow(p.next);
+      snap.shows.push({ before: p.before, after });
+      rowCount += p.rows;
+    }
+    for (const key of keys) {
+      const prev = existing.find((m) => m.id === key);
+      snap.mappings.push({ key, previous: prev ? { ...prev } : "absent" });
+      await itemMappings.upsertItemMapping({ key, kind: "slides", deckId: deck.id });
+    }
+    // Save the song once with the pointer, then tombstone it.
+    snap.songTouched = true;
+    await songs.saveSong({ ...song, customFields: { ...song.customFields, [CONVERTED_TO_DECK_KEY]: deck.id } });
+    await songs.deleteSong(song.id);
+  } catch (err) {
+    try {
+      await undoConversion(conversionId);
+    } catch (rollbackErr) {
+      throw new ConvertRollbackError(conversionId, rollbackErr);
+    }
+    throw err;
+  }
 
   return {
     conversionId,
     deck,
     rows: rowCount,
-    shows: showSnaps.length,
+    shows: snap.shows.length,
     warnings,
-    changedShowIds: showSnaps.map((s) => s.after.id),
+    changedShowIds: snap.shows.map((s) => s.after.id),
   };
 }
 
@@ -164,44 +218,59 @@ export async function undoConversion(conversionId: string): Promise<{
 } | null> {
   const snap = CONVERSIONS.get(conversionId);
   if (!snap) return null;
-  CONVERSIONS.delete(conversionId);
 
   // The song comes back as it was (saveSong clears the tombstone).
-  await songs.saveSong(snap.song);
+  if (snap.songTouched) await songs.saveSong(snap.song);
 
   const restoredShowIds: string[] = [];
   let skippedShows = 0;
-  for (const { before, after } of snap.shows) {
-    const current = await shows.getShow(before.id);
+  for (const s of snap.shows) {
+    if (s.restored) {
+      // Put back by an earlier attempt that failed later on.
+      restoredShowIds.push(s.before.id);
+      continue;
+    }
+    const current = await shows.getShow(s.before.id);
     const untouched =
       current !== null &&
-      current.updatedAt === after.updatedAt &&
-      JSON.stringify(current) === JSON.stringify(after);
+      current.updatedAt === s.after.updatedAt &&
+      JSON.stringify(current) === JSON.stringify(s.after);
     if (!untouched) {
       skippedShows++;
       continue;
     }
-    await shows.saveShow(before);
-    restoredShowIds.push(before.id);
+    await shows.saveShow(s.before);
+    s.restored = true;
+    restoredShowIds.push(s.before.id);
   }
 
   const now = new Date().toISOString();
   const live = await itemMappings.listItemMappings({ includeDeleted: true });
   for (const { key, previous } of snap.mappings) {
     const current = live.find((m) => m.id === key);
-    // Someone re-pointed the mapping since: leave their choice.
-    if (current && current.deckId !== snap.deckId) continue;
+    // Never written, already put back, or re-pointed since: leave it.
+    if (!current || current.deletedAt || current.deckId !== snap.deckId) continue;
     if (previous === "absent") await itemMappings.deleteItemMapping(key);
     else await itemMappings.putItemMapping({ ...previous, updatedAt: now });
   }
 
-  // A skipped show still has rows on the deck, so the deck stays.
-  if (skippedShows === 0) await decks.deleteDeck(snap.deckId);
+  // The deck goes only when no live show still has a row on it (a skipped
+  // show, or one that picked the deck up after the conversion).
+  if (snap.deckSaved && !(await deckInUse(snap.deckId))) await decks.deleteDeck(snap.deckId);
 
+  CONVERSIONS.delete(conversionId);
   return {
     songId: snap.song.id,
     restoredShows: restoredShowIds.length,
     skippedShows,
     restoredShowIds,
   };
+}
+
+async function deckInUse(deckId: string): Promise<boolean> {
+  for (const meta of await shows.listShowMetas()) {
+    const s = await shows.getShow(meta.id);
+    if (s?.rows.some((r) => r.kind === "slides" && r.deckId === deckId)) return true;
+  }
+  return false;
 }

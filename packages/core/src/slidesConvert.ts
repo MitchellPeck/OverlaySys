@@ -6,7 +6,8 @@ import type { Deck, DeckLicensing, DeckSlide } from "./deck";
 import type { Show, ShowSong, SlidesRow, SongRow } from "./show";
 import { resolveShowDate } from "./showSchedule";
 import type { Song } from "./song";
-import { resolveArrangement } from "./songResolution";
+import { resolveArrangement, resolveSongChannel } from "./songResolution";
+import type { Template } from "./template";
 
 /** customFields key on a converted (tombstoned) song naming its deck. */
 export const CONVERTED_TO_DECK_KEY = "converted_to_deck";
@@ -73,14 +74,18 @@ export function songRowToSlidesRow(
   song: Song,
   deck: Deck,
   sectionSlideIds: Record<string, string[]>,
+  /** The row's lyric template: the last step of the song channel cascade. */
+  lyricTemplate?: Template,
 ): { row: SlidesRow; warning?: string } {
+  // Slides rows only read channelHint, so pin the channel the song row resolved to.
+  const channel = resolveSongChannel(row, showSong, song, lyricTemplate);
   const out: SlidesRow = {
     kind: "slides",
     id: row.id,
     deckId: deck.id,
     ...(row.sectionId !== undefined ? { sectionId: row.sectionId } : {}),
     ...(row.stageLayouts !== undefined ? { stageLayouts: row.stageLayouts } : {}),
-    ...(row.channelHint !== undefined ? { channelHint: row.channelHint } : {}),
+    ...(channel !== undefined ? { channelHint: channel } : {}),
     ...(row.notes !== undefined ? { notes: row.notes } : {}),
     ...(row.sermonNotesId !== undefined ? { sermonNotesId: row.sermonNotesId } : {}),
     ...(row.lengthSec !== undefined ? { lengthSec: row.lengthSec } : {}),
