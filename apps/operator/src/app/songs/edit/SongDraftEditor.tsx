@@ -17,7 +17,7 @@ import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
 import { FieldMappingTable } from "./FieldMappingTable";
-import { moveByOne, nextSlideId } from "./songDraftOps";
+import { SECTION_ID_PREFIX, moveByOne, nextSlideId } from "./songDraftOps";
 import { LYRIC_SLIDE_BUDGET, lyricSlideStats } from "@/lib/slideBreaks";
 
 /**
@@ -860,16 +860,6 @@ const KIND_OPTION_LABEL: Record<Section["kind"], string> = {
   intro: "Intro",
   outro: "Outro",
   other: "Other",
-};
-
-const SECTION_ID_PREFIX: Record<Section["kind"], string> = {
-  verse: "v",
-  chorus: "c",
-  bridge: "b",
-  tag: "tag",
-  intro: "intro",
-  outro: "outro",
-  other: "s",
 };
 
 const KIND_LABEL: Record<Section["kind"], string> = {
