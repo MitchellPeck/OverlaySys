@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Field } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
-import { IconButton, Modal, colors, radius } from "@overlaysys/ui";
+import { Button, IconButton, Modal, colors, radius } from "@overlaysys/ui";
+import { songTakeChannel } from "@/lib/songChannel";
 import { BookOpen, Film, Image, Music, Pencil, Type } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -58,19 +59,35 @@ export function Rundown() {
     );
   }
 
+  const caches = { songCache, templateCache };
+  const disconnected = conn !== "open";
+
   return (
     <div>
-      <div role="list" style={{ display: "flex", flexDirection: "column", gap: 2, padding: 6 }}>
+      <div
+        role="listbox"
+        aria-label="Rundown"
+        tabIndex={0}
+        aria-activedescendant={selectedRowId ? rowDomId(selectedRowId) : undefined}
+        style={{ display: "flex", flexDirection: "column", gap: 2, padding: 6 }}
+      >
         {show.rows.map((row, i) => {
           const selected = row.id === selectedRowId;
-          const air = rowAirState(withEffectiveData(row, overrides), channelStates, songSessions);
+          const songChannel = row.kind === "song" ? songTakeChannel(row, show, caches) : undefined;
+          const air = rowAirState(withEffectiveData(row, overrides), channelStates, songSessions, {
+            showId: show.id,
+            rows: show.rows,
+            ...(songChannel ? { songChannel } : {}),
+          });
           if (row.kind === "song") {
             const song = songs.find((s) => s.id === row.songId);
             const cachedSong = songCache[row.songId];
             const showSong = show.songs.find((s) => s.songId === row.songId);
+            const channel = songChannel ?? "program";
             return (
               <RundownItem
                 key={row.id}
+                id={row.id}
                 index={i + 1}
                 icon={<Music size={14} />}
                 title={song?.title ?? row.songId}
@@ -90,16 +107,37 @@ export function Rundown() {
                     showId: show.id,
                     songRowId: row.id,
                     fromChannel: "preview",
-                    toChannel: row.channelHint ?? "program",
+                    toChannel: channel,
                   });
                 }}
+                actions={
+                  <RowAction
+                    label="Take"
+                    disabled={disconnected}
+                    onAct={() => {
+                      setSelectedRow(row.id);
+                      send({ type: "song_take", channel, showId: show.id, songRowId: row.id });
+                    }}
+                  />
+                }
               />
             );
           }
           if (row.kind === "scripture") {
+            const channel = row.channelHint ?? "program";
+            // Like the other rows, double-click takes: the first slide, or the
+            // next one when this scripture is already live on its channel.
+            const takeScripture = () => {
+              setSelectedRow(row.id);
+              if (row.slides.length === 0) return;
+              const live = useStore.getState().channelStates[channel]?.scriptureSession;
+              const slideIdx = live?.rowId === row.id ? Math.min(live.slideIdx + 1, row.slides.length - 1) : 0;
+              send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx, channel });
+            };
             return (
               <RundownItem
                 key={row.id}
+                id={row.id}
                 index={i + 1}
                 icon={<BookOpen size={14} />}
                 title={row.reference}
@@ -108,13 +146,21 @@ export function Rundown() {
                 selected={selected}
                 air={air}
                 onClick={() => setSelectedRow(row.id)}
+                onDoubleClick={takeScripture}
+                actions={<RowAction label="Take" disabled={disconnected || row.slides.length === 0} onAct={takeScripture} />}
               />
             );
           }
           if (row.kind === "video") {
+            const takeVideo = () => {
+              setSelectedRow(row.id);
+              if (onAirMediaFor(row, useStore.getState().channelStates)) return;
+              send(videoRowTakeMessage(row, show?.id));
+            };
             return (
               <RundownItem
                 key={row.id}
+                id={row.id}
                 index={i + 1}
                 icon={<Film size={14} />}
                 thumbnail={<VideoThumb assetUrl={row.assetUrl} />}
@@ -124,11 +170,8 @@ export function Rundown() {
                 selected={selected}
                 air={air}
                 onClick={() => setSelectedRow(row.id)}
-                onDoubleClick={() => {
-                  setSelectedRow(row.id);
-                  if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-                  send(videoRowTakeMessage(row, show?.id));
-                }}
+                onDoubleClick={takeVideo}
+                actions={<RowAction label="Take" disabled={disconnected || air === "program"} onAct={takeVideo} />}
               />
             );
           }
@@ -137,6 +180,7 @@ export function Rundown() {
           return (
             <RundownItem
               key={row.id}
+              id={row.id}
               index={i + 1}
               icon={<Type size={14} />}
               title={
@@ -160,6 +204,26 @@ export function Rundown() {
                 setSelectedRow(row.id);
                 send(graphicRowMessage(row, "take", overrides, show?.id));
               }}
+              actions={
+                <>
+                  <RowAction
+                    label="Cue"
+                    disabled={disconnected}
+                    onAct={() => {
+                      setSelectedRow(row.id);
+                      send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, show.id));
+                    }}
+                  />
+                  <RowAction
+                    label="Take"
+                    disabled={disconnected}
+                    onAct={() => {
+                      setSelectedRow(row.id);
+                      send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, show.id));
+                    }}
+                  />
+                </>
+              }
             />
           );
         })}
@@ -349,7 +413,36 @@ function truncate(s: string, max = 40): string {
   return s.slice(0, max - 1) + "…";
 }
 
+const rowDomId = (rowId: string) => `rundown-row-${rowId}`;
+
+/**
+ * A hover/selection action on a rundown row. Keeps its clicks off the row
+ * (no select-then-double-click), and gives the keyboard back to the show
+ * shortcuts afterwards. Not tabbable: the listbox is the keyboard path.
+ */
+function RowAction({ label, disabled, onAct }: { label: string; disabled: boolean; onAct: () => void }) {
+  return (
+    <Button
+      size="sm"
+      variant={label === "Take" ? "onair" : "ghost"}
+      tabIndex={-1}
+      disabled={disabled}
+      title={disabled ? undefined : label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onAct();
+        e.currentTarget.blur();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      style={{ padding: "2px 8px", fontSize: 11 }}
+    >
+      {label}
+    </Button>
+  );
+}
+
 function RundownItem({
+  id,
   index,
   icon,
   title,
@@ -358,9 +451,12 @@ function RundownItem({
   selected,
   air,
   thumbnail,
+  actions,
   onClick,
   onDoubleClick,
 }: {
+  id: string;
+  actions?: React.ReactNode;
   index: number;
   icon: React.ReactNode;
   thumbnail?: React.ReactNode;
@@ -375,12 +471,26 @@ function RundownItem({
   const bar = air === "program" ? colors.onair : air === "preview" ? colors.ok : "transparent";
   const tint =
     air === "program" ? "rgba(255,51,65,0.12)" : air === "preview" ? "rgba(16,185,129,0.10)" : "transparent";
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
+  // Keep the keyboard selection in view as ↑/↓ moves it.
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selected]);
+  // globals.css's .row-actions rule targets role="listitem"; options manage
+  // their own visibility: on hover, and on the selected (keyboard) row.
+  const showActions = hovered || selected;
   return (
     <div
-      role="listitem"
+      ref={ref}
+      id={rowDomId(id)}
+      role="option"
       aria-selected={selected}
+      tabIndex={-1}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "flex-start",
@@ -403,6 +513,20 @@ function RundownItem({
         </div>
         {detail && <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>{detail}</div>}
       </div>
+      {actions && (
+        <span
+          style={{
+            display: "flex",
+            gap: 4,
+            flexShrink: 0,
+            opacity: showActions ? 1 : 0,
+            pointerEvents: showActions ? "auto" : "none",
+            transition: "opacity 120ms",
+          }}
+        >
+          {actions}
+        </span>
+      )}
       <span style={{ fontSize: 10, color: colors.textMuted, paddingTop: 2 }}>{typeLabel}</span>
     </div>
   );

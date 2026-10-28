@@ -1,65 +1,91 @@
 "use client";
 
 import { useEffect } from "react";
-import type { SongSessionSummary } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 import { graphicRowMessage } from "@/lib/rowData";
+import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
+import {
+  hasCommandModifier,
+  hotcardIndexForKey,
+  isIgnoredRepeat,
+  shouldIgnoreGlobalKey,
+  songKeyChannel,
+  type TargetLike,
+} from "@/lib/shortcutGuards";
 
 /**
  * Global keyboard shortcuts for the show page.
  *
- * When NO song session is active on program (graphic mode):
+ * Always:
+ *   F1..F12         take hotcard 1..12 (Shift: cue it on preview)
+ *
+ * When NO song session is live on program (graphic mode):
  *   ↑/↓             navigate rundown
  *   Enter           cue selected → preview
  *   Space           take selected → program
  *   Esc             clear program
  *   ⌘/Ctrl+Enter   PVW → PGM swap
  *
- * When a song session IS active on program (song mode):
+ * When a song session IS live on program (song mode):
  *   Space           advance + 1 slide
  *   Shift+Space     advance − 1 slide
- *   C               jump to first chorus section
- *   B               jump to first bridge section
- *   T               jump to first tag section
+ *   C               jump to the next chorus
+ *   B               jump to the next bridge
+ *   T               jump to the next tag
  *   1..9            jump to verse 1..9
  *   0               jump to verse 10
  *   .               toggle blank
  *   Esc             end song
  *
- * Inputs and textareas always swallow keys regardless of mode.
+ * Ignored: keys while typing in a text field, keys while a dialog is open or
+ * already handled (a modal's Esc), ⌘/Ctrl/Alt chords other than ⌘Enter, and
+ * auto-repeat (except ↑/↓).
  */
 export function useGlobalShortcuts(): void {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      if (target?.isContentEditable) return;
+      const dialogOpen = !!document.querySelector('[role="dialog"], [aria-modal="true"], dialog[open]');
+      if (shouldIgnoreGlobalKey(e, e.target as TargetLike, dialogOpen)) return;
+      if (isIgnoredRepeat(e)) return;
 
       const store = useStore.getState();
       const client = getClient();
-      // Drive song hotkeys against whichever channel has an active session,
-      // preferring program over preview. Lets the cue-and-navigate-on-PVW
-      // workflow use the same Space / Shift+Space / C / B / 1-9 / 0
-      // shortcuts as live program operation.
-      const programSession = store.songSessions["program"] as SongSessionSummary | null | undefined;
-      const previewSession = store.songSessions["preview"] as SongSessionSummary | null | undefined;
-      const activeChannel: "program" | "preview" | null = programSession
-        ? "program"
-        : previewSession
-        ? "preview"
-        : null;
+      const send = client.send.bind(client);
 
-      if (activeChannel) {
-        if (handleSongHotkey(e, client.send.bind(client), activeChannel)) return;
+      const hotkeyIdx = hotcardIndexForKey(e);
+      if (hotkeyIdx !== null) {
+        const meta = store.hotcards[hotkeyIdx];
+        if (!meta) return;
+        e.preventDefault();
+        const full = store.hotcardCache[meta.id];
+        if (!full) {
+          send({ type: "get_hotcard", hotcardId: meta.id });
+          return;
+        }
+        const target = e.shiftKey ? "preview" : "program";
+        send({ type: e.shiftKey ? "cue" : "take", channel: full.channelHint ?? target, templateId: full.templateId, data: full.data });
+        return;
       }
+
+      const songChannel = songKeyChannel(store.songSessions);
+      if (songChannel && handleSongHotkey(e, send, songChannel)) return;
+
+      // ⌘/Ctrl+Enter is the only chord the show binds.
+      if (e.code === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        e.preventDefault();
+        send({ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" });
+        return;
+      }
+      if (hasCommandModifier(e)) return;
 
       const show = store.show;
       const selId = store.selectedRowId;
       const row = show?.rows.find((r) => r.id === selId);
       const hotcardId = store.selectedHotcardId;
       const hotcard = hotcardId ? store.hotcardCache[hotcardId] : null;
+      const caches = { songCache: store.songCache, templateCache: store.templateCache };
 
       if (e.code === "ArrowDown") {
         e.preventDefault();
@@ -73,66 +99,39 @@ export function useGlobalShortcuts(): void {
         const idx = show.rows.findIndex((r) => r.id === selId);
         const prev = show.rows[Math.max(idx - 1, 0)];
         if (prev) store.setSelectedRow(prev.id);
-      } else if (e.code === "Enter" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        client.send({
-          type: "take_pvw_to_pgm",
-          fromChannel: "preview",
-          toChannel: "program",
-        });
       } else if (e.code === "Enter") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send(graphicRowMessage(row, "cue", store.rowDataOverrides, show?.id));
+          send(graphicRowMessage(row, "cue", store.rowDataOverrides, show?.id));
         } else if (row && row.kind === "song" && show) {
-          client.send({
-            type: "song_take",
-            channel: row.channelHint ?? "preview",
-            showId: show.id,
-            songRowId: row.id,
-          });
+          send({ type: "song_take", channel: songCueChannel(row, show, caches), showId: show.id, songRowId: row.id });
         } else if (hotcard) {
-          client.send({
-            type: "cue",
-            channel: hotcard.channelHint ?? "preview",
-            templateId: hotcard.templateId,
-            data: hotcard.data,
-          });
+          send({ type: "cue", channel: hotcard.channelHint ?? "preview", templateId: hotcard.templateId, data: hotcard.data });
         }
       } else if (e.code === "Space") {
         e.preventDefault();
         if (row && row.kind === "graphic") {
-          client.send(graphicRowMessage(row, "take", store.rowDataOverrides, show?.id));
+          send(graphicRowMessage(row, "take", store.rowDataOverrides, show?.id));
         } else if (row && row.kind === "song" && show) {
-          client.send({
-            type: "song_take",
-            channel: row.channelHint ?? "program",
-            showId: show.id,
-            songRowId: row.id,
-          });
+          send({ type: "song_take", channel: songTakeChannel(row, show, caches), showId: show.id, songRowId: row.id });
         } else if (row && row.kind === "video") {
           const onAir = onAirMediaFor(row, store.channelStates);
           if (onAir) {
-            client.send({
+            send({
               type: "media_control",
               channel: row.channelHint ?? "program",
               takenAt: onAir.takenAt,
               action: onAir.paused ? "play" : "pause",
             });
           } else {
-            client.send(videoRowTakeMessage(row, show?.id));
+            send(videoRowTakeMessage(row, show?.id));
           }
         } else if (hotcard) {
-          client.send({
-            type: "take",
-            channel: hotcard.channelHint ?? "program",
-            templateId: hotcard.templateId,
-            data: hotcard.data,
-          });
+          send({ type: "take", channel: hotcard.channelHint ?? "program", templateId: hotcard.templateId, data: hotcard.data });
         }
       } else if (e.code === "Escape") {
         e.preventDefault();
-        client.send({ type: "clear", channel: "program" });
+        send({ type: "clear", channel: "program" });
       }
     }
 
@@ -145,22 +144,14 @@ type Sender = ReturnType<typeof getClient>["send"];
 
 /**
  * Handle song-mode hotkeys. Returns true if the key was consumed (caller
- * should stop further graphic-mode handling).
+ * should stop further graphic-mode handling). ⌘/Ctrl/Alt chords are never
+ * song keys, so ⌘C copies instead of jumping to the chorus.
  */
-function handleSongHotkey(
-  e: KeyboardEvent,
-  send: Sender,
-  channel: "program" | "preview",
-): boolean {
-
-  if (e.code === "Space" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): boolean {
+  if (hasCommandModifier(e)) return false;
+  if (e.code === "Space") {
     e.preventDefault();
-    send({ type: "song_advance", channel, delta: 1 });
-    return true;
-  }
-  if (e.code === "Space" && e.shiftKey) {
-    e.preventDefault();
-    send({ type: "song_advance", channel, delta: -1 });
+    send({ type: "song_advance", channel, delta: e.shiftKey ? -1 : 1 });
     return true;
   }
   if (e.code === "Escape") {
@@ -175,19 +166,10 @@ function handleSongHotkey(
   }
   // Section jumps. Use e.key (case-insensitive lower) so Shift+C still works.
   const k = e.key.toLowerCase();
-  if (k === "c") {
+  const kind = k === "c" ? "chorus" : k === "b" ? "bridge" : k === "t" ? "tag" : null;
+  if (kind) {
     e.preventDefault();
-    send({ type: "song_jump_kind", channel, kind: "chorus", ordinal: 1 });
-    return true;
-  }
-  if (k === "b") {
-    e.preventDefault();
-    send({ type: "song_jump_kind", channel, kind: "bridge", ordinal: 1 });
-    return true;
-  }
-  if (k === "t") {
-    e.preventDefault();
-    send({ type: "song_jump_kind", channel, kind: "tag", ordinal: 1 });
+    send({ type: "song_jump_kind", channel, kind, ordinal: 1 });
     return true;
   }
   // Verse jumps: 1..9 → Verse 1..9, 0 → Verse 10. Ten verses covers any

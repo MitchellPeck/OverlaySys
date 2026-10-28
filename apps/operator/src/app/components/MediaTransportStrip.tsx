@@ -6,7 +6,7 @@ import { Film, Pause, Play, RotateCcw, Scissors, Square } from "lucide-react";
 import { Button, StatusDot, colors, radius, type PillTone } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { formatClock } from "@/lib/mediaTake";
+import { formatClock, seekTargetForKey } from "@/lib/mediaTake";
 import { displayStatus, displayTime, remainingTone, type MediaDisplayStatus, type RemainingTone } from "@/lib/mediaTime";
 
 const STATUS_LABEL: Record<MediaDisplayStatus, string> = {
@@ -123,6 +123,15 @@ function SeekBar({ tr, height, style }: { tr: Transport; height: number; style?:
       aria-valuemin={0}
       aria-valuemax={Math.round(duration)}
       aria-valuenow={Math.round(t.elapsed)}
+      aria-valuetext={`${formatClock(t.elapsed)} of ${duration > 0 ? formatClock(duration) : "unknown"}`}
+      tabIndex={duration > 0 ? 0 : -1}
+      onKeyDown={(e) => {
+        const target = seekTargetForKey(e.key, e.shiftKey, t.elapsed, duration);
+        if (target === null) return;
+        // Handled here: keep ↑/↓ from also moving the rundown selection.
+        e.preventDefault();
+        control("seek", target);
+      }}
       onPointerDown={(e) => {
         if (duration <= 0) return;
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -181,8 +190,24 @@ function CompactTransport({ channel, media }: { channel: string; media: ChannelM
         {media.label || "Video"}
       </span>
       <StatusDot tone={STATUS_TONE[tr.status]} label={STATUS_LABEL[tr.status]} />
-      <span style={{ fontSize: 12, color: remainingColor(tr) ?? colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
+      <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
       <SeekBar tr={tr} height={6} style={{ width: 140, flexShrink: 0 }} />
+      {/* The number the operator watches before the next cue: big, and amber/red near the end. */}
+      <span
+        title="Time remaining"
+        aria-label={`${formatClock(tr.t.remaining)} remaining`}
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          lineHeight: 1,
+          fontVariantNumeric: "tabular-nums",
+          color: remainingColor(tr) ?? colors.text,
+          minWidth: 64,
+          textAlign: "right",
+        }}
+      >
+        -{tr.duration > 0 ? formatClock(tr.t.remaining) : "–:––"}
+      </span>
       {media.paused ? (
         <Button size="sm" onClick={() => tr.control("play")} title="Play" aria-label="Play" style={iconBtn}>
           <Play size={14} aria-hidden />

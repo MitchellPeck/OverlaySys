@@ -14,6 +14,7 @@ import {
 } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useDialog } from "@/lib/dialog";
 
 const WARN_MS = 60_000;
 
@@ -65,6 +66,7 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
   // The next PCO poll would revert a manual nudge, so don't offer one.
   const pco = t.source === "pco";
   const pcoTitle = pco ? "Driven by Planning Center Live" : undefined;
+  const { confirm, dialog } = useDialog();
 
   return (
     <div style={{ padding: 10, background: colors.panel2, border: `1px solid ${colors.border}`, borderRadius: radius.md }}>
@@ -94,7 +96,20 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
           variant="ghost"
           disabled={pco}
           title={pcoTitle}
-          onClick={() => send({ type: "timer_reset", id: t.id })}
+          onClick={async () => {
+            // An unstarted timer has nothing to lose.
+            if (
+              !notStarted &&
+              !(await confirm({
+                title: "Reset timer?",
+                message: `"${t.label}" is ${running ? "running" : "paused"} and will go back to its start.`,
+                confirmLabel: "Reset",
+                destructive: true,
+              }))
+            )
+              return;
+            send({ type: "timer_reset", id: t.id });
+          }}
         >
           <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
@@ -116,10 +131,23 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
         >
           +1 min
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_delete", id: t.id })}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={async () => {
+            const ok = await confirm({
+              title: isItem ? "Clear current item timer?" : "Delete timer?",
+              message: `"${t.label}" will be removed from the stage displays.`,
+              confirmLabel: isItem ? "Clear" : "Delete",
+              destructive: true,
+            });
+            if (ok) send({ type: "timer_delete", id: t.id });
+          }}
+        >
           {isItem ? "Clear" : "Delete"}
         </Button>
       </div>
+      {dialog}
     </div>
   );
 }

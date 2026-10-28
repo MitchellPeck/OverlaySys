@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { BookOpen, Film, Music, RotateCcw, Type } from "lucide-react";
-import { resolveSongChannel, type ChannelConfig, type ChannelState, type GraphicRow, type VideoRow } from "@overlaysys/core";
+import type { ChannelConfig, ChannelState, GraphicRow, VideoRow } from "@overlaysys/core";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { songTakeChannel } from "@/lib/songChannel";
+import { useTakeFeedback } from "../hooks/useTakeFeedback";
 import { Button, IconButton, PanelHeader, colors, radius, space } from "@overlaysys/ui";
 import { FieldInput } from "@/lib/FieldInput";
 import { useStore } from "@/lib/store";
@@ -93,13 +96,13 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
   const hotcardCache = useStore((s) => s.hotcardCache);
   const channelStates = useStore((s) => s.channelStates);
 
-  function fireHotcard(id: string, target: "preview" | "program") {
+  function hotcardMessage(id: string, target: "preview" | "program"): ClientMessage | null {
     const h = hotcardCache[id];
     if (!h) {
       send({ type: "get_hotcard", hotcardId: id });
-      return;
+      return null;
     }
-    send({ type: target === "preview" ? "cue" : "take", channel: h.channelHint ?? target, templateId: h.templateId, data: h.data });
+    return { type: target === "preview" ? "cue" : "take", channel: h.channelHint ?? target, templateId: h.templateId, data: h.data };
   }
 
   switch (mode.kind) {
@@ -109,11 +112,8 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
       return <TakePanel />;
     case "song": {
       if (!show) return null;
-      const cachedSong = songCache[mode.row.songId];
-      const showSong = show.songs.find((s) => s.songId === mode.row.songId);
-      const channel = cachedSong
-        ? resolveSongChannel(mode.row, showSong, cachedSong, templateCache[mode.row.lyricTemplateId]) ?? "program"
-        : "program";
+      // Same resolution as the keyboard and rundown double-click.
+      const channel = songTakeChannel(mode.row, show, { songCache, templateCache });
       return <SongTakeStrip show={show} row={mode.row} channel={channel} liveSession={songSessions[channel] ?? null} />;
     }
     case "scripture":
@@ -127,7 +127,7 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
           {onAirMediaFor(mode.row, channelStates) ? (
             <p style={{ color: colors.textDim, margin: 0 }}>On air. Use the transport in the bottom bar.</p>
           ) : (
-            <TakeButtons onTake={() => send(videoRowTakeMessage(mode.row, useStore.getState().show?.id))} />
+            <TakeButtons take={() => videoRowTakeMessage(mode.row, useStore.getState().show?.id)} />
           )}
           <VideoDetails key={mode.row.id} row={mode.row} />
         </>
@@ -148,7 +148,7 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
           <div key={mode.hotcardId} style={stageColumns}>
             <div style={previewColumn}>
               {h && !compact && <StagePreview rowId={`hotcard:${h.id}`} templateId={h.templateId} data={h.data} />}
-              <TakeButtons onCue={() => fireHotcard(mode.hotcardId, "preview")} onTake={() => fireHotcard(mode.hotcardId, "program")} />
+              <TakeButtons cue={() => hotcardMessage(mode.hotcardId, "preview")} take={() => hotcardMessage(mode.hotcardId, "program")} />
             </div>
             {entries.length > 0 && (
               <dl style={{ ...fieldsColumn, margin: 0, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 12px", alignContent: "start", fontSize: 12 }}>
@@ -202,8 +202,8 @@ function GraphicStage({ row, compact }: { row: GraphicRow; compact: boolean }) {
 
   const takeButtons = (
     <TakeButtons
-      onCue={() => send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, useStore.getState().show?.id))}
-      onTake={() => send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, useStore.getState().show?.id))}
+      cue={() => graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, useStore.getState().show?.id)}
+      take={() => graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, useStore.getState().show?.id)}
     />
   );
 
@@ -489,19 +489,45 @@ function headingFor(mode: StageMode): string {
   }
 }
 
-function TakeButtons({ onCue, onTake }: { onCue?: () => void; onTake: () => void }) {
+/**
+ * Cue / Take with send feedback: Take reads "Taking…" until the server echoes
+ * the channel, and says so if it never does. Builders return null when they
+ * can't build a message yet (e.g. a hotcard body still loading).
+ */
+function TakeButtons({ cue, take }: { cue?: () => ClientMessage | null; take: () => ClientMessage | null }) {
   const disconnected = useStore((s) => s.conn) !== "open";
+  const cueFb = useTakeFeedback();
+  const takeFb = useTakeFeedback();
   const title = disconnected ? "Disconnected from server" : undefined;
+  const fire = (fb: ReturnType<typeof useTakeFeedback>, build: () => ClientMessage | null) => () => {
+    const msg = build();
+    if (msg) fb.send(msg);
+  };
   return (
-    <div style={{ display: "flex", gap: 8 }}>
-      {onCue && (
-        <Button size="lg" onClick={onCue} disabled={disconnected} title={title}>
-          Cue → PVW
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        {cue && (
+          <Button size="lg" onClick={fire(cueFb, cue)} disabled={disconnected} title={title} aria-busy={cueFb.status === "pending"}>
+            {cueFb.status === "pending" ? "Cueing…" : "Cue → PVW"}
+          </Button>
+        )}
+        <Button
+          size="lg"
+          variant="onair"
+          onClick={fire(takeFb, take)}
+          disabled={disconnected}
+          title={title}
+          aria-busy={takeFb.status === "pending"}
+          style={{ minWidth: 140, opacity: takeFb.status === "pending" ? 0.75 : undefined }}
+        >
+          {takeFb.status === "pending" ? "Taking…" : "Take"}
         </Button>
+      </div>
+      {(takeFb.status === "failed" || cueFb.status === "failed") && (
+        <div role="status" style={{ fontSize: 12, color: colors.warn }}>
+          No response from the server: it may not have gone out. Check the monitors and try again.
+        </div>
       )}
-      <Button size="lg" variant="onair" onClick={onTake} disabled={disconnected} title={title} style={{ minWidth: 140 }}>
-        Take
-      </Button>
     </div>
   );
 }

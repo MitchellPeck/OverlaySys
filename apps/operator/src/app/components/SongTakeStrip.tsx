@@ -229,6 +229,7 @@ export function SongTakeStrip({
             isFirst={isFirst}
             isLast={isLast}
             onClick={onClick}
+            disabled={conn !== "open"}
           />
         );
       })}
@@ -253,25 +254,30 @@ function SegmentButton({
   isFirst,
   isLast,
   onClick,
+  disabled,
 }: {
   label: string;
   isHighlight: boolean;
   isFirst: boolean;
   isLast: boolean;
   onClick: () => void;
+  disabled: boolean;
 }) {
   const c = control.md;
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
+      title={disabled ? "Disconnected from server" : undefined}
       style={{
+        opacity: disabled ? 0.6 : 1,
         flex: 1,
         padding: `${c.padY}px ${c.padX}px`,
         fontSize: c.fontSize,
         fontWeight: fontWeight.semibold,
         lineHeight: lineHeight.tight,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         // Flush adjacent borders: only the outermost edges get rounded.
         borderTopLeftRadius: isFirst ? c.radius : 0,
         borderBottomLeftRadius: isFirst ? c.radius : 0,

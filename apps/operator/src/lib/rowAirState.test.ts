@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ChannelState, Show, SongSessionSummary } from "@overlaysys/core";
-import { rowAirState } from "./rowAirState";
+import { hotcardAirState, rowAirState } from "./rowAirState";
 
 type Row = Show["rows"][number];
 
@@ -96,5 +96,44 @@ describe("rowAirState", () => {
     } as unknown as Record<string, ChannelState>;
     expect(rowAirState(row, intro, {})).toBe("preview");
     expect(rowAirState(row, {}, {})).toBeNull();
+  });
+});
+
+describe("rowAirState song context", () => {
+  it("lights a song on the output it is routed to", () => {
+    const row = song("s", "way-maker");
+    const sessions = { lyrics: session("way-maker") };
+    expect(rowAirState(row, {}, sessions)).toBeNull();
+    expect(rowAirState(row, {}, sessions, { songChannel: "lyrics" })).toBe("program");
+  });
+
+  it("lights only the taken row when the same song appears twice", () => {
+    const a = song("a", "way-maker");
+    const b = song("b", "way-maker");
+    const states: Record<string, ChannelState> = {
+      program: { channel: "program", active: null, liveRow: { showId: "show1", rowId: "b" } },
+    };
+    const ctx = { showId: "show1", rows: [a, b] };
+    const sessions = { program: session("way-maker") };
+    expect(rowAirState(a, states, sessions, ctx)).toBeNull();
+    expect(rowAirState(b, states, sessions, ctx)).toBe("program");
+  });
+
+  it("falls back to lighting every matching row when liveRow points elsewhere", () => {
+    const a = song("a", "way-maker");
+    const states: Record<string, ChannelState> = {
+      program: { channel: "program", active: null, liveRow: { showId: "other-show", rowId: "x" } },
+    };
+    expect(rowAirState(a, states, { program: session("way-maker") }, { showId: "show1", rows: [a] })).toBe("program");
+  });
+});
+
+describe("hotcardAirState", () => {
+  it("matches template and data, ignoring an outgoing graphic", () => {
+    const h = { templateId: "l3", data: { name: "Sam" } };
+    expect(hotcardAirState(h, { program: { channel: "program", active: active("l3", { name: "Sam" }) } })).toBe("program");
+    expect(hotcardAirState(h, { program: { channel: "program", active: active("l3", { name: "Sam" }, "out") } })).toBeNull();
+    expect(hotcardAirState(h, { preview: { channel: "preview", active: active("l3", { name: "Sam" }) } })).toBe("preview");
+    expect(hotcardAirState(undefined, {})).toBeNull();
   });
 });

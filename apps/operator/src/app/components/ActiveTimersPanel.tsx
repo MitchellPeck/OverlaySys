@@ -12,6 +12,7 @@ import {
 } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
 /**
@@ -109,6 +110,7 @@ function ActiveTimerRow({
   data: Record<string, string>;
 }) {
   const { send } = useWs();
+  const { confirm, dialog } = useDialog();
   // Tick a local clock so the displayed remaining/elapsed values stay
   // current. Half-second is enough for human-paced operation without
   // burning CPU on a manage view that isn't critical-path.
@@ -179,6 +181,16 @@ function ActiveTimerRow({
       if (cur.durationMs != null) next.durationMs = cur.durationMs;
       return next;
     });
+  }
+
+  async function confirmReset(): Promise<void> {
+    const ok = await confirm({
+      title: "Reset timer?",
+      message: `The ${template.name} timer on ${channelName} is on air and restarts from its original duration.`,
+      confirmLabel: "Reset",
+      destructive: true,
+    });
+    if (ok) reset();
   }
 
   function reset(): void {
@@ -287,10 +299,11 @@ function ActiveTimerRow({
         <Button onClick={() => nudge(60)} variant="ghost" size="sm">
           +1m
         </Button>
-        <Button onClick={reset} variant="ghost" size="sm" title="Restart from the original duration">
+        <Button onClick={() => void confirmReset()} variant="ghost" size="sm" title="Restart from the original duration">
           <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
       </div>
+      {dialog}
     </div>
   );
 }

@@ -259,9 +259,12 @@ export function jump(
     start(channel, { ...q.args, arrangement }, { sectionIdx: idx, slideIdx });
     return;
   }
-  // If the section already exists in the arrangement, jump there. Otherwise
-  // append it (handles "drop to bridge" audibles).
-  let sectionIdx = s.arrangement.indexOf(sectionId);
+  // If the section already exists in the arrangement, jump to the occurrence
+  // the operator means: the current one when the cursor is already in it (a
+  // slide pick within the section), else the next one after the cursor,
+  // wrapping to the first. Otherwise append it (handles "drop to bridge"
+  // audibles).
+  let sectionIdx = occurrenceFor(s.arrangement, sectionId, s.cursor.sectionIdx);
   if (sectionIdx < 0) {
     if (!s.song.sections.some((sec) => sec.id === sectionId)) return;
     s.arrangement.push(sectionId);
@@ -269,6 +272,21 @@ export function jump(
   }
   s.cursor = { sectionIdx, slideIdx };
   render(s, /* forceMount */ true);
+}
+
+/**
+ * Which arrangement index a jump to `sectionId` lands on: the cursor's own
+ * index when it is already on that section, else the next occurrence after
+ * the cursor, else the first occurrence. -1 when the section isn't in the
+ * arrangement. In V1-C-V2-C, "C" during V2 means the second chorus, not a
+ * replay of the first (which would make the next Space repeat V2).
+ */
+export function occurrenceFor(arrangement: string[], sectionId: string, cursorIdx: number): number {
+  if (arrangement[cursorIdx] === sectionId) return cursorIdx;
+  for (let i = cursorIdx + 1; i < arrangement.length; i++) {
+    if (arrangement[i] === sectionId) return i;
+  }
+  return arrangement.indexOf(sectionId);
 }
 
 /**

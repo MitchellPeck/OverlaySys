@@ -108,6 +108,59 @@ describe("songSession", () => {
     expect(s.songSession?.cursor).toEqual({ sectionIdx: 1, slideIdx: 0 });
   });
 
+  describe("jump with a repeated section", () => {
+    const repeated: Song = {
+      ...song,
+      sections: [
+        ...song.sections,
+        { id: "v2", kind: "verse", label: "Verse 2", slides: [{ id: "v2s1", lines: ["V2"] }] },
+        { id: "b", kind: "bridge", label: "Bridge", slides: [{ id: "b1", lines: ["B"] }] },
+      ],
+    };
+    const arrangement = ["v1", "c", "v2", "c", "b", "c"];
+    const startAt = (sectionIdx: number) =>
+      songSession.start(
+        CH,
+        { song: repeated, lyricTemplateId: "lyric-default", arrangement, trustMode: false },
+        { sectionIdx, slideIdx: 0 },
+      );
+
+    it("lands on the next occurrence after the cursor", () => {
+      startAt(2); // V2
+      songSession.jump(CH, "c");
+      expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 3, slideIdx: 0 });
+      // So the next advance goes on to the bridge, not back into V2.
+      songSession.advance(CH, 1);
+      expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 4, slideIdx: 0 });
+    });
+
+    it("wraps to the first occurrence when none follows the cursor", () => {
+      startAt(5); // last chorus
+      songSession.jump(CH, "v2");
+      expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 2, slideIdx: 0 });
+    });
+
+    it("stays on the current occurrence when the cursor is already in that section", () => {
+      startAt(3); // second chorus
+      songSession.jump(CH, "c", 0);
+      expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 3, slideIdx: 0 });
+    });
+
+    it("jumpByKindOrdinal uses the same next-occurrence rule", () => {
+      startAt(4); // bridge
+      songSession.jumpByKindOrdinal(CH, "chorus", 1);
+      expect(channels.getState(CH).songSession?.cursor).toEqual({ sectionIdx: 5, slideIdx: 0 });
+    });
+  });
+
+  it("occurrenceFor picks current, then next, then first", () => {
+    const arr = ["v1", "c", "v2", "c"];
+    expect(songSession.occurrenceFor(arr, "c", 1)).toBe(1);
+    expect(songSession.occurrenceFor(arr, "c", 2)).toBe(3);
+    expect(songSession.occurrenceFor(arr, "v1", 3)).toBe(0);
+    expect(songSession.occurrenceFor(arr, "x", 0)).toBe(-1);
+  });
+
   it("jump to a section not yet in the arrangement appends it", () => {
     songSession.start(CH, {
       song, lyricTemplateId: "lyric-default",

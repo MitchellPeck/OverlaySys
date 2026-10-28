@@ -6,6 +6,8 @@ import { Mic, Music } from "lucide-react";
 import { Button, Pill, StatusDot, colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { useDialog } from "@/lib/dialog";
+import { slideDeltaTo, sttDebugEnabled, upcomingSlides } from "@/lib/songNav";
 
 interface Props {
   channel: string;
@@ -17,6 +19,10 @@ export function SongModePanel({ channel, session }: Props) {
   const song = useStore((s) => s.songCache[session.songId]);
   const sttMatch = useStore((s) => s.sttMatches[channel]);
   const sttOnline = useStore((s) => s.sttListeners.some((l) => l.online));
+  // Matcher internals (strategy, coverage, latency) are for tuning, not for
+  // running a service: set localStorage "overlaysys:sttDebug" = "1" to see them.
+  const [sttDebug, setSttDebug] = useState(false);
+  useEffect(() => setSttDebug(sttDebugEnabled()), []);
 
   useEffect(() => {
     if (!song) {
@@ -40,7 +46,7 @@ export function SongModePanel({ channel, session }: Props) {
     <div style={panelStyle()}>
       <Header channel={channel} song={song} session={session} />
       {sttMatch ? (
-        <SttDebugStrip match={sttMatch} />
+        sttDebug ? <SttDebugStrip match={sttMatch} /> : <SttStrip match={sttMatch} />
       ) : sttOnline ? (
         <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim }}>
           STT listening — nothing heard yet
@@ -54,10 +60,18 @@ export function SongModePanel({ channel, session }: Props) {
       }}>
         <SectionList
           song={song}
-          currentSectionId={currentSectionId ?? null}
-          onJump={(sectionId) =>
-            send({ type: "song_jump", channel, sectionId })
-          }
+          session={session}
+          onJumpTo={(arrangementIdx) => {
+            // Land on exactly this occurrence of a repeated section.
+            const delta = slideDeltaTo(session.arrangement, song.sections, session.cursor, arrangementIdx);
+            const sectionId = session.arrangement[arrangementIdx];
+            if (delta === null) {
+              if (sectionId) send({ type: "song_jump", channel, sectionId });
+            } else if (delta !== 0) {
+              send({ type: "song_advance", channel, delta });
+            }
+          }}
+          onJumpSection={(sectionId) => send({ type: "song_jump", channel, sectionId })}
         />
         <SlideGrid
           section={currentSection ?? null}
@@ -80,6 +94,37 @@ export function SongModePanel({ channel, session }: Props) {
 }
 
 type SttMatchView = NonNullable<ReturnType<typeof useStore.getState>["sttMatches"][string]>;
+
+/** Operator view of the STT match: what it heard and where it points. */
+function SttStrip({ match }: { match: SttMatchView }) {
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        padding: "6px 10px",
+        fontSize: 11,
+        border: `1px solid ${colors.border}`,
+        borderRadius: radius.md,
+        color: colors.textDim,
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+      }}
+    >
+      <span style={{ fontWeight: 600, color: colors.green }}>STT</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        &ldquo;{match.hypothesis}&rdquo;
+      </span>
+      {match.suggestedSlide ? (
+        <span>
+          suggests section {match.suggestedSlide.sectionIdx + 1}, slide {match.suggestedSlide.slideIdx + 1}
+        </span>
+      ) : (
+        <span>no match</span>
+      )}
+    </div>
+  );
+}
 
 function SttDebugStrip({ match }: { match: SttMatchView }) {
   const [showDetails, setShowDetails] = useState(false);
@@ -175,6 +220,16 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
   const { send } = useWs();
   const sttListeners = useStore((s) => s.sttListeners);
   const onlineCount = sttListeners.filter((l) => l.online).length;
+  const { confirm, dialog } = useDialog();
+  async function endSong() {
+    const ok = await confirm({
+      title: "End song?",
+      message: `"${song.title}" will be cleared from ${channel === "program" ? "program" : channel}.`,
+      confirmLabel: "End song",
+      destructive: true,
+    });
+    if (ok) send({ type: "song_end", channel });
+  }
   return (
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, rowGap: 8 }}>
       <div style={{ fontWeight: 700, fontSize: 16 }}><Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {song.title}</div>
@@ -203,7 +258,11 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
           <input
             type="checkbox"
             checked={session.trustMode}
-            onChange={(e) => send({ type: "song_set_trust", channel, trustMode: e.target.checked })}
+            onChange={(e) => {
+              send({ type: "song_set_trust", channel, trustMode: e.target.checked });
+              // Hand Space back to the song shortcuts instead of re-toggling Trust.
+              e.currentTarget.blur();
+            }}
           />
           Trust Mode
         </label>
@@ -214,46 +273,71 @@ function Header({ channel, song, session }: { channel: string; song: Song; sessi
         >
           {session.blanked ? "Unblank" : "Blank (.)"}
         </Button>
-        <Button onClick={() => send({ type: "song_end", channel })} size="sm">
-          End Song (Esc)
+        <Button onClick={endSong} size="sm">
+          End Song{channel === "program" ? " (Esc)" : ""}
         </Button>
       </div>
+      {dialog}
     </div>
   );
 }
 
+/**
+ * The arrangement in order, so the operator sees where they are in it (a
+ * repeated chorus appears once per occurrence). Sections the arrangement
+ * leaves out follow under "Not in arrangement"; jumping to one appends it.
+ */
 function SectionList({
-  song, currentSectionId, onJump,
+  song, session, onJumpTo, onJumpSection,
 }: {
-  song: Song; currentSectionId: string | null;
-  onJump: (sectionId: string) => void;
+  song: Song;
+  session: SongSessionSummary;
+  onJumpTo: (arrangementIdx: number) => void;
+  onJumpSection: (sectionId: string) => void;
 }) {
+  const unused = song.sections.filter((s) => !session.arrangement.includes(s.id));
+  const sectionButton = (key: string, sec: Song["sections"][number], state: "current" | "past" | "next", onClick: () => void) => (
+    <button
+      key={key}
+      onClick={(e) => {
+        onClick();
+        e.currentTarget.blur();
+      }}
+      aria-current={state === "current" ? "step" : undefined}
+      style={{
+        textAlign: "left",
+        padding: "10px 12px",
+        borderRadius: radius.md,
+        border: `1px solid ${state === "current" ? colors.accent : colors.border}`,
+        background: state === "current" ? "rgba(255, 58, 58, 0.18)" : colors.panel2,
+        color: state === "past" ? colors.textDim : colors.text,
+        cursor: "pointer",
+        fontSize: 13,
+      }}
+    >
+      <div style={{ fontWeight: 600, fontSize: 14 }}>
+        {state === "current" && <span aria-hidden style={{ color: colors.accent, marginRight: 6 }}>▶</span>}
+        {sec.label}
+      </div>
+      <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>
+        {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"} · {sec.kind}
+      </div>
+    </button>
+  );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {song.sections.map((sec) => {
-        const active = sec.id === currentSectionId;
-        return (
-          <button
-            key={sec.id}
-            onClick={() => onJump(sec.id)}
-            style={{
-              textAlign: "left",
-              padding: "10px 12px",
-              borderRadius: radius.md,
-              border: `1px solid ${colors.border}`,
-              background: active ? "rgba(255, 58, 58, 0.18)" : colors.panel2,
-              color: colors.text,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{sec.label}</div>
-            <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>
-              {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"} · {sec.kind}
-            </div>
-          </button>
-        );
+      {session.arrangement.map((id, i) => {
+        const sec = song.sections.find((s) => s.id === id);
+        if (!sec) return null;
+        const state = i === session.cursor.sectionIdx ? "current" : i < session.cursor.sectionIdx ? "past" : "next";
+        return sectionButton(`${i}:${id}`, sec, state, () => onJumpTo(i));
       })}
+      {unused.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim, marginTop: 6 }}>Not in arrangement</div>
+          {unused.map((sec) => sectionButton(`x:${sec.id}`, sec, "next", () => onJumpSection(sec.id)))}
+        </>
+      )}
     </div>
   );
 }
@@ -305,17 +389,8 @@ function SlideGrid({
 }
 
 function UpNext({ song, session }: { song: Song; session: SongSessionSummary }) {
-  const items: { label: string; lines: string[] }[] = [];
-  let { sectionIdx, slideIdx } = session.cursor;
-  for (let n = 0; n < 3 && sectionIdx < session.arrangement.length; n++) {
-    const sec = song.sections.find((s) => s.id === session.arrangement[sectionIdx]);
-    if (!sec) break;
-    const slide = sec.slides[slideIdx];
-    if (!slide) break;
-    items.push({ label: `${sec.label} · slide ${slideIdx + 1}`, lines: slide.lines });
-    if (slideIdx + 1 < sec.slides.length) slideIdx += 1;
-    else { sectionIdx += 1; slideIdx = 0; }
-  }
+  // Starts after the slide already on screen.
+  const items = upcomingSlides(session.arrangement, song.sections, session.cursor, 3);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim }}>

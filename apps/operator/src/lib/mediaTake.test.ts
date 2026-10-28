@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelMedia, ChannelState, VideoRow } from "@overlaysys/core";
-import { onAirMediaFor, posterPathFor, videoRowTakeMessage } from "./mediaTake";
+import { onAirMediaFor, posterPathFor, seekTargetForKey, videoRowTakeMessage } from "./mediaTake";
 
 const row = (over: Partial<VideoRow> = {}): VideoRow => ({
   kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, ...over,
@@ -50,5 +50,20 @@ describe("videoRowTakeMessage showId", () => {
   });
   it("omits showId without one", () => {
     expect(videoRowTakeMessage(row())).not.toHaveProperty("showId");
+  });
+});
+
+describe("seekTargetForKey", () => {
+  it("steps 5 s, or 15 s with Shift, clamped to the clip", () => {
+    expect(seekTargetForKey("ArrowRight", false, 10, 60)).toBe(15);
+    expect(seekTargetForKey("ArrowLeft", true, 10, 60)).toBe(0);
+    expect(seekTargetForKey("ArrowUp", true, 50, 60)).toBe(59);
+  });
+
+  it("jumps with Home/End and ignores other keys or unknown duration", () => {
+    expect(seekTargetForKey("Home", false, 30, 60)).toBe(0);
+    expect(seekTargetForKey("End", false, 30, 60)).toBe(59);
+    expect(seekTargetForKey("Space", false, 30, 60)).toBeNull();
+    expect(seekTargetForKey("ArrowRight", false, 0, 0)).toBeNull();
   });
 });
