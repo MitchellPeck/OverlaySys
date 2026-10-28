@@ -26,7 +26,6 @@ import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
 import { listDeckMetas, reloadDecks } from "./decks";
-import { reloadItemMappings } from "./pco/itemMappings";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
 
@@ -276,9 +275,8 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
       await reloadDecks();
       broadcast({ type: "deck_list", decks: await listDeckMetas() });
     }
-    if (touched("pcoItemMappings")) {
-      await reloadItemMappings();
-    }
+    // PCO item mappings need no reload: FsStorageAdapter writes through the
+    // store's cache, and a reload racing an operator save could drop it.
     // Confidence monitors render rows, songs, decks and templates and read
     // channel configs (kind, follows, layout) — rebuild them against pulled data.
     if (

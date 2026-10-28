@@ -13,7 +13,7 @@ import {
 } from "@overlaysys/core";
 import * as storage from "./storage";
 import { FsStorageAdapter } from "./fsStorageAdapter";
-import { reloadItemMappings } from "./pco/itemMappings";
+import { listItemMappings, reloadItemMappings } from "./pco/itemMappings";
 
 // The cloud `shows` table has no sermon-notes column yet, so a pulled show
 // arrives without `sermonNotes`. The local replica must not lose them.
@@ -212,6 +212,14 @@ describe("FsStorageAdapter decks", () => {
     const [row] = await adapter.listDecksSince("org", "");
     expect(row).toMatchObject({ updatedAt: "2026-10-03T00:00:00.000Z", deletedAt: "2026-10-03T00:00:00.000Z" });
   });
+
+  it("a pulled deck older than the stored one is not written (an edit made during the pass is kept)", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.saveDeck("org", deck({ name: "Local edit", updatedAt: "2026-10-05T00:00:00.000Z" }));
+    await adapter.saveDeck("org", deck({ name: "Stale pull", updatedAt: "2026-10-04T00:00:00+00:00" }));
+    const stored = await adapter.getDeck("org", "deck-a");
+    expect(stored).toMatchObject({ name: "Local edit", updatedAt: "2026-10-05T00:00:00.000Z" });
+  });
 });
 
 describe("FsStorageAdapter PCO item mappings", () => {
@@ -249,5 +257,20 @@ describe("FsStorageAdapter PCO item mappings", () => {
     await adapter.savePcoItemMapping("org", tomb);
     await reloadItemMappings();
     expect(await adapter.listPcoItemMappingsSince("org", "")).toEqual([tomb]);
+  });
+
+  it("a pulled mapping older than the stored one is not written", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.savePcoItemMapping("org", mapping({ deckId: "deck-local", updatedAt: "2026-10-05T00:00:00.000Z" }));
+    await adapter.savePcoItemMapping("org", mapping({ deckId: "deck-stale", updatedAt: "2026-10-04T00:00:00.000Z" }));
+    expect((await adapter.listPcoItemMappings("org")).map((m) => m.deckId)).toEqual(["deck-local"]);
+    await reloadItemMappings();
+    expect((await adapter.listPcoItemMappings("org")).map((m) => m.deckId)).toEqual(["deck-local"]);
+  });
+
+  it("a pulled mapping is visible through the store at once, with no reload (cloudSync does not reload)", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.savePcoItemMapping("org", mapping());
+    expect(await listItemMappings()).toEqual([mapping()]);
   });
 });

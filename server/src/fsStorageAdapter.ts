@@ -95,6 +95,21 @@ export function keepLocalHotkey(incoming: Hotcard, existing: Hotcard | null): Ho
   return { ...incoming, hotkey: existing.hotkey };
 }
 
+/** Epoch millis for an ISO timestamp; 0 when missing or unparseable. */
+function instant(iso: string | undefined): number {
+  const t = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * True when the stored copy is strictly newer than the incoming one. The
+ * sync engine lists both replicas, then writes; an operator save that lands
+ * in between must not be overwritten by the older record the pass pulled.
+ */
+function storedIsNewer(stored: { updatedAt?: string } | null | undefined, incomingUpdatedAt: string): boolean {
+  return !!stored && instant(stored.updatedAt) > instant(incomingUpdatedAt);
+}
+
 function overridesDir(): string {
   return path.join(dataRoot(), "channel_overrides");
 }
@@ -287,10 +302,9 @@ export class FsStorageAdapter implements StorageAdapter {
     return d && !d.deletedAt ? d : null;
   }
   async saveDeck(_org: string, deck: Deck): Promise<void> {
-    await writeDeck({
-      ...deck,
-      updatedAt: deck.updatedAt ?? new Date().toISOString(),
-    });
+    const updatedAt = deck.updatedAt ?? new Date().toISOString();
+    if (storedIsNewer(await loadDeck(deck.id), updatedAt)) return;
+    await writeDeck({ ...deck, updatedAt });
   }
   async deleteDeck(_org: string, id: string): Promise<boolean> {
     const current = await loadDeck(id);
@@ -301,7 +315,8 @@ export class FsStorageAdapter implements StorageAdapter {
   // ── PCO item mappings ──────────────────────────────────────────────────
   //
   // putItemMapping stores the record as-is (tombstones and `updatedAt`
-  // included), which is exactly what a pull needs.
+  // included), which is exactly what a pull needs. It writes through the
+  // store's in-memory cache, so no reload is needed after a sync pass.
   async listPcoItemMappings(_org: string): Promise<PcoItemMapping[]> {
     return listItemMappings();
   }
@@ -309,6 +324,8 @@ export class FsStorageAdapter implements StorageAdapter {
     return listItemMappings({ includeDeleted: true });
   }
   async savePcoItemMapping(_org: string, m: PcoItemMapping): Promise<void> {
+    const all = await listItemMappings({ includeDeleted: true });
+    if (storedIsNewer(all.find((x) => x.id === m.id), m.updatedAt)) return;
     await putItemMapping(m);
   }
   async deletePcoItemMapping(_org: string, id: string): Promise<boolean> {

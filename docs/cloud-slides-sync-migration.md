@@ -48,8 +48,10 @@ create trigger pco_item_mappings_updated_at before update on overlaysys.pco_item
   for each row execute function overlaysys.set_updated_at();
 ```
 
-(`overlaysys.set_updated_at()` is the trigger function used by every table in
-`supabase/migrations/0001_init.sql`.)
+(`overlaysys.set_updated_at()` is the trigger function as redefined in
+`supabase/migrations/0010_project_publish_fixes.sql`: it stamps `now()` only when
+the writer leaves `updated_at` unchanged, so the sync engine's explicit value
+survives a conflict-update.)
 
 ### After applying: regenerate types
 
