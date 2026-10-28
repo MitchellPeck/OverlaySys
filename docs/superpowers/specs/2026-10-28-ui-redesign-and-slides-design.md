@@ -2,7 +2,7 @@
 
 Status: draft — pending owner approval
 Date: 2026-10-28
-Deadline: in use for the service on **Sunday 2026-11-01**
+Target: everything below is in scope and ready for the service on **Sunday 2026-11-01** (owner)
 
 Inputs: the seven-area UI/UX review and its fix plan (session scratchpad
 `uxreview/findings/*.md`, `uxreview/FIX-PLAN.md`), the enrichment catalogue
@@ -40,8 +40,9 @@ can't map Planning Center items cleanly.
    a thumbnail grid view (owner).
 5. **Slides decks**: a library of reusable slide decks and a `slides` rundown
    item, with Planning Center "Import as Slides" (owner).
-6. Ready and rehearsed for Sunday 2026-11-01 (owner) without risking the
-   service (call: see Delivery).
+6. All of it — redesign, shared list, sections, Slides decks including PCO
+   import and Convert, and cloud sync — ready for Sunday 2026-11-01 (owner:
+   no scope cuts, no fallback build).
 
 ## Non-goals
 
@@ -51,14 +52,14 @@ can't map Planning Center items cleanly.
   what Slides needs.
 - Re-implementing defects one by one in the old look: visual-polish findings
   are absorbed by the rebuilt screens (see "Relation to the fix plan").
-- Cloud-mode parity work beyond keeping the cloud build compiling and not
-  showing desktop-only screens.
+- Cloud web-operator parity for the new editors beyond keeping the cloud
+  build compiling and hiding desktop-only screens (sync itself IS in scope —
+  see Cloud sync).
 
 ## Anti-goals (would be a failure even if it "works")
 
 - Anything that can put the wrong thing on air, or make on-air state less
   obvious than today.
-- A Sunday-morning build nobody has run end to end.
 - Data loss: existing shows, songs, templates, hotcards, stage layouts and
   settings must open unchanged (schema changes are additive; migrations are
   idempotent and keep a backup).
@@ -144,8 +145,11 @@ and Stage layouts tabs), Hotcards, Slides decks (and later others).
 - **Below the monitors**: the selected item's content as large thumbnails:
   songs and slides decks one per slide (with section/group colour labels),
   scripture one per passage slide, a graphic as one thumbnail of its filled
-  template, video as its poster frame. Click a thumbnail to cue/take it;
-  live = red border, next = green border.
+  template, video as its poster frame. **Clicking a thumbnail
+  (owner)**: if the item is already live on program, the click takes that
+  slide straight to air (jump within the live song/deck/scripture); if the
+  item is not live, the click cues it to preview — never straight to
+  program. Live = red border, cued/next = green border.
 - **Right**: timers, stage controls (notes, messages, PCO Live) and hotcards
   in a collapsible drawer (call).
 - Existing live behaviour, shortcuts and server protocol stay; the defaults
@@ -164,8 +168,12 @@ and Stage layouts tabs), Hotcards, Slides decks (and later others).
   adds, renames, reorders, deletes and drags items between, in the show
   editor. On Live they are dividers with the name and (call) the section's
   total length when items have lengths. Planning Center "header" items are
-  imported as sections (call). Existing shows with no sections show a flat
-  list.
+  imported as sections, never as playable rows (owner: headers are never put
+  on air). Existing shows with no sections show a flat list. Existing PCO
+  header rows already in shows (imported as graphic rows on the default
+  template) are migrated into sections by a one-time, backed-up migration,
+  and re-import maps headers to sections instead of flagging those rows as
+  removed (call, following the owner's "never on air").
 - Data (call): add an ordered section structure to `Show` that existing
   show JSON parses without (e.g. a `sectionId` on rows plus a `sections`
   list on the show) — the builder chooses the exact shape; it must keep row
@@ -227,6 +235,21 @@ has a fuller model sketch (deck schema, server engine modelled on scripture,
 `data/pco/itemMappings.json`, migration steps); the builder should treat it
 as a starting point, not a spec.
 
+## Cloud sync (owner: implement it)
+
+The owner prepares and runs on one machine, but cloud sync must still cover
+the new data:
+- a `decks` sync entity (last-writer-wins on `updatedAt`, `deletedAt`
+  soft-deletes, like templates and stage layouts) with its Supabase
+  migration written for the apps-portal project (documented in the repo, not
+  applied by the builder — same pattern as `docs/cloud-stage-layouts-migration.md`);
+- show `sections` and `slides` rows travel inside the existing show payload;
+  a client must not strip fields it doesn't understand when it re-saves a
+  synced show (make the show schema pass unknown keys through, or version it);
+- PCO item→deck mappings shared through sync (call: a small synced
+  settings/mappings entity) rather than only a local file;
+- a missing cloud table is skipped quietly (as stage layouts do today).
+
 ## Relation to the fix plan (call)
 
 - **Behaviour defects** in `FIX-PLAN.md` still ship (they're independent of
@@ -243,14 +266,12 @@ as a starting point, not a spec.
 
 ## Delivery (call)
 
-- Before the redesign lands, tag the current `main` as a known-good fallback
-  (`pre-redesign-2026-10-28`) the owner can run on Sunday morning.
-- Land in stages, each green on test/typecheck/build and screenshot-checked:
-  1. visual tokens + UI kit controls + shared library list + native sections;
-  2. Live + show/song/graphics editors + the remaining pages;
-  3. Slides decks (library, row, live, PCO import, convert).
-- Saturday: a full run-through of the owner's real All Saints service in the
-  new build (PVW/PGM outputs, stage monitor, hotcards, Slides decks).
+Land in stages, each green on test/typecheck/build and screenshot-checked
+against the running app; stages can overlap where files don't collide:
+1. visual tokens + UI kit controls + shared library list + native sections
+   (+ header migration);
+2. Live + show/song/graphics editors + the remaining pages;
+3. Slides decks (library, row, live, PCO import, convert) + cloud sync.
 
 ## Left to the builder
 
