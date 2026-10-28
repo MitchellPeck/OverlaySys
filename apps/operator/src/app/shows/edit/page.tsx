@@ -12,6 +12,7 @@ import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
 import { useDialog } from "@/lib/dialog";
+import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -79,6 +80,9 @@ function ShowEditPageInner() {
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+  // Ask before leaving with unsaved edits: reload/close, in-app links and
+  // browser Back/Forward. Must run before the `!draft` early return below.
+  useUnsavedGuard(dirty, { resetKey: showId, canArm: draft?.id === showId });
   const [dragRowId, setDragRowId] = useState<string | null>(null);
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
