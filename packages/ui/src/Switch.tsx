@@ -1,5 +1,5 @@
 "use client";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { colors, fontSize, radius } from "./tokens";
 
@@ -15,9 +15,11 @@ function Row({
   label,
   disabled,
   onToggle,
+  labelId,
   children,
 }: {
   label?: ReactNode;
+  labelId?: string;
   disabled?: boolean;
   onToggle(): void;
   children: ReactNode;
@@ -42,19 +44,21 @@ function Row({
       }}
     >
       {children}
-      {label !== undefined && <span>{label}</span>}
+      {label !== undefined && <span id={labelId}>{label}</span>}
     </span>
   );
 }
 
 export function Switch({ checked, onChange, label, disabled, "aria-label": ariaLabel }: Props) {
+  const labelId = useId();
   return (
-    <Row label={label} disabled={disabled} onToggle={() => onChange(!checked)}>
+    <Row labelId={labelId} label={label} disabled={disabled} onToggle={() => onChange(!checked)}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
         aria-label={ariaLabel}
+        aria-labelledby={!ariaLabel && label !== undefined ? labelId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         style={{
@@ -88,13 +92,15 @@ export function Switch({ checked, onChange, label, disabled, "aria-label": ariaL
 }
 
 export function Checkbox({ checked, onChange, label, disabled, "aria-label": ariaLabel }: Props) {
+  const labelId = useId();
   return (
-    <Row label={label} disabled={disabled} onToggle={() => onChange(!checked)}>
+    <Row labelId={labelId} label={label} disabled={disabled} onToggle={() => onChange(!checked)}>
       <button
         type="button"
         role="checkbox"
         aria-checked={checked}
         aria-label={ariaLabel}
+        aria-labelledby={!ariaLabel && label !== undefined ? labelId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         style={{

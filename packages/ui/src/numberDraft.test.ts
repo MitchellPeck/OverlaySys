@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { roundTo, formatNumber, decimalsFor, parseDraft, stepValue } from "./numberDraft";
+import { roundTo, formatNumber, decimalsFor, parseDraft, stepValue, draftChanged } from "./numberDraft";
 
 describe("numberDraft", () => {
   it("roundTo", () => {
@@ -28,5 +28,10 @@ describe("numberDraft", () => {
   it("stepValue", () => {
     expect(stepValue(1, 1, { step: 0.1 })).toBe(1.1);
     expect(stepValue(5, -1, { step: 1, min: 0, big: true })).toBe(0);
+  });
+  it("unchanged draft does not commit", () => {
+    const shown = formatNumber(1.2345, 2);
+    expect(draftChanged(shown, shown)).toBe(false);
+    expect(draftChanged("1.3", shown)).toBe(true);
   });
 });

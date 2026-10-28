@@ -47,3 +47,8 @@ export function stepValue(v: number, dir: 1 | -1, o: Opts & { big?: boolean }): 
   const step = (o.step ?? (o.int ? 1 : 1)) * (o.big ? 10 : 1);
   return roundTo(clamp(v + dir * step, o), decimalsFor(o.step, o.int, o.precision));
 }
+
+/** Blur/Enter only commits when the user actually changed the text. */
+export function draftChanged(draft: string, shown: string): boolean {
+  return draft !== shown;
+}

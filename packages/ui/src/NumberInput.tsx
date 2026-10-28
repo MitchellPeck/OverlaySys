@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { colors, control, fontSize, radius } from "./tokens";
-import { decimalsFor, formatNumber, parseDraft, stepValue } from "./numberDraft";
+import { decimalsFor, formatNumber, parseDraft, stepValue, draftChanged } from "./numberDraft";
 
 type Props = {
   value: number;
@@ -44,6 +44,7 @@ export function NumberInput({
   }, [shown]);
 
   function commit(text: string) {
+    if (!draftChanged(text, shown)) return;
     const n = parseDraft(text, opts);
     if (n === null) {
       setDraft(shown);
