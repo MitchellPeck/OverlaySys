@@ -65,12 +65,16 @@ describe("FsStorageAdapter.saveShow keeps local sections", () => {
 
   it("a pulled show without sections keeps the local sections", async () => {
     await storage.saveShow(makeShow({ sections, sermonNotes: notes }));
-    const pulled = makeShow({ name: "Renamed in cloud" });
-    delete (pulled as { sections?: unknown }).sections;
+    const slidesRow = { kind: "slides", id: "r1", sectionId: "sec-1", deckId: "deck-1", slideIds: ["a", "b"] };
+    const pulled = ShowSchema.parse({
+      id: "show-1", name: "Renamed in cloud", projectId: "p", songs: [], rows: [slidesRow],
+    });
+    expect("sections" in pulled).toBe(false);
     await new FsStorageAdapter().saveShow("org", pulled);
     const saved = await storage.loadShow("show-1");
     expect(saved?.name).toBe("Renamed in cloud");
     expect(saved?.sections).toEqual(sections);
+    expect(saved?.rows).toEqual([slidesRow]);
     expect(saved?.sermonNotes).toEqual(notes);
   });
 

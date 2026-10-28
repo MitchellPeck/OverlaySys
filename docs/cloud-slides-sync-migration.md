@@ -32,6 +32,21 @@ that `Tables["shows"]["Row"]` has `extra: Json | null` and
 `Tables["hotcards"]["Row"]` has `hotkey: string | null` (both are already
 hand-written into `database.types.ts`).
 
+After applying, also:
+
+1. Reload the PostgREST schema cache so the API sees the new columns at once.
+   Otherwise requests keep failing with PGRST204 until the next automatic reload.
+   Run this in the apps-portal SQL editor:
+
+   ```sql
+   NOTIFY pgrst, 'reload schema';
+   ```
+
+2. Restart the OverlaySys desktop app and reload any open web operator tabs. Once
+   an adapter sees that a column is missing, it remembers that for the rest of the
+   process and stops sending or selecting the column. A process that was running
+   before the migration keeps syncing without `extra` / `hotkey` until it restarts.
+
 ## 3. Status
 
 Code is in place; until applied, the cloud adapter retries without the column, and

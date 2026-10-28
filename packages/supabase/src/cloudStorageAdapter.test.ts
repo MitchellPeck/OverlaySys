@@ -245,6 +245,15 @@ const richShow = (): Show =>
       // A row carries its sectionId (and any future keys, e.g. a slides
       // row's deckId) inside `rows`, which the schema passes through.
       { kind: "graphic", id: "r1", sectionId: "sec-1", templateId: "l3", data: {}, futureKey: "kept" },
+      {
+        kind: "slides",
+        id: "r2",
+        sectionId: "sec-1",
+        deckId: "deck-1",
+        slideIds: ["s2", "s1", "s2"],
+        stageLayouts: { "stage-1": "speaker" },
+        localSlides: [{ id: "l1", data: { line1: "Line A" } }],
+      },
     ],
     updatedAt: "2026-10-28T10:00:00.000Z",
   });
@@ -270,7 +279,11 @@ describe("CloudStorageAdapter optional columns", () => {
     expect(pulled?.scheduledFor).toBe("2026-11-01");
     expect(pulled?.sermonNotes).toEqual(show.sermonNotes);
     expect(pulled?.rows).toEqual(show.rows);
-    expect((await adapter.getShow(ORG, "show-1"))?.sections).toEqual(show.sections);
+    const slides = pulled?.rows.find((r) => r.id === "r2");
+    expect(slides).toMatchObject({ kind: "slides", deckId: "deck-1", slideIds: ["s2", "s1", "s2"], sectionId: "sec-1" });
+    const got = await adapter.getShow(ORG, "show-1");
+    expect(got?.sections).toEqual(show.sections);
+    expect(got?.rows).toEqual(show.rows);
   });
 
   it("an old row with extra = null reads as today (songs [])", async () => {
