@@ -320,7 +320,7 @@ function HotcardEditPageInner() {
             )}
           </Row>
 
-          <Row label="Channel hint">
+          <Row label="Default output">
             <ChannelHintSelect
               value={draft.channelHint}
               onChange={(v) =>
@@ -330,6 +330,9 @@ function HotcardEditPageInner() {
               }
               channels={takeableChannels}
             />
+            <div style={{ marginTop: 4, fontSize: 11, color: colors.textDim }}>
+              Cue always goes to Preview; Take goes here (Program if unset).
+            </div>
           </Row>
 
           <Row label="Notes">
@@ -429,18 +432,22 @@ function ChannelHintSelect({
   onChange: (v: string | undefined) => void;
   channels: ChannelConfig[];
 }) {
-  const current = value ?? "";
-  const knownChannel = current && channels.some((c) => c.id === current);
+  // Program and Preview aren't outputs a Take can default to: Cue always
+  // goes to Preview, and Take goes to Program unless another output is set
+  // (Default D7a). A legacy Program/Preview hint reads as unset.
+  const outputs = channels.filter((c) => c.id !== "program" && c.id !== "preview");
+  const current = value === "program" || value === "preview" ? "" : (value ?? "");
+  const knownChannel = current && outputs.some((c) => c.id === current);
   return (
     <Select
       value={current}
       onChange={(e) => onChange(e.target.value ? e.target.value : undefined)}
     >
-      <option value="">(any)</option>
+      <option value="">Program (default)</option>
       {!knownChannel && current && (
         <option value={current}>{current} (missing)</option>
       )}
-      {channels.map((c) => (
+      {outputs.map((c) => (
         <option key={c.id} value={c.id}>
           {c.name}
         </option>
