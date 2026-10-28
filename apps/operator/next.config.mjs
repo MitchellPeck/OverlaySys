@@ -1,3 +1,5 @@
+import { assetRewrites } from "./src/lib/devProxy.ts";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -24,5 +26,11 @@ const nextConfig = {
   trailingSlash: process.env.NEXT_BUILD_STATIC === "1",
   // Disable next/image optimization — the static export can't run it.
   images: { unoptimized: true },
+  // Dev/non-static: fonts and posters are served by the server, not Next.
+  async rewrites() {
+    return assetRewrites(process.env);
+  },
+  // Keep the dev "N" badge off the media transport.
+  devIndicators: { position: "top-right" },
 };
 export default nextConfig;

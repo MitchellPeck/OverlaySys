@@ -10,5 +10,6 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 3001,
     host: true,
+    proxy: { "/assets": "http://localhost:4000" },
   },
 }));
