@@ -31,7 +31,11 @@ export function ackErrorText(e: unknown): string {
   return "Something went wrong.";
 }
 
-const ERROR_CODES = new Set(["handler_error", "bad_message", "not_found"]);
+/** Server errors carry no op yet, so only count one when it names the saved entity id. not_found is never a save failure. */
+function errorMatches(m: ServerMessage, id?: string): boolean {
+  if (m.type !== "error" || !id) return false;
+  return (m.code === "handler_error" || m.code === "bad_message") && m.message.includes(id);
+}
 
 /** Send `message` and resolve once `accept` returns a value; reject on timeout, disconnect or server error. */
 function run<T>(
@@ -39,7 +43,7 @@ function run<T>(
   message: ClientMessage,
   timeoutMs: number,
   accept: (m: ServerMessage) => T | undefined,
-  watchErrors: boolean,
+  isError: (m: ServerMessage) => boolean,
 ): Promise<T> {
   if (client.getStatus() !== "open") return Promise.reject(new AckError("not_connected"));
   return new Promise<T>((resolve, reject) => {
@@ -55,7 +59,7 @@ function run<T>(
     const timer = setTimeout(() => finish(() => reject(new AckError("timeout"))), timeoutMs);
     cleanups.push(
       client.on((m) => {
-        if (watchErrors && m.type === "error" && ERROR_CODES.has(m.code)) {
+        if (m.type === "error" && isError(m)) {
           finish(() => reject(new AckError("server_error", m.message)));
           return;
         }
@@ -87,7 +91,7 @@ export function sendAndAwaitAck(
     message,
     o?.timeoutMs ?? 8000,
     (m) => (m.type === "ack" && m.op === match.op && (match.id === undefined || m.id === match.id) ? true : undefined),
-    true,
+    (m) => errorMatches(m, match.id),
   ).then(() => undefined);
 }
 
@@ -97,5 +101,5 @@ export function requestOne<T>(
   pick: (m: ServerMessage) => T | undefined,
   o?: { timeoutMs?: number },
 ): Promise<T> {
-  return run<T>(client, message, o?.timeoutMs ?? 5000, pick, false);
+  return run<T>(client, message, o?.timeoutMs ?? 5000, pick, () => false);
 }

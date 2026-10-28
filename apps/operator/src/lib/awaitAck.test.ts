@@ -63,10 +63,43 @@ describe("awaitAck", () => {
   });
   it("rejects with server_error carrying the server message", async () => {
     const c = fake();
-    const p = sendAndAwaitAck(c, msg, { op: "save_show" });
-    const assertion = expect(p).rejects.toMatchObject({ code: "server_error", message: "Disk full" });
-    c.emit({ type: "error", code: "handler_error", message: "Disk full" });
+    const p = sendAndAwaitAck(c, msg, { op: "save_show", id: "s1" });
+    const assertion = expect(p).rejects.toMatchObject({ code: "server_error", message: "save s1: Disk full" });
+    c.emit({ type: "error", code: "handler_error", message: "save s1: Disk full" });
     await assertion;
+  });
+  it("unrelated not_found and handler_error do not reject a pending save", async () => {
+    const c = fake();
+    let settled = false;
+    const p = sendAndAwaitAck(c, msg, { op: "save_show", id: "s1" }).finally(() => (settled = true));
+    c.emit({ type: "error", code: "not_found", message: "deck s1 not found" });
+    c.emit({ type: "error", code: "handler_error", message: "template t9 failed" });
+    c.emit({ type: "error", code: "bad_message", message: "nope" });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    c.emit({ type: "ack", op: "save_show", id: "s1" });
+    await p;
+  });
+  it("removes listeners and the timer after settle", async () => {
+    const c = fake();
+    const off = vi.fn();
+    const offSt = vi.fn();
+    const on = c.on;
+    const onStatus = c.onStatus;
+    c.on = (l) => {
+      const u = on(l);
+      return () => (off(), u());
+    };
+    c.onStatus = (l) => {
+      const u = onStatus(l);
+      return () => (offSt(), u());
+    };
+    const p = sendAndAwaitAck(c, msg, { op: "save_show" });
+    c.emit({ type: "ack", op: "save_show" });
+    await p;
+    expect(off).toHaveBeenCalledTimes(1);
+    expect(offSt).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
   it("requestOne returns the picked payload", async () => {
     const c = fake();
