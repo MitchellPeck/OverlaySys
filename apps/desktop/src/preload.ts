@@ -10,6 +10,8 @@ import type {
   WindowPrefsFile,
   CachedDisplay,
 } from "@overlaysys/core";
+import type { DesktopEvent } from "./supervisor";
+import type { DiagnosticsInfo } from "./diagnostics";
 
 interface ChannelWindowOptions {
   frameless?: boolean;
@@ -141,6 +143,24 @@ interface OverlaysysApi {
    * http(s) URLs by the main-process handler.
    */
   openExternal(url: string): Promise<void>;
+
+  /**
+   * App version, Electron/Node versions, server port + bind host, LAN
+   * addresses and attached displays. Backs Settings → Connection and the
+   * Account page's version line.
+   */
+  getDiagnostics(): Promise<DiagnosticsInfo>;
+  /** Copy the diagnostics text to the clipboard; resolves with that text. */
+  copyDiagnostics(): Promise<string>;
+  /** Show boot.log in the OS file manager. */
+  revealLogs(): Promise<void>;
+
+  /**
+   * Things the host did on the operator's behalf: server crash + respawn,
+   * an output or the console auto-reloaded after a crash, an output closed
+   * because its display was unplugged. Returns an unsubscribe function.
+   */
+  onDesktopEvent(fn: (event: DesktopEvent) => void): () => void;
 }
 
 const api: OverlaysysApi = {
@@ -206,6 +226,15 @@ const api: OverlaysysApi = {
 
   openExternal: (url) =>
     ipcRenderer.invoke("overlaysys:open-external", url),
+
+  getDiagnostics: () => ipcRenderer.invoke("overlaysys:get-diagnostics"),
+  copyDiagnostics: () => ipcRenderer.invoke("overlaysys:copy-diagnostics"),
+  revealLogs: () => ipcRenderer.invoke("overlaysys:reveal-logs"),
+  onDesktopEvent: (fn) => {
+    const handler = (_event: Electron.IpcRendererEvent, ev: DesktopEvent) => fn(ev);
+    ipcRenderer.on("overlaysys:desktop-event", handler);
+    return () => ipcRenderer.removeListener("overlaysys:desktop-event", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("overlaysys", api);

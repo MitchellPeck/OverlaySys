@@ -17,8 +17,20 @@
 //
 // IPC channels are unchanged from the dev-only version — see preload.ts.
 
-import { app, BrowserWindow, ipcMain, Menu, screen, shell, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  powerSaveBlocker,
+  screen,
+  shell,
+  systemPreferences,
+} from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import fs from "node:fs";
@@ -53,6 +65,26 @@ import {
   writePidFile,
 } from "./serverProcess";
 import { resolveServerCloudEnv } from "./serverEnv";
+import {
+  RateLimiter,
+  isRecoverableLoadFailure,
+  respawnDelayMs,
+  shouldReloadAfterGone,
+  type DesktopEvent,
+} from "./supervisor";
+import { outputsOnRemovedDisplays } from "./displayGuard";
+import {
+  clampBoundsToWorkAreas,
+  loadOperatorBounds,
+  saveOperatorBounds,
+  type OperatorBounds,
+} from "./operatorBounds";
+import {
+  formatDiagnostics,
+  keyboardShortcutsText,
+  lanIPv4Addresses,
+  type DiagnosticsInfo,
+} from "./diagnostics";
 import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
@@ -160,6 +192,15 @@ function ensureUserDataEnv(): void {
 let bootLogStream: fs.WriteStream | null = null;
 const bootLogQueue: string[] = [];
 
+/** <userData>/boot.log, or null before the app is ready. */
+function bootLogPath(): string | null {
+  try {
+    return path.join(app.getPath("userData"), "boot.log");
+  } catch {
+    return null;
+  }
+}
+
 function appendBootLog(line: string): void {
   const stamped = `[${new Date().toISOString()}] ${line}\n`;
   if (bootLogStream) {
@@ -231,6 +272,31 @@ const isDev = process.env["OVERLAYSYS_DESKTOP_DEV"] === "1";
 let serverChild: ChildProcess | null = null;
 let serverPort = 4000;
 let serverHost = "127.0.0.1";
+/** Interface the embedded server binds (HOST env, default all interfaces). */
+let serverBindHost = "0.0.0.0";
+/**
+ * Set when WE stop the server (quit, or a restart we initiated) so its exit
+ * isn't mistaken for a crash and respawned.
+ */
+let serverStopping = false;
+/** True once the app is quitting — no more respawns or window reloads. */
+let appQuitting = false;
+/** Consecutive respawn attempts; reset once a restarted server stays up. */
+let respawnAttempt = 0;
+let respawnTimer: NodeJS.Timeout | null = null;
+let respawnStableTimer: NodeJS.Timeout | null = null;
+const RESPAWN_STABLE_MS = 60_000;
+
+/** Tell the operator window what the host just did on its behalf. */
+function notifyOperator(event: DesktopEvent): void {
+  const w = operatorWindow;
+  if (!w || w.isDestroyed()) return;
+  try {
+    w.webContents.send("overlaysys:desktop-event", event);
+  } catch {
+    /* window mid-teardown */
+  }
+}
 
 /**
  * Forward the user's cloud session to the embedded server. The server
@@ -377,7 +443,7 @@ function rendererChannelUrl(channelId: string): string {
 
 // ── Server lifecycle ─────────────────────────────────────────────────────────
 
-function spawnServer(): Promise<{ port: number }> {
+function spawnServer(portOverride?: number): Promise<{ port: number }> {
   // In packaged Electron, the app tree sits at process.resourcesPath/app/
   // with this layout (produced by scripts/package-desktop.mjs):
   //
@@ -429,7 +495,9 @@ function spawnServer(): Promise<{ port: number }> {
     // anything that connects to the WS) can target a known port. Set
     // PORT=0 in env to fall back to an OS-assigned ephemeral port if
     // running multiple instances side-by-side.
-    PORT: process.env["PORT"] ?? "4000",
+    // A respawn after a crash pins the port it had, so every open window
+    // and Companion reconnect to the same address.
+    PORT: portOverride !== undefined ? String(portOverride) : process.env["PORT"] ?? "4000",
     // Bind to all interfaces so renderer windows and Companion/Stream Deck
     // running on another machine on the LAN can reach the server. Local
     // Electron windows still hit 127.0.0.1 fine since loopback is part of
@@ -450,8 +518,11 @@ function spawnServer(): Promise<{ port: number }> {
 
   // Backstop: reap a server left running by a previous session that never
   // cleaned up (crash / force-quit / SIGKILL), so it can't keep holding the
-  // port and block this launch.
+  // port and block this launch. Safe only because the single-instance lock
+  // (bottom of this file) guarantees no other live instance owns that PID.
+  serverBindHost = env["HOST"] ?? "0.0.0.0";
   reapPreviousServer(serverPidFilePath());
+  serverStopping = false;
 
   return new Promise<{ port: number }>((resolve, reject) => {
     // cwd = serverDir so node resolves tsx and other deps from
@@ -501,14 +572,24 @@ function spawnServer(): Promise<{ port: number }> {
 
     child.on("exit", (code, signal) => {
       console.error(`[server] exited code=${code} signal=${signal}`);
-      serverChild = null;
+      // A child we already let go of (killServer, a failed respawn's stale
+      // process) is no longer `serverChild`; only the current one crashing
+      // warrants a respawn.
+      const wasCurrent = serverChild === child;
+      if (wasCurrent) serverChild = null;
       // This PID is dead — drop the record so the next boot doesn't try to
-      // reap an already-gone (or worse, recycled) PID.
-      clearPidFile(serverPidFilePath());
+      // reap an already-gone (or worse, recycled) PID. Skip for a child we
+      // already let go of: by now the pidfile may hold its replacement.
+      if (wasCurrent) clearPidFile(serverPidFilePath());
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         reject(new Error(`server exited before ready (code ${code})`));
+        return;
+      }
+      // Exit after a successful boot that we didn't ask for = crash.
+      if (wasCurrent && !serverStopping && !appQuitting) {
+        scheduleServerRespawn(`exited code=${code} signal=${signal}`);
       }
     });
     child.on("error", (err) => {
@@ -522,18 +603,107 @@ function spawnServer(): Promise<{ port: number }> {
 }
 
 function killServer(): void {
+  serverStopping = true;
+  if (respawnTimer) {
+    clearTimeout(respawnTimer);
+    respawnTimer = null;
+  }
+  // Only touch the pidfile when this instance spawned the server. A second
+  // launch that lost the single-instance lock also runs this on exit, and
+  // must not erase the running instance's record.
+  if (!serverChild) return;
   try {
     clearPidFile(serverPidFilePath());
   } catch {
     // app path may be unavailable during teardown — best-effort.
   }
-  if (!serverChild) return;
   try {
     serverChild.kill("SIGTERM");
   } catch {
     // ignore
   }
   serverChild = null;
+}
+
+/**
+ * The server died mid-session. Respawn it on the same port with backoff
+ * (1s, 2s, 4s … 30s); the windows' WebSocket clients reconnect on their own.
+ * If the OS hands back a different port, reload every window onto it.
+ */
+function scheduleServerRespawn(reason: string): void {
+  if (respawnTimer || appQuitting || isDev) return;
+  if (respawnStableTimer) {
+    clearTimeout(respawnStableTimer);
+    respawnStableTimer = null;
+  }
+  respawnAttempt += 1;
+  const delayMs = respawnDelayMs(respawnAttempt);
+  console.error(
+    `[desktop] server crashed (${reason}); respawn attempt ${respawnAttempt} in ${delayMs}ms`,
+  );
+  notifyOperator({ kind: "server-restarting", attempt: respawnAttempt, delayMs, reason });
+  respawnTimer = setTimeout(() => {
+    respawnTimer = null;
+    if (appQuitting) return;
+    const previousPort = serverPort;
+    spawnServer(previousPort)
+      .then(async ({ port }) => {
+        serverPort = port;
+        const ok = await pingHealth(serverHost, serverPort, 5000);
+        if (!ok) throw new Error("server health check failed after respawn");
+        console.log(`[desktop] server respawned on ${serverHost}:${serverPort}`);
+        notifyOperator({ kind: "server-restarted", port });
+        if (port !== previousPort) reloadAllWindowsOnNewPort();
+        await rePushTokensAfterRespawn();
+        // Only forgive past crashes once the new server has stayed up.
+        respawnStableTimer = setTimeout(() => {
+          respawnAttempt = 0;
+          respawnStableTimer = null;
+        }, RESPAWN_STABLE_MS);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[desktop] server respawn failed:", err);
+        notifyOperator({ kind: "server-failed", reason: msg });
+        // A child that failed its health check may still be alive — stop it
+        // (without triggering another crash-respawn) before the next try.
+        const stale = serverChild;
+        if (stale) {
+          serverChild = null;
+          try {
+            stale.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+        }
+        scheduleServerRespawn(msg);
+      });
+  }, delayMs);
+}
+
+/** A respawned server holds no tokens in memory — hand them over again. */
+async function rePushTokensAfterRespawn(): Promise<void> {
+  try {
+    const cloud = await loadCloudTokens();
+    if (cloud) await pushTokensToServer(cloud).catch(() => undefined);
+  } catch {
+    /* best-effort */
+  }
+  try {
+    const pco = await loadPcoTokens();
+    if (pco) await pushPcoTokenToServer(pco).catch(() => undefined);
+  } catch {
+    /* best-effort */
+  }
+}
+
+function reloadAllWindowsOnNewPort(): void {
+  if (operatorWindow && !operatorWindow.isDestroyed()) {
+    void operatorWindow.loadURL(operatorUrl());
+  }
+  for (const [id, w] of channelWindows) {
+    if (!w.isDestroyed()) void w.loadURL(rendererChannelUrl(id));
+  }
 }
 
 function pingHealth(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -555,14 +725,99 @@ function pingHealth(host: string, port: number, timeoutMs = 2000): Promise<boole
 
 // ── Window creation ──────────────────────────────────────────────────────────
 
+function operatorBoundsPath(): string {
+  return path.join(app.getPath("userData"), "data", "operator-window.json");
+}
+
+const OPERATOR_MIN = { width: 1200, height: 700 };
+
+/** Saved console position, clamped onto the displays attached right now. */
+function initialOperatorBounds(): OperatorBounds | null {
+  const saved = loadOperatorBounds(operatorBoundsPath());
+  if (!saved) return null;
+  const workAreas = screen.getAllDisplays().map((d) => ({ ...d.workArea }));
+  const fitted = clampBoundsToWorkAreas(
+    saved,
+    workAreas,
+    { ...screen.getPrimaryDisplay().workArea },
+    OPERATOR_MIN,
+  );
+  return { ...fitted, maximized: saved.maximized };
+}
+
+/** Persist the console's position (debounced on move/resize, flushed on close). */
+function trackOperatorBounds(win: BrowserWindow): void {
+  let timer: NodeJS.Timeout | null = null;
+  const save = () => {
+    if (win.isDestroyed()) return;
+    // getNormalBounds = the restored size even while maximized/fullscreen.
+    const b = win.getNormalBounds();
+    saveOperatorBounds(operatorBoundsPath(), { ...b, maximized: win.isMaximized() });
+  };
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(save, 500);
+  };
+  win.on("move", schedule);
+  win.on("resize", schedule);
+  win.on("maximize", schedule);
+  win.on("unmaximize", schedule);
+  win.on("close", () => {
+    if (timer) clearTimeout(timer);
+    save();
+  });
+}
+
+/**
+ * Rate-limited auto-reload for a window whose renderer crashed or whose page
+ * failed to load. Gives up after 3 reloads a minute so a page that crashes on
+ * every load doesn't spin; the operator is told either way.
+ */
+function attachAutoReload(
+  win: BrowserWindow,
+  target: string,
+  reloadUrl: () => string,
+): void {
+  const limiter = new RateLimiter(3, 60_000);
+  let pending: NodeJS.Timeout | null = null;
+  const recover = (reason: string) => {
+    if (appQuitting || win.isDestroyed() || pending) return;
+    if (!limiter.tryAcquire(Date.now())) {
+      console.error(`[desktop] ${target}: giving up auto-reload (${reason})`);
+      notifyOperator({ kind: "window-reload-gave-up", target, reason });
+      return;
+    }
+    console.warn(`[desktop] ${target}: auto-reloading after ${reason}`);
+    pending = setTimeout(() => {
+      pending = null;
+      if (win.isDestroyed()) return;
+      void win.loadURL(reloadUrl()).catch(() => undefined);
+      notifyOperator({ kind: "window-reloaded", target, reason });
+    }, 1000);
+  };
+  win.webContents.on("render-process-gone", (_e, details) => {
+    if (shouldReloadAfterGone(details.reason)) recover(`renderer ${details.reason}`);
+  });
+  win.webContents.on("did-fail-load", (_e, code, description, _url, isMainFrame) => {
+    if (isRecoverableLoadFailure(code, isMainFrame)) recover(`load failed: ${description} (${code})`);
+  });
+  win.on("closed", () => {
+    if (pending) clearTimeout(pending);
+  });
+}
+
 function createOperatorWindow(): BrowserWindow {
+  const bounds = initialOperatorBounds();
   const win = new BrowserWindow({
-    width: 1600,
-    height: 1000,
-    minWidth: 1200,
-    minHeight: 700,
+    width: bounds?.width ?? 1600,
+    height: bounds?.height ?? 1000,
+    ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
+    minWidth: OPERATOR_MIN.width,
+    minHeight: OPERATOR_MIN.height,
     title: "OverlaySys",
-    backgroundColor: "#0c0d10",
+    // Matches --bg in apps/operator/src/app/globals.css so there's no flash
+    // of a different colour before the first paint.
+    backgroundColor: "#0a0e17",
     autoHideMenuBar: false,
     // macOS: prefer "simple" (pre-Lion) fullscreen — covers the whole
     // screen incl. menu bar, no separate Space, no animated transition.
@@ -595,6 +850,10 @@ function createOperatorWindow(): BrowserWindow {
       `[desktop] operator render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`,
     );
   });
+  attachAutoReload(win, "operator", operatorUrl);
+
+  if (bounds?.maximized) win.maximize();
+  trackOperatorBounds(win);
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     const sameOrigin =
@@ -614,9 +873,56 @@ function createOperatorWindow(): BrowserWindow {
       if (!w.isDestroyed()) w.close();
     }
     channelWindows.clear();
+    channelWindowDisplays.clear();
+    updatePowerSaveBlocker();
   });
 
   return win;
+}
+
+// ── Keep outputs awake ───────────────────────────────────────────────────────
+//
+// A render PC or operator laptop that dims or sleeps mid-service takes every
+// output with it. Hold a display-sleep blocker while any output is open.
+
+let powerSaveId: number | null = null;
+
+function updatePowerSaveBlocker(): void {
+  const anyOpen = [...channelWindows.values()].some((w) => !w.isDestroyed());
+  if (anyOpen && powerSaveId === null) {
+    powerSaveId = powerSaveBlocker.start("prevent-display-sleep");
+    console.log("[desktop] display sleep blocked (outputs open)");
+  } else if (!anyOpen && powerSaveId !== null) {
+    if (powerSaveBlocker.isStarted(powerSaveId)) powerSaveBlocker.stop(powerSaveId);
+    powerSaveId = null;
+    console.log("[desktop] display sleep allowed (no outputs open)");
+  }
+}
+
+// ── Display removal ──────────────────────────────────────────────────────────
+
+/** Display each open output was placed on, for the display-removed guard. */
+const channelWindowDisplays = new Map<string, number>();
+
+/**
+ * Close outputs whose display was unplugged: the OS would otherwise move a
+ * fullscreen, always-on-top output onto the operator's screen. Auto-open
+ * channels come back through the display-added path when it's reconnected.
+ */
+function closeOutputsOnRemovedDisplays(trigger: string): void {
+  const attached = screen.getAllDisplays().map((d) => d.id);
+  const outputs = [...channelWindows.entries()]
+    .filter(([, w]) => !w.isDestroyed())
+    .map(([channelId]) => ({ channelId, displayId: channelWindowDisplays.get(channelId) }));
+  for (const channelId of outputsOnRemovedDisplays(outputs, attached)) {
+    const w = channelWindows.get(channelId);
+    if (!w || w.isDestroyed()) continue;
+    console.warn(`[desktop] ${trigger}: closing output "${channelId}" — its display is gone`);
+    // Hide first so it never paints over the console while closing.
+    w.hide();
+    w.close();
+    notifyOperator({ kind: "output-hidden", channelId, reason: "display disconnected" });
+  }
 }
 
 function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {}): BrowserWindow {
@@ -625,10 +931,11 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   // Look up the target display so we can position the window on it
   // BEFORE any fullscreen transition. Electron honors the screen the
   // window is currently on at the moment fullscreen is engaged.
-  const targetDisplay =
-    (opts.displayId !== undefined
+  const requestedDisplay =
+    opts.displayId !== undefined
       ? screen.getAllDisplays().find((d) => d.id === opts.displayId)
-      : undefined) ?? screen.getPrimaryDisplay();
+      : undefined;
+  const targetDisplay = requestedDisplay ?? screen.getPrimaryDisplay();
 
   // Cascade successive windows so a second output opened on the same
   // display doesn't land exactly on top of the first (program and alpha
@@ -729,6 +1036,7 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
   win.webContents.on("unresponsive", () => {
     console.warn(`[desktop] channel "${channelId}" renderer unresponsive`);
   });
+  attachAutoReload(win, channelId, () => rendererChannelUrl(channelId));
   win.webContents.on("console-message", (_e, level, message, line, sourceId) => {
     // Info/debug chatter (GSAP, React) is noise in a boot log; warnings
     // and errors are exactly what a "why is this output black" report
@@ -745,11 +1053,20 @@ function createChannelWindow(channelId: string, opts: ChannelWindowOptions = {})
     // async "closed" event would evict the new window's entry.
     if (channelWindows.get(channelId) === win) {
       channelWindows.delete(channelId);
+      channelWindowDisplays.delete(channelId);
     }
-    operatorWindow?.webContents.send("overlaysys:channel-window-closed", channelId);
+    updatePowerSaveBlocker();
+    if (operatorWindow && !operatorWindow.isDestroyed()) {
+      operatorWindow.webContents.send("overlaysys:channel-window-closed", channelId);
+    }
   });
 
   channelWindows.set(channelId, win);
+  // Only a window placed on an explicitly chosen screen is "pinned"; one
+  // that fell back to the primary stays put if displays change.
+  if (requestedDisplay) channelWindowDisplays.set(channelId, requestedDisplay.id);
+  else channelWindowDisplays.delete(channelId);
+  updatePowerSaveBlocker();
   operatorWindow?.webContents.send("overlaysys:channel-window-opened", channelId);
   return win;
 }
@@ -901,8 +1218,97 @@ function buildMenu(): void {
           : ([{ role: "close" }] as Electron.MenuItemConstructorOptions[])),
       ],
     },
+    {
+      role: "help",
+      submenu: [
+        { label: "About OverlaySys", click: () => void showAbout() },
+        { label: "Keyboard Shortcuts", click: () => void showShortcuts() },
+        { type: "separator" },
+        { label: "Reveal Logs", click: () => revealLogs() },
+        {
+          label: "Copy Diagnostics",
+          click: () => {
+            clipboard.writeText(formatDiagnostics(collectDiagnostics()));
+            void showBox({
+              type: "info",
+              message: "Diagnostics copied",
+              detail: "Paste them into your support message.",
+            });
+          },
+        },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ── Help & diagnostics ───────────────────────────────────────────────────────
+
+/** Native message box, parented to the console when it exists. */
+function showBox(
+  opts: Electron.MessageBoxOptions,
+): Promise<Electron.MessageBoxReturnValue> {
+  const parent = operatorWindow && !operatorWindow.isDestroyed() ? operatorWindow : null;
+  return parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts);
+}
+
+function collectDiagnostics(): DiagnosticsInfo {
+  const primaryId = screen.getPrimaryDisplay().id;
+  return {
+    appVersion: app.getVersion(),
+    electron: process.versions.electron ?? "",
+    node: process.versions.node,
+    chrome: process.versions.chrome ?? "",
+    platform: process.platform,
+    arch: process.arch,
+    isDev,
+    serverPort,
+    bindHost: isDev ? "dev server" : serverBindHost,
+    lanAddresses: lanIPv4Addresses(os.networkInterfaces()),
+    displays: screen.getAllDisplays().map((d) => ({
+      id: d.id,
+      label: d.label,
+      bounds: { ...d.bounds },
+      scaleFactor: d.scaleFactor,
+      internal: d.internal,
+      primary: d.id === primaryId,
+    })),
+    openOutputs: [...channelWindows.entries()]
+      .filter(([, w]) => !w.isDestroyed())
+      .map(([id]) => id),
+    logPath: bootLogPath() ?? "(unavailable)",
+  };
+}
+
+function revealLogs(): void {
+  const log = bootLogPath();
+  if (!log) return;
+  if (fs.existsSync(log)) shell.showItemInFolder(log);
+  else void shell.openPath(path.dirname(log));
+}
+
+async function showAbout(): Promise<void> {
+  const d = collectDiagnostics();
+  await showBox({
+    type: "info",
+    title: "About OverlaySys",
+    message: `OverlaySys ${d.appVersion}`,
+    detail: `Electron ${d.electron} · Node ${d.node} · Chrome ${d.chrome}\nServer port ${d.serverPort}`,
+    buttons: ["OK", "Copy Diagnostics"],
+    defaultId: 0,
+  }).then(({ response }) => {
+    if (response === 1) clipboard.writeText(formatDiagnostics(d));
+  });
+}
+
+async function showShortcuts(): Promise<void> {
+  await showBox({
+    type: "none",
+    title: "Keyboard Shortcuts",
+    message: "Keyboard shortcuts",
+    detail: keyboardShortcutsText(process.platform === "darwin"),
+    buttons: ["OK"],
+  });
 }
 
 // ── IPC ──────────────────────────────────────────────────────────────────────
@@ -972,6 +1378,16 @@ function registerIpc(): void {
   }));
 
   ipcMain.handle("overlaysys:get-displays", () => currentDisplaysSnapshot());
+
+  // Version, port, bind host, LAN addresses, displays — the operator's
+  // Connection settings page and Account version line read this.
+  ipcMain.handle("overlaysys:get-diagnostics", (): DiagnosticsInfo => collectDiagnostics());
+  ipcMain.handle("overlaysys:copy-diagnostics", (): string => {
+    const text = formatDiagnostics(collectDiagnostics());
+    clipboard.writeText(text);
+    return text;
+  });
+  ipcMain.handle("overlaysys:reveal-logs", () => revealLogs());
 
   ipcMain.handle("overlaysys:get-channel-window-prefs", (): WindowPrefsFile => {
     return loadPrefs(prefsFilePath());
@@ -1154,13 +1570,14 @@ async function ensureMicrophoneAccess(): Promise<void> {
   }
 }
 
-async function boot(): Promise<void> {
-  initBootLog();
-  console.log(
-    `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
-  );
-  await ensureMicrophoneAccess();
-  if (!isDev) {
+/**
+ * Start the embedded server. On failure, tell the operator why and let them
+ * Retry, open the log folder, or Quit — instead of the app silently vanishing.
+ * Resolves true once the server is healthy, false if the user chose Quit.
+ */
+async function startServerWithRecovery(): Promise<boolean> {
+  for (;;) {
+    let reason: string;
     try {
       const { port } = await spawnServer();
       serverPort = port;
@@ -1168,8 +1585,46 @@ async function boot(): Promise<void> {
       const ok = await pingHealth(serverHost, serverPort, 5000);
       if (!ok) throw new Error("server health check failed");
       console.log(`[desktop] server ready on ${serverHost}:${serverPort}`);
+      return true;
     } catch (err) {
       console.error("[desktop] server failed to start:", err);
+      reason = err instanceof Error ? err.message : String(err);
+      // A child that started but failed its health check is still running.
+      killServer();
+    }
+    for (;;) {
+      const { response } = await dialog.showMessageBox({
+        type: "error",
+        title: "OverlaySys couldn't start",
+        message: "The OverlaySys server failed to start.",
+        detail:
+          `${reason}\n\nThe log (boot.log) has the details. ` +
+          "If another copy of OverlaySys or another app is using port " +
+          `${process.env["PORT"] ?? "4000"}, close it and choose Retry.`,
+        buttons: ["Retry", "Open Log Folder", "Quit"],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (response === 0) break; // retry
+      if (response === 1) {
+        revealLogs();
+        continue; // keep the dialog up
+      }
+      return false;
+    }
+  }
+}
+
+async function boot(): Promise<void> {
+  initBootLog();
+  console.log(
+    `[desktop] boot starting — platform=${process.platform} arch=${process.arch} electron=${process.versions.electron} node=${process.versions.node} execPath=${process.execPath} resourcesPath=${process.resourcesPath} isDev=${isDev}`,
+  );
+  await ensureMicrophoneAccess();
+  if (!isDev) {
+    const started = await startServerWithRecovery();
+    if (!started) {
       app.quit();
       return;
     }
@@ -1245,11 +1700,40 @@ async function boot(): Promise<void> {
       console.error("[desktop] display-added auto-open failed:", err);
     }
   });
+
+  // A projector/TV unplugged mid-service: take its outputs down before the
+  // OS drops them onto the console. Metrics changes (resolution/arrangement)
+  // re-run the same check in case a display id was swapped out.
+  screen.on("display-removed", () => closeOutputsOnRemovedDisplays("display-removed"));
+  screen.on("display-metrics-changed", () =>
+    closeOutputsOnRemovedDisplays("display-metrics-changed"),
+  );
 }
 
-app.whenReady().then(boot);
+// ── Single instance ──────────────────────────────────────────────────────────
+//
+// A second launch must never touch the first one's server: boot() reaps the
+// PID in server.pid, which would kill the live server mid-service. The second
+// process quits before doing anything and the first focuses its console.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  console.log("[desktop] another instance is running — focusing it and exiting");
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const w = operatorWindow;
+    if (!w || w.isDestroyed()) return;
+    if (w.isMinimized()) w.restore();
+    w.show();
+    w.focus();
+  });
+
+  app.whenReady().then(boot);
+}
 
 app.on("activate", () => {
+  if (!gotSingleInstanceLock) return;
   if (BrowserWindow.getAllWindows().length === 0 && !isDev) {
     operatorWindow = createOperatorWindow();
   }
@@ -1260,7 +1744,12 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  appQuitting = true;
   killServer();
+  if (powerSaveId !== null && powerSaveBlocker.isStarted(powerSaveId)) {
+    powerSaveBlocker.stop(powerSaveId);
+    powerSaveId = null;
+  }
 });
 
 process.on("exit", () => {

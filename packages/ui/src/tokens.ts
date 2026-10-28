@@ -5,7 +5,9 @@ export const space = { 0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const;
 // 10px base radius family, matching Ovation OS (--radius: 0.625rem).
 export const radius = { sm: 6, md: 8, lg: 10, xl: 14, pill: 999 } as const;
 
-export const fontSize = { xs: 11, sm: 12, md: 13, base: 14, lg: 16 } as const;
+// 2xs (10) is the floor for dense console labels (badges, meta lines); use xs
+// (11) for small captions. The ~150 inline 9–11px sizes should migrate here.
+export const fontSize = { "2xs": 10, xs: 11, sm: 12, md: 13, base: 14, lg: 16 } as const;
 
 export const fontWeight = { regular: 400, medium: 500, semibold: 600 } as const;
 
@@ -31,11 +33,17 @@ export const colors = {
   brand: "var(--brand)",
   brandHover: "var(--brand-hover)",
   brandSubtle: "var(--brand-subtle)",
+  /** Brand colour for TEXT and icons on dark surfaces (AA on every surface). */
+  brandText: "var(--brand-text)",
   ok: "var(--ok)",
   okSubtle: "var(--ok-subtle)",
   warn: "var(--warn)",
   danger: "var(--danger)",
   onair: "var(--onair)",
+  /** On-air as a FILL under white text (AA); --onair stays for borders/glows. */
+  onairFill: "var(--onair-fill)",
+  /** Brand as a FILL under white text (AA). */
+  brandFill: "var(--brand-fill)",
   gradBrand: "var(--grad-brand)",
 
   // ── Backward-compat aliases — DO NOT REMOVE.

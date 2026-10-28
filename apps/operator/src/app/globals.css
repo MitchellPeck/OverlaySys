@@ -12,17 +12,24 @@
   /* ── Text ── */
   --text: #f5f7fb;
   --text-dim: #9aa6bd;
-  --text-muted: #6b7688;
+  /* ≥4.5:1 on every surface incl. --surface-3 (4.67:1); was #6b7688 (3.1:1). */
+  --text-muted: #8a95a8;
 
   /* ── Brand & state ── */
   --brand: #6366f1;
   --brand-hover: #7c7ff5;
   --brand-subtle: rgba(99, 102, 241, 0.16);
+  /* Brand used as text/icon colour: #6366f1 is only 3.2–3.9:1 on surfaces. */
+  --brand-text: #818cf8;
+  /* Brand as a fill under white text: 5.3:1 (#6366f1 is 4.47:1). */
+  --brand-fill: #5558e8;
   --ok: #10b981;
   --ok-subtle: rgba(16, 185, 129, 0.16);
   --warn: #f59e0b;
   --danger: #ef4444;
   --onair: #ff3341;
+  /* On-air fill under white text (5.1:1); white on --onair is 3.6:1. */
+  --onair-fill: #d61f2c;
 
   /* ── Signature gradient (logo / brand accents) ── */
   --grad-brand: linear-gradient(135deg, #6366f1, #10b981);
@@ -85,3 +92,40 @@ tr .row-actions { opacity: 0; transition: opacity 120ms; }
 [role="listitem"]:focus-within .row-actions,
 tr:hover .row-actions,
 tr:focus-within .row-actions { opacity: 1; }
+
+/* Respect the OS "reduce motion" setting everywhere in the console. Output
+   windows (apps/renderer) are unaffected — this stylesheet is operator-only. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Shell layout (app/shell). Sizes that change with the viewport live here,
+      not inline, because inline styles can't respond to media queries. ── */
+.shell-topbar { gap: 12px; }
+.shell-topbar-right { gap: 12px; min-width: 0; }
+.shell-title {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell-context { min-width: 0; overflow: hidden; white-space: nowrap; }
+.shell-subnav { width: 168px; padding: 12px 8px; }
+
+/* Under ~1366px (13" laptops, 1280-wide projector feeds) the shell must not
+   push content off-screen: tighten gaps, collapse the sub-nav to icons and
+   drop the healthy-state labels next to status dots. */
+@media (max-width: 1365px) {
+  .shell-topbar { gap: 8px; }
+  .shell-topbar-right { gap: 8px; }
+  .shell-title { max-width: 18ch; }
+  .shell-subnav { width: 52px; padding: 12px 6px; }
+  .shell-subnav-label { display: none; }
+  .shell-status-label { display: none; }
+}

@@ -13,7 +13,27 @@ interface NetworkInfo {
   addresses: string[];
 }
 
-/** "Open on another device" links for a stage channel. */
+// One /api/network request shared by every channel row on the page.
+let networkInfoPromise: Promise<NetworkInfo | null> | null = null;
+function fetchNetworkInfo(): Promise<NetworkInfo | null> {
+  if (!networkInfoPromise) {
+    networkInfoPromise = fetch(`${httpBase()}/api/network`)
+      .then((r) => (r.ok ? (r.json() as Promise<NetworkInfo>) : null))
+      .catch(() => null)
+      .then((j) => {
+        // Don't cache a failure — the next mount retries.
+        if (!j) networkInfoPromise = null;
+        return j;
+      });
+  }
+  return networkInfoPromise;
+}
+
+/**
+ * "Open on another device" links for any channel kind: a clean LAN URL (no
+ * debug flag) with Copy and a QR code, for OBS on another PC, a stage
+ * display or a tablet.
+ */
 export function LanStageLinks({ channelId, rendererBase }: { channelId: string; rendererBase: string }) {
   const cloud = isCloudMode();
   const [info, setInfo] = useState<NetworkInfo | null | undefined>(undefined);
@@ -21,10 +41,9 @@ export function LanStageLinks({ channelId, rendererBase }: { channelId: string; 
   useEffect(() => {
     if (cloud) return;
     let cancelled = false;
-    fetch(`${httpBase()}/api/network`)
-      .then((r) => (r.ok ? (r.json() as Promise<NetworkInfo>) : Promise.reject(new Error(String(r.status)))))
-      .then((j) => !cancelled && setInfo(j))
-      .catch(() => !cancelled && setInfo(null));
+    void fetchNetworkInfo().then((j) => {
+      if (!cancelled) setInfo(j);
+    });
     return () => {
       cancelled = true;
     };
@@ -83,8 +102,10 @@ function LanLink({ url }: { url: string }) {
         <code ref={textRef} style={{ fontFamily: "ui-monospace, monospace", color: colors.accent2 }}>
           {url}
         </code>
-        <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
-        <Button onClick={() => setShowQr((v) => !v)}>{showQr ? "Hide QR" : "QR"}</Button>
+        <Button size="sm" onClick={copy}>{copied ? "Copied" : "Copy URL"}</Button>
+        <Button size="sm" onClick={() => setShowQr((v) => !v)} aria-expanded={showQr}>
+          {showQr ? "Hide QR" : "QR code"}
+        </Button>
         {hint && <span>Press ⌘C / Ctrl+C to copy</span>}
       </div>
       {showQr && (
