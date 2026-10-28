@@ -91,9 +91,17 @@ describe("shortcutHint", () => {
 
   it("keeps the song hint in song-live even with a row selected", () => {
     const h = shortcutHint({
-      kind: "song-live", channel: "preview", session, selection: { kind: "scripture", row: show.rows[2] as never },
+      kind: "song-live", channel: "program", session, selection: { kind: "scripture", row: show.rows[2] as never },
     });
     expect(h).toContain("Space next");
+  });
+
+  it("with the song only cued on PVW, describes the selection's keys instead", () => {
+    const h = shortcutHint({
+      kind: "song-live", channel: "preview", session, selection: { kind: "graphic", row: show.rows[0] as never },
+    });
+    expect(h).not.toContain("Space next");
+    expect(h).toContain("Space take");
   });
 
   it("says quick take is button-driven", () => {

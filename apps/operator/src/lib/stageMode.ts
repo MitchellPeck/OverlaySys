@@ -59,7 +59,10 @@ function selectionModeFor(input: StageInput): StageMode {
 export function shortcutHint(mode: StageMode): string {
   switch (mode.kind) {
     case "song-live":
-      return "Space next · Shift+Space previous · C/B/T chorus/bridge/tag · 1–9, 0 verse · . blank · Esc end song";
+      // Song keys only drive a program session; with the song merely cued on
+      // preview, keys act on the rundown selection.
+      if (mode.channel !== "program") return `Song cued on PVW (keys act on the selection) · ${shortcutHint(mode.selection)}`;
+      return "Space next · Shift+Space previous · C/B/T next chorus/bridge/tag · 1–9, 0 verse · . blank · Esc end song";
     case "quick-take":
       return "Keys act on the rundown selection · use the buttons above for Quick take";
     case "scripture":
