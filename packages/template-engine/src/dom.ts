@@ -165,7 +165,7 @@ function shadowToFilter(shadow: Shadow, data: Record<string, string>): string {
  * clipBy reveal-edge feature so a layer can locate its referenced clip
  * source regardless of how deeply nested it is in groups.
  */
-function indexLayers(layers: Layer[]): Map<string, Layer> {
+export function indexLayers(layers: Layer[]): Map<string, Layer> {
   const out = new Map<string, Layer>();
   function visit(l: Layer): void {
     out.set(l.id, l);
@@ -173,6 +173,36 @@ function indexLayers(layers: Layer[]): Map<string, Layer> {
   }
   for (const l of layers) visit(l);
   return out;
+}
+
+/** A box in the clipped layer's parent space. */
+export type ClipBox = { x: number; y: number; w: number; h: number };
+
+/**
+ * A clipBy reference's visible box: its declared position plus any animated
+ * translate (`dx`/`dy`), at size `w`×`h` scaled about its anchor. Rotation is
+ * ignored — the clip follows the unrotated box.
+ */
+export function revealRefBox(
+  t: Transform,
+  live: { dx: number; dy: number; w: number; h: number; scaleX: number; scaleY: number },
+): ClipBox {
+  const w = live.w * live.scaleX;
+  const h = live.h * live.scaleY;
+  const x = t.x + live.dx + t.anchorX * (live.w - w);
+  const y = t.y + live.dy + t.anchorY * (live.h - h);
+  // A negative scale flips the box across the anchor; normalise it.
+  return {
+    x: Math.min(x, x + w),
+    y: Math.min(y, y + h),
+    w: Math.abs(w),
+    h: Math.abs(h),
+  };
+}
+
+/** The reference's box at its static (un-animated) pose. */
+function staticRefBox(t: Transform): ClipBox {
+  return revealRefBox(t, { dx: 0, dy: 0, w: t.w ?? 0, h: t.h ?? 0, scaleX: t.scaleX, scaleY: t.scaleY });
 }
 
 /**
@@ -191,20 +221,16 @@ function indexLayers(layers: Layer[]): Map<string, Layer> {
  * so coordinates are in the parent's local box. We need `parentW`/`parentH`
  * in pixels because CSS `path()` doesn't accept percentages.
  *
- * Scale/rotation/anchor on the reference are ignored — we use the
- * declared box.
+ * `box` is the reference's box (see revealRefBox); the mount re-runs this
+ * every frame with the animated box so the clip follows an animated reference.
  */
-function buildClipPathForReveal(
-  ref: Layer,
+export function revealClipPath(
+  box: ClipBox,
   hide: "inside" | "outside" | "above" | "below" | "left" | "right",
   parentW: number,
   parentH: number,
 ): string {
-  const t = ref.transform;
-  const x = t.x;
-  const y = t.y;
-  const w = t.w ?? 0;
-  const h = t.h ?? 0;
+  const { x, y, w, h } = box;
   switch (hide) {
     case "inside": {
       // Outer rect (parent box) + inner rect (reference box) with the
@@ -468,8 +494,11 @@ function buildLayer(
     wrapper.style.width = "100%";
     wrapper.style.height = "100%";
     wrapper.style.pointerEvents = "none";
-    wrapper.style.clipPath = buildClipPathForReveal(
-      ref,
+    // The mount re-derives the clip from these when the reference animates.
+    wrapper.dataset["clipW"] = String(parentSize.w);
+    wrapper.dataset["clipH"] = String(parentSize.h);
+    wrapper.style.clipPath = revealClipPath(
+      staticRefBox(ref.transform),
       layer.clipBy!.hide,
       parentSize.w,
       parentSize.h,

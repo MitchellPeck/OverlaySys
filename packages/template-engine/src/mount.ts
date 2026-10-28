@@ -6,6 +6,9 @@ import {
   applyTransform,
   applyVisibility,
   buildTemplateDom,
+  indexLayers,
+  revealClipPath,
+  revealRefBox,
   updateTemplateData,
   type LayerNodeMap,
 } from "./dom";
@@ -327,6 +330,48 @@ export function mountTemplate(
     return p;
   }
 
+  // clipBy wrappers bake the reference's static box into their clip-path at
+  // build. When a timeline moves/sizes/scales the reference, re-derive the
+  // clip from its animated values so the reveal edge follows it. The
+  // wrappers only change on a remount, so collect them once.
+  const revealClips = Array.from(root.querySelectorAll<HTMLElement>("[data-clip-for]"));
+  let clipIndex: { for: Template; layers: Map<string, Layer> } | null = null;
+  // Compared against what we last wrote: the browser normalises style.clipPath.
+  const lastClip = new Map<HTMLElement, string>();
+  function syncRevealClips(): void {
+    if (revealClips.length === 0) return;
+    if (clipIndex?.for !== current) clipIndex = { for: current, layers: indexLayers(current.layers) };
+    const layers = clipIndex.layers;
+    for (const wrapper of revealClips) {
+      const layer = layers.get(wrapper.dataset["clipFor"] ?? "");
+      const ref = layer?.clipBy && layers.get(layer.clipBy.layerId);
+      const refEl = ref && nodes.get(ref.id);
+      if (!layer?.clipBy || !ref || !refEl) continue;
+      const num = (v: unknown, fallback: number) => {
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : fallback;
+      };
+      const box = revealRefBox(ref.transform, {
+        dx: num(gsap.getProperty(refEl, "x"), 0),
+        dy: num(gsap.getProperty(refEl, "y"), 0),
+        // A w/h track writes the inline size; otherwise it's the declared one.
+        w: num(refEl.style.width, ref.transform.w ?? 0),
+        h: num(refEl.style.height, ref.transform.h ?? 0),
+        scaleX: num(gsap.getProperty(refEl, "scaleX"), ref.transform.scaleX),
+        scaleY: num(gsap.getProperty(refEl, "scaleY"), ref.transform.scaleY),
+      });
+      const clip = revealClipPath(
+        box,
+        layer.clipBy.hide,
+        Number(wrapper.dataset["clipW"]),
+        Number(wrapper.dataset["clipH"]),
+      );
+      if (lastClip.get(wrapper) === clip) continue;
+      wrapper.style.clipPath = clip;
+      lastClip.set(wrapper, clip);
+    }
+  }
+
   function applyScrub(which: "in" | "out", time: number): void {
     // Both timelines target the same DOM. The active one is seeked; the
     // other is parked at the boundary that represents the design pose so
@@ -336,6 +381,7 @@ export function mountTemplate(
     const tl = which === "in" ? inTl : outTl;
     tl.pause();
     tl.seek(Math.max(0, Math.min(time, tl.duration())));
+    syncRevealClips();
   }
 
   function fieldsMap(t: Template): Map<string, Field> {
@@ -386,10 +432,11 @@ export function mountTemplate(
         lastWritten.set(b.el, next);
       }
     }
+    syncRevealClips();
     rafId = requestAnimationFrame(tick);
   }
   function startTicker(): void {
-    if (rafId != null || timeBindings.length === 0) return;
+    if (rafId != null || (timeBindings.length === 0 && revealClips.length === 0)) return;
     // Write once synchronously so the first frame paints correct values
     // instead of whatever resolveBinding produced from the raw anchor string.
     tick();
@@ -481,6 +528,7 @@ export function mountTemplate(
       const tl = which === "in" ? inTl : outTl;
       tl.pause();
       tl.seek(Math.max(0, Math.min(time, tl.duration())));
+      syncRevealClips();
     },
     scrub(which, time) {
       lastScrub = { which, time };
@@ -519,6 +567,7 @@ export function mountTemplate(
       inTl = buildGsapTimeline(next.timelines.in, nodes, { paused: true });
       outTl = buildGsapTimeline(next.timelines.out, nodes, { paused: true });
       if (lastScrub) applyScrub(lastScrub.which, lastScrub.time);
+      else syncRevealClips();
       fitText();
       return true;
     },
