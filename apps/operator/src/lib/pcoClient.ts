@@ -71,12 +71,17 @@ export interface ImportPlanRequest {
   items: ImportItemConfig[];
   defaultLyricTemplateId?: string;
   defaultGraphicTemplateId?: string;
+  /** Existing-show target: move this plan's rows into plan order. */
+  reorderToPlan?: boolean;
 }
 
 export interface ImportPlanResult {
   ok: boolean;
   showId?: string;
   counts: { rows: number; songsCreated: number; songsLinked: number; songsUpdated: number };
+  /** Rows from this plan whose PCO item has been removed (left in the show). Absent on older servers. */
+  removedRows?: { rowId: string; itemId: string; label?: string }[];
+  reordered?: boolean;
   warnings: string[];
   errors: { itemId: string; message: string }[];
 }
@@ -121,7 +126,12 @@ export async function listPlans(serviceTypeId: string): Promise<PcoPlan[]> {
 export async function getPlanItems(
   serviceTypeId: string,
   planId: string,
-): Promise<{ items: PcoPlanItem[]; previews: ItemPreview[] }> {
+): Promise<{
+  items: PcoPlanItem[];
+  previews: ItemPreview[];
+  /** itemId → shows already holding a row imported from that item. Absent on older servers. */
+  imported?: Record<string, { showId: string; showName: string }[]>;
+}> {
   return get(
     `/api/pco/plans/${encodeURIComponent(planId)}/items?serviceTypeId=${encodeURIComponent(serviceTypeId)}`,
   );
