@@ -161,6 +161,40 @@ describe("dispatchAction — hotcard", () => {
     });
     expect(r.messages).toEqual([]);
   });
+
+  it("cue_hotcard cues to preview even when the default output is stage1", () => {
+    const s = apply(initialState(), {
+      type: "hotcard",
+      hotcard: { id: "h1", name: "L3", templateId: "tpl-1", data: { a: "b" }, channelHint: "stage1" },
+    });
+    const r = dispatchAction(s, "cue_hotcard", { hotcardId: "h1" });
+    expect(r.messages).toEqual([
+      { type: "cue", channel: "preview", templateId: "tpl-1", data: { a: "b" } },
+    ]);
+  });
+
+  it("fire_hotcard with no channel goes to the card's default output, else program", () => {
+    const s = apply(initialState(), {
+      type: "hotcard",
+      hotcard: { id: "h1", name: "L3", templateId: "tpl-1", data: {}, channelHint: "stage1" },
+    });
+    expect(dispatchAction(s, "fire_hotcard", { hotcardId: "h1", channel: "" }).messages[0])
+      .toMatchObject({ type: "take", channel: "stage1" });
+    const s2 = apply(initialState(), {
+      type: "hotcard",
+      hotcard: { id: "h2", name: "L4", templateId: "tpl-1", data: {} },
+    });
+    expect(dispatchAction(s2, "fire_hotcard", { hotcardId: "h2" }).messages[0])
+      .toMatchObject({ channel: "program" });
+  });
+
+  it("a cache miss emits no message and one warn", () => {
+    for (const id of ["fire_hotcard", "cue_hotcard"] as const) {
+      const r = dispatchAction(initialState(), id, { hotcardId: "h9" });
+      expect(r.messages).toEqual([]);
+      expect(r.warnings).toEqual(["Hotcard h9 isn't loaded yet; try again in a moment"]);
+    }
+  });
 });
 
 describe("dispatchAction — song actions", () => {

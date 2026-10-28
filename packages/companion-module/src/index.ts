@@ -156,6 +156,9 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
     if (mutatesDropdownSources(evt)) {
       this.refreshDefinitions();
     }
+    if (evt.type === "hotcard_list" || evt.type === "hotcard") {
+      this.setPresetDefinitions(presetDefinitions(this.state));
+    }
     if (mutatesRundownVariables(evt, this.state)) {
       this.setVariableDefinitions(
         variableDefinitions(this.channels, this.state),
@@ -180,7 +183,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   private refreshAll(): void {
     this.refreshDefinitions();
     this.setVariableDefinitions(variableDefinitions(this.channels, this.state));
-    this.setPresetDefinitions(presetDefinitions());
+    this.setPresetDefinitions(presetDefinitions(this.state));
     this.refreshDynamic();
   }
 
@@ -243,7 +246,8 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
       return;
     }
 
-    const { messages, localEvents } = dispatchAction(this.state, id, options);
+    const { messages, localEvents, warnings } = dispatchAction(this.state, id, options);
+    for (const w of warnings ?? []) this.log("warn", w);
     for (const e of localEvents) this.applyEvent(e);
     for (const m of messages) this.connection?.send(m);
 

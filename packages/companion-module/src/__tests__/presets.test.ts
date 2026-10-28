@@ -45,3 +45,21 @@ describe("presets", () => {
     expect(fb.every((f) => f.options.rowIndex === 3)).toBe(true);
   });
 });
+
+describe("Hotcards presets", () => {
+  it("has one fire_hotcard button per cached card", () => {
+    const state = {
+      hotcards: [
+        { id: "h1", name: "Lower third", projectId: "p", templateId: "t" },
+        { id: "h2", name: "Welcome", projectId: "p", templateId: "t" },
+      ],
+    };
+    const p = Object.values(presetDefinitions(state)).filter((x: any) => x.category === "Hotcards") as any[];
+    expect(p).toHaveLength(2);
+    expect(p[0].steps[0].down[0]).toMatchObject({ actionId: "fire_hotcard", options: { hotcardId: "h1" } });
+    expect(p[0].feedbacks[0]).toMatchObject({ feedbackId: "hotcard_on_air", style: { bgcolor: 0xe5484d } });
+  });
+  it("has none without hotcards", () => {
+    expect(Object.values(presetDefinitions()).some((x: any) => x.category === "Hotcards")).toBe(false);
+  });
+});

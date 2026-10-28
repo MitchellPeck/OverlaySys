@@ -1,5 +1,6 @@
 import type { CompanionPresetDefinitions } from "@companion-module/base";
 import { RUNDOWN_LIMIT } from "./variables";
+import type { CompanionState } from "./types";
 
 const green = 0x00aa00;
 const red = 0xaa0000;
@@ -7,8 +8,30 @@ const amber = 0xcc8800;
 const dark = 0x222222;
 const white = 0xffffff;
 
-export function presetDefinitions(): CompanionPresetDefinitions {
+export function presetDefinitions(
+  state?: Pick<CompanionState, "hotcards">,
+): CompanionPresetDefinitions {
   const presets: CompanionPresetDefinitions = {};
+
+  // One button per hotcard in the current project's list.
+  for (const h of state?.hotcards ?? []) {
+    presets[`hotcard_${h.id}`] = {
+      type: "button",
+      category: "Hotcards",
+      name: `Hotcard: ${h.name}`,
+      style: { text: h.name, size: "auto", color: white, bgcolor: dark },
+      steps: [
+        { down: [{ actionId: "fire_hotcard", options: { hotcardId: h.id, channel: "" } }], up: [] },
+      ],
+      feedbacks: [
+        {
+          feedbackId: "hotcard_on_air",
+          options: { hotcardId: h.id, channel: "program" },
+          style: { bgcolor: 0xe5484d },
+        },
+      ],
+    };
+  }
 
   presets["take_pvw_pgm"] = {
     type: "button",

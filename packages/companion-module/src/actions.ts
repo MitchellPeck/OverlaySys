@@ -22,6 +22,7 @@ export type ActionId =
   | "cue_template"
   | "take_pvw_to_pgm"
   | "fire_hotcard"
+  | "cue_hotcard"
   | "load_show"
   | "clear_loaded_show"
   | "select_next_show"
@@ -90,6 +91,8 @@ export type ActionOptions = Record<
 export interface DispatchResult {
   messages: ClientMessage[];
   localEvents: LocalEvent[];
+  /** Operator-facing warnings the module edge logs at "warn". */
+  warnings?: string[];
 }
 
 function parseDataField(s: string | undefined | null): Record<string, string> {
@@ -218,6 +221,7 @@ export function dispatchAction(
 ): DispatchResult {
   const messages: ClientMessage[] = [];
   const localEvents: LocalEvent[] = [];
+  const warnings: string[] = [];
 
   const str = (k: string, dflt = ""): string => String(opts[k] ?? dflt);
   const num = (k: string, dflt = 0): number =>
@@ -282,10 +286,24 @@ export function dispatchAction(
         toChannel: str("toChannel", "program"),
       });
       break;
-    case "fire_hotcard": {
+    case "fire_hotcard":
+    case "cue_hotcard": {
       const hid = str("hotcardId");
       const payload = state.hotcardCache.get(hid);
-      if (!payload) break;
+      if (!payload) {
+        warnings.push(`Hotcard ${hid} isn't loaded yet; try again in a moment`);
+        break;
+      }
+      if (id === "cue_hotcard") {
+        // Cue always goes to preview, whatever the card's default output is.
+        messages.push({
+          type: "cue",
+          channel: "preview",
+          templateId: payload.templateId,
+          data: payload.data,
+        });
+        break;
+      }
       // An explicit channel on the button wins; otherwise the card's
       // default output, where a legacy "preview" hint must not redirect a
       // Take (Default D7a, same rule as the operator).
@@ -684,7 +702,7 @@ export function dispatchAction(
     }
   }
 
-  return { messages, localEvents };
+  return warnings.length ? { messages, localEvents, warnings } : { messages, localEvents };
 }
 
 // ──── SDK-shaped definitions for Companion ────────────────────────────────
@@ -722,6 +740,18 @@ function optionalChannelDropdown(
 ): CompanionInputFieldDropdown {
   const base = channelDropdown(state, id, label);
   return { ...base, default: "", choices: [DEFAULT_CHANNEL_CHOICE, ...base.choices] };
+}
+
+/** Take channel for a hotcard; empty means the card's own default output. */
+function hotcardChannelDropdown(
+  state: CompanionState,
+): CompanionInputFieldDropdown {
+  const base = channelDropdown(state);
+  return {
+    ...base,
+    default: "",
+    choices: [{ id: "", label: "Default (card's output)" }, ...base.choices],
+  };
 }
 
 function withDefaultChoice(
@@ -1006,9 +1036,14 @@ export function actionDefinitions(
       callback: wrap("take_pvw_to_pgm"),
     },
     fire_hotcard: {
-      name: "Fire hotcard",
-      options: [hotcardDropdown(state), channelDropdown(state)],
+      name: "Hotcard: take",
+      options: [hotcardDropdown(state), hotcardChannelDropdown(state)],
       callback: wrap("fire_hotcard"),
+    },
+    cue_hotcard: {
+      name: "Hotcard: cue",
+      options: [hotcardDropdown(state)],
+      callback: wrap("cue_hotcard"),
     },
     load_show: {
       name: "Load show (this Companion instance)",
