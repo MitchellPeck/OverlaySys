@@ -20,6 +20,10 @@ import {
   orderRowsBySection,
   planHeaderSections,
   // [/P1.19]
+  // [P3.11]
+  buildSlidesRow,
+  carryOverSlidesRow,
+  // [/P3.11]
   type Field,
   type PcoPlanItem,
   type RundownRow,
@@ -33,6 +37,10 @@ import { loadPcoConfig } from "../storage";
 // [P2b.27]
 import { linkedRowArrangement, mergeReimportedArrangement } from "./linkedArrangement";
 // [/P2b.27]
+// [P3.11]
+import { listDecks } from "../decks";
+import { rememberSlidesChoices } from "./slidesImport";
+// [/P3.11]
 import { loadScriptureSettings } from "../scriptureSettings";
 import type { PcoClient } from "./pcoClient";
 import { buildImportedScriptureRow } from "./scriptureImport";
@@ -53,7 +61,7 @@ export interface ImportTarget {
  */
 export interface ImportItemConfig {
   itemId: string;
-  kind: "song" | "graphic" | "scripture";
+  kind: "song" | "graphic" | "scripture" /* [P3.11] */ | "slides" /* [/P3.11] */;
   /** Song kind: link an existing library song or create/update one. */
   songAction?: "link" | "create";
   /** Song kind + link: the library song id to reference. */
@@ -76,6 +84,12 @@ export interface ImportItemConfig {
   translation?: string;
   /** Scripture kind: max characters per auto-split slide. */
   slideMaxChars?: number;
+  // [P3.11]
+  /** Slides kind: the deck the row plays (`templateId` is the row template override). */
+  deckId?: string;
+  /** Slides kind: remember this item → deck choice for later imports. */
+  remember?: boolean;
+  // [/P3.11]
 }
 
 export interface ImportPlanRequest {
@@ -155,7 +169,10 @@ export function planServiceDate(sortDate: string | undefined): string | undefine
  * replacement: the sermon-notes link, and a manually set length.
  */
 function carryOver(old: RundownRow, row: RundownRow): RundownRow {
-  const next: RundownRow = { ...row };
+  // [P3.11] Same deck: keep the operator's slide picks and field overrides.
+  const next: RundownRow =
+    old.kind === "slides" && row.kind === "slides" ? (carryOverSlidesRow(old, row) as RundownRow) : { ...row };
+  // [/P3.11]
   if (old.sermonNotesId) next.sermonNotesId = old.sermonNotesId;
   if (old.lengthSecManual) {
     next.lengthSecManual = true;
@@ -234,6 +251,9 @@ export function findRemovedPlanRows(
   planId: string,
   planItemIds: ReadonlySet<string>,
   songTitle: (songId: string) => string | undefined,
+  // [P3.11]
+  deckName: (deckId: string) => string | undefined = () => undefined,
+  // [/P3.11]
 ): RemovedPlanRow[] {
   const out: RemovedPlanRow[] = [];
   for (const r of rows) {
@@ -242,6 +262,9 @@ export function findRemovedPlanRows(
     if (r.kind === "song") label = songTitle(r.songId);
     else if (r.kind === "graphic") label = Object.values(r.data ?? {}).find((v) => typeof v === "string" && v.trim());
     else if (r.kind === "scripture") label = r.reference;
+    // [P3.11]
+    else if (r.kind === "slides") label = (r.deckId ? deckName(r.deckId) : undefined) ?? "Slides";
+    // [/P3.11]
     out.push({ rowId: r.id, itemId: r.sourceRef!.itemId, ...(label ? { label } : {}) });
   }
   return out;
@@ -491,6 +514,12 @@ export async function importPlan(
   counts.headerRowsConverted = rowsBefore - show.rows.length;
   // [/P1.19]
 
+  // [P3.11] Live decks (for slides rows and removed-row labels), and the
+  // slides configs that produced a row — only those are remembered.
+  const deckById = new Map((await listDecks()).map((d) => [d.id, d]));
+  const slidesImported: ImportItemConfig[] = [];
+  // [/P3.11]
+
   // ── 3. Build rows per item config (song row vs graphic row) ──────────
   for (const item of chosen) {
     if (failedItems.has(item.id)) continue;
@@ -554,6 +583,21 @@ export async function importPlan(
         });
         continue;
       }
+      // [P3.11] Any plan item can play a deck; an unknown or deleted deck fails only this item.
+    } else if (cfg.kind === "slides") {
+      if (!cfg.deckId || !deckById.has(cfg.deckId)) {
+        errors.push({ itemId: item.id, message: `Deck not found for "${item.title}"` });
+        continue;
+      }
+      row = buildSlidesRow({
+        id: rowId,
+        deckId: cfg.deckId,
+        templateId: cfg.templateId,
+        sourceRef,
+        lengthSec: item.lengthSec,
+      }) as RundownRow;
+      slidesImported.push(cfg);
+      // [/P3.11]
     } else {
       const templateId = cfg.templateId ?? fallbackGraphic;
       if (!templateId) {
@@ -597,6 +641,9 @@ export async function importPlan(
     req.planId,
     new Set(allItems.map((i) => i.id)),
     (id) => titleById.get(id),
+    // [P3.11]
+    (id) => deckById.get(id)?.name,
+    // [/P3.11]
   );
   if (removedRows.length > 0) {
     warnings.push(
@@ -648,6 +695,15 @@ export async function importPlan(
   // through the WS ShowSchema boundary, so parse here (small payloads).
   const parsed = ShowSchema.parse(show);
   await shows.saveShow(parsed);
+
+  // [P3.11] Remember deck choices only once the show is safely saved. A
+  // failed mapping write must not fail an import that already landed.
+  try {
+    await rememberSlidesChoices(allItems, slidesImported);
+  } catch (err) {
+    warnings.push(`Couldn't remember the deck choices: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // [/P3.11]
 
   return {
     ok: errors.length === 0,

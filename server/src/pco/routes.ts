@@ -17,6 +17,11 @@ import {
 } from "./pcoTokens";
 import { PcoAuthError, createPcoClient, verifyPcoCredentials, type PcoClient } from "./pcoClient";
 import { findImportedItems, importPlan, type ImportPlanRequest } from "./importPlan";
+// [P3.11]
+import { scheduleSync } from "../cloudSync";
+import { deleteItemMapping, listItemMappings } from "./itemMappings";
+import { slidesSuggestionsFor } from "./slidesImport";
+// [/P3.11]
 
 /**
  * Planning Center Services REST surface. Token receipt mirrors the cloud
@@ -133,12 +138,28 @@ export async function registerPcoRoutes(
           if (show) liveShows.push(show);
         }
         const imported = findImportedItems(liveShows, serviceTypeId, req.params.planId);
-        return { items, previews, imported };
+        // [P3.11] Deck to pre-select per item for "Import as Slides".
+        const slidesSuggestions = await slidesSuggestionsFor(items);
+        return { items, previews, imported, slidesSuggestions };
+        // [/P3.11]
       } catch (err) {
         return pcoErrorReply(reply, err);
       }
     },
   );
+
+  // [P3.11] ── Remembered "Import as Slides" mappings ─────────────────────
+  app.get("/api/pco/item-mappings", async () => {
+    scheduleSync();
+    return { mappings: await listItemMappings() };
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/pco/item-mappings/:id", async (req) => {
+    const ok = await deleteItemMapping(req.params.id);
+    scheduleSync();
+    return { ok };
+  });
+  // [/P3.11]
 
   // ── Import ─────────────────────────────────────────────────────────────
   app.post<{ Body: ImportPlanRequest }>("/api/pco/import", async (req, reply) => {

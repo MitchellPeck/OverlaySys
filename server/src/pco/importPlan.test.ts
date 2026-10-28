@@ -1,9 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { PCO_SONG_ID_KEY, SongSchema, type Song } from "@overlaysys/core";
 import type { PcoPlanItem } from "@overlaysys/core";
+// [P3.11]
+import type { Deck } from "@overlaysys/core";
+import * as decks from "../decks";
+import { reloadDecks } from "../decks";
+import { listItemMappings, reloadItemMappings } from "./itemMappings";
+// [/P3.11]
 import * as storage from "../storage";
 import * as songs from "../songs";
 import * as shows from "../shows";
@@ -851,3 +857,204 @@ describe("importPlan — linked song arrangement [P2b.27]", () => {
     expect(row?.kind === "song" && row.arrangement).toEqual(["v2"]);
   });
 });
+
+// [P3.11]
+describe("importPlan — slides kind [P3.11]", () => {
+  const PLAN: PcoPlanItem[] = [
+    { id: "s1", title: "Call to Worship", sequence: 1, itemType: "item", lengthSec: 120 },
+    {
+      id: "s2",
+      title: "Doxology",
+      sequence: 2,
+      itemType: "song",
+      song: { id: "pco-song-X", title: "Doxology" },
+      arrangement: { id: "arr-X", lyrics: "Verse 1\nLine A" },
+    },
+    { id: "g3", title: "Welcome", sequence: 3, itemType: "item" },
+  ];
+  const client: PcoClient = { ...fakeClient, getPlanItems: async () => PLAN };
+  const deck = (id: string, name: string): Deck => ({
+    id,
+    name,
+    tags: [],
+    defaultTemplateId: "tpl-graphic",
+    licensing: { kind: "own" },
+    slides: [
+      { id: `${id}-a`, data: { headline: "Line A" } },
+      { id: `${id}-b`, data: { headline: "Line B" } },
+    ],
+    createdAt: NOW,
+  });
+  const req = (items: ImportPlanRequest["items"]): ImportPlanRequest => ({
+    serviceTypeId: "st-1",
+    planId: "plan-1",
+    defaultGraphicTemplateId: "tpl-graphic",
+    target: { mode: "new", name: "Sunday" },
+    items,
+  });
+  const reimport = (showId: string, items: ImportPlanRequest["items"]): ImportPlanRequest => ({
+    ...req(items),
+    target: { mode: "existing", showId },
+  });
+
+  beforeEach(async () => {
+    await reloadDecks();
+    await reloadItemMappings();
+    await decks.saveDeck(deck("deck-cw", "Call to Worship"));
+    await decks.saveDeck(deck("deck-dox", "Doxology"));
+  });
+
+  it("a slides-kind item becomes a slides row with sourceRef and PCO length", async () => {
+    const result = await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    expect(result.ok).toBe(true);
+    const row = (await shows.getShow(result.showId!))!.rows[0]!;
+    expect(row.kind).toBe("slides");
+    if (row.kind !== "slides") throw new Error("expected slides row");
+    expect(row.deckId).toBe("deck-cw");
+    expect(row.sourceRef).toMatchObject({ provider: "pco", serviceTypeId: "st-1", planId: "plan-1", itemId: "s1" });
+    expect(row.lengthSec).toBe(120);
+    expect(row.templateId).toBeUndefined();
+  });
+
+  it("uses the config templateId as the row template override", async () => {
+    const result = await importPlan(
+      client,
+      req([{ itemId: "s1", kind: "slides", deckId: "deck-cw", templateId: "tpl-lyric" }]),
+      NOW,
+    );
+    expect((await shows.getShow(result.showId!))!.rows[0]).toMatchObject({ kind: "slides", templateId: "tpl-lyric" });
+  });
+
+  it("re-import keeps the operator's slideIds and fieldOverrides for the same deck", async () => {
+    const first = await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    await shows.saveShow({
+      ...show,
+      rows: show.rows.map((r) =>
+        r.kind === "slides"
+          ? {
+              ...r,
+              slideIds: ["deck-cw-b", "deck-cw-a", "deck-cw-b"],
+              fieldOverrides: { "deck-cw-a": { headline: "Line C" } },
+            }
+          : r,
+      ),
+    });
+    await importPlan(client, reimport(first.showId!, [{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    const after = (await shows.getShow(first.showId!))!;
+    expect(after.rows).toHaveLength(1);
+    expect(after.rows[0]).toMatchObject({
+      kind: "slides",
+      deckId: "deck-cw",
+      slideIds: ["deck-cw-b", "deck-cw-a", "deck-cw-b"],
+      fieldOverrides: { "deck-cw-a": { headline: "Line C" } },
+    });
+
+    // A different deck drops the old deck's slide picks.
+    await importPlan(client, reimport(first.showId!, [{ itemId: "s1", kind: "slides", deckId: "deck-dox" }]), NOW);
+    const switched = (await shows.getShow(first.showId!))!.rows[0]!;
+    expect(switched).toMatchObject({ kind: "slides", deckId: "deck-dox" });
+    if (switched.kind !== "slides") throw new Error("expected slides row");
+    expect(switched.slideIds).toBeUndefined();
+    expect(switched.fieldOverrides).toBeUndefined();
+  });
+
+  it("re-import keeps sectionId, sermonNotesId and a manual length on slides rows", async () => {
+    const first = await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    await shows.saveShow({
+      ...show,
+      sections: [{ id: "sec-manual", name: "Opening" }],
+      rows: show.rows.map((r) => ({
+        ...r,
+        sectionId: "sec-manual",
+        sermonNotesId: "notes-1",
+        lengthSec: 45,
+        lengthSecManual: true,
+      })),
+    });
+    await importPlan(client, reimport(first.showId!, [{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    expect((await shows.getShow(first.showId!))!.rows[0]).toMatchObject({
+      kind: "slides",
+      sectionId: "sec-manual",
+      sermonNotesId: "notes-1",
+      lengthSec: 45,
+      lengthSecManual: true,
+    });
+  });
+
+  it("a slides config naming an unknown deck fails that item with 'Deck not found for \"<title>\"' and imports the rest", async () => {
+    const result = await importPlan(
+      client,
+      req([
+        { itemId: "s1", kind: "slides", deckId: "deck-gone" },
+        { itemId: "g3", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome" } },
+      ]),
+      NOW,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([{ itemId: "s1", message: 'Deck not found for "Call to Worship"' }]);
+    expect((await shows.getShow(result.showId!))!.rows.map((r) => r.kind)).toEqual(["graphic"]);
+  });
+
+  it("a deleted deck counts as unknown", async () => {
+    await decks.deleteDeck("deck-cw");
+    const result = await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    expect(result.errors).toEqual([{ itemId: "s1", message: 'Deck not found for "Call to Worship"' }]);
+  });
+
+  it("remember: true writes title and pcoSong mappings only after the show saved", async () => {
+    const saveSpy = vi.spyOn(shows, "saveShow").mockRejectedValueOnce(new Error("disk full"));
+    await expect(
+      importPlan(client, req([{ itemId: "s2", kind: "slides", deckId: "deck-dox", remember: true }]), NOW),
+    ).rejects.toThrow("disk full");
+    expect(await listItemMappings()).toEqual([]);
+    saveSpy.mockRestore();
+
+    const result = await importPlan(
+      client,
+      req([
+        { itemId: "s1", kind: "slides", deckId: "deck-cw", remember: true, templateId: "tpl-lyric" },
+        { itemId: "s2", kind: "slides", deckId: "deck-dox", remember: true },
+      ]),
+      NOW,
+    );
+    expect(result.ok).toBe(true);
+    const byKey = Object.fromEntries((await listItemMappings()).map((m) => [m.key, m]));
+    expect(Object.keys(byKey).sort()).toEqual(["pcoSong:pco-song-X", "title:call to worship", "title:doxology"]);
+    expect(byKey["title:call to worship"]).toMatchObject({ kind: "slides", deckId: "deck-cw", templateId: "tpl-lyric" });
+    expect(byKey["pcoSong:pco-song-X"]).toMatchObject({ kind: "slides", deckId: "deck-dox" });
+    expect(byKey["pcoSong:pco-song-X"]!.templateId).toBeUndefined();
+  });
+
+  it("remember: false writes no mapping", async () => {
+    await importPlan(client, req([{ itemId: "s2", kind: "slides", deckId: "deck-dox", remember: false }]), NOW);
+    await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-cw" }]), NOW);
+    expect(await listItemMappings()).toEqual([]);
+  });
+
+  it("a failed slides item is not remembered", async () => {
+    await importPlan(client, req([{ itemId: "s1", kind: "slides", deckId: "deck-gone", remember: true }]), NOW);
+    expect(await listItemMappings()).toEqual([]);
+  });
+
+  it("labels a removed slides row with its deck name, falling back to Slides", async () => {
+    const first = await importPlan(
+      client,
+      req([
+        { itemId: "s1", kind: "slides", deckId: "deck-cw" },
+        { itemId: "s2", kind: "slides", deckId: "deck-dox" },
+      ]),
+      NOW,
+    );
+    await decks.deleteDeck("deck-dox");
+    const shrunk: PcoClient = { ...fakeClient, getPlanItems: async () => [PLAN[2]!] };
+    const result = await importPlan(
+      shrunk,
+      reimport(first.showId!, [{ itemId: "g3", kind: "graphic", templateId: "tpl-graphic", data: { headline: "Welcome" } }]),
+      NOW,
+    );
+    expect(result.removedRows.map((r) => r.label)).toEqual(["Call to Worship", "Slides"]);
+  });
+});
+// [/P3.11]
