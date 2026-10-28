@@ -30,7 +30,13 @@ export function useTakeFeedback(): { status: TakeStatus; send: (msg: ClientMessa
 
   const send = useCallback(
     (msg: ClientMessage) => {
-      const channel = "channel" in msg && typeof msg.channel === "string" ? msg.channel : null;
+      // A PVW→PGM swap answers on its destination channel.
+      const channel =
+        "toChannel" in msg && typeof msg.toChannel === "string"
+          ? msg.toChannel
+          : "channel" in msg && typeof msg.channel === "string"
+          ? msg.channel
+          : null;
       cancelRef.current();
       if (hintTimer.current) clearTimeout(hintTimer.current);
       if (!channel) {

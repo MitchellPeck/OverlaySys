@@ -10,6 +10,7 @@ import { ShowPicker } from "./components/ShowPicker";
 import { Rundown } from "./components/Rundown";
 import { Monitors } from "./components/Monitors";
 import { StageArea } from "./components/StageArea";
+import { OnAirStrip } from "./components/OnAirStrip";
 import { TimersRail } from "./components/TimersRail";
 import { HotcardsPanel } from "./components/HotcardsPanel";
 import { StagePanel } from "./components/StagePanel";
@@ -89,6 +90,7 @@ function ShowPageLocal() {
         </section>
         <section style={columnStyle}>
           <Monitors compact={songModeActive} />
+          <OnAirStrip />
           <StageArea />
         </section>
         <section style={columnStyle}>
