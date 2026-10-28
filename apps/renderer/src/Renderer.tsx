@@ -8,6 +8,7 @@ import { createChannelPlayer, type ChannelPlayer } from "./channelPlayer";
 import { DEFAULT_STAGE_SIZE, readSizeOverride, resolveStageSize, type StageSize } from "./stageSize";
 import { createMirrorSubscription, outputLabel } from "./mirrorSubscription";
 import { MediaLayer } from "./MediaLayer";
+import { isPreviewingChannel, type StageLayoutPreview } from "./stagePreviewTag";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 type Props = {
@@ -57,6 +58,7 @@ export function Renderer({ channel, debug = false }: Props) {
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
+  const [layoutPreviews, setLayoutPreviews] = useState<StageLayoutPreview[]>([]);
   const [stageFeed, setStageFeed] = useState<{ feed: StageFeed; offsetMs: number } | null>(null);
   const [config, setConfig] = useState<ChannelConfig | null>(null);
   // A stage channel shows only its StageView: its own state's templates and
@@ -213,6 +215,8 @@ export function Renderer({ channel, debug = false }: Props) {
         if (subscription.source !== before) {
           console.log(`[renderer] ${channel}: now mirroring ${subscription.source}`);
         }
+      } else if (msg.type === "stage_layout_previews") {
+        setLayoutPreviews(msg.previews);
       } else if (msg.type === "stage_feed" && msg.channel === channel) {
         setStageFeed({ feed: msg.feed, offsetMs: serverOffset(msg.feed.serverNow, Date.now()) });
       } else if (msg.type === "state" && subscription.accepts(msg.channel)) {
@@ -344,6 +348,25 @@ export function Renderer({ channel, debug = false }: Props) {
       />
       {isStage && stageFeed && (
         <StageView feed={stageFeed.feed} offsetMs={stageFeed.offsetMs} connected={status === "open"} send={sendRef.current} />
+      )}
+      {isStage && isPreviewingChannel(layoutPreviews, channel) && (
+        <div
+          style={{
+            position: "fixed",
+            top: 16,
+            left: 16,
+            zIndex: 50,
+            padding: "4px 12px",
+            fontSize: 28,
+            fontWeight: 700,
+            color: "#fff",
+            background: "rgba(0,0,0,0.6)",
+            borderRadius: 6,
+            pointerEvents: "none",
+          }}
+        >
+          PREVIEW
+        </div>
       )}
       {debug && (
         <DebugOverlay
