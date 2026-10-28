@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   INITIAL_STAGE_STATE,
   NONE_SLIDE,
@@ -13,6 +13,9 @@ import {
   decodeTimerValue,
 } from "@overlaysys/core";
 import { buildStageFeed, lyricSlideAt, nextLyricCursor, rowTitle } from "./stageFeed";
+
+// CCLI usage logging writes to the data dir; keep tests off disk.
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
 
 const song: Song = SongSchema.parse({
   id: "song-1",

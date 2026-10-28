@@ -25,6 +25,7 @@ import { initScripture, registerScriptureRoutes } from "./scripture";
 import { registerStageSettingsRoutes } from "./stageSettings";
 import { initApiBible } from "./apiBible/config";
 import { registerApiBibleRoutes } from "./apiBible/routes";
+import { registerSongLibraryRoutes } from "./songLibraryRoute";
 import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
 import os from "node:os";
@@ -180,6 +181,7 @@ initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
 await registerStageSettingsRoutes(app);
 await registerApiBibleRoutes(app);
+await registerSongLibraryRoutes(app);
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };

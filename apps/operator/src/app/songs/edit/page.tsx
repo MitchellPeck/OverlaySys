@@ -15,6 +15,7 @@ import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
+import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { PasteLyricsModal } from "../PasteLyricsModal";
@@ -172,17 +173,9 @@ function SongEditorPageInner() {
     if (savingRef.current) clearTimeout(savingRef.current.timer);
   }, []);
 
-  // Unsaved-changes guard for reloads / closing the window.
-  // TODO(unsaved-guard): wire useUnsavedGuard(dirty) for in-app navigation.
-  useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  // Ask before leaving with unsaved changes: reload/close, in-app links and
+  // browser Back/Forward.
+  useUnsavedGuard(dirty, { resetKey: id, canArm: draft?.id === id });
 
   if (!draft) return <div style={{ padding: 24 }}>Loading…</div>;
 

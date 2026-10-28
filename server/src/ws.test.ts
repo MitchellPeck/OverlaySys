@@ -16,6 +16,9 @@ import os from "node:os";
 import path from "node:path";
 import { ChannelConfigSchema, SPEAKER_LAYOUT, ShowSchema, SongSchema, StageLayoutSchema } from "@overlaysys/core";
 
+// CCLI usage logging writes to the data dir; keep tests off disk.
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
+
 // Hermetic: the whole file runs against a temp data dir (connect() lazily
 // seeds storage, so the env must stay fixed until everything has settled).
 let dataDir: string;

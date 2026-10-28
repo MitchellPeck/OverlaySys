@@ -2,6 +2,7 @@ import type { Song, SongSessionSummary } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as sttMatcher from "./sttMatcher";
 import type { MatchResult } from "./sttMatcher";
+import { recordSongUse } from "./songUsage";
 
 interface StartArgs {
   song: Song;
@@ -154,6 +155,13 @@ export function start(
   sessions.set(channel, internal);
   render(internal, /* forceMount */ true);
   sttMatcher.bindSession(channel, args.song, args.arrangement);
+  noteSongUse(args.song, channel);
+}
+
+/** CCLI usage: count songs that reach air, not ones cued on preview. */
+function noteSongUse(song: Song, channel: string): void {
+  if (channel === "preview") return;
+  void recordSongUse(song, channel);
 }
 
 /**
@@ -189,6 +197,7 @@ export function promoteTo(
   sessions.set(toChannel, internal);
   render(internal, /* forceMount */ true);
   sttMatcher.bindSession(toChannel, args.song, internal.arrangement);
+  noteSongUse(args.song, toChannel);
 
   // End the source AFTER the destination is rendered, so there's never a
   // gap with neither channel showing the song.

@@ -19,6 +19,7 @@ import { ScriptureIntroEditor, type IntroConfig } from "./ScriptureIntroEditor";
 import { useScriptureSettings } from "@/lib/scriptureSettings";
 import { ScriptureSlideEditor, type EditableSlide } from "./ScriptureSlideEditor";
 import { useStore } from "@/lib/store";
+import { useDialog } from "@/lib/dialog";
 import {
   budgetChanged,
   budgetForPref,
@@ -363,6 +364,7 @@ function Step2({
   onCancel: () => void;
   onSave: (slides: EditableSlide[], templateId: string, intro: IntroConfig & { skipIntro?: boolean }) => void;
 }) {
+  const { confirm, dialog } = useDialog();
   const templates = useStore((s) => s.templates);
   const [sizePref, setSizePref] = useState<SlideSizePref>(() => loadSlideSizePref());
   const [customDraft, setCustomDraft] = useState<string>(() =>
@@ -400,10 +402,21 @@ function Step2({
   const defaultName = templates.find((t) => t.id === settings?.introTemplateId)?.name;
 
   /** Switch slide size, re-splitting only if the budget actually changes. Returns false if the operator cancels. */
-  function applySize(next: SlideSizePref): boolean {
+  async function applySize(next: SlideSizePref): Promise<boolean> {
     const nextBudget = budgetForPref(next);
     const resplit = budgetChanged(budget, nextBudget);
-    if (resplit && manualEdits && !window.confirm("Re-split and discard your manual breaks?")) return false;
+    if (
+      resplit &&
+      manualEdits &&
+      !(await confirm({
+        title: "Re-split slides?",
+        message: "Changing the slide size re-splits the passage and discards your manual breaks.",
+        confirmLabel: "Re-split",
+        destructive: true,
+      }))
+    ) {
+      return false;
+    }
     setSizePref(next);
     saveSlideSizePref(next);
     if (next.kind === "custom") setCustomDraft(String(nextBudget.maxChars));
@@ -418,14 +431,15 @@ function Step2({
 
   const customDraftChars = clampCustomChars(Number(customDraft));
   const customPending = sizePref.kind === "custom" && customDraftChars !== budget.maxChars;
-  function applyCustomDraft() {
-    if (!applySize({ kind: "custom", maxChars: customDraftChars })) {
+  async function applyCustomDraft() {
+    if (!(await applySize({ kind: "custom", maxChars: customDraftChars }))) {
       setCustomDraft(String(budget.maxChars));
     }
   }
 
   return (
     <>
+      {dialog}
       <Field label="Template">
         <Select
           value={templateId}

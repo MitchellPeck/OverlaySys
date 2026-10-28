@@ -453,6 +453,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
         title: z.string(),
         ccliNumber: z.string().optional(),
         author: z.string().optional(),
+        updatedAt: z.string().optional(),
       }),
     ),
   }),

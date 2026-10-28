@@ -1,6 +1,9 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import type { Song } from "@overlaysys/core";
 import * as matcher from "./sttMatcher";
+
+// CCLI usage logging writes to the data dir; keep tests off disk.
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
 
 const song: Song = {
   id: "test",

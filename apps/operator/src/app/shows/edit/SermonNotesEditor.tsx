@@ -7,6 +7,7 @@ import { splitPoints } from "@overlaysys/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button, IconButton, Input, Panel, Select, colors } from "@overlaysys/ui";
 import { notesFromFile } from "@/lib/notesImport";
+import { useDialog } from "@/lib/dialog";
 
 /** Compact "Notes set" picker used inside row editors. Hidden when the show has no sets. */
 export function NotesSetPicker({
@@ -44,6 +45,7 @@ export function SermonNotesEditor({
   notes: SermonNotes[];
   onUpdate: (recipe: (s: Show) => void) => void;
 }) {
+  const { confirm, dialog } = useDialog();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -76,8 +78,14 @@ export function SermonNotesEditor({
     });
   }
 
-  function deleteSet(set: SermonNotes) {
-    if (!window.confirm(`Delete notes set "${set.title || "Untitled notes"}"?`)) return;
+  async function deleteSet(set: SermonNotes) {
+    const ok = await confirm({
+      title: "Delete notes set?",
+      message: `Delete "${set.title || "Untitled notes"}"? Rows linked to it lose their notes.`,
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
     onUpdate((s) => {
       s.sermonNotes = (s.sermonNotes ?? []).filter((n) => n.id !== set.id);
       for (const r of s.rows) {
@@ -189,6 +197,7 @@ export function SermonNotesEditor({
           );
         })}
       </div>
+      {dialog}
     </Panel>
   );
 }

@@ -3,6 +3,9 @@ import type { Song } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as songSession from "./songSession";
 
+// CCLI usage logging writes to the data dir; keep tests off disk.
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
+
 const song: Song = {
   id: "test-song",
   title: "Test Song",

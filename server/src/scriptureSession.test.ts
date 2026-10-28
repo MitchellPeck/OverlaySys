@@ -6,6 +6,9 @@ import * as songSession from "./songSession";
 import * as fums from "./apiBible/fums";
 import * as templates from "./templates";
 
+// CCLI usage logging writes to the data dir; keep tests off disk.
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
+
 const CH = "program";
 const v = (verse: number, text: string) => ({ book: "JHN", chapter: 3, verse, text });
 const row: ScriptureRow = {

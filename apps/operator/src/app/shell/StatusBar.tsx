@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { getClient, useWs } from "@/lib/useWs";
+import { getClient, reconnectNow, useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { SyncStatusPill } from "@/app/components/SyncStatusPill";
 import { copyText } from "./clipboard";
@@ -93,6 +93,11 @@ function ServerDot() {
             </div>
           )}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {conn !== "open" && (
+              <Button size="sm" variant="primary" onClick={() => reconnectNow()}>
+                Retry now
+              </Button>
+            )}
             <Button
               size="sm"
               onClick={async () => {
