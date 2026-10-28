@@ -61,7 +61,11 @@ function waitForAssets(
   const fonts = typeof document !== "undefined" && "fonts" in document ? document.fonts : null;
   eachLayer(template.layers, (l) => {
     if (l.type === "text" && fonts) {
-      tasks.push(fonts.load(fontSpec(l)).catch(() => {}));
+      try {
+        tasks.push(fonts.load(fontSpec(l)).catch(() => {}));
+      } catch {
+        // An unparseable family name; the cap still bounds the wait.
+      }
     } else if (l.type === "image") {
       const img = nodes.get(l.id) as HTMLImageElement | undefined;
       if (img && img.getAttribute("src") && typeof img.decode === "function") {
