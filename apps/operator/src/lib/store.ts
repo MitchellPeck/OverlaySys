@@ -30,6 +30,7 @@ import type {
 import type { PcoLiveStateMessage, ServerMessage } from "@overlaysys/ws-protocol";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
+import { requestedDecks } from "./deckRequests";
 
 export type StageStateMessage = Extract<ServerMessage, { type: "stage_state" }>;
 type ConnState = "connecting" | "open" | "closed";
@@ -106,6 +107,10 @@ type StoreState = {
   decks: DeckMeta[];
   deckCache: Record<string, Deck>;
   lastSongConversion: Extract<ServerMessage, { type: "song_converted" }> | null;
+  /** Deck ids the server answered get_deck for with not_found. */
+  deckNotFound: Record<string, true>;
+  /** Bumped on reconnect so useDeck re-asks for decks whose get_deck was lost. */
+  deckEpoch: number;
   // [/P3.13]
   songs: SongMeta[];
   songCache: Record<string, Song>;
@@ -151,6 +156,8 @@ type StoreState = {
   setDecks: (d: DeckMeta[]) => void;
   upsertDeck: (d: Deck) => void;
   setLastSongConversion: (m: Extract<ServerMessage, { type: "song_converted" }> | null) => void;
+  markDeckNotFound: (id: string) => void;
+  resetDeckLookups: () => void;
   // [/P3.13]
   setSong: (song: Song) => void;
   setShowFull: (show: Show) => void;
@@ -231,6 +238,8 @@ export const useStore = create<StoreState>((set) => ({
   decks: [],
   deckCache: {},
   lastSongConversion: null,
+  deckNotFound: {},
+  deckEpoch: 0,
   // [/P3.13]
   songs: [],
   songCache: {},
@@ -379,7 +388,19 @@ export const useStore = create<StoreState>((set) => ({
   setSongs: (songs) => set({ songs }),
   // [P3.13]
   setDecks: (decks) => set({ decks }),
-  upsertDeck: (d) => set((s) => ({ deckCache: { ...s.deckCache, [d.id]: d } })),
+  upsertDeck: (d) =>
+    set((s) => {
+      const { [d.id]: _gone, ...deckNotFound } = s.deckNotFound;
+      return { deckCache: { ...s.deckCache, [d.id]: d }, deckNotFound };
+    }),
+  markDeckNotFound: (id) => {
+    requestedDecks.delete(id);
+    set((s) => ({ deckNotFound: { ...s.deckNotFound, [id]: true } }));
+  },
+  resetDeckLookups: () => {
+    requestedDecks.clear();
+    set((s) => ({ deckNotFound: {}, deckEpoch: s.deckEpoch + 1 }));
+  },
   setLastSongConversion: (m) => set({ lastSongConversion: m }),
   // [/P3.13]
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),

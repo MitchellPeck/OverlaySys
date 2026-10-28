@@ -3,6 +3,9 @@
 import { useSyncExternalStore } from "react";
 import { WsClient, defaultServerUrl, type WsStatus } from "./wsClient";
 import { useStore } from "./store";
+// [P3.13]
+import { requestedDecks } from "./deckRequests";
+// [/P3.13]
 import { isCloudMode } from "./mode";
 import type { ClientMessage, OutputsState } from "@overlaysys/ws-protocol";
 
@@ -101,6 +104,7 @@ function bootstrap(): void {
         client.send({ type: "list_songs" });
         // [P3.13]
         client.send({ type: "list_decks" });
+        store.resetDeckLookups();
         // [/P3.13]
         client.send({ type: "list_hotcards" });
         client.send({ type: "list_channels" });
@@ -229,7 +233,10 @@ function bootstrap(): void {
         break;
       case "error":
         // A refused "Follow PCO Live" is shown next to its toggle.
-        if (msg.code === "pco_live") store.setPcoLiveStartError(msg.message);
+        // [P3.13] a get_deck we sent came back not_found
+        if (msg.code === "not_found" && requestedDecks.has(msg.message)) store.markDeckNotFound(msg.message);
+        // [/P3.13]
+        else if (msg.code === "pco_live") store.setPcoLiveStartError(msg.message);
         else console.warn("[server error]", msg);
         break;
     }

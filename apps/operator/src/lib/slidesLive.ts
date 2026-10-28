@@ -1,19 +1,11 @@
 import type { ChannelState } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
-import type { KeyLike } from "./shortcutGuards";
 import type { RowLike } from "./rowLike";
 
 type States = Record<string, ChannelState | undefined>;
 
-/** Space / Shift+Space / B while a slides session is on program; otherwise null. */
-export function slidesKeyMessage(e: KeyLike, states: States): ClientMessage | null {
-  if (!states.program?.slidesSession) return null;
-  if (e.code === "Space" || e.key === " ") {
-    return { type: "slides_advance", channel: "program", delta: e.shiftKey ? -1 : 1 };
-  }
-  if (e.code === "KeyB") return { type: "slides_blank", channel: "program" };
-  return null;
-}
+// Live keys (Space, Shift+Space, B) go through keyMode in shortcutGuards, which
+// calls slidesKeyChannel / slidesAdvanceMessage / slidesBlankMessage.
 
 /** Click on a thumbnail: goto if this row is live on program, else cue to preview. */
 export function slidesThumbClickMessage(a: {
