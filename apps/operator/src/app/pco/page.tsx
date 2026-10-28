@@ -331,11 +331,16 @@ export default function PcoPage() {
   async function disconnect() {
     setError(null);
     try {
-      await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
-      await getDesktopApi()?.pcoSignOut?.();
+      const res = await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Couldn't disconnect from Planning Center (${res.status}).`);
     } catch (err) {
+      // Still sign the desktop OAuth session out, but stay "connected" since
+      // the server didn't confirm.
+      await getDesktopApi()?.pcoSignOut?.()?.catch?.(() => undefined);
       setError(err instanceof Error ? err.message : String(err));
+      return;
     }
+    await getDesktopApi()?.pcoSignOut?.()?.catch?.(() => undefined);
     setServiceTypes([]);
     setServiceTypeId("");
     setPlans([]);

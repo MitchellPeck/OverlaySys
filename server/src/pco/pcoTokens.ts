@@ -28,6 +28,12 @@ export function clearPcoAuthorization(): void {
   authorization = null;
 }
 
+/** Clear only if the stored credential is still `header` (a late 401 for an
+ * old credential must not wipe a newer one). */
+export function clearPcoAuthorizationIf(header: string): void {
+  if (authorization === header) authorization = null;
+}
+
 export function getPcoAuthorization(): string | null {
   return authorization;
 }

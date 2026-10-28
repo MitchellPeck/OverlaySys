@@ -9,7 +9,7 @@ import type { ServerMessage } from "@overlaysys/ws-protocol";
 import * as shows from "../shows";
 import * as timers from "../timers";
 import { createPcoClient, PcoAuthError, type PcoClient } from "./pcoClient";
-import { getPcoAuthorization } from "./pcoTokens";
+import { clearPcoAuthorizationIf, getPcoAuthorization } from "./pcoTokens";
 
 export const POLL_MS = 5000;
 export const MAX_BACKOFF_MS = 60_000;
@@ -148,10 +148,10 @@ export async function startLiveSync(
   const plan = show ? pickPlan(show.rows) : null;
   if (!plan) return { ok: false, error: "This show has no Planning Center items." };
   let client = deps.client;
+  const usedAuth = getPcoAuthorization();
   if (!client) {
-    const auth = getPcoAuthorization();
-    if (!auth) return { ok: false, error: "Planning Center is not connected." };
-    client = createPcoClient(auth);
+    if (!usedAuth) return { ok: false, error: "Planning Center is not connected." };
+    client = createPcoClient(usedAuth);
   }
 
   const differentShow = state.enabled && state.showId !== showId;
@@ -215,6 +215,8 @@ export async function startLiveSync(
     } catch (err) {
       if (gen !== generation) return;
       if (err instanceof PcoAuthError) {
+        // The credential PCO just rejected is dead; drop it unless replaced.
+        if (usedAuth) clearPcoAuthorizationIf(usedAuth);
         // Stop polling but stay enabled so the operator sees why.
         fail(err.message);
         return;

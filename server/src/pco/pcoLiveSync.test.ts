@@ -5,6 +5,7 @@ import * as shows from "../shows";
 import * as timers from "../timers";
 import { PcoAuthError, type PcoClient } from "./pcoClient";
 import * as live from "./pcoLiveSync";
+import { clearPcoAuthorization, isPcoConnected, setPcoAuthorization } from "./pcoTokens";
 
 vi.mock("../shows", () => ({ getShow: vi.fn() }));
 
@@ -157,6 +158,28 @@ describe("pcoLiveSync", () => {
     expect(state()).toMatchObject({ enabled: true, status: "error", error: new PcoAuthError().message });
     await vi.advanceTimersByTimeAsync(120_000);
     expect(client.getLive).toHaveBeenCalledTimes(1);
+  });
+
+  it("auth error drops the credential live sync used, but not a newer one", async () => {
+    useShows(showWithPlans("s1", ["p1"]));
+    setPcoAuthorization("Basic old");
+    const client = fakeClient(async () => {
+      throw new PcoAuthError();
+    });
+    await live.startLiveSync("s1", { client });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(isPcoConnected()).toBe(false);
+
+    live._resetForTest();
+    setPcoAuthorization("Basic old");
+    let reject!: (e: Error) => void;
+    const pending = fakeClient(() => new Promise((_, r) => (reject = r)));
+    await live.startLiveSync("s1", { client: pending });
+    setPcoAuthorization("Basic new");
+    reject(new PcoAuthError());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(isPcoConnected()).toBe(true);
+    clearPcoAuthorization();
   });
 
   it("auth error clears the pco item timer", async () => {

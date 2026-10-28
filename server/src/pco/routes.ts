@@ -10,6 +10,7 @@ import {
   basicHeader,
   bearerHeader,
   clearPcoAuthorization,
+  clearPcoAuthorizationIf,
   getPcoAuthorization,
   isPcoConnected,
   setPcoAuthorization,
@@ -32,7 +33,15 @@ export async function registerPcoRoutes(
   function requireClient(): PcoClient {
     const authorization = getPcoAuthorization();
     if (!authorization) throw new PcoAuthError("Not connected to Planning Center.");
-    return createPcoClient(authorization, fetchImpl);
+    // Capture the header this client uses: a 401 clears it only if it is
+    // still the stored credential, so a late 401 for an old credential can't
+    // wipe a newer valid one.
+    const guarded = (async (...args: Parameters<typeof fetch>) => {
+      const res = await fetchImpl(...args);
+      if (res.status === 401) clearPcoAuthorizationIf(authorization);
+      return res;
+    }) as typeof fetch;
+    return createPcoClient(authorization, guarded);
   }
 
   // ── Credential receipt ─────────────────────────────────────────────────
@@ -163,8 +172,8 @@ export async function registerPcoRoutes(
 
 function pcoErrorReply(reply: import("fastify").FastifyReply, err: unknown) {
   if (err instanceof PcoAuthError) {
-    // A 401 from a live request means the stored credential is dead.
-    clearPcoAuthorization();
+    // Clearing already happened (header-scoped) where the 401 was seen; the
+    // "Not connected" error has nothing to clear.
     return reply.status(401).send({ error: err.message, code: "pco_auth" });
   }
   return reply

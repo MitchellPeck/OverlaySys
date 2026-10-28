@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerPcoRoutes } from "./routes";
-import { clearPcoAuthorization, isPcoConnected } from "./pcoTokens";
+import { clearPcoAuthorization, getPcoAuthorization, isPcoConnected, setPcoAuthorization } from "./pcoTokens";
 
 function fetchReturning(status: number) {
   return vi.fn(async (_url: string) => new Response(JSON.stringify({ data: [] }), { status }));
@@ -55,5 +55,38 @@ describe("POST /api/pco/tokens validation", () => {
     const res = await app.inject({ method: "GET", url: "/api/pco/service-types" });
     expect(res.statusCode).toBe(401);
     expect(isPcoConnected()).toBe(false);
+  });
+
+  it("maps a 403 to 400 and a 5xx to 502 without storing", async () => {
+    const a = await build(fetchReturning(403));
+    const r1 = await a.inject({ method: "POST", url: "/api/pco/tokens", payload: { appId: "x", secret: "y" } });
+    expect(r1.statusCode).toBe(400);
+    const b = await build(fetchReturning(503));
+    const r2 = await b.inject({ method: "POST", url: "/api/pco/tokens", payload: { appId: "x", secret: "y" } });
+    expect(r2.statusCode).toBe(502);
+    expect(isPcoConnected()).toBe(false);
+  });
+
+  it("a late 401 for credential A does not wipe newly stored credential B", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const app = await build(async () => {
+      await gate;
+      return new Response("{}", { status: 401 });
+    });
+    setPcoAuthorization("Basic A");
+    const inflight = app.inject({ method: "GET", url: "/api/pco/service-types" });
+    await new Promise((r) => setTimeout(r, 10));
+    setPcoAuthorization("Basic B");
+    release();
+    const res = await inflight;
+    expect(res.statusCode).toBe(401);
+    expect(getPcoAuthorization()).toBe("Basic B");
+  });
+
+  it("'not connected' 401 clears nothing", async () => {
+    const app = await build(fetchReturning(200));
+    const res = await app.inject({ method: "GET", url: "/api/pco/service-types" });
+    expect(res.statusCode).toBe(401);
   });
 });
