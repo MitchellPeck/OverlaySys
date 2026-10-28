@@ -9,6 +9,9 @@ import { restoreLiveState, startLiveStatePersistence } from "./liveState";
 import { registerHttpApi } from "./httpApi";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
+// [P1.20]
+import { startHeaderMigration } from "./pco/headerMigration";
+// [/P1.20]
 // [P3.3]
 import { reloadDecks } from "./decks";
 import { reloadItemMappings } from "./pco/itemMappings";
@@ -143,6 +146,9 @@ await reloadShows();
 await reloadDecks();
 await reloadItemMappings();
 // [/P3.3]
+// [P1.20] one-time PCO header migration (background; needs PCO or its cache)
+void startHeaderMigration().catch((err) => app.log.warn({ err }, "[pco] header migration failed"));
+// [/P1.20]
 await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();

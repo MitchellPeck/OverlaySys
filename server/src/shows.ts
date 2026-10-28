@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { Show } from "@overlaysys/core";
+import { promises as fs, constants as fsConstants } from "node:fs";
+import path from "node:path";
+import { migrateHeaderRows, type Show } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInShow } from "./bundleApply";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
@@ -104,3 +106,30 @@ export async function duplicateShow(sourceId: string): Promise<Show | null> {
   REGISTRY.set(copy.id, copy);
   return copy;
 }
+
+// [P1.20] one-time PCO header-row -> section migration
+/**
+ * Convert PCO header rows into sections on every live show that has them.
+ * The first change to a show copies its file to `<id>.json.pre-sections.bak`
+ * (an existing backup is never overwritten). Returns the changed show ids.
+ */
+export async function applyHeaderMigration(headers: ReadonlyMap<string, string>): Promise<string[]> {
+  await ensureLoaded();
+  if (headers.size === 0) return [];
+  const changed: string[] = [];
+  for (const show of liveOnly(REGISTRY.values())) {
+    const r = migrateHeaderRows(show, headers);
+    if (!r.changed) continue;
+    const file = path.join(storage.dataRoot(), "shows", `${show.id}.json`);
+    try {
+      await fs.copyFile(file, `${file}.pre-sections.bak`, fsConstants.COPYFILE_EXCL);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST" && code !== "ENOENT") throw err;
+    }
+    await saveShow(r.show);
+    changed.push(show.id);
+  }
+  return changed;
+}
+// [/P1.20]

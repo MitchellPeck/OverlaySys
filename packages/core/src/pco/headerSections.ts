@@ -1,4 +1,5 @@
-import type { ShowSection } from "../show";
+import type { RundownRow, Show, ShowSection } from "../show";
+import { orderRowsBySection } from "../sections";
 import type { PcoPlanItem } from "./pcoTypes";
 
 const PCO_SECTION_PREFIX = "pco-";
@@ -74,4 +75,36 @@ export function mergePlanSections(
     present.add(s.id);
   });
   return out.length > 0 ? out : undefined;
+}
+
+/**
+ * One-time migration: PCO header items that earlier imports stored as graphic
+ * rows become sections. Only items in `headers` (PCO item id -> title, as
+ * reported by Planning Center) qualify. Rows after a header with no section of
+ * their own join it; rows before the first header are untouched.
+ */
+export function migrateHeaderRows(
+  show: Show,
+  headers: ReadonlyMap<string, string>,
+): { show: Show; changed: boolean } {
+  const isHeader = (row: RundownRow): boolean =>
+    row.kind === "graphic" && row.sourceRef?.provider === "pco" && headers.has(row.sourceRef.itemId);
+  if (!show.rows.some(isHeader)) return { show, changed: false };
+
+  const sections: ShowSection[] = [...(show.sections ?? [])];
+  const rows: RundownRow[] = [];
+  let open: string | undefined;
+  for (const row of show.rows) {
+    if (isHeader(row) && row.kind === "graphic" && row.sourceRef) {
+      const itemId = row.sourceRef.itemId;
+      const id = pcoSectionId(itemId);
+      const fallback = Object.values(row.data).find((v) => v.trim() !== "")?.trim();
+      const name = headers.get(itemId)?.trim() || fallback || "Section";
+      if (!sections.some((s) => s.id === id)) sections.push({ id, name });
+      open = id;
+      continue;
+    }
+    rows.push(open !== undefined && row.sectionId === undefined ? ({ ...row, sectionId: open } as RundownRow) : row);
+  }
+  return { show: orderRowsBySection({ ...show, sections, rows }), changed: true };
 }
