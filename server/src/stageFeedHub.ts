@@ -15,6 +15,7 @@ import * as channels from "./channels";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import { deckRegistrySnapshot } from "./decks";
 import * as stageState from "./stageState";
 import * as stageLayouts from "./stageLayouts";
 import * as templates from "./templates";
@@ -89,6 +90,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     show,
     songs: songMap,
     templates: templateMap,
+    decks: deckRegistrySnapshot(), // [P3.10]
     now,
     stage,
     stageTimers: timers.getTimers(),
