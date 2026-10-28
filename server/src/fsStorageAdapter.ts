@@ -65,6 +65,17 @@ export function keepLocalSermonNotes(incoming: Show, existing: Show | null): Sho
   return { ...incoming, sermonNotes: existing.sermonNotes };
 }
 
+/**
+ * Stopgap until the cloud `hotcards` table carries `hotkey` (plan 3): a
+ * pulled hotcard arrives without it, so keep the local copy's F-key, or
+ * its deliberate `null`, rather than wiping it. Without this, a pull would
+ * drop the key and the boot migration could renumber the project.
+ */
+export function keepLocalHotkey(incoming: Hotcard, existing: Hotcard | null): Hotcard {
+  if (incoming.hotkey !== undefined || !existing || existing.hotkey === undefined) return incoming;
+  return { ...incoming, hotkey: existing.hotkey };
+}
+
 function overridesDir(): string {
   return path.join(dataRoot(), "channel_overrides");
 }
@@ -162,9 +173,10 @@ export class FsStorageAdapter implements StorageAdapter {
     return h && !h.deletedAt ? h : null;
   }
   async saveHotcard(_org: string, hotcard: Hotcard): Promise<void> {
+    const merged = hotcard.hotkey === undefined ? keepLocalHotkey(hotcard, await loadHotcard(hotcard.id)) : hotcard;
     await saveHotcard({
-      ...hotcard,
-      updatedAt: hotcard.updatedAt ?? new Date().toISOString(),
+      ...merged,
+      updatedAt: merged.updatedAt ?? new Date().toISOString(),
     });
   }
   async deleteHotcard(_org: string, id: string): Promise<boolean> {

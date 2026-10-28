@@ -84,6 +84,24 @@ describe("hotcard hotkey migration", () => {
     expect(await keysOf()).toEqual({ "hotcard-a": null, "hotcard-b": null, "hotcard-c": "F7", "hotcard-d": undefined });
   });
 
+  it("leaves updatedAt alone, so a stale local copy can't win last-writer-wins", async () => {
+    await writeCard({ id: "hotcard-a", updatedAt: "2025-05-01T00:00:00.000Z" });
+    await writeCard({ id: "hotcard-b" });
+    await hotcards.reloadHotcards();
+    const a = await readCard("hotcard-a");
+    expect(a.hotkey).toBeTruthy();
+    expect(a.updatedAt).toBe("2025-05-01T00:00:00.000Z");
+    expect((await readCard("hotcard-b")).updatedAt).toBeUndefined();
+  });
+
+  it("never re-runs for a project with any decided card, even one pulled in later without a key", async () => {
+    await writeCard({ id: "hotcard-a", hotkey: null });
+    await writeCard({ id: "hotcard-b" });
+    await hotcards.reloadHotcards();
+    expect(await keysOf()).toEqual({ "hotcard-a": null, "hotcard-b": undefined });
+    expect((await readCard("hotcard-b")).hotkey).toBeUndefined();
+  });
+
   it("saves new cards as decided and gives a duplicate no key", async () => {
     await hotcards.reloadHotcards();
     const saved = await hotcards.saveHotcard({ id: "hotcard-n", name: "N", templateId: "t", data: {}, projectId: "p1", hotkey: "F3" });

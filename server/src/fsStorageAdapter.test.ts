@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { SPEAKER_LAYOUT, ShowSchema, StageLayoutSchema, type Show } from "@overlaysys/core";
+import { SPEAKER_LAYOUT, ShowSchema, StageLayoutSchema, type Hotcard, type Show } from "@overlaysys/core";
 import * as storage from "./storage";
 import { FsStorageAdapter } from "./fsStorageAdapter";
 
@@ -55,6 +55,45 @@ describe("FsStorageAdapter.saveShow keeps local sermon notes", () => {
   it("a brand-new show saves as-is", async () => {
     await new FsStorageAdapter().saveShow("org", makeShow());
     expect((await storage.loadShow("show-1"))?.sermonNotes).toBeUndefined();
+  });
+});
+
+// The cloud `hotcards` table has no hotkey column yet (plan 3), so a pulled
+// hotcard arrives without `hotkey`. The local F-key must survive the pull.
+describe("FsStorageAdapter.saveHotcard keeps the local hotkey", () => {
+  const card = (extra: Partial<Hotcard> = {}): Hotcard => ({
+    id: "hotcard-1",
+    name: "Pastor",
+    projectId: "p1",
+    templateId: "l3",
+    data: {},
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    ...extra,
+  });
+
+  it("a pulled hotcard without hotkey keeps the local key", async () => {
+    await storage.saveHotcard(card({ hotkey: "F4" }));
+    await new FsStorageAdapter().saveHotcard("org", card({ name: "Pastor (edited in cloud)" }));
+    const saved = await storage.loadHotcard("hotcard-1");
+    expect(saved?.hotkey).toBe("F4");
+    expect(saved?.name).toBe("Pastor (edited in cloud)");
+  });
+
+  it("keeps a deliberate local null too, so the migration never renumbers it", async () => {
+    await storage.saveHotcard(card({ hotkey: null }));
+    await new FsStorageAdapter().saveHotcard("org", card());
+    expect((await storage.loadHotcard("hotcard-1"))?.hotkey).toBeNull();
+  });
+
+  it("an incoming hotkey (once the cloud carries one) wins", async () => {
+    await storage.saveHotcard(card({ hotkey: "F4" }));
+    await new FsStorageAdapter().saveHotcard("org", card({ hotkey: "F6" }));
+    expect((await storage.loadHotcard("hotcard-1"))?.hotkey).toBe("F6");
+  });
+
+  it("a brand-new pulled hotcard saves as-is", async () => {
+    await new FsStorageAdapter().saveHotcard("org", card());
+    expect((await storage.loadHotcard("hotcard-1"))?.hotkey).toBeUndefined();
   });
 });
 

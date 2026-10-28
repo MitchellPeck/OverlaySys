@@ -29,13 +29,18 @@ export async function reloadHotcards(): Promise<void> {
  * D6a): projects whose cards all predate hotkeys get F1–F12 in the order
  * the hotcard list shows them (registry order), saved so every later boot
  * reads the same keys whatever order readdir returns.
+ *
+ * The write keeps `updatedAt` as it was: stamping it would make every
+ * migrated (possibly stale) local copy beat newer cloud edits under
+ * last-writer-wins. Projects with any decided card (a key or `null`) are
+ * never touched again, see `initialHotkeyAssignments`.
  */
 async function migrateHotkeys(): Promise<void> {
   const assignments = initialHotkeyAssignments(liveOnly(REGISTRY.values()));
   for (const [id, hotkey] of assignments) {
     const current = REGISTRY.get(id);
     if (!current) continue;
-    const next = stampWrite({ ...current, hotkey });
+    const next: Hotcard = { ...current, hotkey };
     await storage.saveHotcard(next);
     REGISTRY.set(id, next);
   }
