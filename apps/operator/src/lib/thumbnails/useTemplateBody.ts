@@ -6,9 +6,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
-
-// Ids already requested this session; avoids a request per thumbnail instance.
-const inFlight = new Set<string>();
+import { bodyStatus, clearInFlightOnDisconnect, inFlight } from "./templateBodyState";
 
 export function useTemplateBody(templateId: string): {
   template: Template | null;
@@ -16,16 +14,20 @@ export function useTemplateBody(templateId: string): {
 } {
   const template = useStore((s) => s.templateCache[templateId] ?? null);
   const inList = useStore((s) => s.templates.some((t) => t.id === templateId));
-  const listLoaded = useStore((s) => s.templates.length > 0);
+  const listLoaded = useStore((s) => s.templatesLoaded);
   const conn = useStore((s) => s.conn);
   const setTemplate = useStore((s) => s.setTemplate);
   const { send } = useWs();
   const cloud = isCloudMode();
 
-  const missing = !template && listLoaded && !inList;
+  const status = bodyStatus({ hasBody: !!template, listLoaded, inList });
 
   useEffect(() => {
-    if (template || missing || inFlight.has(templateId)) return;
+    if (!cloud) clearInFlightOnDisconnect(conn);
+  }, [conn, cloud]);
+
+  useEffect(() => {
+    if (template || status === "missing" || inFlight.has(templateId)) return;
     if (cloud) {
       inFlight.add(templateId);
       getTemplateCloud(templateId)
@@ -38,12 +40,12 @@ export function useTemplateBody(templateId: string): {
       inFlight.add(templateId);
       send({ type: "get_template", templateId });
     }
-  }, [templateId, template, missing, cloud, conn, send, setTemplate]);
+  }, [templateId, template, status, cloud, conn, send, setTemplate]);
 
   // Local mode: the reply lands in templateCache, which clears the flag.
   useEffect(() => {
     if (template) inFlight.delete(templateId);
   }, [template, templateId]);
 
-  return { template, status: template ? "ready" : missing ? "missing" : "loading" };
+  return { template, status };
 }

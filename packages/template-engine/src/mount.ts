@@ -1,4 +1,5 @@
 import type { BlinkOnTake, Field, Layer, Template } from "@overlaysys/core";
+import { createTicker } from "./ticker";
 import { computeTimeDisplay } from "@overlaysys/core";
 import gsap from "gsap";
 import {
@@ -262,7 +263,7 @@ export function mountTemplate(
   host: HTMLElement,
   template: Template,
   initialData: Record<string, string>,
-  options: { mode?: MountMode } = {},
+  options: { mode?: MountMode; static?: boolean } = {},
 ): MountedTemplate {
   const mode = options.mode ?? "live";
   let current = template;
@@ -427,9 +428,8 @@ export function mountTemplate(
   // comparing against the last value so the browser doesn't repaint when
   // the display string hasn't changed (e.g. between frames within the same
   // wall second).
-  let rafId: number | null = null;
   const lastWritten = new WeakMap<HTMLElement, string>();
-  function tick(): void {
+  function paintFrame(): void {
     const now = Date.now();
     for (const b of timeBindings) {
       const next = computeTimeDisplay(b.field, currentData[b.field.key], now);
@@ -439,19 +439,17 @@ export function mountTemplate(
       }
     }
     syncRevealClips();
-    rafId = requestAnimationFrame(tick);
   }
+  // `static` (thumbnails): paint on demand, never schedule a rAF loop.
+  const ticker = createTicker(paintFrame, { static: options.static });
   function startTicker(): void {
-    if (rafId != null || (timeBindings.length === 0 && revealClips.length === 0)) return;
+    if (timeBindings.length === 0 && revealClips.length === 0) return;
     // Write once synchronously so the first frame paints correct values
     // instead of whatever resolveBinding produced from the raw anchor string.
-    tick();
+    ticker.start();
   }
   function stopTicker(): void {
-    if (rafId != null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
+    ticker.stop();
   }
   startTicker();
 
@@ -545,6 +543,7 @@ export function mountTemplate(
     scrub(which, time) {
       lastScrub = { which, time };
       applyScrub(which, time);
+      if (options.static) ticker.paintNow();
     },
     patch(next) {
       if (destroyed) return false;
@@ -601,6 +600,7 @@ export function mountTemplate(
       currentData = withDefaults(current, { ...currentData, ...data });
       updateTemplateData(current, currentData, nodes as LayerNodeMap);
       fitText();
+      if (options.static) ticker.paintNow();
     },
     destroy() {
       destroyed = true;

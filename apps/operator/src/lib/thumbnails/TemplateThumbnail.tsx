@@ -17,7 +17,7 @@ function TemplateThumbnailImpl({ templateId, data, width, label }: TemplateThumb
   const { template, status } = useTemplateBody(templateId);
   const boxRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const mountedRef = useRef<{ m: MountedTemplate; updatedAt?: string; id: string } | null>(null);
+  const mountedRef = useRef<{ m: MountedTemplate; updatedAt?: string; id: string; host: HTMLElement } | null>(null);
   const [visible, setVisible] = useState(false);
 
   const size = template?.size ?? { w: 16, h: 9 };
@@ -48,7 +48,12 @@ function TemplateThumbnailImpl({ templateId, data, width, label }: TemplateThumb
   useEffect(() => {
     if (!visible || !template || !stageRef.current) return;
     const cur = mountedRef.current;
-    if (cur && cur.id === template.id && cur.updatedAt === template.updatedAt) {
+    if (
+      cur &&
+      cur.host === stageRef.current &&
+      cur.id === template.id &&
+      cur.updatedAt === template.updatedAt
+    ) {
       cur.m.update(data);
       cur.m.scrub("out", 0);
       return;
@@ -57,9 +62,15 @@ function TemplateThumbnailImpl({ templateId, data, width, label }: TemplateThumb
       cur.m.destroy();
       mountedRef.current = null;
     }
-    const m = mountTemplate(stageRef.current, template, data, { mode: "live" });
+    // static: no perpetual rAF ticker; the thumbnail stays parked on its pose.
+    const m = mountTemplate(stageRef.current, template, data, { mode: "live", static: true });
     m.scrub("out", 0);
-    mountedRef.current = { m, updatedAt: template.updatedAt, id: template.id };
+    mountedRef.current = {
+      m,
+      updatedAt: template.updatedAt,
+      id: template.id,
+      host: stageRef.current,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, template, thumbKey(templateId, data, template?.updatedAt)]);
 

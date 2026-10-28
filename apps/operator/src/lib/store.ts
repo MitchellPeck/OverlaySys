@@ -68,6 +68,9 @@ type StoreState = {
   /** serverTime (from hello) minus local Date.now(); add to Date.now() for server-clock time. */
   serverTimeOffsetMs: number;
   templates: TemplateMeta[];
+  // [P1.10] true once setTemplates has run (an empty list is then "loaded")
+  templatesLoaded: boolean;
+  // [/P1.10]
   templateCache: Record<string, Template>;
   showMetas: ShowMeta[];
   show: Show | null;
@@ -200,6 +203,7 @@ export const useStore = create<StoreState>((set) => ({
   conn: "connecting",
   serverTimeOffsetMs: 0,
   templates: [],
+  templatesLoaded: false, // [P1.10]
   templateCache: {},
   showMetas: [],
   show: null,
@@ -244,7 +248,7 @@ export const useStore = create<StoreState>((set) => ({
   setServerTimeOffset: (ms) => set({ serverTimeOffsetMs: ms }),
   setConn: (c) =>
     set(c === "open" ? { conn: c } : { conn: c, sttLevels: { levels: [], channels: [] } }),
-  setTemplates: (t) => set({ templates: t }),
+  setTemplates: (t) => set({ templates: t, templatesLoaded: true }), // [P1.10]
   setTemplate: (t) =>
     set((cur) => ({ templateCache: { ...cur.templateCache, [t.id]: t } })),
   setShowMetas: (s) => set({ showMetas: s }),
