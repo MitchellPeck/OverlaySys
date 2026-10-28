@@ -15,6 +15,7 @@
   "dependencies": {
     "@overlaysys/core": "workspace:*",
     "@overlaysys/stage-widgets": "workspace:*",
+    "@overlaysys/ui": "workspace:*",
     "@overlaysys/template-engine": "workspace:*",
     "immer": "^10.1.1",
     "lucide-react": "^1.60.0"

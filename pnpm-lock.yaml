@@ -223,6 +223,9 @@ importers:
       '@overlaysys/template-engine':
         specifier: workspace:*
         version: link:../template-engine
+      '@overlaysys/ui':
+        specifier: workspace:*
+        version: link:../ui
       immer:
         specifier: ^10.1.1
         version: 10.2.0

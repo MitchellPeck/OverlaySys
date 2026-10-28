@@ -20,3 +20,7 @@ export * from "./templateStarters";
 export * from "./canvasView";
 export { useEditCoalescer, createEditCoalescer, isContinuousInput } from "./editCoalescer";
 export { nudgeForKey } from "./stageCanvasMath";
+export { roundTo, formatNumber } from "./numberFormat";
+export { FieldRow } from "./FieldRow";
+export { FONT_WEIGHTS, fontWeightOptions } from "./fontWeights";
+export { FontWeightSelect } from "./FontWeightSelect";
