@@ -20,3 +20,7 @@ export { type IconButtonTone } from "./IconButton";
 export { DeleteButton } from "./DeleteButton";
 export { Tooltip } from "./Tooltip";
 export { KindBar } from "./KindBar";
+export { NumberInput } from "./NumberInput";
+export { SegmentedControl } from "./SegmentedControl";
+export { Switch, Checkbox } from "./Switch";
+export { FileDrop } from "./FileDrop";
