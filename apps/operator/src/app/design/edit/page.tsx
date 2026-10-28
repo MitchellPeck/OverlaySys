@@ -491,7 +491,9 @@ function DesignPageInner() {
       style={{
         height: "100%",
         display: "grid",
-        gridTemplateRows: "auto auto minmax(0, 1fr) 280px",
+        // PageChrome renders into the shell (returns null), so it takes no
+        // row here: error banner, editor, timeline.
+        gridTemplateRows: "auto minmax(0, 1fr) 280px",
         overflow: "hidden",
       }}
     >
@@ -1017,10 +1019,11 @@ function EmbeddedFonts({ template, onCommit }: { template: Template; onCommit: (
     <div style={{ marginTop: 12 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim, marginBottom: 6 }}>Embedded fonts</div>
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-        {template.fonts.map((f) => {
+        {template.fonts.map((f, i) => {
           const usedBy = fontUsage(template, f.family);
           return (
-            <li key={f.family} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4 }}>
+            // Older templates can embed the same family twice, so the name alone isn't a unique key.
+            <li key={`${i}:${f.family}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4 }}>
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: f.family }}>
                 {f.family}
               </span>
