@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emitSections, inferKind, generateSectionId } from "./sectionEmit";
+import { emitSections, emptySections, inferKind, generateSectionId } from "./sectionEmit";
 
 describe("inferKind", () => {
   it("recognizes core kinds", () => {
@@ -41,5 +41,15 @@ describe("emitSections", () => {
   it("emits one empty slide for sections with no blocks", () => {
     const out = emitSections([{ header: "Verse 1", blocks: [] }]);
     expect(out.sections[0]!.slides).toEqual([{ id: "v1s1", lines: [""] }]);
+  });
+});
+
+describe("emptySections", () => {
+  it("finds a section of blank slides", () => {
+    const { sections } = emitSections([
+      { header: "Verse 1", blocks: [["Line one"]] },
+      { header: "Bridge", blocks: [] },
+    ]);
+    expect(emptySections(sections).map((x) => x.label)).toEqual(["Bridge"]);
   });
 });

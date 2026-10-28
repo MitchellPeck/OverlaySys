@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseSongFromText } from "./songParser";
+import { parseSongFromText, parseSongTextWithNotice } from "./songParser";
+import { parsePlainLyrics } from "./parsePlainLyrics";
+import { parseSongSelectText } from "./songSelectParser";
 
 describe("parseSongFromText", () => {
   it("parses a basic verse + chorus", () => {
@@ -79,8 +81,9 @@ b`);
     expect(song.sections[0]!.slides[0]!.lines).toEqual(["foo"]);
   });
 
-  it("rejects input with no section headers", () => {
-    expect(() => parseSongFromText("x", "X", "just some lines\nno header")).toThrow();
+  it("imports input with no section headers as Verse 1", () => {
+    const song = parseSongFromText("x", "X", "just some lines\nno header");
+    expect(song.sections.map((x) => x.label)).toEqual(["Verse 1"]);
   });
 
   it("reuses the earlier section for a repeated empty header (SONGS-1)", () => {
@@ -107,5 +110,32 @@ Bridge line one
   it("makes a repeated header with a different body a new section", () => {
     const song = parseSongFromText("x", "X", "[Chorus]\na\n[Chorus]\nb");
     expect(song.sections.map((s) => s.id)).toEqual(["c1", "c2"]);
+  });
+});
+
+describe("headerless and orphan handling", () => {
+  it("headerless text becomes Verse 1 with slides at blank lines, with a notice", () => {
+    const r = parseSongTextWithNotice("id", "T", "Line one\nLine two\n\nLine three");
+    expect(r.song.sections).toEqual([{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["Line one", "Line two"] }, { id: "v1s2", lines: ["Line three"] }] }]);
+    expect(r.notice).toBe("No section headers found, so everything was imported as Verse 1. Add [Verse 1], [Chorus] headers to split it.");
+  });
+  it("orphan lines before the first header become Intro", () => {
+    const r = parseSongTextWithNotice("id", "T", "Lead line\n\n[Verse 1]\nLine one");
+    expect(r.song.sections.map((x) => x.kind)).toEqual(["intro", "verse"]);
+    expect(r.notice).toBeNull();
+  });
+  it("empty text throws", () => {
+    expect(() => parseSongTextWithNotice("id", "T", "  \n")).toThrow("Paste some lyrics first.");
+  });
+  it("repeated empty header still references the earlier section (SONGS-1 regression)", () => {
+    const t = "[Verse 1]\na\n[Chorus]\nb\n[Verse 2]\nc\n[Chorus]\n[Bridge]\nd\n[Chorus]";
+    const want = ["v1", "c1", "v2", "c1", "b1", "c1"];
+    expect(parseSongTextWithNotice("i", "T", t).song.defaultArrangement).toEqual(want);
+    const p = parsePlainLyrics(t);
+    expect(p.sections).toHaveLength(4);
+    expect(p.defaultArrangement).toEqual(want);
+    const ss = parseSongSelectText(t);
+    expect(ss.sections).toHaveLength(4);
+    expect(ss.defaultArrangement).toEqual(want);
   });
 });

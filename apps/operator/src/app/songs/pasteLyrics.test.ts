@@ -19,10 +19,10 @@ describe("parsePastedLyrics", () => {
   });
 
   it("reports a parse error instead of throwing", () => {
-    const r = parsePastedLyrics(song, "no headers here at all", false);
+    const r = parsePastedLyrics(song, "   ", false);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error).toMatch(/header/i);
+    expect(r.error).toMatch(/lyrics/i);
   });
 
   it("only takes SongSelect metadata when asked", () => {

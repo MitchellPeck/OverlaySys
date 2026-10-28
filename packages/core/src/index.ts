@@ -31,3 +31,4 @@ export * from "./stageTimers";
 export * from "./stageSampleFeeds";
 export * from "./deck";
 export * from "./slides";
+export * from "./chordPro";

@@ -71,3 +71,10 @@ export function emitSections(raw: RawSection[]): {
   }
   return { sections, defaultArrangement };
 }
+
+/** Sections whose every slide is blank lines (nothing to show). */
+export function emptySections(sections: Section[]): Section[] {
+  return sections.filter((sec) =>
+    sec.slides.every((sl) => sl.lines.every((l) => l.trim() === "")),
+  );
+}
