@@ -58,12 +58,17 @@ export interface MirrorSubscription {
   accepts(stateChannel: string): boolean;
 }
 
-export function createMirrorSubscription(channel: string): MirrorSubscription {
+export function createMirrorSubscription(channel: string, label?: string): MirrorSubscription {
   let source = channel;
   let config: ChannelConfig | null = null;
 
+  // The URL channel subscription makes this window count as an output of
+  // that channel (outputs_state). The source subscription of a mirror is
+  // tagged so it doesn't count as an output of the source, and so the
+  // server sends it the source's playback ticks (video drift correction).
   function subscribe(target: string): ClientMessage {
-    return { type: "subscribe", channel: target, role: "renderer" };
+    if (target !== channel) return { type: "subscribe", channel: target, role: "renderer", mirrorFor: channel };
+    return { type: "subscribe", channel: target, role: "renderer", ...(label ? { label } : {}) };
   }
 
   function retarget(next: ChannelConfig): ClientMessage[] {
@@ -105,4 +110,13 @@ export function createMirrorSubscription(channel: string): MirrorSubscription {
       return stateChannel === source;
     },
   };
+}
+
+/** How this window introduces itself in outputs_state: `?label=`, else a guess from the user agent. */
+export function outputLabel(search: string, userAgent: string): string {
+  const explicit = new URLSearchParams(search).get("label");
+  if (explicit) return explicit.slice(0, 80);
+  if (/\bOBS\b/.test(userAgent)) return "OBS";
+  if (/Electron/.test(userAgent)) return "Desktop window";
+  return "Browser";
 }

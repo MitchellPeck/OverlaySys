@@ -132,6 +132,58 @@ describe("ws subscribe", () => {
   });
 });
 
+describe("ws output presence", () => {
+  function lastOutputs(sock: FakeSocket) {
+    const all = sock.sent.filter((m) => m.type === "outputs_state");
+    const last = all[all.length - 1];
+    return last?.type === "outputs_state" ? last.outputs : undefined;
+  }
+
+  it("broadcasts outputs_state when a renderer subscribes and when it leaves", async () => {
+    const ch = `t-${Date.now()}-out`;
+    const operator = connect();
+    expect(lastOutputs(operator)).toBeDefined();
+    const renderer = connect();
+    await renderer.client({ type: "subscribe", channel: ch, role: "renderer", label: "OBS" });
+    expect(lastOutputs(operator)?.[ch]).toMatchObject({ count: 1, labels: ["OBS"] });
+    renderer.emit("close");
+    expect(lastOutputs(operator)?.[ch]).toBeUndefined();
+  });
+
+  it("operator subscriptions and a mirror's source subscription aren't outputs", async () => {
+    const ch = `t-${Date.now()}-out2`;
+    const operator = connect();
+    await operator.client({ type: "subscribe", channel: ch, role: "operator" });
+    const alpha = connect();
+    await alpha.client({ type: "subscribe", channel: ch, role: "renderer", mirrorFor: `${ch}-alpha` });
+    expect(lastOutputs(operator)?.[ch]).toBeUndefined();
+    alpha.emit("close");
+  });
+
+  it("only the first renderer on a channel reports media status", async () => {
+    const ch = `t-${Date.now()}-media`;
+    channels.mediaTake(ch, { rowId: "r", assetUrl: "/assets/x.mp4", volume: 1, endAction: "hold" });
+    const takenAt = channels.getState(ch).media!.takenAt;
+    const a = connect();
+    const b = connect();
+    const report = (currentTime: number) => ({
+      type: "media_status",
+      channel: ch,
+      takenAt,
+      status: "playing",
+      currentTime,
+      duration: 10,
+    });
+    await a.client(report(1));
+    await b.client(report(5));
+    expect(channels.getState(ch).media!.playback.currentTime).toBe(1);
+    a.emit("close");
+    await b.client(report(6));
+    expect(channels.getState(ch).media!.playback.currentTime).toBe(6);
+    b.emit("close");
+  });
+});
+
 describe("ws song takes set liveRow", () => {
   const song = SongSchema.parse({
     id: "song-lr",
@@ -157,6 +209,22 @@ describe("ws song takes set liveRow", () => {
   }
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("stt_match goes only to sockets that subscribed", async () => {
+    vi.spyOn(shows, "getShow").mockResolvedValue(show);
+    vi.spyOn(songs, "getSong").mockResolvedValue(song);
+    vi.spyOn(templates, "getTemplate").mockResolvedValue(null);
+    const ch = `t-${Date.now()}-stt`;
+    const operator = connect();
+    const renderer = connect();
+    await operator.client({ type: "stt_match_subscribe", on: true });
+    await operator.client({ type: "song_take", channel: ch, showId: "show-lr", songRowId: "row-lr" });
+    await vi.waitFor(() => expect(songSession.getSession(ch)).toBeTruthy());
+    await renderer.client({ type: "stt_hypothesis", audioSourceId: "a1", text: "amazing grace", t: Date.now() });
+    await vi.waitFor(() => expect(operator.sent.some((m) => m.type === "stt_match")).toBe(true));
+    expect(renderer.sent.some((m) => m.type === "stt_match")).toBe(false);
+    songSession.end(ch);
   });
 
   it("song_take sets liveRow on its channel", async () => {
@@ -312,6 +380,8 @@ describe("ws stage layouts", () => {
   });
 
   it("a slow preview on is superseded by a newer on from the same socket", async () => {
+    // Messages from one socket are handled in order, so the newer "on" only
+    // starts once the slow one has finished — and it wins.
     const other = StageLayoutSchema.parse({ id: "stage-layout-wsws0002", name: "WS2", widgets: [] });
     const releases: (() => void)[] = [];
     vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
@@ -321,11 +391,32 @@ describe("ws stage layouts", () => {
     const sock = connect();
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout });
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout: other });
-    releases[1]?.();
-    await new Promise((r) => setTimeout(r, 0));
+    expect(releases).toHaveLength(1);
     releases[0]?.();
     await new Promise((r) => setTimeout(r, 0));
+    expect(releases).toHaveLength(2);
+    releases[1]?.();
+    await new Promise((r) => setTimeout(r, 0));
     expect(stageFeedHub.listPreviews()).toEqual([{ channel: "stage-ws-race2", layoutId: other.id }]);
+    sock.emit("close");
+  });
+
+  it("handles one socket's messages in arrival order", async () => {
+    // A slow first handler must not let a later message overtake it.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
+      await gate;
+      return stageCh(id);
+    });
+    const ch = `t-${Date.now()}-order`;
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-order", layout });
+    await sock.client({ type: "take", channel: ch, templateId: "after", data: {} });
+    expect(channels.getState(ch).active).toBeNull();
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(channels.getState(ch).active?.templateId).toBe("after");
     sock.emit("close");
   });
 
@@ -337,5 +428,31 @@ describe("ws stage layouts", () => {
     await sock.client({ type: "stage_layout_preview", channel: "program", layout });
     expect(sock.sent).toContainEqual({ type: "error", code: "not_stage_channel", message: "program" });
     expect(stageFeedHub.listPreviews()).toEqual([]);
+  });
+});
+
+describe("ws machine-admin operations", () => {
+  function connectFrom(remoteAddress: string): FakeSocket {
+    const sock = new FakeSocket();
+    sockets.push(sock);
+    handleConnection(sock as never, { socket: { remoteAddress } } as never, silentLog);
+    return sock;
+  }
+
+  it("refuses STT installs and model downloads from another machine", async () => {
+    const sock = connectFrom("192.0.2.44");
+    await sock.client({ type: "stt_download_model", url: "https://huggingface.co/x.bin", filename: "x.bin" });
+    await sock.client({ type: "stt_install_binary" });
+    await sock.client({ type: "stt_spawner_start", config: { autoStart: false } });
+    const refused = sock.sent.filter((m) => m.type === "error" && m.code === "forbidden_remote");
+    expect(refused).toHaveLength(3);
+  });
+
+  it("still lets a remote operator take graphics", async () => {
+    const ch = `t-${Date.now()}-remote`;
+    const sock = connectFrom("192.0.2.44");
+    await sock.client({ type: "take", channel: ch, templateId: "tpl", data: {} });
+    expect(channels.getState(ch).active?.templateId).toBe("tpl");
+    expect(sock.sent.some((m) => m.type === "error")).toBe(false);
   });
 });

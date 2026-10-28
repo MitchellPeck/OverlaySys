@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Template, ChannelState, ChannelConfig, StageFeed } from "@overlaysys/core";
+import type { ChannelState, ChannelConfig, MediaPlayback, StageFeed } from "@overlaysys/core";
 import { StageView, serverOffset } from "@overlaysys/stage-widgets";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
-import { createMirrorSubscription } from "./mirrorSubscription";
+import { createTemplateLoader } from "./templateLoader";
+import { createChannelPlayer, type ChannelPlayer } from "./channelPlayer";
+import { DEFAULT_STAGE_SIZE, readSizeOverride, resolveStageSize, type StageSize } from "./stageSize";
+import { createMirrorSubscription, outputLabel } from "./mirrorSubscription";
 import { MediaLayer } from "./MediaLayer";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
@@ -14,8 +17,6 @@ type Props = {
 
 type Status = "connecting" | "open" | "closed";
 
-const STAGE_W = 1920;
-const STAGE_H = 1080;
 
 // Session-boundary stage fade duration. Applied on top of (not in place
 // of) the template's own IN/OUT animations — for sessions, that's the
@@ -38,32 +39,21 @@ const SONG_FADE_DIP_MIN = 0.25;
 
 export function Renderer({ channel, debug = false }: Props) {
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const mountedRef = useRef<MountedTemplate | null>(null);
-  // Tracks the templateId of the current mount so the takenAt-change handler
-  // can distinguish same-template swaps (lyric slide advance, same-template
-  // outro) from different-template transitions. Same-template swaps reuse the
-  // mount and run its OUT → update → IN animation, so layers outside the
-  // template's in/out timelines (e.g. the shadow band on a lyric template)
-  // stay in place.
-  const lastTemplateIdRef = useRef<string | null>(null);
-  const lastTakenAtRef = useRef<number>(0);
-  const templateCacheRef = useRef<Map<string, Template>>(new Map());
-  const pendingTemplateLoads = useRef<Map<string, ((t: Template) => void)[]>>(
-    new Map(),
-  );
-  // Tracks which mounts have already had playOut() initiated. Without this,
-  // consecutive state deliveries (e.g. phase=out followed shortly by a new
-  // take) would call playOut twice on the same mount, restarting the
-  // animation back to t=0 mid-fade.
-  const outStartedRef = useRef<WeakSet<MountedTemplate>>(new WeakSet());
+  // Template fetches + the take/clear sequencing live in templateLoader.ts and
+  // channelPlayer.ts (unit-tested). Created inside the WS effect.
+  const playerRef = useRef<ChannelPlayer | null>(null);
   // Which channel we subscribe to and whose state we apply. Defaults to
   // the URL param; retargets when a config with `mirrorOf` arrives. The
   // sequencing (reconnects, late config, changed mirrorOf) lives in
   // mirrorSubscription.ts where it is unit-tested — see that file for the
   // reconnect bug that used to black out the alpha output.
-  const subscriptionRef = useRef(createMirrorSubscription(channel));
+  const subscriptionRef = useRef(createMirrorSubscription(channel, outputLabel(location.search, navigator.userAgent)));
   const clientRef = useRef<WsClient | null>(null);
   const sendRef = useRef((msg: ClientMessage) => clientRef.current?.send(msg));
+  // Mirror windows: the primary's playback ticks + server clock offset, read
+  // by MediaLayer each tick to keep the key video locked to the fill.
+  const primaryPlaybackRef = useRef<{ takenAt: number; playback: MediaPlayback } | null>(null);
+  const serverOffsetRef = useRef(0);
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
@@ -76,6 +66,9 @@ export function Renderer({ channel, debug = false }: Props) {
   const isStageRef = useRef(isStage);
   isStageRef.current = isStage;
   const [scale, setScale] = useState(1);
+  // Output resolution: `?size=WxH`, else the size of the template on air.
+  const sizeOverrideRef = useRef<StageSize | null>(readSizeOverride(location.search));
+  const [stageSize, setStageSize] = useState<StageSize>(sizeOverrideRef.current ?? DEFAULT_STAGE_SIZE);
   // Session-level fade. opacity drives the stage; transitionMs=0 disables
   // the CSS transition so we can snap back to 1 cleanly after a fade-out
   // without re-triggering a slow ramp on the next non-song take.
@@ -90,17 +83,17 @@ export function Renderer({ channel, debug = false }: Props) {
   // own IN animation.
   const pendingSessionStartRef = useRef(false);
 
-  // Fit-scale the 1920x1080 stage to the viewport.
+  // Fit-scale the stage to the viewport.
   useLayoutEffect(() => {
     function update() {
-      const sw = window.innerWidth / STAGE_W;
-      const sh = window.innerHeight / STAGE_H;
+      const sw = window.innerWidth / stageSize.w;
+      const sh = window.innerHeight / stageSize.h;
       setScale(Math.min(sw, sh));
     }
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
+  }, [stageSize]);
 
   // Defensive cleanup: clear any inline `background` left on <html>/<body>
   // by an earlier version of the renderer that mutated those elements
@@ -124,12 +117,7 @@ export function Renderer({ channel, debug = false }: Props) {
   // Config can land after state: tear down anything mounted before we knew
   // this was a stage channel.
   useEffect(() => {
-    if (!isStage || !mountedRef.current) return;
-    const m = mountedRef.current;
-    mountedRef.current = null;
-    lastTemplateIdRef.current = null;
-    lastTakenAtRef.current = 0;
-    m.destroy();
+    if (isStage) playerRef.current?.reset();
   }, [isStage]);
 
   const backgroundColor = matte ? "#000" : (config?.background ?? "transparent");
@@ -138,117 +126,33 @@ export function Renderer({ channel, debug = false }: Props) {
     const client = new WsClient(defaultServerUrl());
     clientRef.current = client;
 
-    function ensureTemplate(id: string): Promise<Template> {
-      const cached = templateCacheRef.current.get(id);
-      if (cached) return Promise.resolve(cached);
-      return new Promise((resolve) => {
-        const list = pendingTemplateLoads.current.get(id) ?? [];
-        list.push(resolve);
-        pendingTemplateLoads.current.set(id, list);
-        client.send({ type: "get_template", templateId: id });
-      });
-    }
-
-    function triggerOut(m: MountedTemplate): Promise<void> {
-      if (outStartedRef.current.has(m)) return Promise.resolve();
-      outStartedRef.current.add(m);
-      return m.playOut();
-    }
-
-    async function applyState(state: ChannelState) {
-      if (!stageRef.current) return;
-      if (isStageRef.current) return;
-
-      if (!state.active) {
-        if (mountedRef.current) {
-          const m = mountedRef.current;
-          mountedRef.current = null;
-          lastTemplateIdRef.current = null;
-          await triggerOut(m).catch(() => {});
-          m.destroy();
+    const loader = createTemplateLoader({
+      request: (id) => client.send({ type: "get_template", templateId: id }),
+    });
+    const player = createChannelPlayer<MountedTemplate>({
+      loadTemplate: (id) => loader.get(id),
+      mount: (tpl, data) => mountTemplate(stageRef.current!, tpl, data),
+      sessionStartPending: () => pendingSessionStartRef.current,
+      // Session-start cue: dip stage opacity to SONG_FADE_DIP_MIN now (after
+      // the previous OUT has finished, so we don't clobber that animation),
+      // then ramp back to 1 over SONG_FADE_MS once the new mount is in. The
+      // dip is not 0 — the lyric template's IN underneath still shows.
+      beforeFreshMount: () => {
+        if (!pendingSessionStartRef.current) return false;
+        pendingSessionStartRef.current = false;
+        if (songFadeOutTimerRef.current) {
+          clearTimeout(songFadeOutTimerRef.current);
+          songFadeOutTimerRef.current = null;
         }
-        return;
-      }
-
-      const { templateId, data, phase, takenAt } = state.active;
-
-      if (takenAt !== lastTakenAtRef.current) {
-        lastTakenAtRef.current = takenAt;
-
-        if (phase === "out") return;
-
-        const myTakenAt = takenAt;
-        const previous = mountedRef.current;
-
-        // Same-template swap: lyric slide advance, or an outro/intro that
-        // happens to reuse the same template. Reuse the mount, run its OUT
-        // → data swap → IN. Only layers the template's in/out timelines
-        // target will animate (e.g. on a lyric template the text element
-        // fades while the shadow band stays put). Pre-condition: a session
-        // start is NOT pending (those want the full mount cycle so the
-        // session-boundary fade lands correctly).
-        if (
-          previous &&
-          lastTemplateIdRef.current === templateId &&
-          !pendingSessionStartRef.current
-        ) {
-          // playOutTimeline (not playOut, not triggerOut): we want ONLY the
-          // template's own outTl to run — no root-opacity fade. Layers the
-          // template chose not to animate (e.g. a gradient shape behind a
-          // lyric template's text) stay put across the swap. The WeakSet
-          // guard in triggerOut would also suppress this on subsequent
-          // slides, which is wrong for slide-to-slide continuation.
-          await previous.playOutTimeline().catch(() => {});
-          if (myTakenAt !== lastTakenAtRef.current) return;
-          previous.update(data);
-          await previous.playIn().catch(() => {});
-          return;
-        }
-
-        // Different-template (or fresh) transition: play the previous mount's
-        // out animation to completion, destroy it, then mount the new template
-        // and play its in animation. Total transition time is out-duration +
-        // in-duration. If a newer take arrives during the out, the takenAt
-        // guard below abandons this flow so the newer take's flow can take over.
-        mountedRef.current = null;
-        lastTemplateIdRef.current = null;
-
-        const tpl = await ensureTemplate(templateId);
-
-        if (previous) {
-          await triggerOut(previous).catch(() => {});
-          previous.destroy();
-        }
-
-        if (myTakenAt !== lastTakenAtRef.current) return;
-
-        // Session-start cue: dip stage opacity to SONG_FADE_DIP_MIN NOW
-        // (after previous's OUT has finished, so we don't clobber that
-        // animation), then ramp back to 1 over SONG_FADE_MS. The dip is
-        // not 0 — we keep the stage partially visible so the lyric
-        // template's IN animation underneath still shows through.
-        const sessionStart = pendingSessionStartRef.current;
-        if (sessionStart) {
-          pendingSessionStartRef.current = false;
-          if (songFadeOutTimerRef.current) {
-            clearTimeout(songFadeOutTimerRef.current);
-            songFadeOutTimerRef.current = null;
-          }
-          setSongFadeTransitionMs(0);
-          setSongFadeOpacity(SONG_FADE_DIP_MIN);
-        }
-
-        const m = mountTemplate(stageRef.current, tpl, data);
-        mountedRef.current = m;
-        lastTemplateIdRef.current = templateId;
-        m.playIn().catch(() => {});
+        setSongFadeTransitionMs(0);
+        setSongFadeOpacity(SONG_FADE_DIP_MIN);
+        return true;
+      },
+      afterFreshMount: (tpl, m, sessionStart) => {
+        setStageSize((prev) => resolveStageSize(sizeOverrideRef.current, tpl.size, prev));
         // Blink overlay fires in parallel with playIn so the IN animation
-        // continues underneath. Catch to keep the takenAt flow alive if the
-        // blink tween errors for any reason.
-        if (tpl.blinkOnTake?.enabled) {
-          m.playBlink(tpl.blinkOnTake).catch(() => {});
-        }
-
+        // continues underneath.
+        if (tpl.blinkOnTake?.enabled) m.playBlink(tpl.blinkOnTake).catch(() => {});
         if (sessionStart) {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -257,20 +161,17 @@ export function Renderer({ channel, debug = false }: Props) {
             });
           });
         }
-        return;
-      }
+      },
+      onLoadError: (id, err) => {
+        console.warn(`[renderer] ${channel}: template ${id} failed to load — stage cleared`, err);
+      },
+    });
+    playerRef.current = player;
 
-      if (phase === "out" && mountedRef.current) {
-        const m = mountedRef.current;
-        mountedRef.current = null;
-        lastTemplateIdRef.current = null;
-        triggerOut(m).finally(() => m.destroy());
-        return;
-      }
-
-      if (mountedRef.current) {
-        mountedRef.current.update(data);
-      }
+    function applyState(state: ChannelState) {
+      if (!stageRef.current) return;
+      if (isStageRef.current) return;
+      void player.apply(state);
     }
 
     const subscription = subscriptionRef.current;
@@ -280,12 +181,19 @@ export function Renderer({ channel, debug = false }: Props) {
 
     const offStatus = client.onStatus((s) => setStatus(s));
     const offMsg = client.on((msg) => {
-      if (msg.type === "hello") {
+      if (msg.type === "media_playback") {
+        if (subscription.source !== channel && subscription.accepts(msg.channel)) {
+          primaryPlaybackRef.current = { takenAt: msg.takenAt, playback: msg.playback };
+        }
+      } else if (msg.type === "hello") {
+        serverOffsetRef.current = msg.serverTime - Date.now();
         // Every hello is a fresh socket (first connect OR a reconnect), so
         // the server knows nothing about us: subscribe to the URL channel,
         // re-subscribe to the mirror source if we already have one, and
         // re-fetch config in case mirrorOf changed while we were away.
         sendAll(subscription.hello());
+        // Template requests sent on the old socket died with it.
+        loader.resend();
       } else if (msg.type === "channel") {
         const before = subscription.source;
         const msgs = subscription.channelConfig(msg.config);
@@ -349,12 +257,11 @@ export function Renderer({ channel, debug = false }: Props) {
         setLatestState(msg.state);
         applyState(msg.state);
       } else if (msg.type === "template") {
-        templateCacheRef.current.set(msg.template.id, msg.template);
-        const waiting = pendingTemplateLoads.current.get(msg.template.id) ?? [];
-        for (const r of waiting) r(msg.template);
-        pendingTemplateLoads.current.delete(msg.template.id);
+        loader.received(msg.template);
       } else if (msg.type === "error") {
-        if (msg.code === "not_found" && msg.message === channel) {
+        if (msg.code === "not_found" && loader.notFound(msg.message)) {
+          // A take's template is gone; the player has cleared the stage.
+        } else if (msg.code === "not_found" && msg.message === channel) {
           // No config for this channel yet. Normal for ad-hoc channels;
           // for a channel that is SUPPOSED to mirror (alpha outputs) it
           // means we are painting our own — usually empty — state until a
@@ -380,10 +287,9 @@ export function Renderer({ channel, debug = false }: Props) {
         clearTimeout(songFadeOutTimerRef.current);
         songFadeOutTimerRef.current = null;
       }
-      if (mountedRef.current) {
-        mountedRef.current.destroy();
-        mountedRef.current = null;
-      }
+      loader.dispose();
+      player.reset();
+      playerRef.current = null;
     };
   }, [channel]);
 
@@ -408,6 +314,9 @@ export function Renderer({ channel, debug = false }: Props) {
           isMirror={subscriptionRef.current.source !== channel}
           matte={matte}
           scale={scale}
+          stageSize={stageSize}
+          primaryPlayback={primaryPlaybackRef}
+          serverOffsetMs={serverOffsetRef}
           send={sendRef.current}
         />
       )}
@@ -417,8 +326,8 @@ export function Renderer({ channel, debug = false }: Props) {
           position: "absolute",
           left: "50%",
           top: "50%",
-          width: STAGE_W,
-          height: STAGE_H,
+          width: stageSize.w,
+          height: stageSize.h,
           transform: `translate(-50%, -50%) scale(${scale})`,
           transformOrigin: "50% 50%",
           // Matte: brightness(0) drives every pixel's color to black, then

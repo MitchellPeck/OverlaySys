@@ -7,6 +7,7 @@ import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
   encode,
+  type ClientMessage,
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
 import {
@@ -37,12 +38,46 @@ import { stageFollowedChannels } from "./stageFollowed";
 import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 import * as pcoLiveSync from "./pco/pcoLiveSync";
+import { isLocalAddress, remoteAddressOf, securityContext } from "./security";
+import * as outputs from "./outputs";
+import { SERVER_VERSION } from "./version";
+
+/**
+ * Requests that don't need to wait their turn behind this socket's earlier
+ * messages: heartbeats, and slow lookups whose answers don't depend on order
+ * (a PCO poll or a capture-device probe must not hold up a take).
+ */
+const UNORDERED_TYPES = new Set<string>([
+  "ping",
+  "pco_live_start",
+  "stt_check_presence",
+  "stt_list_models",
+  "stt_enumerate_capture_devices",
+]);
+
+/**
+ * Operations that install software, write files from a URL, or set the
+ * shell command the STT spawner runs. They act on the server machine, so
+ * only a connection from that machine may send them.
+ */
+const LOCAL_ONLY_TYPES = new Set<string>([
+  "stt_install_binary",
+  "stt_uninstall_binary",
+  "stt_download_model",
+  "stt_delete_model",
+  "stt_cancel_install",
+  "stt_spawner_save_config",
+]);
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
 
+// STT suggestions arrive several times a second while a song is live. They
+// go only to clients that opted in with stt_match_subscribe (operator
+// consoles, Companion) — never to renderers or stage displays.
+const sttMatchSubscribers = new Set<(msg: ServerMessage) => void>();
 songSession.onMatch((channel, result, hypothesis, meta) => {
-  broadcast({
+  const msg: ServerMessage = {
     type: "stt_match",
     channel,
     suggestedSlide: result
@@ -55,7 +90,14 @@ songSession.onMatch((channel, result, hypothesis, meta) => {
     coverage: result?.coverage ?? 0,
     latencyMs: meta.latencyMs,
     isFinal: meta.isFinal,
-  });
+  };
+  for (const send of sttMatchSubscribers) {
+    try {
+      send(msg);
+    } catch {
+      // one bad socket must not starve the rest
+    }
+  }
 });
 
 // Any channel change can alter what a confidence monitor shows (a timer on
@@ -144,15 +186,58 @@ sttInstaller.subscribeInstall((progress) => {
   })();
 });
 
+outputs.subscribeOutputs(() => broadcast(outputsStateMessage()));
+
+export function outputsStateMessage(): ServerMessage {
+  return { type: "outputs_state", outputs: outputs.outputsSnapshot() };
+}
+
+// One renderer per channel reports media playback: with two windows on the
+// same channel (OBS + a browser preview) both reported, and their slightly
+// different clocks made the operator's transport jitter. The first socket to
+// report owns the channel until it closes.
+const liveConnections = new Set<string>();
+const mediaReporters = new Map<string, string>();
+
+/** Should a media_status from `connId` for `channel` be applied? */
+export function claimMediaReporter(channel: string, connId: string): boolean {
+  const owner = mediaReporters.get(channel);
+  if (owner && owner !== connId && liveConnections.has(owner)) return false;
+  mediaReporters.set(channel, connId);
+  return true;
+}
+
 stageFeedHub.subscribePreviews(() =>
   broadcast({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() }),
 );
 
+export interface ConnectionHandle {
+  /** Resolves once every message received so far has been handled. */
+  drain(): Promise<void>;
+}
+
+/** Every channel a panic clear should reach: configured (non-mirror) and any with live state. */
+export async function clearAllChannels(cutVideo: boolean): Promise<string[]> {
+  const configs = await channelConfigs.listChannelConfigs();
+  const mirrors = new Set(configs.filter((c) => c.mirrorOf).map((c) => c.id));
+  const ids = new Set<string>(configs.filter((c) => !c.mirrorOf).map((c) => c.id));
+  for (const st of channels.allStates()) if (!mirrors.has(st.channel)) ids.add(st.channel);
+  for (const id of ids) {
+    channels.clear(id);
+    if (cutVideo) channels.mediaClear(id, { cut: true });
+  }
+  return [...ids];
+}
+
 export function handleConnection(
   ws: WebSocket,
-  _req: IncomingMessage,
+  req: IncomingMessage,
   log: FastifyBaseLogger,
-): void {
+): ConnectionHandle {
+  // No socket = an in-process connection (tests); otherwise loopback or one
+  // of this machine's own addresses.
+  const peer = remoteAddressOf(req);
+  const isLocalPeer = peer === undefined || isLocalAddress(peer, securityContext().ownAddresses);
   const subscriptions = new Map<string, () => void>();
   const connId = randomUUID();
   const previewSeq = new Map<string, number>();
@@ -164,7 +249,9 @@ export function handleConnection(
   }
   const offBroadcast = registerSender(send);
 
-  send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now() });
+  liveConnections.add(connId);
+  send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now(), serverVersion: SERVER_VERSION });
+  send(outputsStateMessage());
   // Snapshot so a reconnecting designer learns which preview it (or another socket) holds.
   send({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() });
   void stageState
@@ -175,18 +262,50 @@ export function handleConnection(
       send(pcoLiveSync.liveSyncStateMessage());
     });
 
-  ws.on("message", async (raw) => {
-    let parsed;
+  // Messages from one socket are handled strictly in arrival order: each
+  // handler (most await disk) runs after the previous one settles. Without
+  // this, a quick Stream Deck "song take" + "next slide" could apply the
+  // advance before the take had loaded its show. Only slow, order-free
+  // requests (and ping, so a busy socket still answers heartbeats) bypass
+  // the queue.
+  let chain: Promise<void> = Promise.resolve();
+  ws.on("message", (raw) => {
+    let parsed: ClientMessage;
     try {
       parsed = ClientMessageSchema.parse(JSON.parse(raw.toString()));
     } catch (err) {
       send({ type: "error", code: "bad_message", message: String(err) });
       return;
     }
+    outputs.touchOutput(connId);
+    if (UNORDERED_TYPES.has(parsed.type)) {
+      void handleMessage(parsed);
+      return;
+    }
+    chain = chain.then(() => handleMessage(parsed));
+  });
+
+  async function handleMessage(parsed: ClientMessage): Promise<void> {
+    if (
+      !isLocalPeer &&
+      (LOCAL_ONLY_TYPES.has(parsed.type) || (parsed.type === "stt_spawner_start" && parsed.config))
+    ) {
+      send({
+        type: "error",
+        code: "forbidden_remote",
+        message: `${parsed.type} is only allowed from the server machine`,
+      });
+      return;
+    }
 
     try {
       switch (parsed.type) {
         case "subscribe": {
+          // A renderer window on its own channel is an output of it; a
+          // mirror's subscription to its source is not.
+          if (parsed.role === "renderer" && !parsed.mirrorFor) {
+            outputs.addOutput(connId, parsed.channel, parsed.label ?? "renderer");
+          }
           if (subscriptions.has(parsed.channel)) {
             // Already live on this socket — don't double-subscribe, but
             // do answer with the current state. A renderer that re-sends
@@ -211,8 +330,9 @@ export function handleConnection(
           });
           // Renderers are the source of playback reports and never read the
           // 4 Hz ticks; only operator-role subscribers get them.
+          // Mirrors do read them: their video follows the primary's clock.
           const unsubPlayback =
-            parsed.role === "renderer"
+            parsed.role === "renderer" && !parsed.mirrorFor
               ? () => {}
               : channels.subscribeMediaPlayback(parsed.channel, (e) => {
                   send({ type: "media_playback", ...e });
@@ -233,6 +353,11 @@ export function handleConnection(
         }
         case "clear": {
           channels.clear(parsed.channel);
+          break;
+        }
+        case "clear_all_channels": {
+          await clearAllChannels(parsed.cutVideo);
+          send({ type: "ack", op: "clear_all_channels" });
           break;
         }
         case "update": {
@@ -269,6 +394,7 @@ export function handleConnection(
           break;
         }
         case "media_status": {
+          if (!claimMediaReporter(parsed.channel, connId)) break;
           channels.mediaStatus(parsed.channel, parsed.takenAt, {
             status: parsed.status,
             currentTime: parsed.currentTime,
@@ -547,14 +673,17 @@ export function handleConnection(
         case "stage_message_clear":
           await stageState.dispatchStage({ type: "messageClear" });
           break;
-        case "timer_create":
-          timers.createTimer({
+        case "timer_create": {
+          const id = timers.createTimer({
             label: parsed.label,
             mode: parsed.mode,
             durationMs: parsed.durationMs,
             overtime: parsed.overtime,
           });
+          if (parsed.start) timers.dispatchTimers({ type: "start", id });
+          send({ type: "ack", op: "timer_create", id });
           break;
+        }
         case "timer_start":
           timers.dispatchTimers({ type: "start", id: parsed.id });
           break;
@@ -909,6 +1038,11 @@ export function handleConnection(
           sttSpawner.start(cfg);
           break;
         }
+        case "stt_match_subscribe": {
+          if (parsed.on) sttMatchSubscribers.add(send);
+          else sttMatchSubscribers.delete(send);
+          break;
+        }
         case "stt_levels_subscribe": {
           if (parsed.on) levelSubscribers.add(send);
           else levelSubscribers.delete(send);
@@ -1049,10 +1183,13 @@ export function handleConnection(
       log.error({ err, type: parsed.type }, "ws handler error");
       send({ type: "error", code: "handler_error", message: String(err) });
     }
-  });
+  }
 
   ws.on("close", () => {
     closed = true;
+    liveConnections.delete(connId);
+    for (const [ch, owner] of mediaReporters) if (owner === connId) mediaReporters.delete(ch);
+    outputs.removeConnection(connId);
     stageFeedHub.clearPreviewsByOwner(connId);
     if (registeredAudioSourceId) {
       sttListener.disconnect(registeredAudioSourceId);
@@ -1061,10 +1198,13 @@ export function handleConnection(
     subscriptions.clear();
     offBroadcast();
     levelSubscribers.delete(send);
+    sttMatchSubscribers.delete(send);
     log.info("ws closed");
   });
 
   ws.on("error", (err) => {
     log.error({ err }, "ws error");
   });
+
+  return { drain: () => chain };
 }

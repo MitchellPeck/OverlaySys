@@ -4,6 +4,9 @@ import staticPlugin from "@fastify/static";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import { handleConnection } from "./ws";
+import { startHeartbeat, trackSocket } from "./heartbeat";
+import { restoreLiveState, startLiveStatePersistence } from "./liveState";
+import { registerHttpApi } from "./httpApi";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -26,6 +29,15 @@ import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
 import os from "node:os";
 import { lanAddresses } from "./networkInfo";
+import {
+  TOKEN_COOKIE,
+  checkRequest,
+  loadSecuritySettings,
+  originAllowed,
+  remoteAddressOf,
+  securityContext,
+  tokenEnabled,
+} from "./security";
 import {
   clearCloudTokens,
   getCloudSyncStatus,
@@ -56,7 +68,44 @@ const STATIC_OPERATOR_DIR = process.env["OVERLAYSYS_STATIC_OPERATOR_DIR"];
 const STATIC_RENDERER_DIR = process.env["OVERLAYSYS_STATIC_RENDERER_DIR"];
 
 const app = Fastify({ logger: { level: "info" } });
-await app.register(cors, { origin: true });
+await loadSecuritySettings();
+
+// Origin allow-list + optional LAN token (see security.ts). CORS only
+// decides whether a browser may READ a response; the onRequest hook below is
+// what actually refuses a cross-site POST before it runs.
+await app.register(cors, {
+  delegator: (req, cb) =>
+    cb(null, { origin: originAllowed(req.headers.origin, securityContext(), req.headers.host) }),
+});
+
+// Routes that hand the server machine-level credentials. Only the desktop
+// host (same machine) ever calls them.
+const LOOPBACK_ONLY_PREFIXES = ["/api/cloud/tokens", "/api/pco/tokens"];
+
+app.addHook("onRequest", async (req, reply) => {
+  const result = checkRequest(
+    { url: req.url, headers: req.headers, remoteAddress: remoteAddressOf(req.raw) },
+    securityContext(),
+  );
+  const path = req.url.split("?")[0] ?? "";
+  if (!result.ok) {
+    // /health stays reachable for monitoring without the token (it reports
+    // less when unauthorized); a bad Origin is refused everywhere.
+    if (!(result.status === 401 && path === "/health")) {
+      return reply.code(result.status).send({ error: result.reason });
+    }
+    return;
+  }
+  if (LOOPBACK_ONLY_PREFIXES.some((p) => path.startsWith(p)) && !result.local) {
+    return reply.code(403).send({ error: "only allowed from this machine" });
+  }
+  // A page opened once with ?token= keeps working: later navigations, asset
+  // loads and its WebSocket carry the cookie (cookies ignore the port).
+  if (result.tokenFromQuery) {
+    const t = securityContext().token ?? "";
+    reply.header("set-cookie", `${TOKEN_COOKIE}=${encodeURIComponent(t)}; Path=/; HttpOnly; SameSite=Lax`);
+  }
+});
 
 if (STATIC_OPERATOR_DIR) {
   await app.register(staticPlugin, {
@@ -93,11 +142,25 @@ app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
 
+// Put back what was on air if the server restarted mid-service (snapshot
+// younger than 5 min), then keep the snapshot current.
+{
+  const restored = await restoreLiveState().catch((err) => {
+    app.log.warn({ err }, "[liveState] restore failed");
+    return null;
+  });
+  if (restored) {
+    app.log.info(`[liveState] restored ${restored.channels} on-air channel(s), ${restored.timers} timer(s)`);
+  }
+  startLiveStatePersistence();
+}
+
 // Load persisted STT config now; the spawner is booted after the port is
 // bound (below) so the listener daemon can be pointed at the real WS URL.
 const sttConfig = await loadSttConfig();
 
-app.get("/health", async () => ({ ok: true, time: Date.now() }));
+// Detailed /health and the versioned /api/v1 control API (httpApi.ts).
+await registerHttpApi(app);
 
 // LAN info for "open on another device" links. boundPort is set once the
 // listener is up (listenWithFallback may pick a port other than 4000).
@@ -251,20 +314,38 @@ if (sttConfig.autoStart) {
   })();
 }
 
-// 1 GB cap. Videos and (eventually large) fonts are embedded as data URLs
-// today, which can push template-save messages well past ws's 100 MB
-// default. This raises the ceiling so saves don't drop the socket; the
-// proper fix is a real upload endpoint that stores binaries on disk.
+// Media and fonts upload over HTTP (/api/assets) and templates reference
+// them by URL, so WS messages are JSON documents. The cap still leaves room
+// for legacy templates that embed an image/font as a data URL; raise it with
+// OVERLAYSYS_WS_MAX_PAYLOAD_MB if a very old template refuses to save. (It
+// was 1 GB, which let any LAN client make the server buffer a gigabyte.)
+const WS_MAX_PAYLOAD_MB = Number(process.env["OVERLAYSYS_WS_MAX_PAYLOAD_MB"] ?? 128);
 const wss = new WebSocketServer({
   server: app.server,
   path: "/ws",
-  maxPayload: 1024 * 1024 * 1024,
+  maxPayload: Math.max(1, WS_MAX_PAYLOAD_MB) * 1024 * 1024,
+  verifyClient: (info, cb) => {
+    const result = checkRequest(
+      { url: info.req.url, headers: info.req.headers, remoteAddress: remoteAddressOf(info.req) },
+      securityContext(),
+    );
+    if (result.ok) cb(true);
+    else {
+      app.log.warn(`[ws] refused upgrade from ${remoteAddressOf(info.req) ?? "?"}: ${result.reason}`);
+      cb(false, result.status, result.reason);
+    }
+  },
 });
 wss.on("connection", (ws, req) => {
+  trackSocket(ws);
   handleConnection(ws, req, app.log);
 });
+// Ping every socket every 10 s; two missed pongs and it's terminated, so a
+// renderer PC that lost power stops counting as a connected output.
+startHeartbeat(() => wss.clients);
 
 app.log.info(`OverlaySys server listening on ${HOST}:${actualPort}`);
+if (tokenEnabled()) app.log.info("  LAN token required for connections from other machines");
 app.log.info(`  HTTP   http://${HOST}:${actualPort}/health`);
 app.log.info(`  WS     ws://${HOST}:${actualPort}/ws`);
 // Magic line consumed by the Electron host (see apps/desktop/src/main.ts).

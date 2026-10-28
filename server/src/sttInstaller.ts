@@ -25,6 +25,7 @@ import http from "node:http";
 import https from "node:https";
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
+import { isAllowedModelUrl } from "./security";
 import {
   PRESET_MODELS,
   buildAugmentedPath,
@@ -771,6 +772,9 @@ export function downloadModel(url: string, filename: string): string {
   if (filename.includes("/") || filename.includes("\\") || filename.includes("..")) {
     throw new Error("filename must not contain path separators");
   }
+  if (!isAllowedModelUrl(url)) {
+    throw new Error("model URL must be https:// on huggingface.co or github.com (OVERLAYSYS_STT_MODEL_HOSTS adds hosts)");
+  }
   const jobId = filename;
   if (activeJobs.has(jobId)) return jobId;
 
@@ -911,7 +915,12 @@ export function downloadModel(url: string, filename: string): string {
               return;
             }
             res.resume();
-            fetch(new URL(res.headers.location, target).toString(), redirects + 1);
+            const next = new URL(res.headers.location, target);
+            if (next.protocol !== "https:") {
+              onError(new Error(`refusing non-https redirect to ${next.host}`));
+              return;
+            }
+            fetch(next.toString(), redirects + 1);
             return;
           }
           if (res.statusCode !== 200) {

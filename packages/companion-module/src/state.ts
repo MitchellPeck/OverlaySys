@@ -28,11 +28,17 @@ export function apply(
         connectionState: "reconnecting",
         timers: [],
         pcoLive: null,
+        outputs: null,
       };
     case "local_reset_live":
       return { ...state, timers: [], pcoLive: null };
     case "hello":
-      return { ...state, serverTimeOffsetMs: evt.serverTime - Date.now() };
+      return {
+        ...state,
+        serverTimeOffsetMs: evt.serverTime - Date.now(),
+        serverVersion: evt.serverVersion ?? null,
+        serverProtocolVersion: evt.protocolVersion,
+      };
     case "local_disconnected":
       return {
         ...state,
@@ -41,13 +47,35 @@ export function apply(
         stage: null,
         timers: [],
         pcoLive: null,
+        outputs: null,
       };
 
     case "state": {
       const next = new Map(state.channelStates);
       next.set(evt.channel, evt.state);
-      return { ...state, channelStates: next };
+      const live = [...next.values()].some((st) => !!st.songSession);
+      const songLiveSince = live ? (state.songLiveSince ?? Date.now()) : null;
+      return { ...state, channelStates: next, songLiveSince };
     }
+
+    case "outputs_state":
+      return { ...state, outputs: evt.outputs };
+
+    case "media_playback": {
+      const next = new Map(state.mediaPlayback);
+      next.set(evt.channel, { takenAt: evt.takenAt, playback: evt.playback });
+      return { ...state, mediaPlayback: next };
+    }
+
+    case "stt_match":
+      return {
+        ...state,
+        stt: {
+          confidence: evt.confidence,
+          lastHypothesis: evt.hypothesis,
+          lastMatchAt: Date.now(),
+        },
+      };
 
     case "template_list":
       return { ...state, templates: evt.templates };
@@ -176,10 +204,12 @@ export function apply(
   }
 }
 
-/** True when something on screen changes with time alone (running timer or live PCO service). */
+/** True when something on screen changes with time alone (running timer, live PCO service, song live for the STT silence count). */
 export function hasRunningWork(state: CompanionState): boolean {
   return (
     state.timers.some((t) => t.anchor !== null && t.pausedAt === undefined) ||
-    state.pcoLive?.service?.status === "live"
+    state.pcoLive?.service?.status === "live" ||
+    // STT "silent for N s" counts up while a song is live.
+    state.songLiveSince !== null
   );
 }

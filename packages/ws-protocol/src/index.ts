@@ -31,6 +31,20 @@ import {
 
 export const PROTOCOL_VERSION = 3;
 
+/** True when a peer's protocol major differs from ours (log a warning). */
+export function protocolMismatch(peerVersion: number | undefined): boolean {
+  return typeof peerVersion === "number" && peerVersion !== PROTOCOL_VERSION;
+}
+
+export const OutputPresenceSchema = z.object({
+  count: z.number().int().nonnegative(),
+  /** Most recent sign of life from any of the channel's outputs (ms epoch). */
+  lastSeen: z.number(),
+  labels: z.array(z.string()),
+});
+export type OutputPresence = z.infer<typeof OutputPresenceSchema>;
+export type OutputsState = Record<string, OutputPresence>;
+
 const DataPayload = z.record(z.string(), z.string());
 
 // ───── Client → Server ─────────────────────────────────────────────────────
@@ -40,6 +54,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("subscribe"),
     channel: z.string(),
     role: z.enum(["operator", "renderer"]).default("renderer"),
+    /** Renderer windows: shown in `outputs_state` (e.g. "OBS", "Desktop window"). */
+    label: z.string().max(80).optional(),
+    /**
+     * Set by a mirror window (fill/key alpha) subscribing to its SOURCE
+     * channel: the subscription doesn't count as an output of that source,
+     * and it receives `media_playback` so its video can follow the primary.
+     */
+    mirrorFor: z.string().optional(),
   }),
   z.object({
     type: z.literal("take"),
@@ -51,6 +73,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("clear"),
     channel: z.string(),
+  }),
+  /**
+   * Panic: clear graphics on every channel (mirrors excluded — they follow
+   * their source) and, unless `cutVideo` is false, hard-cut every video.
+   */
+  z.object({
+    type: z.literal("clear_all_channels"),
+    cutVideo: z.boolean().default(true),
   }),
   z.object({
     type: z.literal("update"),
@@ -261,6 +291,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   // Opt in/out of `stt_levels` (channel-select meter, ~10/s). Only the
   // settings page asks, so Companion and renderers never receive them.
   z.object({ type: z.literal("stt_levels_subscribe"), on: z.boolean() }),
+  // Opt in/out of `stt_match` (several per second while a song is live).
+  // Operator consoles and Companion ask; renderers never receive them.
+  z.object({ type: z.literal("stt_match_subscribe"), on: z.boolean() }),
   // Presence / installer flows. The operator's /stt page sends these to
   // poll for whisper-stream binary availability, list installed models,
   // enumerate capture devices, and drive auto-install. Server responds
@@ -308,6 +341,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     mode: z.enum(["countdown", "countup"]),
     durationMs: z.number().finite().min(0).max(MAX_TIMER_DURATION_MS).optional(),
     overtime: z.boolean().default(true),
+    /** Start it right away (the id is server-generated, so a caller can't start it after). */
+    start: z.boolean().optional(),
   }),
   z.object({
     type: z.enum(["timer_start", "timer_pause", "timer_resume", "timer_reset", "timer_delete"]),
@@ -329,8 +364,20 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("hello"),
+    /** Major protocol version; clients warn when it differs from theirs. */
     protocolVersion: z.number(),
     serverTime: z.number(),
+    /** Server package version (absent on older servers). */
+    serverVersion: z.string().optional(),
+  }),
+  /**
+   * Connected renderer windows per channel. Sent on connect and whenever a
+   * renderer subscribes or disconnects. A channel with no entry has no
+   * output connected.
+   */
+  z.object({
+    type: z.literal("outputs_state"),
+    outputs: z.record(z.string(), OutputPresenceSchema),
   }),
   z.object({
     type: z.literal("state"),

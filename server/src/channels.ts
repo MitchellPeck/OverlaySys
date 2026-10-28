@@ -1,4 +1,5 @@
 import type {
+  ActiveGraphic,
   ChannelState,
   MediaEndAction,
   MediaPlayback,
@@ -222,6 +223,18 @@ export function take(
   if (!takeIsInternal && !scripture?.session) {
     void maybeScheduleAutoOut(channel, templateId, s.active.takenAt);
   }
+}
+
+/**
+ * Put a graphic back on air after a server restart (liveState.ts). No
+ * session teardown, no auto-out, no liveRow side effects: it is the same
+ * take, resumed.
+ */
+export function restoreActive(channel: string, active: ActiveGraphic): void {
+  const s = getOrInit(channel);
+  s.active = { ...active, phase: "in" };
+  states.set(channel, s);
+  emit(channel);
 }
 
 export function takeInternal(channel: string, templateId: string, data: Record<string, string>): void {

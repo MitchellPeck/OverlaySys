@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelConfig } from "@overlaysys/core";
-import { createMirrorSubscription } from "./mirrorSubscription";
+import { createMirrorSubscription, outputLabel } from "./mirrorSubscription";
 
 const alphaCfg: ChannelConfig = {
   id: "alpha-program",
@@ -11,7 +11,10 @@ const alphaCfg: ChannelConfig = {
   background: "transparent",
 };
 
-const sub = (ch: string) => ({ type: "subscribe", channel: ch, role: "renderer" });
+const sub = (ch: string, self = "alpha-program") =>
+  ch === self
+    ? { type: "subscribe", channel: ch, role: "renderer" }
+    : { type: "subscribe", channel: ch, role: "renderer", mirrorFor: self };
 const getCfg = (ch: string) => ({ type: "get_channel", channelId: ch });
 
 describe("createMirrorSubscription", () => {
@@ -105,5 +108,19 @@ describe("createMirrorSubscription", () => {
     m.hello();
     expect(m.channelList([{ ...alphaCfg, id: "program", mirrorOf: undefined }])).toEqual([]);
     expect(m.source).toBe("alpha-program");
+  });
+
+  it("labels its own subscription so it shows up as an output", () => {
+    const m = createMirrorSubscription("program", "OBS");
+    expect(m.hello()[0]).toEqual({ type: "subscribe", channel: "program", role: "renderer", label: "OBS" });
+  });
+});
+
+describe("outputLabel", () => {
+  it("prefers ?label=, then recognises OBS and Electron", () => {
+    expect(outputLabel("?label=Lobby%20TV", "Mozilla")).toBe("Lobby TV");
+    expect(outputLabel("", "Mozilla/5.0 Chrome/103 OBS/30.1")).toBe("OBS");
+    expect(outputLabel("", "Mozilla/5.0 Electron/31")).toBe("Desktop window");
+    expect(outputLabel("", "Mozilla/5.0 Safari")).toBe("Browser");
   });
 });

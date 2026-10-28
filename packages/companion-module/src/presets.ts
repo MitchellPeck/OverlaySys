@@ -36,6 +36,68 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     feedbacks: [],
   };
 
+  presets["panic"] = {
+    type: "button",
+    category: "Master",
+    name: "PANIC: clear every channel (graphics + cut video)",
+    style: { text: "PANIC\\nCLEAR ALL", size: "14", color: white, bgcolor: red },
+    steps: [{ down: [{ actionId: "panic", options: { keepVideo: false } }], up: [] }],
+    feedbacks: [],
+  };
+
+  presets["output_status_pgm"] = {
+    type: "button",
+    category: "Master",
+    name: "PGM output status (red when no output is connected)",
+    style: { text: "PGM OUT\\n$(overlaysys:program_outputs)", size: "14", color: white, bgcolor: dark },
+    steps: [],
+    feedbacks: [{ feedbackId: "output_offline", options: { channel: "program" }, style: { bgcolor: red } }],
+  };
+
+  presets["video_countdown_pgm"] = {
+    type: "button",
+    category: "Video",
+    name: "PGM video countdown (remaining, red under 10 s)",
+    style: { text: "$(overlaysys:program_video_remaining)", size: "18", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "video_play_pause", options: { channel: "program" } }], up: [] }],
+    feedbacks: [
+      { feedbackId: "video_on_air", options: { channel: "program" }, style: { bgcolor: green } },
+      { feedbackId: "video_remaining_below", options: { channel: "program", seconds: 10 }, style: { bgcolor: red } },
+      { feedbackId: "video_errored", options: { channel: "program" }, style: { bgcolor: amber, text: "VIDEO\\nERROR" } },
+    ],
+  };
+
+  presets["create_countdown_5"] = {
+    type: "button",
+    category: "Stage",
+    name: "Start a 5-minute countdown",
+    style: { text: "COUNT\\nDOWN 5:00", size: "14", color: white, bgcolor: dark },
+    steps: [
+      {
+        down: [
+          {
+            actionId: "create_countdown",
+            options: { label: "Countdown", minutes: 5, seconds: 0, overtime: true, start: true },
+          },
+        ],
+        up: [],
+      },
+    ],
+    feedbacks: [],
+  };
+
+  presets["stt_silent"] = {
+    type: "button",
+    category: "Master",
+    name: "STT status (red when silent 15 s during a song)",
+    style: { text: "STT\\n$(overlaysys:stt_confidence)%", size: "14", color: white, bgcolor: dark },
+    steps: [],
+    feedbacks: [
+      { feedbackId: "stt_running", options: {}, style: { bgcolor: green } },
+      { feedbackId: "stt_silent", options: { seconds: 15 }, style: { bgcolor: red } },
+    ],
+  };
+
   presets["video_stop_pgm"] = {
     type: "button",
     category: "Video",

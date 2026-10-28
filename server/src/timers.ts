@@ -89,6 +89,11 @@ export function createTimer(input: {
   return id;
 }
 
+/** Replace all timers (restore after a restart). Notifies listeners. */
+export function restoreTimers(list: StageTimerInstance[]): void {
+  commit([...list]);
+}
+
 export function timersStateMessage(): ServerMessage {
   return { type: "timers_state", timers };
 }

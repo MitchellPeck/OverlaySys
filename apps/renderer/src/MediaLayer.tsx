@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChannelMedia, MediaStatus, MediaTransition } from "@overlaysys/core";
+import type { ChannelMedia, MediaPlayback, MediaStatus, MediaTransition } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { defaultServerUrl } from "./wsClient";
+import type { StageSize } from "./stageSize";
 import {
   initialMountPlan,
+  mirrorCorrection,
   pendingSeek,
   pickAudioSink,
   readSinkRequest,
@@ -21,8 +23,6 @@ import {
   type TransitionDirection,
 } from "./mediaTransition";
 
-const STAGE_W = 1920;
-const STAGE_H = 1080;
 const TICK_MS = 250;
 const RAMP_STEP_MS = 16;
 
@@ -34,9 +34,17 @@ type Props = {
   isMirror: boolean;
   matte: boolean;
   scale: number;
+  /** Output resolution (same box as the template stage). */
+  stageSize: StageSize;
   send: (msg: ClientMessage) => void;
   /** The last media_clear asked for a hard cut (skip the Out transition). */
   clearCut: boolean;
+  /**
+   * Mirrors only: the primary window's latest playback report for the source
+   * channel, and the server clock offset, so the mirror video can follow it.
+   */
+  primaryPlayback?: { current: { takenAt: number; playback: MediaPlayback } | null };
+  serverOffsetMs?: { current: number };
 };
 
 /**
@@ -77,7 +85,19 @@ type VideoProps = Omit<Props, "media" | "clearCut"> & {
   onGone: (takenAt: number) => void;
 };
 
-function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onGone }: VideoProps) {
+function MediaVideo({
+  media,
+  channel,
+  isMirror,
+  matte,
+  scale,
+  stageSize,
+  send,
+  leaving,
+  onGone,
+  primaryPlayback,
+  serverOffsetMs,
+}: VideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animRef = useRef<HTMLDivElement | null>(null);
   const appliedRef = useRef<AppliedSeek>(initialMountPlan(media).applied);
@@ -234,6 +254,7 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onG
 
     const tick = setInterval(() => {
       if (!v.paused && !v.ended) report("playing");
+      if (isMirror) followPrimary(v);
       checkEndFade(v);
     }, TICK_MS);
 
@@ -280,6 +301,24 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onG
     // Mount-once per take; parent keys this component by takenAt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Mirror: steer toward the primary's reported position (see mirrorCorrection). */
+  function followPrimary(v: HTMLVideoElement) {
+    const p = primaryPlayback?.current;
+    if (!p || p.takenAt !== takenAt || v.paused || v.seeking || !Number.isFinite(v.currentTime)) {
+      if (v.playbackRate !== 1) v.playbackRate = 1;
+      return;
+    }
+    const fix = mirrorCorrection(v.currentTime, p.playback, Date.now() + (serverOffsetMs?.current ?? 0));
+    if (fix.action === "seek") {
+      v.playbackRate = 1;
+      v.currentTime = fix.time;
+    } else if (fix.action === "rate") {
+      v.playbackRate = fix.rate;
+    } else if (v.playbackRate !== 1) {
+      v.playbackRate = 1;
+    }
+  }
 
   /**
    * Begin the Out early so it finishes on the last frame. The tick is coarse
@@ -358,8 +397,8 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onG
         position: "absolute",
         left: "50%",
         top: "50%",
-        width: STAGE_W,
-        height: STAGE_H,
+        width: stageSize.w,
+        height: stageSize.h,
         transform: `translate(-50%, -50%) scale(${scale})`,
         transformOrigin: "50% 50%",
         // Same silhouette trick as the template stage: the video area keys solid white.

@@ -1,4 +1,4 @@
-import type { ChannelMedia } from "@overlaysys/core";
+import type { ChannelMedia, MediaPlayback } from "@overlaysys/core";
 
 /**
  * Pure helpers for the renderer's media slot. Kept out of MediaLayer.tsx so
@@ -71,4 +71,35 @@ export function pendingSeek(media: ChannelMedia, applied: AppliedSeek): number |
   if (!media.seek) return null;
   if (applied.takenAt === media.takenAt && applied.seq >= media.seek.seq) return null;
   return media.seek.time;
+}
+
+export type MirrorCorrection = { action: "none" } | { action: "rate"; rate: number } | { action: "seek"; time: number };
+
+/** Beyond this, nudging the rate would take too long: jump. */
+export const MIRROR_SEEK_THRESHOLD_S = 0.2;
+/** Within a frame of the primary is in sync. */
+export const MIRROR_FRAME_S = 1 / 30;
+const MAX_RATE_NUDGE = 0.05;
+/** Don't extrapolate a stale report further than this. */
+const MAX_EXTRAPOLATE_MS = 2000;
+
+/**
+ * Fill/key mirrors (e.g. alpha-program in matte mode) play the same video as
+ * the primary window but on their own clock, so the key slowly slides off
+ * the fill. Each tick the mirror compares its position to where the
+ * primary's last report says it should be now: more than a frame off →
+ * nudge playbackRate (up to ±5%), more than 200 ms off → seek.
+ */
+export function mirrorCorrection(localTime: number, primary: MediaPlayback, serverNowMs: number): MirrorCorrection {
+  if (primary.status !== "playing") return { action: "none" };
+  const elapsedMs = Math.min(Math.max(0, serverNowMs - primary.updatedAt), MAX_EXTRAPOLATE_MS);
+  const expected = primary.currentTime + elapsedMs / 1000;
+  const drift = localTime - expected;
+  if (Math.abs(drift) > MIRROR_SEEK_THRESHOLD_S) return { action: "seek", time: expected };
+  if (Math.abs(drift) > MIRROR_FRAME_S) {
+    // Ahead (drift > 0) → slow down; behind → speed up. Close the gap over ~2 s.
+    const nudge = Math.max(-MAX_RATE_NUDGE, Math.min(MAX_RATE_NUDGE, drift / 2));
+    return { action: "rate", rate: 1 - nudge };
+  }
+  return { action: "none" };
 }

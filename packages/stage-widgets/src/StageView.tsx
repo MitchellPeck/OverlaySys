@@ -1,15 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { StageFeed } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { StageWidgetView } from "./widgets";
 
-/** Re-render at 4 Hz so clocks, timers and video remaining tick locally. */
+/**
+ * Re-render at 4 Hz so clocks, timers and video remaining tick locally.
+ *
+ * The offset is re-measured on every feed update, so it changes constantly;
+ * it lives in a ref so the interval is created once. (Keying the effect on
+ * it restarted the interval on every update — with feeds arriving faster
+ * than 250 ms, e.g. during video playback, the clock never ticked.)
+ */
 function useNow(offsetMs: number): number {
+  const offsetRef = useRef(offsetMs);
+  offsetRef.current = offsetMs;
   const [now, setNow] = useState(() => Date.now() + offsetMs);
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now() + offsetMs), 250);
+    const id = setInterval(() => setNow(Date.now() + offsetRef.current), 250);
     return () => clearInterval(id);
-  }, [offsetMs]);
+  }, []);
   return now;
 }
 
