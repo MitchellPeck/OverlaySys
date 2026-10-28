@@ -19,7 +19,7 @@ function clearMessages(st: ChannelState | undefined, channel: string): ClientMes
 
 /**
  * "What's on air" under the monitors: program and preview captions with the
- * one action each needs (Clear / Take), plus Clear all.
+ * actions each needs (PVW: Take, Clear; PGM: Clear), plus Clear all.
  */
 export function OnAirStrip({ compact = false }: { compact?: boolean }) {
   const { send } = useWs();
@@ -93,6 +93,15 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
           onClick={blurAfter(takePreview)}
         >
           {take.status === "pending" ? "Taking…" : "Take ▶"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={disconnected || !channelHasContent(pvw)}
+          title={offline}
+          onClick={blurAfter(() => clearMessages(pvw, "preview").forEach(send))}
+        >
+          Clear
         </Button>
         {take.status === "failed" && (
           <span role="status" style={{ color: colors.warn }}>
