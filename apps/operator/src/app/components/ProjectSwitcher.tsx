@@ -25,7 +25,7 @@ export function ProjectSwitcher() {
         fontSize: 13,
       }}
     >
-      <span>Project</span>
+      <span>Current project</span>
       <select
         value={currentProjectId}
         onChange={(e) => setCurrentProjectId(e.target.value)}

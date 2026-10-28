@@ -82,7 +82,7 @@ input, textarea {
   font: inherit;
 }
 
-/* Consistent indigo focus ring for all controls (replaces per-component
+/* Consistent brand focus ring for all controls (replaces per-component
    focus handling; primitives rely on this). */
 :where(button, [role="button"], a, input, select, textarea):focus-visible {
   outline: 2px solid var(--brand);
@@ -124,7 +124,7 @@ input, textarea {
   white-space: nowrap;
 }
 .shell-context { min-width: 0; overflow: hidden; white-space: nowrap; }
-.shell-subnav { width: 160px; padding: 12px 8px; }
+.shell-subnav { width: 184px; padding: 12px 8px; }
 
 /* Under ~1366px the shell must not push content off-screen: tighten gaps.
    Sub-nav labels stay visible at every width. */

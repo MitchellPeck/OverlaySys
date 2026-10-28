@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AREAS, AREA_ORDER, LEGACY_REDIRECTS, areasFor, defaultRouteFor, destinationsFor,
-  lastRouteKey, liveToggleTarget, routeToArea,
+  lastRouteKey, liveToggleTarget, routeToArea, showsProjectSwitcher,
 } from "./areas";
 
 describe("areas model", () => {
@@ -75,6 +75,16 @@ describe("areas model", () => {
 
   it("lists areas in tab order", () => {
     expect(AREA_ORDER).toEqual(["live", "library", "settings"]);
-    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Designs", "Hotcards", "Planning Center"]);
+    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Slides", "Designs", "Hotcards", "Planning Center"]);
+    expect(AREAS.live.destinations[0].label).toBe("Live");
+  });
+
+  it("shows the project switcher except on editors and per-install settings", () => {
+    for (const p of ["/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit", "/settings/channels", "/settings/stt", "/settings/connection", "/account"]) {
+      expect(showsProjectSwitcher(p), p).toBe(false);
+    }
+    for (const p of ["/shows", "/", "/settings/scripture", "/songs", "/design"]) {
+      expect(showsProjectSwitcher(p), p).toBe(true);
+    }
   });
 });

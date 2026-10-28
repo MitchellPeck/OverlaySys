@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AreaTabs, colors, fontSize, fontWeight } from "@overlaysys/ui";
+import { AreaTabs, Button, Kbd, colors, fontSize, fontWeight } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
 import { AccountMenu } from "@/app/components/AccountMenu";
 import { useShellChrome } from "./ShellChromeContext";
 import { StatusBar } from "./StatusBar";
 import { FirstRunChecklist } from "./FirstRunChecklist";
-import { AREAS, areasFor, defaultRouteFor, lastRouteKey, routeToArea, type AreaId } from "./areas";
+import { AREAS, areasFor, defaultRouteFor, lastRouteKey, routeToArea, showsProjectSwitcher, type AreaId } from "./areas";
 
 /**
  * Navigate to an area's last-visited route, falling back to its default.
@@ -68,9 +68,17 @@ export function TopBar() {
           {chrome.context}
         </div>
       )}
-      <ProjectSwitcher />
+      {showsProjectSwitcher(pathname) && <ProjectSwitcher />}
       <div className="shell-topbar-right" style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
         {chrome.actions}
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Open command palette"
+          onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+        >
+          <Kbd>⌘K</Kbd>
+        </Button>
         <FirstRunChecklist />
         <StatusBar />
         <AccountMenu />

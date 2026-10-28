@@ -3,7 +3,7 @@
 
 import {
   ArrowDownUp, BookOpen, CloudDownload, FolderKanban, ListOrdered, Mic, MonitorPlay,
-  MonitorSmartphone, MonitorSpeaker, Music, Network, Palette, Plug, UserRound, Zap, type LucideIcon,
+  MonitorSmartphone, MonitorSpeaker, Music, Network, Palette, Plug, Presentation, UserRound, Zap, type LucideIcon,
 } from "lucide-react";
 
 export type AreaId = "live" | "library" | "settings";
@@ -24,7 +24,7 @@ export const AREAS: Record<AreaId, Area> = {
   live: {
     id: "live",
     label: "Live",
-    destinations: [{ route: "/", label: "Show", icon: MonitorPlay, desktopOnly: true }],
+    destinations: [{ route: "/", label: "Live", icon: MonitorPlay, desktopOnly: true }],
   },
   library: {
     id: "library",
@@ -32,6 +32,7 @@ export const AREAS: Record<AreaId, Area> = {
     destinations: [
       { route: "/shows", label: "Shows", icon: ListOrdered },
       { route: "/songs", label: "Songs", icon: Music },
+      { route: "/slides", label: "Slides", icon: Presentation, desktopOnly: true },
       { route: "/design", label: "Designs", icon: Palette },
       { route: "/hotcards", label: "Hotcards", icon: Zap },
       { route: "/pco", label: "Planning Center", icon: CloudDownload, desktopOnly: true },
@@ -87,7 +88,17 @@ export function defaultRouteFor(id: AreaId, cloud: boolean): string {
   return destinationsFor(id, cloud)[0]?.route ?? "/shows";
 }
 
-export const lastRouteKey = (id: AreaId): string => `overlaysys:lastRoute:${id}`;
+/** Routes where the project switcher is hidden: editors and per-install settings. */
+const NO_SWITCHER = [
+  "/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit",
+  "/settings/channels", "/settings/stt", "/settings/connection", "/account",
+];
+
+export function showsProjectSwitcher(pathname: string): boolean {
+  return !NO_SWITCHER.some((r) => pathname === r || pathname.startsWith(r + "/"));
+}
+
+export const lastRouteKey =(id: AreaId): string => `overlaysys:lastRoute:${id}`;
 export const LAST_NON_LIVE_KEY = "overlaysys:lastRoute:nonLive";
 
 /** Where ⌘⇧L goes: into Live from anywhere else; back out of Live to the last non-live route. */

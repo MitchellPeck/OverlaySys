@@ -12,8 +12,8 @@ function isActive(pathname: string, route: string): boolean {
 }
 
 /**
- * Left sub-nav for Library and Settings. Live has none. Collapses to icons
- * below 1366px (see .shell-subnav in globals.css). The account menu lives in
+ * Left sub-nav for Library and Settings. Live has none. Labels are always
+ * visible, at every width (see .shell-subnav in globals.css). The account menu lives in
  * the top bar so it's reachable from every area.
  */
 export function SubNav({ area }: { area: AreaId }) {
@@ -57,7 +57,7 @@ export function SubNav({ area }: { area: AreaId }) {
             }}
           >
             <Icon size={16} aria-hidden style={{ flexShrink: 0 }} />
-            <span className="shell-subnav-label">{d.label}</span>
+            <span>{d.label}</span>
           </Link>
         );
       })}
