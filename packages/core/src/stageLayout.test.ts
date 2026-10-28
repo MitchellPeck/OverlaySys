@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_STAGE_LAYOUTS,
+  NEW_WIDGET_DEFAULTS,
   DEFAULT_STAGE_LAYOUT_ID,
   LYRICS_LAYOUT,
   SCRIPTURE_LAYOUT,
@@ -177,6 +178,85 @@ describe("stage layout id safety and meta", () => {
   });
   it("stageLayoutMeta copies size", () => {
     expect(stageLayoutMeta(SPEAKER_LAYOUT).size).not.toBe(SPEAKER_LAYOUT.size);
+  });
+});
+
+describe("D8 built-ins readable at 10 m", () => {
+  const find = (l: { widgets: { id: string }[] }, id: string) => l.widgets.find((w) => w.id === id) as (typeof SPEAKER_LAYOUT.widgets)[number];
+
+  it("Speaker timer is at least 160", () => {
+    expect(find(SPEAKER_LAYOUT, "timer").style.fontSize).toBeGreaterThanOrEqual(160);
+  });
+  it("no built-in text widget is smaller than 48", () => {
+    for (const l of BUILT_IN_STAGE_LAYOUTS)
+      for (const w of l.widgets) expect(w.style.fontSize, `${l.id}/${w.id}`).toBeGreaterThanOrEqual(48);
+  });
+  it("no two widgets overlap in any built-in", () => {
+    for (const l of BUILT_IN_STAGE_LAYOUTS)
+      for (let i = 0; i < l.widgets.length; i++)
+        for (let j = i + 1; j < l.widgets.length; j++) {
+          const a = l.widgets[i]!.rect;
+          const b = l.widgets[j]!.rect;
+          const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          expect(overlap, `${l.id}: ${l.widgets[i]!.id} vs ${l.widgets[j]!.id}`).toBe(false);
+        }
+  });
+  it("Scripture message is full width", () => {
+    expect(find(SCRIPTURE_LAYOUT, "message").rect.w).toBe(1872);
+  });
+  it("Lyrics and Scripture each have a timer and a clock", () => {
+    for (const l of [LYRICS_LAYOUT, SCRIPTURE_LAYOUT]) {
+      const kinds = l.widgets.map((w) => w.kind);
+      expect(kinds).toContain("timer");
+      expect(kinds).toContain("clock");
+    }
+  });
+  it("built-in timers use the fill overtime style and notes collapse when empty", () => {
+    for (const l of BUILT_IN_STAGE_LAYOUTS)
+      for (const w of l.widgets) {
+        if (w.kind === "timer") expect(w.props.overtimeStyle).toBe("fill");
+        if (w.kind === "sermonNotes") expect(w.props.collapseWhenEmpty).toBe(true);
+      }
+  });
+  it("NEW_WIDGET_DEFAULTS has timer, message and currentSlide entries", () => {
+    expect(NEW_WIDGET_DEFAULTS.timer).toEqual({
+      rect: { w: 600, h: 300 },
+      style: { fontSize: 160, autoFit: false },
+      props: { showLabel: true, overtimeStyle: "fill" },
+    });
+    expect(NEW_WIDGET_DEFAULTS.currentSlide).toEqual({ rect: { w: 1200, h: 400 }, style: { fontSize: 72 } });
+    expect(NEW_WIDGET_DEFAULTS.message?.style?.fontSize).toBe(52);
+  });
+});
+
+describe("stored layout from before 2b parses unchanged", () => {
+  const stored = {
+    id: "custom-1",
+    name: "Old",
+    size: { w: 1920, h: 1080 },
+    background: "#000000",
+    widgets: [
+      {
+        id: "t",
+        kind: "timer",
+        rect: { x: 0, y: 0, w: 300, h: 100 },
+        style: { fontFamily: "Inter", fontSize: 52, fontWeight: 600, color: "#ffffff", padding: 16, align: "left", vAlign: "top", autoFit: false },
+        props: { source: "firstActive", warnBelowSec: 60, warnColor: "#ffb703", overColor: "#ef233c" },
+      },
+    ],
+  };
+  it("keeps showLabel false and adds no new keys", () => {
+    const parsed = StageLayoutSchema.parse(JSON.parse(JSON.stringify(stored)));
+    const t = parsed.widgets[0]!;
+    if (t.kind !== "timer") throw new Error("narrowing");
+    expect(t.props.showLabel).toBe(false);
+    expect(t.props.overtimeStyle).toBeUndefined();
+    expect(t.style.captionSize).toBeUndefined();
+    expect(t.style.captionColor).toBeUndefined();
+    const out = JSON.parse(JSON.stringify(parsed));
+    expect("overtimeStyle" in out.widgets[0].props).toBe(false);
+    expect("captionSize" in out.widgets[0].style).toBe(false);
+    expect("captionColor" in out.widgets[0].style).toBe(false);
   });
 });
 

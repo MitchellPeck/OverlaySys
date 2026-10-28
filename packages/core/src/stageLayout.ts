@@ -175,7 +175,7 @@ export type StageLayout = z.infer<typeof StageLayoutSchema>;
 
 export const DEFAULT_STAGE_LAYOUT_ID = "speaker";
 
-/** Speaker: row title + clock across the top, live slide, then next / cue / timers. */
+/** Speaker: row title + live slide + next + notes on the left, timer / clock / video / cue on the right. Sized to read at 10 m. */
 export const SPEAKER_LAYOUT: StageLayout = StageLayoutSchema.parse({
   id: "speaker",
   name: "Speaker",
@@ -183,21 +183,21 @@ export const SPEAKER_LAYOUT: StageLayout = StageLayoutSchema.parse({
   size: { w: 1920, h: 1080 },
   background: "#000000",
   widgets: [
-    { id: "row-title", kind: "rowTitle", rect: { x: 24, y: 24, w: 1472, h: 96 }, style: { fontSize: 44, label: "NOW" } },
-    { id: "clock", kind: "clock", rect: { x: 1520, y: 24, w: 376, h: 96 }, style: { fontSize: 64, padding: 8, align: "right", vAlign: "middle", autoFit: false } },
-    { id: "notes", kind: "sermonNotes", rect: { x: 24, y: 136, w: 1180, h: 704 }, style: { fontSize: 48, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
-    { id: "current", kind: "currentSlide", rect: { x: 1228, y: 136, w: 668, h: 340 }, style: { fontSize: 40, label: "LIVE" } },
-    { id: "next", kind: "nextSlide", rect: { x: 1228, y: 492, w: 668, h: 200 }, style: { fontSize: 32, label: "NEXT", color: "#bbbbbb" } },
-    { id: "cue", kind: "rowCue", rect: { x: 1228, y: 708, w: 668, h: 104 }, style: { fontSize: 32, label: "CUE", color: "#ffd166" } },
-    { id: "timer", kind: "timer", rect: { x: 1228, y: 828, w: 330, h: 124 }, style: { fontSize: 52, label: "TIMER", autoFit: false } },
-    { id: "video", kind: "videoRemaining", rect: { x: 1566, y: 828, w: 330, h: 124 }, style: { fontSize: 52, label: "VIDEO", autoFit: false } },
+    { id: "row-title", kind: "rowTitle", rect: { x: 24, y: 24, w: 1248, h: 96 }, style: { fontSize: 56, label: "NOW" } },
+    { id: "current", kind: "currentSlide", rect: { x: 24, y: 136, w: 1248, h: 300 }, style: { fontSize: 64, label: "LIVE" } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 452, w: 1248, h: 150 }, style: { fontSize: 48, label: "NEXT", color: "#bbbbbb" } },
+    { id: "notes", kind: "sermonNotes", rect: { x: 24, y: 618, w: 1248, h: 334 }, props: { collapseWhenEmpty: true }, style: { fontSize: 48, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
+    { id: "timer", kind: "timer", rect: { x: 1296, y: 24, w: 600, h: 300 }, props: { showLabel: true, overtimeStyle: "fill" }, style: { fontSize: 200, autoFit: false } },
+    { id: "clock", kind: "clock", rect: { x: 1296, y: 340, w: 600, h: 140 }, style: { fontSize: 96, padding: 8, align: "center", vAlign: "middle", autoFit: false } },
+    { id: "video", kind: "videoRemaining", rect: { x: 1296, y: 496, w: 600, h: 140 }, style: { fontSize: 72, padding: 8, label: "VIDEO", autoFit: false } },
+    { id: "cue", kind: "rowCue", rect: { x: 1296, y: 652, w: 600, h: 300 }, style: { fontSize: 48, label: "CUE", color: "#ffd166" } },
     { id: "message", kind: "message", rect: { x: 24, y: 968, w: 1872, h: 88 }, style: { fontSize: 52, align: "center", vAlign: "middle", color: "#000000", background: "#ffd166", autoFit: true } },
   ],
 });
 
 const MESSAGE_BAR_STYLE = { align: "center", vAlign: "middle", color: "#000000", background: "#ffd166", autoFit: true } as const;
 
-/** Lyrics: the live slide dominates; next slide, clock and message bar below. */
+/** Lyrics: the live slide dominates; next slide, timer, clock and message bar below. */
 export const LYRICS_LAYOUT: StageLayout = StageLayoutSchema.parse({
   id: "lyrics",
   name: "Lyrics",
@@ -206,13 +206,14 @@ export const LYRICS_LAYOUT: StageLayout = StageLayoutSchema.parse({
   background: "#000000",
   widgets: [
     { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1872, h: 720 }, props: { showReference: false }, style: { fontSize: 96, align: "center", vAlign: "middle" } },
-    { id: "next", kind: "nextSlide", rect: { x: 24, y: 760, w: 1480, h: 200 }, props: { maxLines: 2 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT" } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 760, w: 1100, h: 200 }, props: { maxLines: 2 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT" } },
+    { id: "timer", kind: "timer", rect: { x: 1148, y: 760, w: 360, h: 200 }, props: { overtimeStyle: "fill" }, style: { fontSize: 96, align: "center", vAlign: "middle", autoFit: false } },
     { id: "clock", kind: "clock", rect: { x: 1528, y: 760, w: 368, h: 200 }, style: { fontSize: 72, align: "right", vAlign: "middle", autoFit: false } },
     { id: "message", kind: "message", rect: { x: 24, y: 976, w: 1872, h: 80 }, style: { fontSize: 52, ...MESSAGE_BAR_STYLE } },
   ],
 });
 
-/** Scripture: reference + verse, the next verse, and a notes sidebar. */
+/** Scripture: reference + verse, the next verse, timer / clock, and a notes sidebar. */
 export const SCRIPTURE_LAYOUT: StageLayout = StageLayoutSchema.parse({
   id: "scripture",
   name: "Scripture",
@@ -221,9 +222,11 @@ export const SCRIPTURE_LAYOUT: StageLayout = StageLayoutSchema.parse({
   background: "#000000",
   widgets: [
     { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1300, h: 820 }, props: { showReference: true }, style: { fontSize: 64, label: "SCRIPTURE" } },
-    { id: "next", kind: "nextSlide", rect: { x: 24, y: 860, w: 1300, h: 196 }, style: { fontSize: 36, color: "#bbbbbb", label: "NEXT VERSE" } },
-    { id: "notes", kind: "sermonNotes", rect: { x: 1348, y: 24, w: 548, h: 936 }, style: { fontSize: 36, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
-    { id: "message", kind: "message", rect: { x: 1348, y: 976, w: 548, h: 80 }, style: { fontSize: 40, ...MESSAGE_BAR_STYLE } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 860, w: 1300, h: 100 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT VERSE" } },
+    { id: "timer", kind: "timer", rect: { x: 1348, y: 24, w: 548, h: 180 }, props: { overtimeStyle: "fill" }, style: { fontSize: 96, align: "center", vAlign: "middle", autoFit: false } },
+    { id: "clock", kind: "clock", rect: { x: 1348, y: 220, w: 548, h: 120 }, style: { fontSize: 72, align: "center", vAlign: "middle", autoFit: false } },
+    { id: "notes", kind: "sermonNotes", rect: { x: 1348, y: 356, w: 548, h: 604 }, props: { collapseWhenEmpty: true }, style: { fontSize: 48, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
+    { id: "message", kind: "message", rect: { x: 24, y: 976, w: 1872, h: 80 }, style: { fontSize: 52, ...MESSAGE_BAR_STYLE } },
   ],
 });
 
