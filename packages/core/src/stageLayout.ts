@@ -171,13 +171,13 @@ export const SPEAKER_LAYOUT: StageLayout = StageLayoutSchema.parse({
   background: "#000000",
   widgets: [
     { id: "row-title", kind: "rowTitle", rect: { x: 24, y: 24, w: 1472, h: 96 }, style: { fontSize: 44, label: "NOW" } },
-    { id: "clock", kind: "clock", rect: { x: 1520, y: 24, w: 376, h: 96 }, style: { fontSize: 64, align: "right", vAlign: "middle", autoFit: false } },
+    { id: "clock", kind: "clock", rect: { x: 1520, y: 24, w: 376, h: 96 }, style: { fontSize: 64, padding: 8, align: "right", vAlign: "middle", autoFit: false } },
     { id: "notes", kind: "sermonNotes", rect: { x: 24, y: 136, w: 1180, h: 704 }, style: { fontSize: 48, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },
     { id: "current", kind: "currentSlide", rect: { x: 1228, y: 136, w: 668, h: 340 }, style: { fontSize: 40, label: "LIVE" } },
     { id: "next", kind: "nextSlide", rect: { x: 1228, y: 492, w: 668, h: 200 }, style: { fontSize: 32, label: "NEXT", color: "#bbbbbb" } },
-    { id: "cue", kind: "rowCue", rect: { x: 1228, y: 708, w: 668, h: 132 }, style: { fontSize: 32, label: "CUE", color: "#ffd166" } },
-    { id: "timer", kind: "timer", rect: { x: 1228, y: 856, w: 330, h: 96 }, style: { fontSize: 52, label: "TIMER", autoFit: false } },
-    { id: "video", kind: "videoRemaining", rect: { x: 1566, y: 856, w: 330, h: 96 }, style: { fontSize: 52, label: "VIDEO", autoFit: false } },
+    { id: "cue", kind: "rowCue", rect: { x: 1228, y: 708, w: 668, h: 104 }, style: { fontSize: 32, label: "CUE", color: "#ffd166" } },
+    { id: "timer", kind: "timer", rect: { x: 1228, y: 828, w: 330, h: 124 }, style: { fontSize: 52, label: "TIMER", autoFit: false } },
+    { id: "video", kind: "videoRemaining", rect: { x: 1566, y: 828, w: 330, h: 124 }, style: { fontSize: 52, label: "VIDEO", autoFit: false } },
     { id: "message", kind: "message", rect: { x: 24, y: 968, w: 1872, h: 88 }, style: { fontSize: 52, align: "center", vAlign: "middle", color: "#000000", background: "#ffd166", autoFit: true } },
   ],
 });

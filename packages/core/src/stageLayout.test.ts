@@ -179,3 +179,19 @@ describe("stage layout id safety and meta", () => {
     expect(stageLayoutMeta(SPEAKER_LAYOUT).size).not.toBe(SPEAKER_LAYOUT.size);
   });
 });
+
+describe("built-in layouts fit their text", () => {
+  // Frame caption: 20px text (~23px line) + 6px margin. FitBody line height
+  // is 1.15. A widget that doesn't autoFit must fit one line of its text.
+  const CAPTION = 29;
+  const LINE = 1.15;
+  for (const layout of BUILT_IN_STAGE_LAYOUTS) {
+    for (const w of layout.widgets) {
+      if (w.style.autoFit) continue;
+      it(`${layout.id}/${w.id} (${w.kind}) isn't clipped`, () => {
+        const need = 2 * w.style.padding + (w.style.label ? CAPTION : 0) + w.style.fontSize * LINE;
+        expect(w.rect.h).toBeGreaterThanOrEqual(Math.ceil(need));
+      });
+    }
+  }
+});
