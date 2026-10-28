@@ -2,6 +2,7 @@ import type { DeckLicensing, ResolvedSlide, SlidesSessionSummary, Template } fro
 import { slideTextLines } from "@overlaysys/core";
 import * as channels from "./channels";
 import { recordSongUse } from "./songUsage";
+import * as songSession from "./songSession";
 
 export type StartArgs = {
   showId: string;
@@ -76,6 +77,9 @@ export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
   if (args.slides.length === 0 || !Number.isInteger(slideIdx) || slideIdx < 0 || slideIdx >= args.slides.length) {
     return false;
   }
+  // A song session on this channel (STT binding, timers) must not outlive the takeover.
+  songSession.endSessionOnly(channel);
+  songSession.clearQueued(channel);
   const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false };
   sessions.set(channel, s);
   render(s, true);
@@ -133,6 +137,8 @@ export function end(channel: string): void {
   if (!sessions.delete(channel)) return;
   channels.setSlidesSessionSummary(channel, null, { deferEmit: true });
   channels.clear(channel);
+  // Blanked: active is already null so clear() emitted nothing.
+  if (!channels.getState(channel).active) channels.setSlidesSessionSummary(channel, null);
 }
 
 export function promote(from: string, to: string): boolean {

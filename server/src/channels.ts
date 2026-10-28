@@ -255,6 +255,7 @@ export function clear(
   channel: string,
   options?: { keepQueuedSong?: boolean; reason?: "auto" },
 ): void {
+  let droppedSlides = false; // [P3.5]
   if (!clearIsInternal) {
     // External clear ends any live song session on this channel; without this
     // the session summary persists in ChannelState and the operator UI stays
@@ -266,7 +267,10 @@ export function clear(
       delete st.scriptureSession;
     }
     // [P3.5] slides session
-    if (slidesSession.dropAll(channel)) delete getOrInit(channel).slidesSession;
+    if (slidesSession.dropAll(channel)) {
+      delete getOrInit(channel).slidesSession;
+      droppedSlides = true;
+    }
     // [/P3.5]
   }
   cancelAutoOut(channel);
@@ -282,7 +286,12 @@ export function clear(
     states.set(channel, s);
     if (!s.active) emit(channel);
   }
-  if (!s.active) return;
+  if (!s.active) {
+    // [P3.5] a dropped slides session must still reach clients (blanked, active already null)
+    if (droppedSlides) emit(channel);
+    // [/P3.5]
+    return;
+  }
   s.active = { ...s.active, phase: "out", ...(options?.reason === "auto" ? { outReason: "auto" as const } : {}) };
   states.set(channel, s);
   emit(channel);
@@ -390,7 +399,7 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   const queued = src.active;
 
   // [P3.5] slides session
-  if (src.slidesSession) {
+  if (src.slidesSession && slidesSession.getSession(fromChannel)) {
     if (songSession.getSession(toChannel)) songSession.end(toChannel);
     return void slidesSession.promote(fromChannel, toChannel);
   }
@@ -426,6 +435,9 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // Scripture mirrors songs: live scripture on the destination ends; a
   // promoted scripture intro carries its queue.
   if (scriptureSession.dropLive(toChannel)) delete pgm.scriptureSession;
+  // [P3.5] a promoted graphic replaces any slides session live on the destination
+  if (slidesSession.dropAll(toChannel)) delete pgm.slidesSession;
+  // [/P3.5]
   let carriedScripture: QueuedScripture | null = null;
   if (queued.scriptureContext?.sub === "intro") {
     carriedScripture = scriptureSession.moveQueued(fromChannel, toChannel);

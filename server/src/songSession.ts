@@ -3,6 +3,9 @@ import * as channels from "./channels";
 import * as sttMatcher from "./sttMatcher";
 import type { MatchResult } from "./sttMatcher";
 import { recordSongUse } from "./songUsage";
+// [P3.5]
+import * as slidesSession from "./slidesSession";
+// [/P3.5]
 
 interface StartArgs {
   song: Song;
@@ -142,6 +145,9 @@ export function start(
   // Starting any song consumes the queue; the cleared field rides along with
   // the session's first render emit.
   if (dropQueued(channel)) channels.setQueuedSong(channel, null, { deferEmit: true });
+  // [P3.5] a song starting over live slides ends the slides session
+  if (slidesSession.dropAll(channel)) channels.setSlidesSessionSummary(channel, null, { deferEmit: true });
+  // [/P3.5]
   const internal: InternalSession = {
     channel,
     song: args.song,
@@ -354,6 +360,9 @@ export function end(channel: string): void {
   // channels.take's coalesced path).
   channels.setSongSessionSummary(channel, null, { deferEmit: true });
   channels.clear(channel);
+  // [P3.5] blanked: active already null, so clear() emitted nothing
+  if (!channels.getState(channel).active) channels.setSongSessionSummary(channel, null);
+  // [/P3.5]
 }
 
 /**
