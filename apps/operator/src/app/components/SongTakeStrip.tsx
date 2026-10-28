@@ -7,7 +7,7 @@ import {
   resolveIntroTake,
   resolveOutroTake,
 } from "@overlaysys/core";
-import { colors, control, fontWeight, lineHeight, radius } from "@overlaysys/ui";
+import { Button, colors, control, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 
@@ -123,7 +123,7 @@ export function SongTakeStrip({
         <div
           style={{
             padding: "8px 12px",
-            background: colors.panel2,
+            background: colors.surface2,
             border: `1px solid ${colors.border}`,
             borderRadius: radius.md,
             fontSize: 12,
@@ -228,6 +228,7 @@ export function SongTakeStrip({
             isHighlight={isHighlight}
             isFirst={isFirst}
             isLast={isLast}
+            onAir={channel === "program"}
             onClick={onClick}
             disabled={conn !== "open"}
           />
@@ -253,6 +254,7 @@ function SegmentButton({
   isHighlight,
   isFirst,
   isLast,
+  onAir,
   onClick,
   disabled,
 }: {
@@ -260,46 +262,37 @@ function SegmentButton({
   isHighlight: boolean;
   isFirst: boolean;
   isLast: boolean;
+  /** The segment's target channel is program (D5): it renders as an on-air action. */
+  onAir: boolean;
   onClick: () => void;
   disabled: boolean;
 }) {
-  const c = control.md;
+  const r = control.md.radius;
   return (
-    <button
-      type="button"
+    <Button
+      size="md"
+      variant={onAir ? "onair" : isHighlight ? "primary" : "secondary"}
       onClick={onClick}
       disabled={disabled}
       title={disabled ? "Disconnected from server" : undefined}
+      icon={isHighlight ? <Play size={14} aria-hidden /> : undefined}
       style={{
-        opacity: disabled ? 0.6 : 1,
         flex: 1,
-        padding: `${c.padY}px ${c.padX}px`,
-        fontSize: c.fontSize,
-        fontWeight: fontWeight.semibold,
-        lineHeight: lineHeight.tight,
-        cursor: disabled ? "not-allowed" : "pointer",
         // Flush adjacent borders: only the outermost edges get rounded.
-        borderTopLeftRadius: isFirst ? c.radius : 0,
-        borderBottomLeftRadius: isFirst ? c.radius : 0,
-        borderTopRightRadius: isLast ? c.radius : 0,
-        borderBottomRightRadius: isLast ? c.radius : 0,
-        // Collapse the doubled border between adjacent segments.
+        borderTopLeftRadius: isFirst ? r : 0,
+        borderBottomLeftRadius: isFirst ? r : 0,
+        borderTopRightRadius: isLast ? r : 0,
+        borderBottomRightRadius: isLast ? r : 0,
         marginLeft: isFirst ? 0 : -1,
-        border: `1px solid ${isHighlight ? colors.accent : colors.border}`,
-        background: isHighlight ? colors.accent : colors.panel2,
-        color: isHighlight ? "#fff" : colors.text,
-        // The highlighted segment gets stacked on top so its accent border
-        // doesn't get clipped by the neighbouring segment's grey border.
+        // The next segment gets a ring on top so it reads even when every
+        // segment is red.
         position: "relative",
         zIndex: isHighlight ? 1 : 0,
+        boxShadow: isHighlight ? `0 0 0 2px ${colors.text}` : undefined,
       }}
     >
-      {isHighlight && (
-        <span aria-hidden style={{ marginRight: 6 }}>
-          <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
-        </span>
-      )}
       {label}
-    </button>
+    </Button>
   );
 }
+
