@@ -159,6 +159,22 @@ describe("ws song takes set liveRow", () => {
     vi.restoreAllMocks();
   });
 
+  it("stt_match goes only to sockets that subscribed", async () => {
+    vi.spyOn(shows, "getShow").mockResolvedValue(show);
+    vi.spyOn(songs, "getSong").mockResolvedValue(song);
+    vi.spyOn(templates, "getTemplate").mockResolvedValue(null);
+    const ch = `t-${Date.now()}-stt`;
+    const operator = connect();
+    const renderer = connect();
+    await operator.client({ type: "stt_match_subscribe", on: true });
+    await operator.client({ type: "song_take", channel: ch, showId: "show-lr", songRowId: "row-lr" });
+    await vi.waitFor(() => expect(songSession.getSession(ch)).toBeTruthy());
+    await renderer.client({ type: "stt_hypothesis", audioSourceId: "a1", text: "amazing grace", t: Date.now() });
+    await vi.waitFor(() => expect(operator.sent.some((m) => m.type === "stt_match")).toBe(true));
+    expect(renderer.sent.some((m) => m.type === "stt_match")).toBe(false);
+    songSession.end(ch);
+  });
+
   it("song_take sets liveRow on its channel", async () => {
     mockLibrary();
     const ch = `t-${Date.now()}-song`;

@@ -49,4 +49,28 @@ describe("sttListener", () => {
     off();
     expect(events.length).toBeGreaterThanOrEqual(2);
   });
+
+  it("hypotheses don't re-broadcast the list every time", () => {
+    listener.register("aud-2");
+    const events: number[] = [];
+    const off = listener.subscribe((ls) => events.push(ls.length));
+    const t0 = Date.now() + 60_000;
+    listener.markHypothesisReceived("aud-2", t0);
+    const afterFirst = events.length;
+    for (let i = 1; i <= 20; i++) listener.markHypothesisReceived("aud-2", t0 + i * 100);
+    expect(events.length).toBe(afterFirst);
+    listener.markHypothesisReceived("aud-2", t0 + listener.LAST_SEEN_NOTIFY_MS + 1);
+    expect(events.length).toBe(afterFirst + 1);
+    off();
+  });
+
+  it("disconnect of an already-offline listener doesn't notify", () => {
+    listener.register("aud-3");
+    listener.disconnect("aud-3");
+    const events: number[] = [];
+    const off = listener.subscribe((ls) => events.push(ls.length));
+    listener.disconnect("aud-3");
+    expect(events).toEqual([]);
+    off();
+  });
 });

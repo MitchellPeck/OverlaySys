@@ -70,8 +70,12 @@ const LOCAL_ONLY_TYPES = new Set<string>([
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
 
+// STT suggestions arrive several times a second while a song is live. They
+// go only to clients that opted in with stt_match_subscribe (operator
+// consoles, Companion) — never to renderers or stage displays.
+const sttMatchSubscribers = new Set<(msg: ServerMessage) => void>();
 songSession.onMatch((channel, result, hypothesis, meta) => {
-  broadcast({
+  const msg: ServerMessage = {
     type: "stt_match",
     channel,
     suggestedSlide: result
@@ -84,7 +88,14 @@ songSession.onMatch((channel, result, hypothesis, meta) => {
     coverage: result?.coverage ?? 0,
     latencyMs: meta.latencyMs,
     isFinal: meta.isFinal,
-  });
+  };
+  for (const send of sttMatchSubscribers) {
+    try {
+      send(msg);
+    } catch {
+      // one bad socket must not starve the rest
+    }
+  }
 });
 
 // Any channel change can alter what a confidence monitor shows (a timer on
@@ -968,6 +979,11 @@ export function handleConnection(
           sttSpawner.start(cfg);
           break;
         }
+        case "stt_match_subscribe": {
+          if (parsed.on) sttMatchSubscribers.add(send);
+          else sttMatchSubscribers.delete(send);
+          break;
+        }
         case "stt_levels_subscribe": {
           if (parsed.on) levelSubscribers.add(send);
           else levelSubscribers.delete(send);
@@ -1120,6 +1136,7 @@ export function handleConnection(
     subscriptions.clear();
     offBroadcast();
     levelSubscribers.delete(send);
+    sttMatchSubscribers.delete(send);
     log.info("ws closed");
   });
 

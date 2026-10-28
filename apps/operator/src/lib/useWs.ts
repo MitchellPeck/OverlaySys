@@ -56,6 +56,8 @@ function bootstrap(): void {
         client.send({ type: "list_channels" });
         client.send({ type: "list_projects" });
         client.send({ type: "stt_spawner_get_config" });
+        // STT suggestions are opt-in per socket (renderers never get them).
+        client.send({ type: "stt_match_subscribe", on: true });
         break;
       case "state":
         store.setChannelState(msg.state);

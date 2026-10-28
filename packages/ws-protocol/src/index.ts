@@ -261,6 +261,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   // Opt in/out of `stt_levels` (channel-select meter, ~10/s). Only the
   // settings page asks, so Companion and renderers never receive them.
   z.object({ type: z.literal("stt_levels_subscribe"), on: z.boolean() }),
+  // Opt in/out of `stt_match` (several per second while a song is live).
+  // Operator consoles and Companion ask; renderers never receive them.
+  z.object({ type: z.literal("stt_match_subscribe"), on: z.boolean() }),
   // Presence / installer flows. The operator's /stt page sends these to
   // poll for whisper-stream binary availability, list installed models,
   // enumerate capture devices, and drive auto-install. Server responds
