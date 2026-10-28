@@ -540,7 +540,9 @@ function ChannelRow({
 
         <div style={{ marginTop: 8, fontSize: 11, color: colors.textDim, display: "flex", gap: 12, alignItems: "center" }}>
           <a
-            href={`${rendererBase}/?channel=${encodeURIComponent(config.id)}&debug=1`}
+            // Clean URL (no &debug=1): this is what gets copied into OBS / a
+            // browser source, and the debug overlay must never reach air.
+            href={`${rendererBase}/?channel=${encodeURIComponent(config.id)}`}
             target="_blank"
             rel="noreferrer"
             style={{ color: colors.accent2, fontFamily: "ui-monospace, monospace" }}
@@ -559,7 +561,9 @@ function ChannelRow({
           )}
           {dirty && <span style={{ color: colors.accent2, marginLeft: "auto" }}><span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved</span>}
         </div>
-        {draft.kind === "stage" && <LanStageLinks channelId={config.id} rendererBase={rendererBase} />}
+        {/* Every kind (graphics, stage, …) can be opened from another machine
+            — OBS on a second PC, a confidence monitor, a tablet. */}
+        <LanStageLinks channelId={config.id} rendererBase={rendererBase} />
         {showOverride && draft.kind === "graphics" && (
           <ProjectOverrideEditor
             config={config}

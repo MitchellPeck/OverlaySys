@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Panel, colors } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { useAuthStore } from "@/lib/useAuth";
 import { isCloudMode } from "@/lib/mode";
-import { isElectron } from "@/lib/desktop";
+import { getDesktopApi, isElectron, type DesktopDiagnostics } from "@/lib/desktop";
 import { getCloudClient } from "@/lib/cloudAuth";
 import { signOutFromElectron } from "@/lib/cloudSession";
 
@@ -109,13 +109,42 @@ export default function AccountPage() {
           </Button>
         </Panel>
 
-        <Panel title="Session" padding="md">
+        <Panel title="Session" padding="md" style={{ marginBottom: 16 }}>
           <Button onClick={signOut} variant="destructive" size="sm">
             Sign out
           </Button>
         </Panel>
+
+        <Panel title="About" padding="md">
+          <Row label="Version" value={<VersionLine />} />
+        </Panel>
       </PageBody>
     </>
+  );
+}
+
+/** App version from the desktop host; the web build has no installed version. */
+function VersionLine() {
+  const [diag, setDiag] = useState<DesktopDiagnostics | null>(null);
+  // Read after mount so the static-export HTML and first client render match.
+  const [inElectron, setInElectron] = useState(false);
+  useEffect(() => {
+    setInElectron(isElectron());
+    let cancelled = false;
+    void getDesktopApi()
+      ?.getDiagnostics?.()
+      .then((d) => !cancelled && setDiag(d))
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!diag) return <Dim>{inElectron ? "unknown (update the desktop app)" : "OverlaySys web"}</Dim>;
+  return (
+    <Mono>
+      OverlaySys {diag.appVersion}
+      {diag.isDev ? " (dev)" : ""} · Electron {diag.electron}
+    </Mono>
   );
 }
 
