@@ -76,7 +76,7 @@ const ITEMS: PcoPlanItem[] = [
     song: { id: "pco-song-B", title: "Brand New Song", author: "Someone" },
     arrangement: { id: "arr-B", lyrics: "Verse 1\nfresh lyric line", sequence: ["Verse 1"] },
   },
-  { id: "item-C", title: "Welcome & Offering", sequence: 3, itemType: "header", description: "3 min" },
+  { id: "item-C", title: "Welcome & Offering", sequence: 3, itemType: "item", description: "3 min" },
   {
     id: "item-D",
     title: "Fallback Song",
@@ -154,7 +154,7 @@ const baseReq: Omit<ImportPlanRequest, "target"> = {
 };
 
 describe("importPlan", () => {
-  it("creates a new show: links by CCLI, creates a missing song, maps a header to a graphic row", async () => {
+  it("creates a new show: links by CCLI, creates a missing song, maps a plain item to a graphic row", async () => {
     await songs.saveSong(existingLibrarySong());
 
     const result = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "Sunday" } }, NOW);
@@ -476,7 +476,7 @@ describe("importPlan — scripture kind", () => {
   const scriptureItems: PcoPlanItem[] = [
     { id: "item-S1", title: "Scripture: John 3:16", sequence: 1, itemType: "item", description: "Read by Pat" },
     { id: "item-S2", title: "Bad ref", sequence: 2, itemType: "item" },
-    { id: "item-C", title: "Welcome", sequence: 3, itemType: "header", description: "3 min" },
+    { id: "item-C", title: "Welcome", sequence: 3, itemType: "item", description: "3 min" },
   ];
   const scriptureClient: PcoClient = {
     listServiceTypes: async () => [],
@@ -557,7 +557,7 @@ describe("importPlan row length", () => {
     id: "item-C",
     title: "Welcome",
     sequence: 1,
-    itemType: "header",
+    itemType: "item",
     ...(lengthSec ? { lengthSec } : {}),
   });
   const req: ImportPlanRequest = {
@@ -690,5 +690,67 @@ describe("importPlan — re-sync", () => {
     expect((await shows.getShow(showId))!.rows.map((r) => r.sourceRef?.itemId ?? r.id)).toEqual([
       "item-A", "manual", "item-B", "item-C",
     ]);
+  });
+});
+
+describe("importPlan — header sections", () => {
+  const PLAN: PcoPlanItem[] = [
+    { id: "i1", title: "Prelude", sequence: 1, itemType: "item" },
+    { id: "h2", title: " Worship ", sequence: 2, itemType: "header" },
+    { id: "i3", title: "Welcome", sequence: 3, itemType: "item" },
+    { id: "h4", title: "Message", sequence: 4, itemType: "header" },
+    { id: "i5", title: "Closing", sequence: 5, itemType: "item" },
+  ];
+  const client: PcoClient = { ...fakeClient, getPlanItems: async () => PLAN };
+  const cfg = (id: string) => ({ itemId: id, kind: "graphic" as const, templateId: "tpl-graphic", data: { headline: id } });
+  const req = (ids: string[]): Omit<ImportPlanRequest, "target"> => ({
+    ...baseReq,
+    items: ids.map(cfg),
+  });
+
+  it("imports headers as sections, never as rows", async () => {
+    const r = await importPlan(client, { ...req(["i1", "h2", "i3", "h4", "i5"]), target: { mode: "new", name: "S" } }, NOW);
+    expect(r.counts).toMatchObject({ rows: 3, sections: 2, headerRowsConverted: 0 });
+    const show = (await shows.getShow(r.showId!))!;
+    expect(show.rows.map((x) => x.sourceRef?.itemId)).toEqual(["i1", "i3", "i5"]);
+    expect(show.rows.map((x) => x.sectionId)).toEqual([undefined, "pco-h2", "pco-h4"]);
+    expect(show.sections).toEqual([{ id: "pco-h2", name: "Worship" }, { id: "pco-h4", name: "Message" }]);
+  });
+
+  it("re-import removes header rows left by an older import", async () => {
+    const first = await importPlan(client, { ...req(["i1", "i3"]), target: { mode: "new", name: "S" } }, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    const old = { ...show.rows[0]!, id: "old-header", sourceRef: { ...show.rows[0]!.sourceRef!, itemId: "h2" } };
+    await shows.saveShow({ ...show, rows: [...show.rows, old] });
+    const r = await importPlan(client, { ...req(["i1", "i3"]), target: { mode: "existing", showId: first.showId } }, NOW);
+    expect(r.counts.headerRowsConverted).toBe(1);
+    expect((await shows.getShow(first.showId!))!.rows.map((x) => x.id)).not.toContain("old-header");
+  });
+
+  it("keeps a row the operator moved into a manual section", async () => {
+    const first = await importPlan(client, { ...req(["i3"]), target: { mode: "new", name: "S" } }, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    await shows.saveShow({
+      ...show,
+      sections: [{ id: "mine", name: "Mine" }, ...(show.sections ?? [])],
+      rows: show.rows.map((x) => ({ ...x, sectionId: "mine" })),
+    });
+    await importPlan(client, { ...req(["i3"]), target: { mode: "existing", showId: first.showId } }, NOW);
+    const after = (await shows.getShow(first.showId!))!;
+    expect(after.rows[0]!.sectionId).toBe("mine");
+    expect(after.sections?.map((s) => s.id)).toEqual(["mine", "pco-h2"]);
+  });
+
+  it("does not create a section with no imported rows", async () => {
+    const r = await importPlan(client, { ...req(["i1", "i5"]), target: { mode: "new", name: "S" } }, NOW);
+    const show = (await shows.getShow(r.showId!))!;
+    expect(show.sections?.map((s) => s.id)).toEqual(["pco-h4"]);
+    expect(r.counts.sections).toBe(1);
+  });
+
+  it("keeps rows in display order after import", async () => {
+    const r = await importPlan(client, { ...req(["i5", "i3", "i1"]), target: { mode: "new", name: "S" } }, NOW);
+    const show = (await shows.getShow(r.showId!))!;
+    expect(show.rows.map((x) => x.sourceRef?.itemId)).toEqual(["i1", "i3", "i5"]);
   });
 });

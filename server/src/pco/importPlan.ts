@@ -11,7 +11,11 @@ import {
   effectiveLyricsArrangement,
   ensureShowSongEntry,
   makeSourceRef,
+  isPcoSectionId,
   matchLibrarySong,
+  mergePlanSections,
+  orderRowsBySection,
+  planHeaderSections,
   pcoItemGraphicDefaults,
   resolveImportedSongId,
   type Field,
@@ -104,6 +108,10 @@ export interface ImportPlanResult {
     songsCreated: number;
     songsLinked: number;
     songsUpdated: number;
+    /** PCO header sections in the saved show. */
+    sections: number;
+    /** Rows from an older import that were headers; removed (they are sections now). */
+    headerRowsConverted: number;
   };
   /**
    * Library song ids this import wrote (created or updated in place), in write
@@ -277,7 +285,7 @@ export async function importPlan(
   req: ImportPlanRequest,
   now: string,
 ): Promise<ImportPlanResult> {
-  const counts = { rows: 0, songsCreated: 0, songsLinked: 0, songsUpdated: 0 };
+  const counts = { rows: 0, songsCreated: 0, songsLinked: 0, songsUpdated: 0, sections: 0, headerRowsConverted: 0 };
   const warnings: string[] = [];
   const errors: { itemId: string; message: string }[] = [];
 
@@ -293,7 +301,9 @@ export async function importPlan(
   // Fetch authoritative plan items; keep the configured items in plan order.
   const allItems = await client.getPlanItems(req.serviceTypeId, req.planId);
   const cfgById = new Map(req.items.map((c) => [c.itemId, c]));
-  const chosen = allItems.filter((i) => cfgById.has(i.id));
+  // Headers become show sections, never rows, whatever the config says.
+  const chosen = allItems.filter((i) => cfgById.has(i.id) && i.itemType !== "header");
+  const { sections: planSections, sectionByItem } = planHeaderSections(allItems);
 
   // Memoize each template's field list (used only when a config omits explicit
   // field data and we fall back to deriving values from the plan item).
@@ -445,6 +455,15 @@ export async function importPlan(
     };
   }
 
+  // [P1.19] Rows an older import made from header items are sections now.
+  const headerItemIds = new Set(allItems.filter((i) => i.itemType === "header").map((i) => i.id));
+  const rowsBefore = show.rows.length;
+  show.rows = show.rows.filter(
+    (r) => !(isFromPlan(r, req.serviceTypeId, req.planId) && headerItemIds.has(r.sourceRef!.itemId)),
+  );
+  counts.headerRowsConverted = rowsBefore - show.rows.length;
+  // [/P1.19]
+
   // ── 3. Build rows per item config (song row vs graphic row) ──────────
   for (const item of chosen) {
     if (failedItems.has(item.id)) continue;
@@ -512,6 +531,13 @@ export async function importPlan(
     }
     if (item.lengthSec) row = { ...row, lengthSec: item.lengthSec };
 
+    // [P1.19] A section the operator chose (not a PCO one) survives re-import.
+    const prevSection = existingIdx >= 0 ? show.rows[existingIdx]!.sectionId : undefined;
+    const sectionId =
+      prevSection !== undefined && !isPcoSectionId(prevSection) ? prevSection : sectionByItem.get(item.id);
+    if (sectionId !== undefined) row = { ...row, sectionId };
+    // [/P1.19]
+
     if (existingIdx >= 0) {
       show.rows[existingIdx] = carryOver(show.rows[existingIdx]!, row);
     } else show.rows.push(row);
@@ -546,6 +572,16 @@ export async function importPlan(
     reordered = next !== show.rows;
     show.rows = next;
   }
+
+  // [P1.19] Merge PCO header sections (only those that hold rows) and keep
+  // rows in display order.
+  const usedSections = new Set(show.rows.map((r) => r.sectionId).filter((x): x is string => x !== undefined));
+  const mergedSections = mergePlanSections(show.sections, planSections, (id) => usedSections.has(id));
+  if (mergedSections) show.sections = mergedSections;
+  else delete show.sections;
+  show = orderRowsBySection(show);
+  counts.sections = (show.sections ?? []).filter((s) => isPcoSectionId(s.id)).length;
+  // [/P1.19]
 
   // Date the show from the plan. A show that already has a date keeps it —
   // the operator may have set it deliberately.
