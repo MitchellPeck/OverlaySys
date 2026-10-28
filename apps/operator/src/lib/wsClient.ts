@@ -175,8 +175,35 @@ function readyStateLabel(rs: number): string {
 
 const SERVER_STORAGE_KEY = "overlaysys:server-url";
 
+const TOKEN_STORAGE_KEY = "overlaysys:lan-token";
+
+/**
+ * LAN token (`?token=` on the operator URL, remembered for the tab). Only
+ * needed when the server has OVERLAYSYS_TOKEN set and this browser is on
+ * another machine; the server also sets a cookie, this covers dev setups
+ * where the operator is served from a different host than the server.
+ */
+function lanToken(): string | null {
+  const fromUrl = new URLSearchParams(location.search).get("token");
+  try {
+    if (fromUrl) sessionStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+    return fromUrl ?? sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return fromUrl;
+  }
+}
+
+export function withToken(url: string, token: string | null): string {
+  if (!token || /[?&]token=/.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 export function defaultServerUrl(): string {
   if (typeof window === "undefined") return "ws://localhost:4000/ws";
+  return withToken(baseServerUrl(), lanToken());
+}
+
+function baseServerUrl(): string {
   // Priority 1 — `?server=` URL override (Electron host injects this on
   // initial window load). Persist it so subsequent in-app navigations
   // (which strip the query string) and page refreshes still find the

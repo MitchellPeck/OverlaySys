@@ -115,12 +115,20 @@ export interface ServerUrlLocation {
  * dev) assume the server is on :4000 of the same hostname.
  */
 export function resolveServerUrl(loc: ServerUrlLocation): string {
-  const override = new URLSearchParams(loc.search).get("server");
-  if (override) return override;
-  if (loc.pathname === "/renderer" || loc.pathname.startsWith("/renderer/")) {
-    return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws`;
-  }
-  return `ws://${loc.hostname}:4000/ws`;
+  const params = new URLSearchParams(loc.search);
+  const override = params.get("server");
+  let url: string;
+  if (override) url = override;
+  else if (loc.pathname === "/renderer" || loc.pathname.startsWith("/renderer/")) {
+    url = `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/ws`;
+  } else url = `ws://${loc.hostname}:4000/ws`;
+  return withToken(url, params.get("token"));
+}
+
+/** Carry a LAN token (`?token=` on the page URL) onto the WS URL. */
+export function withToken(url: string, token: string | null): string {
+  if (!token || /[?&]token=/.test(url)) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 }
 
 export function defaultServerUrl(): string {

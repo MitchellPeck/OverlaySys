@@ -78,6 +78,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
       {
         host: this.currentConfig.host,
         port: this.currentConfig.port,
+        token: this.currentConfig.token,
       },
       {
         onConnected: () => {

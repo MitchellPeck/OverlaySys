@@ -27,6 +27,15 @@ import { listenWithFallback } from "./serverBoot";
 import os from "node:os";
 import { lanAddresses } from "./networkInfo";
 import {
+  TOKEN_COOKIE,
+  checkRequest,
+  loadSecuritySettings,
+  originAllowed,
+  remoteAddressOf,
+  securityContext,
+  tokenEnabled,
+} from "./security";
+import {
   clearCloudTokens,
   getCloudSyncStatus,
   runSyncNow,
@@ -56,7 +65,47 @@ const STATIC_OPERATOR_DIR = process.env["OVERLAYSYS_STATIC_OPERATOR_DIR"];
 const STATIC_RENDERER_DIR = process.env["OVERLAYSYS_STATIC_RENDERER_DIR"];
 
 const app = Fastify({ logger: { level: "info" } });
-await app.register(cors, { origin: true });
+await loadSecuritySettings();
+
+// Origin allow-list + optional LAN token (see security.ts). CORS only
+// decides whether a browser may READ a response; the onRequest hook below is
+// what actually refuses a cross-site POST before it runs.
+await app.register(cors, {
+  origin: (origin, cb) => cb(null, originAllowed(origin, securityContext())),
+});
+
+/** Peer-is-this-machine flag per request, set by the gate below. */
+const localRequests = new WeakSet<object>();
+
+// Routes that hand the server machine-level credentials. Only the desktop
+// host (same machine) ever calls them.
+const LOOPBACK_ONLY_PREFIXES = ["/api/cloud/tokens", "/api/pco/tokens"];
+
+app.addHook("onRequest", async (req, reply) => {
+  const result = checkRequest(
+    { url: req.url, headers: req.headers, remoteAddress: remoteAddressOf(req.raw) },
+    securityContext(),
+  );
+  const path = req.url.split("?")[0] ?? "";
+  if (!result.ok) {
+    // /health stays reachable for monitoring without the token (it reports
+    // less when unauthorized); a bad Origin is refused everywhere.
+    if (!(result.status === 401 && path === "/health")) {
+      return reply.code(result.status).send({ error: result.reason });
+    }
+    return;
+  }
+  if (result.local) localRequests.add(req.raw);
+  if (LOOPBACK_ONLY_PREFIXES.some((p) => path.startsWith(p)) && !result.local) {
+    return reply.code(403).send({ error: "only allowed from this machine" });
+  }
+  // A page opened once with ?token= keeps working: later navigations, asset
+  // loads and its WebSocket carry the cookie (cookies ignore the port).
+  if (result.tokenFromQuery) {
+    const t = securityContext().token ?? "";
+    reply.header("set-cookie", `${TOKEN_COOKIE}=${encodeURIComponent(t)}; Path=/; HttpOnly; SameSite=Lax`);
+  }
+});
 
 if (STATIC_OPERATOR_DIR) {
   await app.register(staticPlugin, {
@@ -251,20 +300,34 @@ if (sttConfig.autoStart) {
   })();
 }
 
-// 1 GB cap. Videos and (eventually large) fonts are embedded as data URLs
-// today, which can push template-save messages well past ws's 100 MB
-// default. This raises the ceiling so saves don't drop the socket; the
-// proper fix is a real upload endpoint that stores binaries on disk.
+// Media and fonts upload over HTTP (/api/assets) and templates reference
+// them by URL, so WS messages are JSON documents. The cap still leaves room
+// for legacy templates that embed an image/font as a data URL; raise it with
+// OVERLAYSYS_WS_MAX_PAYLOAD_MB if a very old template refuses to save. (It
+// was 1 GB, which let any LAN client make the server buffer a gigabyte.)
+const WS_MAX_PAYLOAD_MB = Number(process.env["OVERLAYSYS_WS_MAX_PAYLOAD_MB"] ?? 128);
 const wss = new WebSocketServer({
   server: app.server,
   path: "/ws",
-  maxPayload: 1024 * 1024 * 1024,
+  maxPayload: Math.max(1, WS_MAX_PAYLOAD_MB) * 1024 * 1024,
+  verifyClient: (info, cb) => {
+    const result = checkRequest(
+      { url: info.req.url, headers: info.req.headers, remoteAddress: remoteAddressOf(info.req) },
+      securityContext(),
+    );
+    if (result.ok) cb(true);
+    else {
+      app.log.warn(`[ws] refused upgrade from ${remoteAddressOf(info.req) ?? "?"}: ${result.reason}`);
+      cb(false, result.status, result.reason);
+    }
+  },
 });
 wss.on("connection", (ws, req) => {
   handleConnection(ws, req, app.log);
 });
 
 app.log.info(`OverlaySys server listening on ${HOST}:${actualPort}`);
+if (tokenEnabled()) app.log.info("  LAN token required for connections from other machines");
 app.log.info(`  HTTP   http://${HOST}:${actualPort}/health`);
 app.log.info(`  WS     ws://${HOST}:${actualPort}/ws`);
 // Magic line consumed by the Electron host (see apps/desktop/src/main.ts).

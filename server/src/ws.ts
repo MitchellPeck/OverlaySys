@@ -37,6 +37,21 @@ import { stageFollowedChannels } from "./stageFollowed";
 import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 import * as pcoLiveSync from "./pco/pcoLiveSync";
+import { isLocalAddress, remoteAddressOf, securityContext } from "./security";
+
+/**
+ * Operations that install software, write files from a URL, or set the
+ * shell command the STT spawner runs. They act on the server machine, so
+ * only a connection from that machine may send them.
+ */
+const LOCAL_ONLY_TYPES = new Set<string>([
+  "stt_install_binary",
+  "stt_uninstall_binary",
+  "stt_download_model",
+  "stt_delete_model",
+  "stt_cancel_install",
+  "stt_spawner_save_config",
+]);
 
 // ───── Module-scope subscriptions ────────────────────────────────────────────
 // These broadcast to all connected clients whenever STT state changes.
@@ -150,9 +165,13 @@ stageFeedHub.subscribePreviews(() =>
 
 export function handleConnection(
   ws: WebSocket,
-  _req: IncomingMessage,
+  req: IncomingMessage,
   log: FastifyBaseLogger,
 ): void {
+  // No socket = an in-process connection (tests); otherwise loopback or one
+  // of this machine's own addresses.
+  const peer = remoteAddressOf(req);
+  const isLocalPeer = peer === undefined || isLocalAddress(peer, securityContext().ownAddresses);
   const subscriptions = new Map<string, () => void>();
   const connId = randomUUID();
   const previewSeq = new Map<string, number>();
@@ -181,6 +200,18 @@ export function handleConnection(
       parsed = ClientMessageSchema.parse(JSON.parse(raw.toString()));
     } catch (err) {
       send({ type: "error", code: "bad_message", message: String(err) });
+      return;
+    }
+
+    if (
+      !isLocalPeer &&
+      (LOCAL_ONLY_TYPES.has(parsed.type) || (parsed.type === "stt_spawner_start" && parsed.config))
+    ) {
+      send({
+        type: "error",
+        code: "forbidden_remote",
+        message: `${parsed.type} is only allowed from the server machine`,
+      });
       return;
     }
 

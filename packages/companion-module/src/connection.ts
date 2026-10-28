@@ -17,6 +17,13 @@ export interface ConnectionCallbacks {
 export interface ConnectionOptions {
   host: string;
   port: number;
+  /** LAN token (server OVERLAYSYS_TOKEN); empty = none. */
+  token?: string;
+}
+
+export function connectionUrl(opts: ConnectionOptions): string {
+  const base = `ws://${opts.host}:${opts.port}/ws`;
+  return opts.token ? `${base}?token=${encodeURIComponent(opts.token)}` : base;
 }
 
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000];
@@ -57,8 +64,8 @@ export class Connection {
   }
 
   private open(): void {
-    const url = `ws://${this.opts.host}:${this.opts.port}/ws`;
-    this.cb.onLog("info", `connecting ${url}`);
+    const url = connectionUrl(this.opts);
+    this.cb.onLog("info", `connecting ws://${this.opts.host}:${this.opts.port}/ws`);
     const ws = new WebSocket(url, { perMessageDeflate: false });
     this.ws = ws;
 

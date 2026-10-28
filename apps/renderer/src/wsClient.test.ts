@@ -19,6 +19,11 @@ describe("resolveServerUrl", () => {
       resolveServerUrl({ ...base, protocol: "https:", host: "x.local:443", hostname: "x.local", pathname: "/renderer/index.html" }),
     ).toBe("wss://x.local:443/ws");
   });
+  it("forwards a LAN token from the page URL", () => {
+    expect(resolveServerUrl({ ...base, search: "?channel=a&token=s%20t", pathname: "/renderer/" })).toBe(
+      "ws://localhost:3001/ws?token=s%20t",
+    );
+  });
   it("dev server falls back to hostname:4000", () => {
     expect(resolveServerUrl(base)).toBe("ws://localhost:4000/ws");
   });

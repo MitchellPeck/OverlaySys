@@ -339,3 +339,29 @@ describe("ws stage layouts", () => {
     expect(stageFeedHub.listPreviews()).toEqual([]);
   });
 });
+
+describe("ws machine-admin operations", () => {
+  function connectFrom(remoteAddress: string): FakeSocket {
+    const sock = new FakeSocket();
+    sockets.push(sock);
+    handleConnection(sock as never, { socket: { remoteAddress } } as never, silentLog);
+    return sock;
+  }
+
+  it("refuses STT installs and model downloads from another machine", async () => {
+    const sock = connectFrom("192.0.2.44");
+    await sock.client({ type: "stt_download_model", url: "https://huggingface.co/x.bin", filename: "x.bin" });
+    await sock.client({ type: "stt_install_binary" });
+    await sock.client({ type: "stt_spawner_start", config: { autoStart: false } });
+    const refused = sock.sent.filter((m) => m.type === "error" && m.code === "forbidden_remote");
+    expect(refused).toHaveLength(3);
+  });
+
+  it("still lets a remote operator take graphics", async () => {
+    const ch = `t-${Date.now()}-remote`;
+    const sock = connectFrom("192.0.2.44");
+    await sock.client({ type: "take", channel: ch, templateId: "tpl", data: {} });
+    expect(channels.getState(ch).active?.templateId).toBe("tpl");
+    expect(sock.sent.some((m) => m.type === "error")).toBe(false);
+  });
+});

@@ -5,6 +5,8 @@ export interface ModuleConfig {
   port: number;
   channels: string;
   loadedShowId: string;
+  /** LAN token, only when the server sets OVERLAYSYS_TOKEN. */
+  token: string;
 }
 
 export const defaultConfig: ModuleConfig = {
@@ -12,6 +14,7 @@ export const defaultConfig: ModuleConfig = {
   port: 4000,
   channels: "program,preview",
   loadedShowId: "",
+  token: "",
 };
 
 export function configFields(): SomeCompanionConfigField[] {
@@ -31,6 +34,13 @@ export function configFields(): SomeCompanionConfigField[] {
       default: defaultConfig.port,
       min: 1,
       max: 65535,
+    },
+    {
+      id: "token",
+      type: "textinput",
+      label: "LAN token (only if the server requires one)",
+      width: 12,
+      default: "",
     },
     {
       id: "channels",
