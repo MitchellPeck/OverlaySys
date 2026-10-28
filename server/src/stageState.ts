@@ -36,6 +36,11 @@ export function _resetForTest(): void {
   listeners.clear();
 }
 
+/** Replace the whole state (restore after a restart). Notifies listeners. */
+export function restoreStageState(next: StageState): void {
+  commit(next);
+}
+
 /** The active notes document and its points, or null when none / deleted. */
 export async function activeNotes(s: StageState = state): Promise<{ notes: SermonNotes; points: NotesPoint[] } | null> {
   if (!s.notes) return null;

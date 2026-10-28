@@ -5,6 +5,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 import { handleConnection } from "./ws";
 import { startHeartbeat, trackSocket } from "./heartbeat";
+import { restoreLiveState, startLiveStatePersistence } from "./liveState";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -142,6 +143,19 @@ await initScripture();
 app.log.info(
   `loaded ${(await listTemplateMetas()).length} template(s), ${(await listShowMetas()).length} show(s), ${(await listChannelConfigs()).length} channel(s), ${(await listSongMetas()).length} song(s), ${(await listProjects()).length} project(s)`,
 );
+
+// Put back what was on air if the server restarted mid-service (snapshot
+// younger than 5 min), then keep the snapshot current.
+{
+  const restored = await restoreLiveState().catch((err) => {
+    app.log.warn({ err }, "[liveState] restore failed");
+    return null;
+  });
+  if (restored) {
+    app.log.info(`[liveState] restored ${restored.channels} on-air channel(s), ${restored.timers} timer(s)`);
+  }
+  startLiveStatePersistence();
+}
 
 // Load persisted STT config now; the spawner is booted after the port is
 // bound (below) so the listener daemon can be pointed at the real WS URL.
