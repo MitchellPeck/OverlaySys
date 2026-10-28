@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
+import { pageBodyStyle, type PageBodyVariant } from "./pageBody";
 
 /**
  * Scrollable body region rendered inside the AppShell's content slot. Optional
@@ -16,13 +17,30 @@ export function PageBody({
   children,
   padding = 24,
   maxWidth,
+  variant,
   style,
 }: {
   children: ReactNode;
   padding?: number | string;
   maxWidth?: number | string;
+  /** form = 760px, wide = 1100px, list = full width; left-aligned, padding 24, column gap 16. */
+  variant?: PageBodyVariant;
   style?: CSSProperties;
 }) {
+  if (variant) {
+    return (
+      <div
+        style={{
+          ...pageBodyStyle(variant),
+          ...(padding !== 24 ? { padding } : {}),
+          ...(maxWidth !== undefined ? { maxWidth } : {}),
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    );
+  }
   return (
     <div style={{ overflow: "auto", padding, ...style }}>
       {maxWidth ? (

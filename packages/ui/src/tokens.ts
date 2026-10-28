@@ -2,8 +2,8 @@
 // 0:0  1:4  2:8  3:12  4:16  5:24  6:32
 export const space = { 0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 24, 6: 32 } as const;
 
-// 10px base radius family, matching Ovation OS (--radius: 0.625rem).
-export const radius = { sm: 6, md: 8, lg: 10, xl: 14, pill: 999 } as const;
+// Compact radius family.
+export const radius = { sm: 4, md: 6, lg: 8, xl: 12, pill: 999 } as const;
 
 // 2xs (10) is the floor for dense console labels (badges, meta lines); use xs
 // (11) for small captions. The ~150 inline 9–11px sizes should migrate here.
@@ -35,10 +35,14 @@ export const colors = {
   brandSubtle: "var(--brand-subtle)",
   /** Brand colour for TEXT and icons on dark surfaces (AA on every surface). */
   brandText: "var(--brand-text)",
+  control: "var(--control)",
   ok: "var(--ok)",
+  okFill: "var(--ok-fill)",
   okSubtle: "var(--ok-subtle)",
   warn: "var(--warn)",
   danger: "var(--danger)",
+  /** Danger for TEXT on dark surfaces (AA). */
+  dangerText: "var(--danger-text)",
   onair: "var(--onair)",
   /** On-air as a FILL under white text (AA); --onair stays for borders/glows. */
   onairFill: "var(--onair-fill)",
@@ -66,12 +70,23 @@ export const fontFamily = {
   mono: "var(--font-mono), Geist Mono, monospace",
 } as const;
 
-// Control sizes — unchanged shape from the pre-overhaul tokens.
+// Control sizes. `height` is the fixed compact control height.
 export const control = {
-  sm: { padX: 10, padY: 6, fontSize: fontSize.sm, radius: radius.md },
-  md: { padX: 12, padY: 8, fontSize: fontSize.md, radius: radius.md },
-  lg: { padX: 12, padY: 10, fontSize: fontSize.md, radius: radius.md },
+  sm: { height: 24, padX: 8, padY: 6, fontSize: fontSize.sm, radius: radius.md },
+  md: { height: 28, padX: 10, padY: 8, fontSize: fontSize.md, radius: radius.md },
+  lg: { height: 32, padX: 12, padY: 10, fontSize: fontSize.md, radius: radius.md },
 } as const;
+
+export type ItemKind = "graphic" | "song" | "slides" | "scripture" | "video" | "section";
+
+export const kindColor: Record<ItemKind, string> = {
+  graphic: "var(--kind-graphic)",
+  song: "var(--kind-song)",
+  slides: "var(--kind-slides)",
+  scripture: "var(--kind-scripture)",
+  video: "var(--kind-video)",
+  section: "var(--kind-section)",
+};
 
 export type ControlSize = keyof typeof control;
 export type SpaceKey = keyof typeof space;

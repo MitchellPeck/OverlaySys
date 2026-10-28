@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { colors, radius, fontFamily, space } from "./tokens";
+import { colors, radius, fontFamily, space, control, kindColor } from "./tokens";
 
 describe("token backward-compatibility contract", () => {
   it("keeps the 4/8/12/16 spacing steps the console relies on", () => {
@@ -16,7 +16,7 @@ describe("token backward-compatibility contract", () => {
     }
   });
 
-  it("flips legacy accent to the indigo brand", () => {
+  it("legacy accent is the brand", () => {
     expect(colors.accent).toBe("var(--brand)");
     expect(colors.accent).toBe(colors.brand);
   });
@@ -36,7 +36,18 @@ describe("token backward-compatibility contract", () => {
     expect(fontFamily.mono).toContain("Geist Mono");
   });
 
-  it("uses the 10px radius family", () => {
-    expect(radius.lg).toBe(10);
+  it("uses the compact radius family", () => {
+    expect(radius.md).toBe(6);
+  });
+
+  it("kindColor has exactly the six item kinds", () => {
+    expect(Object.keys(kindColor).sort()).toEqual(["graphic", "scripture", "section", "slides", "song", "video"]);
+    for (const [k, v] of Object.entries(kindColor)) expect(v).toBe(`var(--kind-${k})`);
+  });
+
+  it("control sizes carry compact heights", () => {
+    expect(control.sm.height).toBe(24);
+    expect(control.md.height).toBe(28);
+    expect(control.lg.height).toBe(32);
   });
 });
