@@ -1,11 +1,12 @@
 import type { Draft } from "immer";
-import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, Shadow } from "@overlaysys/core";
+import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, Shadow, TextFit } from "@overlaysys/core";
 import { findLayer } from "./utils";
 import { ColorInput } from "./ColorInput";
 import { FontInput } from "./FontInput";
 import { ImageInput } from "./ImageInput";
 import { VideoInput } from "./VideoInput";
 import { GradientStops } from "./GradientStops";
+import { useEditCoalescer } from "./editCoalescer";
 
 type CommitFn = (recipe: (d: Draft<Template>) => void) => void;
 type PushHistoryFn = () => void;
@@ -15,13 +16,19 @@ type Props = {
   template: Template;
   selectedId: string | null;
   onCommit: CommitFn;
+  /**
+   * Apply without a new undo step. With it, typing in a field updates the
+   * canvas live but makes one undo step per field edit, not per keystroke.
+   */
+  onLive?: CommitFn;
   onPushHistory?: PushHistoryFn;
   /** Optional uploader for image/video/font file pickers. Without it,
    * picked files fall back to inline data URLs. */
   onUpload?: UploadFn;
 };
 
-export function PropertyInspector({ template, selectedId, onCommit, onPushHistory, onUpload }: Props) {
+export function PropertyInspector({ template, selectedId, onCommit: commitStep, onLive, onPushHistory, onUpload }: Props) {
+  const { commit: onCommit, handlers } = useEditCoalescer(commitStep, onLive);
   if (!selectedId) {
     return (
       <p style={{ color: "var(--text-dim, #9099a8)", fontSize: 12, padding: 8 }}>
@@ -47,13 +54,15 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
     });
 
   return (
-    <div style={{ padding: "0 4px" }}>
+    <div style={{ padding: "0 4px" }} {...handlers}>
       <Section title="Identity">
-        <Row label="ID">
-          <code style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>{layer.id}</code>
-        </Row>
         <Row label="Name">
-          <input value={layer.name} onChange={(e) => patchLayer({ name: e.target.value } as Partial<Layer>)} style={inputStyle} />
+          <input
+            value={layer.name}
+            onChange={(e) => patchLayer({ name: e.target.value } as Partial<Layer>)}
+            onKeyDown={blurOnEnter}
+            style={inputStyle}
+          />
         </Row>
         <Row label="Visible">
           <input
@@ -61,6 +70,24 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
             checked={layer.visible}
             onChange={(e) => patchLayer({ visible: e.target.checked } as Partial<Layer>)}
           />
+        </Row>
+        <Row label="Locked">
+          <input
+            type="checkbox"
+            checked={layer.locked === true}
+            title="A locked layer can't be dragged, nudged or aligned on the canvas"
+            onChange={(e) =>
+              onCommit((d) => {
+                const l = findInDraft(d.layers, selectedId);
+                if (!l) return;
+                if (e.target.checked) l.locked = true;
+                else delete l.locked;
+              })
+            }
+          />
+        </Row>
+        <Row label="ID">
+          <code style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>{layer.id}</code>
         </Row>
       </Section>
 
@@ -183,6 +210,38 @@ export function PropertyInspector({ template, selectedId, onCommit, onPushHistor
               <option value="bottom">bottom</option>
             </select>
           </Row>
+          <Row label="Overflow">
+            <select
+              value={layer.fit ?? "none"}
+              title="What happens when the text doesn't fit the layer box"
+              onChange={(e) => {
+                const fit = e.target.value as TextFit;
+                onCommit((d) => {
+                  const l = findInDraft(d.layers, selectedId);
+                  if (!l || l.type !== "text") return;
+                  if (fit === "none") delete l.fit;
+                  else l.fit = fit;
+                });
+              }}
+              style={inputStyle}
+            >
+              <option value="none">clip</option>
+              <option value="shrink">shrink to fit</option>
+              <option value="ellipsis">ellipsis (…)</option>
+            </select>
+          </Row>
+          {layer.fit === "shrink" && (
+            <NumberRow
+              label="Min size"
+              value={layer.minFontSize ?? 12}
+              onChange={(v) =>
+                onCommit((d) => {
+                  const l = findInDraft(d.layers, selectedId);
+                  if (l && l.type === "text") l.minFontSize = Math.max(1, v);
+                })
+              }
+            />
+          )}
         </Section>
       )}
 
@@ -807,10 +866,16 @@ function NumberRow({
           const v = parseFloat(e.target.value);
           if (Number.isFinite(v)) onChange(v);
         }}
+        onKeyDown={blurOnEnter}
         style={inputStyle}
       />
     </Row>
   );
+}
+
+/** Enter in a single-line field ends the edit (and its undo step). */
+function blurOnEnter(e: React.KeyboardEvent<HTMLInputElement>): void {
+  if (e.key === "Enter") e.currentTarget.blur();
 }
 
 function findInDraft(layers: Draft<Layer>[], id: string): Draft<Layer> | null {

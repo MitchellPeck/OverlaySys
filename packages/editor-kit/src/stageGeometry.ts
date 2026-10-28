@@ -14,19 +14,20 @@ export function moveRect(r: StageRect, dx: number, dy: number): StageRect {
 }
 
 /** Resize one axis: `start`/`size` in, the dragged side moved by `d`; the opposite side stays fixed. */
-function resizeAxis(start: number, size: number, d: number, dragStart: boolean, dragEnd: boolean): [number, number] {
-  if (dragEnd) return [start, Math.max(MIN_WIDGET_SIZE, size + d)];
+function resizeAxis(start: number, size: number, d: number, dragStart: boolean, dragEnd: boolean, min: number): [number, number] {
+  if (dragEnd) return [start, Math.max(min, size + d)];
   if (dragStart) {
     const end = start + size;
-    const s = Math.min(start + d, end - MIN_WIDGET_SIZE);
+    const s = Math.min(start + d, end - min);
     return [s, end - s];
   }
   return [start, size];
 }
 
-export function resizeRect(r: StageRect, handle: ResizeHandle, dx: number, dy: number): StageRect {
-  const [x, w] = resizeAxis(r.x, r.w, dx, handle.includes("w"), handle.includes("e"));
-  const [y, h] = resizeAxis(r.y, r.h, dy, handle.includes("n"), handle.includes("s"));
+/** `min` is the smallest size an edge drag may leave (default MIN_WIDGET_SIZE). */
+export function resizeRect(r: StageRect, handle: ResizeHandle, dx: number, dy: number, min = MIN_WIDGET_SIZE): StageRect {
+  const [x, w] = resizeAxis(r.x, r.w, dx, handle.includes("w"), handle.includes("e"), min);
+  const [y, h] = resizeAxis(r.y, r.h, dy, handle.includes("n"), handle.includes("s"), min);
   return { x, y, w, h };
 }
 
@@ -72,6 +73,7 @@ export function snapRect(
   canvas: { w: number; h: number },
   threshold: number,
   edges: { x: SnapEdge[]; y: SnapEdge[] } = { x: ALL_EDGES, y: ALL_EDGES },
+  min = MIN_WIDGET_SIZE,
 ): { rect: StageRect; guides: Guide[] } {
   const xs = [0, canvas.w / 2, canvas.w];
   const ys = [0, canvas.h / 2, canvas.h];
@@ -85,27 +87,27 @@ export function snapRect(
   // Moving snaps shift the rect; a resize (only some edges listed) moves just those edges.
   const sx = snapAxis(moving.x, moving.w, xs, threshold, edges.x);
   if (sx) {
-    applyAxis(rect, "x", "w", edges.x, sx.delta);
+    applyAxis(rect, "x", "w", edges.x, sx.delta, min);
     guides.push({ axis: "x", at: sx.at });
   }
   const sy = snapAxis(moving.y, moving.h, ys, threshold, edges.y);
   if (sy) {
-    applyAxis(rect, "y", "h", edges.y, sy.delta);
+    applyAxis(rect, "y", "h", edges.y, sy.delta, min);
     guides.push({ axis: "y", at: sy.at });
   }
   return { rect, guides };
 }
 
-function applyAxis(rect: StageRect, pos: "x" | "y", size: "w" | "h", edges: SnapEdge[], delta: number): void {
+function applyAxis(rect: StageRect, pos: "x" | "y", size: "w" | "h", edges: SnapEdge[], delta: number, min: number): void {
   const hasStart = edges.includes("start");
   const hasEnd = edges.includes("end");
   if (hasStart && hasEnd) {
     rect[pos] += delta; // whole-rect move
   } else if (hasEnd && !hasStart) {
-    rect[size] = Math.max(MIN_WIDGET_SIZE, rect[size] + delta); // resizing the end edge
+    rect[size] = Math.max(min, rect[size] + delta); // resizing the end edge
   } else if (hasStart && !hasEnd) {
     const end = rect[pos] + rect[size];
-    const s = Math.min(rect[pos] + delta, end - MIN_WIDGET_SIZE);
+    const s = Math.min(rect[pos] + delta, end - min);
     rect[pos] = s;
     rect[size] = end - s;
   } else {

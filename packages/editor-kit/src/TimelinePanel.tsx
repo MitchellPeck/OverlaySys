@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 import type { Template, Track, Keyframe, EasingSpec, Layer } from "@overlaysys/core";
 import { EasingPicker } from "./EasingPicker";
 import { findLayer } from "./utils";
+import { useEditCoalescer } from "./editCoalescer";
+import { ANIMATION_PRESETS, applyAnimationPreset, clampTimelineDuration, minTimelineDuration, type AnimationPreset } from "./templateOps";
 
 type Props = {
   template: Template;
@@ -36,14 +38,19 @@ const ALL_PROPERTIES = [
   "opacity",
   "w",
   "h",
+  "wipe",
 ] as const;
 type TrackProperty = (typeof ALL_PROPERTIES)[number];
 
-export function TimelinePanel(props: Props) {
+export function TimelinePanel(rawProps: Props) {
+  // Typed values (duration, keyframe t/value) make one undo step per field edit.
+  const { commit, handlers } = useEditCoalescer(rawProps.onCommit, rawProps.onLive);
+  const props = { ...rawProps, onCommit: commit };
   const tl = props.template.timelines[props.active];
 
   return (
     <div
+      {...handlers}
       style={{
         height: "100%",
         display: "grid",
@@ -161,9 +168,12 @@ function Toolbar(props: Props) {
         label="dur"
         value={tl.duration}
         step={0.05}
+        min={minTimelineDuration(tl)}
+        title={`Timeline length (s). Can't be shorter than the last keyframe (${minTimelineDuration(tl).toFixed(2)}s) — move or delete keyframes first.`}
         onChange={(v) =>
           props.onCommit((d) => {
-            d.timelines[props.active].duration = Math.max(0.05, v);
+            const t = d.timelines[props.active];
+            t.duration = clampTimelineDuration(t, v);
           })
         }
       />
@@ -182,10 +192,35 @@ function Toolbar(props: Props) {
 
       <label
         style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-dim, #9099a8)" }}
+        title="Loop the preview playback here in the editor"
       >
         <input type="checkbox" checked={props.loop} onChange={props.onLoopToggle} />
-        loop
+        loop preview
       </label>
+
+      <select
+        value=""
+        onChange={(e) => {
+          const v = e.target.value as AnimationPreset | "";
+          e.currentTarget.value = "";
+          if (!v || !props.selectedLayerId) return;
+          props.onCommit(applyAnimationPreset(props.selectedLayerId, props.active, v));
+        }}
+        disabled={!props.selectedLayerId}
+        title={
+          props.selectedLayerId
+            ? `Replace ${layerName ?? "the layer"}'s ${props.active} animation with a preset`
+            : "Select a layer first"
+        }
+        style={{ ...selectStyle, opacity: props.selectedLayerId ? 1 : 0.5 }}
+      >
+        <option value="">{props.active === "in" ? "Animate in…" : "Animate out…"}</option>
+        {ANIMATION_PRESETS.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.label}
+          </option>
+        ))}
+      </select>
 
       {/* Property picker: select-as-action. The select is reset to "" on each
           change so the user can add the same property after deleting it. */}
@@ -303,25 +338,34 @@ function NumberSpinner({
   label,
   value,
   step,
+  min,
+  title,
   onChange,
 }: {
   label: string;
   value: number;
   step: number;
+  min?: number;
+  title?: string;
   onChange: (v: number) => void;
 }) {
   return (
     <label
       style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-dim, #9099a8)" }}
+      title={title}
     >
       {label}
       <input
         type="number"
         value={value}
         step={step}
+        min={min}
         onChange={(e) => {
           const v = parseFloat(e.target.value);
           if (Number.isFinite(v)) onChange(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
         }}
         style={{
           width: 60,
@@ -443,7 +487,8 @@ function TrackList({
 
 // ──────────────────────────────────────────────────────────────────────────
 
-type DragKf = { trackKey: string; index: number; startX: number; startT: number; pxPerSec: number };
+/** `pushed`: history was snapshotted (on the first move, so a click only selects). */
+type DragKf = { trackKey: string; index: number; startX: number; startT: number; pxPerSec: number; pushed: boolean };
 
 function TrackLanes({
   tracks,
@@ -517,7 +562,6 @@ function TrackLanes({
     e.stopPropagation(); // prevents the container scrub-drag from also starting
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     onSelectKeyframe({ trackKey, index });
-    onPushHistory();
     const r = (laneRef.current as HTMLElement).getBoundingClientRect();
     dragRef.current = {
       trackKey,
@@ -525,6 +569,7 @@ function TrackLanes({
       startX: e.clientX,
       startT,
       pxPerSec: r.width / duration,
+      pushed: false,
     };
   }
 
@@ -540,6 +585,11 @@ function TrackLanes({
     const d = dragRef.current;
     const dx = e.clientX - d.startX;
     const newT = clamp(d.startT + dx / d.pxPerSec, 0, duration);
+    if (!d.pushed) {
+      if (newT === d.startT) return;
+      d.pushed = true;
+      onPushHistory();
+    }
     onLive((draft) => {
       const t = trackByKey(draft.timelines[activeTimeline].tracks, d.trackKey);
       if (!t) return;
@@ -760,6 +810,9 @@ function KeyframeInspector({
             const v = parseFloat(e.target.value);
             if (Number.isFinite(v)) patch({ t: v });
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
           style={inputStyle}
         />
       </Row>
@@ -808,11 +861,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  * Sensible starting keyframes for a newly-added track.
  *
  * Most properties default to a flat "current value at both ends" so the user
- * can shape the in/out from the layer's design pose. Opacity is the common
- * exception: 0 → 1 is what authors almost always want for an `in` reveal,
- * and 1 → 0 for an `out`. We can't tell which timeline the user picked from
- * here, so we default to 0 → 1 (matches the previous behaviour for `in`,
- * and the user can drag/edit values for `out`).
+ * can shape the in/out from the layer's design pose. x/y tracks are offsets
+ * from the design position (the engine applies them as a translate), so
+ * their flat value is 0 — seeding the absolute position would double it.
+ * Opacity and wipe are the common exceptions: 0 → 1 is what authors almost
+ * always want for an `in` reveal, and 1 → 0 for an `out`. We can't tell
+ * which timeline the user picked from here, so we default to 0 → 1 (matches
+ * the previous behaviour for `in`, and the user can drag/edit values for
+ * `out`).
  */
 function initialKeyframesFor(
   property: TrackProperty,
@@ -821,17 +877,18 @@ function initialKeyframesFor(
 ): Keyframe[] {
   const t = layer.transform;
   const cur: Record<TrackProperty, number> = {
-    x: t.x,
-    y: t.y,
+    x: 0,
+    y: 0,
     rotation: t.rotation,
     scaleX: t.scaleX,
     scaleY: t.scaleY,
     opacity: t.opacity,
     w: t.w ?? 0,
     h: t.h ?? 0,
+    wipe: 1,
   };
 
-  if (property === "opacity") {
+  if (property === "opacity" || property === "wipe") {
     return [
       { t: 0, value: 0, easing: "power2.out" },
       { t: duration, value: 1, easing: "power2.out" },

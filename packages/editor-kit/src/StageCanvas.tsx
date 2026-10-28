@@ -1,10 +1,11 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Draft } from "immer";
 import type { StageFeed, StageLayout, StageRect, StageWidget, StageWidgetKind } from "@overlaysys/core";
 import { StageWidgetView } from "@overlaysys/stage-widgets";
 import { fitScale, isEditableTarget } from "./utils";
 import { SNAP_SCREEN_PX, type Guide, type ResizeHandle } from "./stageGeometry";
 import { STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
+import { GuideOverlays, ViewToolbar, useCanvasZoom, type GuideToggles } from "./canvasView";
 import {
   dragMove,
   dragResize,
@@ -90,9 +91,27 @@ export function StageCanvas(props: StageCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [scale, setScale] = useState(1);
+  const [fit, setFit] = useState(1);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<StageRect | null>(null);
+  const [overlays, setOverlays] = useState<GuideToggles>({ safe: false, center: false, thirds: false });
+  // View: zoom (⌘+/−/0, ⌘+wheel) on top of fit-to-window; middle-drag or wheel pans.
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const panRef = useRef<{ pointerId: number; start: Point; startPan: Point } | null>(null);
+  const { zoom, setZoom } = useCanvasZoom(hostRef, () => setPan({ x: 0, y: 0 }));
+  const scale = fit * zoom;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    function onWheel(e: WheelEvent) {
+      if (e.ctrlKey || e.metaKey) return; // zoom, handled by useCanvasZoom
+      e.preventDefault();
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, []);
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -100,7 +119,7 @@ export function StageCanvas(props: StageCanvasProps) {
     const ro = new ResizeObserver(() => {
       const r = host.getBoundingClientRect();
       const next = fitScale(layout.size.w, layout.size.h, r.width - HOST_PADDING, r.height - HOST_PADDING);
-      if (next > 0) setScale(next);
+      if (next > 0) setFit(next);
     });
     ro.observe(host);
     return () => ro.disconnect();
@@ -163,6 +182,12 @@ export function StageCanvas(props: StageCanvasProps) {
   }
 
   function onBackgroundPointerDown(e: React.PointerEvent) {
+    if (e.button === 1) {
+      e.preventDefault();
+      hostRef.current?.setPointerCapture(e.pointerId);
+      panRef.current = { pointerId: e.pointerId, start: { x: e.clientX, y: e.clientY }, startPan: pan };
+      return;
+    }
     if (e.button !== 0 || !stageRef.current) return;
     begin(e, {
       ...base(e),
@@ -174,6 +199,11 @@ export function StageCanvas(props: StageCanvasProps) {
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    const pd = panRef.current;
+    if (pd && pd.pointerId === e.pointerId) {
+      setPan({ x: pd.startPan.x + e.clientX - pd.start.x, y: pd.startPan.y + e.clientY - pd.start.y });
+      return;
+    }
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     // A pointerup we never saw (e.g. released outside the window) ends the drag, keeping its result.
@@ -233,6 +263,11 @@ export function StageCanvas(props: StageCanvasProps) {
    * "lost": capture lost without a pointerup; keep what was there.
    */
   function endDrag(e: React.PointerEvent, how: "up" | "cancel" | "lost") {
+    if (panRef.current?.pointerId === e.pointerId) {
+      hostRef.current?.releasePointerCapture?.(e.pointerId);
+      panRef.current = null;
+      return;
+    }
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     hostRef.current?.releasePointerCapture?.(e.pointerId);
@@ -322,7 +357,7 @@ export function StageCanvas(props: StageCanvasProps) {
           top: "50%",
           width: layout.size.w,
           height: layout.size.h,
-          transform: `translate(-50%, -50%) scale(${scale})`,
+          transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
           transformOrigin: "50% 50%",
           boxShadow: "0 0 0 1px var(--border, #2a2e36), 0 8px 40px rgba(0,0,0,0.6)",
         }}
@@ -390,6 +425,8 @@ export function StageCanvas(props: StageCanvasProps) {
           ),
         )}
 
+        <GuideOverlays w={layout.size.w} h={layout.size.h} scale={scale} show={overlays} />
+
         {marquee && (
           <div
             style={{
@@ -417,8 +454,20 @@ export function StageCanvas(props: StageCanvasProps) {
           pointerEvents: "none",
         }}
       >
-        {layout.size.w}×{layout.size.h} · {(scale * 100).toFixed(0)}%
+        {layout.size.w}×{layout.size.h} · Alt: no snap
       </div>
+      <ViewToolbar
+        zoom={zoom}
+        scale={scale}
+        onZoom={(z) => {
+          if (z === "fit") {
+            setZoom(1);
+            setPan({ x: 0, y: 0 });
+          } else setZoom(z);
+        }}
+        guides={overlays}
+        onGuides={setOverlays}
+      />
     </div>
   );
 }

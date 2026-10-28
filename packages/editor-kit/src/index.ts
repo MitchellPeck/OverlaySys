@@ -15,3 +15,8 @@ export { StageWidgetList } from "./StageWidgetList";
 export { StagePalette, STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
 export * from "./stageInspectorLogic";
 export { StageCanvas, type StageCanvasProps } from "./StageCanvas";
+export * from "./templateOps";
+export * from "./templateStarters";
+export * from "./canvasView";
+export { useEditCoalescer, createEditCoalescer, isContinuousInput } from "./editCoalescer";
+export { nudgeForKey } from "./stageCanvasMath";
