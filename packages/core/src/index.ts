@@ -35,3 +35,4 @@ export * from "./chordPro";
 export * from "./stageLayoutRules";
 export * from "./slidesMapping";
 export * from "./sections";
+export * from "./slidesConvert";

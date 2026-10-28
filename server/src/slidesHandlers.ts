@@ -10,6 +10,10 @@ import * as shows from "./shows";
 import * as templates from "./templates";
 import * as slidesSession from "./slidesSession";
 // [/P3.9]
+// [P3.12]
+import { convertSongToDeck, undoConversion } from "./decksConvert";
+import * as songs from "./songs";
+// [/P3.12]
 
 export type SlidesMessage = Extract<
   ClientMessage,
@@ -90,6 +94,24 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
 async function broadcastList(): Promise<void> {
   broadcast({ type: "deck_list", decks: await decks.listDeckMetas() });
 }
+
+// [P3.12] convert broadcasts
+async function broadcastConvertChanges(deckId: string | null, showIds: string[]): Promise<void> {
+  if (deckId) {
+    const d = await decks.getDeck(deckId);
+    if (d) broadcast({ type: "deck", deck: d });
+  }
+  await broadcastList();
+  broadcast({ type: "song_list", songs: await songs.listSongMetas() });
+  broadcast({ type: "show_list", shows: await shows.listShowMetas() });
+  for (const id of showIds) {
+    const s = await shows.getShow(id);
+    if (s) broadcast({ type: "show", show: s });
+  }
+  stageFeedHub.invalidateAll();
+  scheduleSync();
+}
+// [/P3.12]
 
 export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promise<void> {
   switch (msg.type) {
@@ -176,11 +198,46 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       slidesSession.end(msg.channel);
       return;
     // [/P3.9]
-    // [P3.4] placeholder: replaced by P3.12 (convert)
-    case "convert_song_to_deck":
-    case "undo_convert_song":
-      send({ type: "error", code: "not_implemented", message: msg.type });
+    // [P3.12] convert a song to a slide deck
+    case "convert_song_to_deck": {
+      let res: Awaited<ReturnType<typeof convertSongToDeck>>;
+      try {
+        res = await convertSongToDeck(msg.songId, {
+          titleSlide: msg.titleSlide,
+          ...(msg.licensing ? { licensing: msg.licensing } : {}),
+        });
+      } catch {
+        send({ type: "error", code: "not_found", message: msg.songId });
+        return;
+      }
+      send({
+        type: "song_converted",
+        conversionId: res.conversionId,
+        deckId: res.deck.id,
+        deckName: res.deck.name,
+        rows: res.rows,
+        shows: res.shows,
+        warnings: res.warnings,
+      });
+      await broadcastConvertChanges(res.deck.id, res.changedShowIds);
       return;
-    // [/P3.4]
+    }
+    case "undo_convert_song": {
+      const res = await undoConversion(msg.conversionId);
+      if (!res) {
+        send({ type: "error", code: "not_found", message: msg.conversionId });
+        return;
+      }
+      send({
+        type: "song_convert_undone",
+        conversionId: msg.conversionId,
+        songId: res.songId,
+        restoredShows: res.restoredShows,
+        skippedShows: res.skippedShows,
+      });
+      await broadcastConvertChanges(null, res.restoredShowIds);
+      return;
+    }
+    // [/P3.12]
   }
 }

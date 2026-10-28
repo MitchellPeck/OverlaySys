@@ -136,11 +136,6 @@ describe("slides handlers", () => {
     expect(scheduleSync).not.toHaveBeenCalled();
   });
 
-  it("unimplemented convert messages reply not_implemented", async () => {
-    await handleSlidesMessage({ type: "undo_convert_song", conversionId: "c1" }, send);
-    expect(sent).toEqual([{ type: "error", code: "not_implemented", message: "undo_convert_song" }]);
-  });
-
   it("list_decks replies only to the sender", async () => {
     await handleSlidesMessage({ type: "list_decks" }, send);
     expect(sent.map((m) => m.type)).toEqual(["deck_list"]);
@@ -294,3 +289,54 @@ describe("slides live handlers", () => {
   });
 });
 // [/P3.9]
+
+// [P3.12] convert handlers
+describe("convert handlers", () => {
+  it("convert replies song_converted, broadcasts the changes, and undo puts them back", async () => {
+    const songs = await import("./songs");
+    const itemMappings = await import("./pco/itemMappings");
+    await songs.reloadSongs();
+    await itemMappings.reloadItemMappings();
+    // Placeholder lyrics only.
+    await songs.saveSong({
+      id: "song-x",
+      title: "Placeholder",
+      sections: [{ id: "v", kind: "verse", label: "Verse", slides: [{ id: "a", lines: ["Line A"] }] }],
+      defaultArrangement: ["v"],
+      customFields: {},
+    });
+    await shows.saveShow({
+      id: "sh1",
+      name: "Undated show",
+      projectId: "default",
+      rows: [{ kind: "song", id: "r1", songId: "song-x", lyricTemplateId: "t" }],
+      songs: [{ songId: "song-x" }],
+    });
+
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-x", titleSlide: false }, send);
+    const reply = sent[0];
+    expect(reply).toMatchObject({ type: "song_converted", deckName: "Placeholder", rows: 1, shows: 1, warnings: [] });
+    expect(broadcasts.map((m) => m.type)).toEqual(["deck", "deck_list", "song_list", "show_list", "show"]);
+    expect(scheduleSync).toHaveBeenCalled();
+
+    sent = [];
+    broadcasts.length = 0;
+    const conversionId = reply?.type === "song_converted" ? reply.conversionId : "";
+    await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
+    expect(sent).toEqual([
+      { type: "song_convert_undone", conversionId, songId: "song-x", restoredShows: 1, skippedShows: 0 },
+    ]);
+    expect(broadcasts.map((m) => m.type)).toEqual(["deck_list", "song_list", "show_list", "show"]);
+    expect((await shows.getShow("sh1"))!.rows[0]).toMatchObject({ kind: "song" });
+  });
+
+  it("convert of an unknown song and undo of an unknown id send not_found", async () => {
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "nope", titleSlide: false }, send);
+    await handleSlidesMessage({ type: "undo_convert_song", conversionId: "nope" }, send);
+    expect(sent).toEqual([
+      { type: "error", code: "not_found", message: "nope" },
+      { type: "error", code: "not_found", message: "nope" },
+    ]);
+  });
+});
+// [/P3.12]
