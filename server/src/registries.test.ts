@@ -163,4 +163,24 @@ describe("duplicateShow", () => {
     // Deep copy — editing the duplicate's notes leaves the source alone.
     expect(copy?.sermonNotes?.[0]).not.toBe((await shows.getShow("show-src"))?.sermonNotes?.[0]);
   });
+
+  it("keeps sections, sectionIds and scheduledFor with fresh row ids", async () => {
+    await shows.reloadShows();
+    await shows.saveShow({
+      id: "show-sec",
+      name: "Sunday",
+      projectId: "p",
+      songs: [],
+      scheduledFor: "2026-11-01",
+      sections: [{ id: "sec-a", name: "Worship" }],
+      rows: [{ kind: "graphic", id: "r1", templateId: "t", data: {}, sectionId: "sec-a" }],
+    });
+    const copy = await shows.duplicateShow("show-sec");
+    expect(copy?.sections).toEqual([{ id: "sec-a", name: "Worship" }]);
+    expect(copy?.scheduledFor).toBe("2026-11-01");
+    expect(copy?.rows[0]?.sectionId).toBe("sec-a");
+    expect(copy?.rows[0]?.id).not.toBe("r1");
+    expect(copy?.name).toBe("Sunday (copy)");
+    expect(copy?.deletedAt).toBeUndefined();
+  });
 });

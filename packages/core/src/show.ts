@@ -14,12 +14,16 @@ export const RowSourceRefSchema = z.object({
   serviceTypeId: z.string(),
   planId: z.string(),
   itemId: z.string(),
+  /** Arrangement a PCO import last set on a song row, so re-import can tell an operator edit from its own. */
+  pcoArrangement: z.array(z.string()).optional(),
 });
 export type RowSourceRef = z.infer<typeof RowSourceRefSchema>;
 
-export const GraphicRowSchema = z.object({
+const GraphicRowObject = z.object({
   kind: z.literal("graphic"),
   id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
   templateId: z.string(),
   data: z.record(z.string(), z.string()),
   channelHint: z.string().optional(),
@@ -32,11 +36,14 @@ export const GraphicRowSchema = z.object({
   lengthSecManual: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
-export type GraphicRow = z.infer<typeof GraphicRowSchema>;
+export type GraphicRow = z.infer<typeof GraphicRowObject>;
+export const GraphicRowSchema = GraphicRowObject.passthrough();
 
-export const SongRowSchema = z.object({
+const SongRowObject = z.object({
   kind: z.literal("song"),
   id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
   songId: z.string(),
   lyricTemplateId: z.string(),
   arrangement: z.array(z.string()).optional(),
@@ -71,7 +78,8 @@ export const SongRowSchema = z.object({
   skipOutro: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
-export type SongRow = z.infer<typeof SongRowSchema>;
+export type SongRow = z.infer<typeof SongRowObject>;
+export const SongRowSchema = SongRowObject.passthrough();
 
 /**
  * Per-show override layer for a Song. One entry per song that appears in the
@@ -80,7 +88,7 @@ export type SongRow = z.infer<typeof SongRowSchema>;
  * without mutating the canonical Song in the library. Row-level overrides on
  * {@link SongRow} take precedence over these.
  */
-export const ShowSongSchema = z.object({
+const ShowSongObject = z.object({
   songId: z.string(),
   channelOverride: z.string().optional(),
   introTemplateId: z.string().optional(),
@@ -101,7 +109,8 @@ export const ShowSongSchema = z.object({
    *  precedence over this. */
   arrangement: z.array(z.string()).optional(),
 });
-export type ShowSong = z.infer<typeof ShowSongSchema>;
+export type ShowSong = z.infer<typeof ShowSongObject>;
+export const ShowSongSchema = ShowSongObject.passthrough();
 
 export const ScriptureSlideSchema = z.object({
   id: z.string(),
@@ -123,9 +132,11 @@ export const ScriptureSlideSchema = z.object({
 });
 export type ScriptureSlide = z.infer<typeof ScriptureSlideSchema>;
 
-export const ScriptureRowSchema = z.object({
+const ScriptureRowObject = z.object({
   kind: z.literal("scripture"),
   id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
   /** Normalized reference string, e.g. "John 3:16-18". */
   reference: z.string(),
   /** TranslationMeta.id from @overlaysys/scripture. */
@@ -173,15 +184,18 @@ export const ScriptureRowSchema = z.object({
   /** Operator opted this row out of an intro. */
   skipIntro: z.boolean().optional(),
 });
-export type ScriptureRow = z.infer<typeof ScriptureRowSchema>;
+export type ScriptureRow = z.infer<typeof ScriptureRowObject>;
+export const ScriptureRowSchema = ScriptureRowObject.passthrough();
 
 /**
  * Full-frame video played in the channel's media slot (beneath graphics).
  * `durationSec` is display-only, captured when the row is saved.
  */
-export const VideoRowSchema = z.object({
+const VideoRowObject = z.object({
   kind: z.literal("video"),
   id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
   assetUrl: z.string(),
   label: z.string().optional(),
   durationSec: z.number().optional(),
@@ -199,7 +213,12 @@ export const VideoRowSchema = z.object({
   lengthSecManual: z.boolean().optional(),
   sourceRef: RowSourceRefSchema.optional(),
 });
-export type VideoRow = z.infer<typeof VideoRowSchema>;
+export type VideoRow = z.infer<typeof VideoRowObject>;
+export const VideoRowSchema = VideoRowObject.passthrough();
+
+const ShowSectionObject = z.object({ id: z.string().min(1), name: z.string() });
+export type ShowSection = z.infer<typeof ShowSectionObject>;
+export const ShowSectionSchema = ShowSectionObject.passthrough();
 
 /**
  * Show JSON files predating the row union have rows without a `kind` field.
@@ -219,7 +238,7 @@ export const RundownRowSchema = z.preprocess(
   },
   z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema]),
 );
-export type RundownRow = z.infer<typeof RundownRowSchema>;
+export type RundownRow = GraphicRow | SongRow | ScriptureRow | VideoRow;
 
 /**
  * Shows pre-dating the Project concept have no `projectId`. Default missing
@@ -229,6 +248,38 @@ export type RundownRow = z.infer<typeof RundownRowSchema>;
  * `songs` to `[]` on read; writes always include the field. Mirrors the
  * row-kind backfill pattern above.
  */
+const ShowObject = z.object({
+  id: z.string(),
+  name: z.string(),
+  projectId: z.string(),
+  // Runtime schemas pass unknown keys through; the casts keep the inferred types free of index signatures.
+  rows: z.array(RundownRowSchema as unknown as z.ZodType<RundownRow, z.ZodTypeDef, unknown>),
+  songs: z.array(ShowSongSchema as unknown as z.ZodType<ShowSong, z.ZodTypeDef, unknown>),
+  /**
+   * ISO timestamp of the last write. Set by writers on every save; consumed
+   * by the sync engine for last-writer-wins. Optional for backwards
+   * compatibility with pre-sync JSON; new writes always set it.
+   *
+   * Note: a Show is synced as one document, so a single `updatedAt` bump
+   * covers every row + ShowSong override inside. The SyncEngine logs when
+   * it overwrites a show with newer-but-superset content so a future
+   * field-level merge has a paper trail (see plan §Workstream 1).
+   */
+  updatedAt: z.string().optional(),
+  /**
+   * Optional service date, date-only ISO `YYYY-MM-DD`. Drives "next show"
+   * selection on control surfaces. Optional/backfill-free: shows saved before
+   * this field simply have no value and fall back to name-parsed dates.
+   */
+  scheduledFor: z.string().optional(),
+  /** Sermon notes for this show; rows link to one via `sermonNotesId`. */
+  sermonNotes: z.array(SermonNotesSchema).optional(),
+  /** Soft-delete tombstone; see hotcard.ts for the rationale. */
+  deletedAt: z.string().optional(),
+  /** Named groups of rows; rows reference one via `sectionId`. */
+  sections: z.array(ShowSectionSchema as unknown as z.ZodType<ShowSection, z.ZodTypeDef, unknown>).optional(),
+});
+
 export const ShowSchema = z.preprocess(
   (raw) => {
     if (
@@ -249,33 +300,6 @@ export const ShowSchema = z.preprocess(
     }
     return raw;
   },
-  z.object({
-    id: z.string(),
-    name: z.string(),
-    projectId: z.string(),
-    rows: z.array(RundownRowSchema),
-    songs: z.array(ShowSongSchema),
-    /**
-     * ISO timestamp of the last write. Set by writers on every save; consumed
-     * by the sync engine for last-writer-wins. Optional for backwards
-     * compatibility with pre-sync JSON; new writes always set it.
-     *
-     * Note: a Show is synced as one document, so a single `updatedAt` bump
-     * covers every row + ShowSong override inside. The SyncEngine logs when
-     * it overwrites a show with newer-but-superset content so a future
-     * field-level merge has a paper trail (see plan §Workstream 1).
-     */
-    updatedAt: z.string().optional(),
-    /**
-     * Optional service date, date-only ISO `YYYY-MM-DD`. Drives "next show"
-     * selection on control surfaces. Optional/backfill-free: shows saved before
-     * this field simply have no value and fall back to name-parsed dates.
-     */
-    scheduledFor: z.string().optional(),
-    /** Sermon notes for this show; rows link to one via `sermonNotesId`. */
-    sermonNotes: z.array(SermonNotesSchema).optional(),
-    /** Soft-delete tombstone; see hotcard.ts for the rationale. */
-    deletedAt: z.string().optional(),
-  }),
+  ShowObject.passthrough(),
 );
-export type Show = z.infer<typeof ShowSchema>;
+export type Show = z.infer<typeof ShowObject>;

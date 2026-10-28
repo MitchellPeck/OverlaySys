@@ -69,14 +69,16 @@ export async function duplicateShow(sourceId: string): Promise<Show | null> {
   await ensureLoaded();
   const src = REGISTRY.get(sourceId);
   if (!src || !isLive(src)) return null;
+  const { deletedAt: _deletedAt, ...rest } = src;
   const copy: Show = stampWrite<Show>({
+    ...rest,
     id: `show-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
-    projectId: src.projectId,
     rows: src.rows.map((row) => ({ ...row, id: randomUUID() })),
     songs: src.songs.map((s) => ({ ...s })),
     // Copied rows keep their sermonNotesId, so the notes they point at come too.
     ...(src.sermonNotes ? { sermonNotes: src.sermonNotes.map((n) => ({ ...n })) } : {}),
+    ...(src.sections ? { sections: src.sections.map((n) => ({ ...n })) } : {}),
   });
   await storage.saveShow(copy);
   REGISTRY.set(copy.id, copy);

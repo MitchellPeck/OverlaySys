@@ -424,3 +424,60 @@ describe("VideoRow", () => {
     ).toThrow();
   });
 });
+
+describe("ShowSchema sections and pass-through", () => {
+  const base = { id: "s1", name: "Sunday", projectId: "p", songs: [] as unknown[] };
+  const graphicRow = { kind: "graphic", id: "r1", templateId: "t", data: {} };
+
+  it("parses an old show without sections unchanged", () => {
+    const s = ShowSchema.parse({ ...base, rows: [graphicRow] });
+    expect(s.sections).toBeUndefined();
+    expect(s.rows[0]!.sectionId).toBeUndefined();
+  });
+
+  it("round-trips sections and sectionId", () => {
+    const s = ShowSchema.parse({
+      ...base,
+      sections: [{ id: "sec-a", name: "Worship" }],
+      rows: [{ ...graphicRow, sectionId: "sec-a" }],
+    });
+    expect(s.sections).toEqual([{ id: "sec-a", name: "Worship" }]);
+    expect(s.rows[0]!.sectionId).toBe("sec-a");
+  });
+
+  it("keeps unknown keys on the show, rows, show songs and sections", () => {
+    const s = ShowSchema.parse({
+      ...base,
+      futureShowKey: 1,
+      songs: [{ songId: "x", futureSongKey: true }],
+      sections: [{ id: "a", name: "A", colour: "#fff" }],
+      rows: [{ ...graphicRow, futureRowKey: "x" }],
+    }) as Record<string, unknown>;
+    expect(s.futureShowKey).toBe(1);
+    expect((s.rows as Record<string, unknown>[])[0]!.futureRowKey).toBe("x");
+    expect((s.songs as Record<string, unknown>[])[0]!.futureSongKey).toBe(true);
+    expect((s.sections as Record<string, unknown>[])[0]!.colour).toBe("#fff");
+  });
+
+  it("still defaults a row without kind to graphic", () => {
+    const s = ShowSchema.parse({ ...base, rows: [{ id: "r1", templateId: "t", data: {} }] });
+    expect(s.rows[0]!.kind).toBe("graphic");
+  });
+
+  it("round-trips sourceRef.pcoArrangement", () => {
+    const s = ShowSchema.parse({
+      ...base,
+      rows: [
+        {
+          kind: "song",
+          id: "r1",
+          songId: "x",
+          lyricTemplateId: "l",
+          sourceRef: { provider: "pco", serviceTypeId: "a", planId: "b", itemId: "c", pcoArrangement: ["v1", "c"] },
+        },
+      ],
+    });
+    const row = s.rows[0]!;
+    expect(row.kind === "song" && row.sourceRef?.pcoArrangement).toEqual(["v1", "c"]);
+  });
+});
