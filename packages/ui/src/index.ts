@@ -33,3 +33,5 @@ export { SaveBar } from "./SaveBar";
 export { saveBarState, type SaveBarState, type SaveBarStatus } from "./saveBarState";
 export { OfflineState } from "./OfflineState";
 export { offlineCopy } from "./offlineCopy";
+export { LibraryList, type LibraryListProps, type Column, type SortSpec, type FilterSpec } from "./LibraryList";
+export { computeVisible, normalizeSearch, loadListPrefs, saveListPrefs, listBodyState, type ListPrefs } from "./libraryListModel";
