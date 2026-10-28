@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SongSessionSummarySchema } from "./song";
+import { SlidesSessionSummarySchema } from "./slides";
 
 export const ChannelPhaseSchema = z.enum(["in", "on", "out"]);
 export type ChannelPhase = z.infer<typeof ChannelPhaseSchema>;
@@ -132,6 +133,9 @@ export const ChannelStateSchema = z.object({
   songSession: SongSessionSummarySchema.optional(),
   queuedSong: QueuedSongSchema.optional(),
   scriptureSession: ScriptureSessionSummarySchema.optional(),
+  // [P3.5] slides session
+  slidesSession: SlidesSessionSummarySchema.optional(),
+  // [/P3.5]
   queuedScripture: QueuedScriptureSchema.optional(),
   media: ChannelMediaSchema.nullable().optional(),
   /**

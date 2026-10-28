@@ -11,11 +11,13 @@ import type {
   ScriptureContext,
   ScriptureSessionSummary,
   SongSessionSummary,
+  SlidesSessionSummary,
   SubTakeContext,
 } from "@overlaysys/core";
 import { DEFAULT_MEDIA_TRANSITION } from "@overlaysys/core";
 import * as scriptureSession from "./scriptureSession";
 import * as songSession from "./songSession";
+import * as slidesSession from "./slidesSession";
 import * as templates from "./templates";
 
 type Listener = (state: ChannelState) => void;
@@ -191,6 +193,9 @@ export function take(
     if (songSession.dropQueued(channel)) {
       delete s.queuedSong;
     }
+    // [P3.5] slides session
+    if (slidesSession.dropAll(channel)) delete s.slidesSession;
+    // [/P3.5]
   }
   // Every take replaces whatever scripture owned the channel — including song
   // slides (internal takes) and scripture's own takes, which re-establish
@@ -260,6 +265,9 @@ export function clear(
       const st = getOrInit(channel);
       delete st.scriptureSession;
     }
+    // [P3.5] slides session
+    if (slidesSession.dropAll(channel)) delete getOrInit(channel).slidesSession;
+    // [/P3.5]
   }
   cancelAutoOut(channel);
   activeSource.delete(channel);
@@ -329,6 +337,20 @@ export function setSongSessionSummary(
   if (!options?.deferEmit) emit(channel);
 }
 
+// [P3.5] slides session
+export function setSlidesSessionSummary(
+  channel: string,
+  summary: SlidesSessionSummary | null,
+  options?: { deferEmit?: boolean },
+): void {
+  const s = getOrInit(channel);
+  if (summary === null) delete s.slidesSession;
+  else s.slidesSession = summary;
+  states.set(channel, s);
+  if (!options?.deferEmit) emit(channel);
+}
+// [/P3.5]
+
 export function setQueuedSong(
   channel: string,
   queued: QueuedSong | null,
@@ -366,6 +388,13 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   const src = states.get(fromChannel);
   if (!src || !src.active) return;
   const queued = src.active;
+
+  // [P3.5] slides session
+  if (src.slidesSession) {
+    if (songSession.getSession(toChannel)) songSession.end(toChannel);
+    return void slidesSession.promote(fromChannel, toChannel);
+  }
+  // [/P3.5]
 
   // End any song session live on the destination channel — otherwise the
   // session keeps rendering lyric slides over whatever we just promoted.
