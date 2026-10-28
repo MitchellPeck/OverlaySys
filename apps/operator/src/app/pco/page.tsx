@@ -53,6 +53,8 @@ import {
   importPlan,
   listPlans,
   listServiceTypes,
+  httpBase,
+  PcoNotConnectedError,
   setPcoCredentials,
   type ImportItemConfig,
   type ImportPlanResult,
@@ -262,6 +264,12 @@ export default function PcoPage() {
     try {
       setServiceTypes(await listServiceTypes());
     } catch (err) {
+      if (err instanceof PcoNotConnectedError) {
+        // The server dropped a dead credential; go back to the connect form.
+        setStatus("disconnected");
+        setError("Planning Center rejected the saved credential. Reconnect to continue.");
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     }
   }, []);
@@ -318,6 +326,22 @@ export default function PcoPage() {
     } finally {
       setConnectingPat(false);
     }
+  }
+
+  async function disconnect() {
+    setError(null);
+    try {
+      await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
+      await getDesktopApi()?.pcoSignOut?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+    setServiceTypes([]);
+    setServiceTypeId("");
+    setPlans([]);
+    setPlanId("");
+    setItems([]);
+    setStatus("disconnected");
   }
 
   async function onPickServiceType(id: string) {
@@ -671,6 +695,13 @@ export default function PcoPage() {
 
         {status === "connected" && (
           <Stack gap={4}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, color: colors.textDim, fontSize: 13 }}>
+              <span>Connected</span>
+              <span aria-hidden>·</span>
+              <Button variant="secondary" onClick={() => void disconnect()}>
+                Disconnect
+              </Button>
+            </div>
             <Panel title="Select a plan">
               <Stack gap={3}>
                 <Field label="Service type">

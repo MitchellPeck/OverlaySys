@@ -78,6 +78,28 @@ function parseArrangement(r: JsonApiResource) {
 }
 
 /**
+ * Cheap credential check: one `service_types?per_page=1` request. Resolves if
+ * PCO accepts the credential, throws `PcoAuthError` on 401/403, and any other
+ * Error when PCO can't be reached or answers unexpectedly.
+ */
+export async function verifyPcoCredentials(
+  authorization: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const res = await fetchImpl(`${BASE}/service_types?per_page=1`, {
+    headers: { Authorization: authorization, Accept: "application/json" },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new PcoAuthError(
+      "Planning Center rejected that Application ID / Secret. Check both values.",
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Planning Center could not verify the credential (${res.status}).`);
+  }
+}
+
+/**
  * Create a Planning Center Services client bound to a ready-to-send
  * `Authorization` header value (`Bearer <token>` from OAuth, or
  * `Basic <base64>` from a Personal Access Token). `fetchImpl` is injectable so

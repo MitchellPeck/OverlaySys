@@ -14,7 +14,7 @@ import {
   isPcoConnected,
   setPcoAuthorization,
 } from "./pcoTokens";
-import { PcoAuthError, createPcoClient, type PcoClient } from "./pcoClient";
+import { PcoAuthError, createPcoClient, verifyPcoCredentials, type PcoClient } from "./pcoClient";
 import { findImportedItems, importPlan, type ImportPlanRequest } from "./importPlan";
 
 /**
@@ -22,13 +22,17 @@ import { findImportedItems, importPlan, type ImportPlanRequest } from "./importP
  * endpoints (`/api/cloud/tokens`); the import route mirrors `/api/import`
  * (single request → one response → broadcast).
  */
-export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
+export async function registerPcoRoutes(
+  app: FastifyInstance,
+  opts: { fetchImpl?: typeof fetch } = {},
+): Promise<void> {
+  const fetchImpl = opts.fetchImpl ?? fetch;
   // Build a client from the current in-memory token, or throw a 401-shaped
   // error the handlers below translate.
   function requireClient(): PcoClient {
     const authorization = getPcoAuthorization();
     if (!authorization) throw new PcoAuthError("Not connected to Planning Center.");
-    return createPcoClient(authorization);
+    return createPcoClient(authorization, fetchImpl);
   }
 
   // ── Credential receipt ─────────────────────────────────────────────────
@@ -40,17 +44,28 @@ export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
     "/api/pco/tokens",
     async (req, reply) => {
       const { accessToken, appId, secret } = req.body ?? {};
-      if (accessToken) {
-        setPcoAuthorization(bearerHeader(accessToken));
-        return { ok: true };
+      let header: string;
+      if (accessToken) header = bearerHeader(accessToken);
+      else if (appId && secret) header = basicHeader(appId, secret);
+      else {
+        return reply
+          .status(400)
+          .send({ error: "provide either accessToken, or appId + secret" });
       }
-      if (appId && secret) {
-        setPcoAuthorization(basicHeader(appId, secret));
-        return { ok: true };
+      // Validate before storing: a wrong credential must not flip the app to
+      // "connected".
+      try {
+        await verifyPcoCredentials(header, fetchImpl);
+      } catch (err) {
+        if (err instanceof PcoAuthError) {
+          return reply.status(400).send({ error: err.message, code: "pco_auth" });
+        }
+        return reply.status(502).send({
+          error: `Couldn't reach Planning Center to check the credential. ${err instanceof Error ? err.message : String(err)}`,
+        });
       }
-      return reply
-        .status(400)
-        .send({ error: "provide either accessToken, or appId + secret" });
+      setPcoAuthorization(header);
+      return { ok: true };
     },
   );
 
@@ -148,6 +163,8 @@ export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
 
 function pcoErrorReply(reply: import("fastify").FastifyReply, err: unknown) {
   if (err instanceof PcoAuthError) {
+    // A 401 from a live request means the stored credential is dead.
+    clearPcoAuthorization();
     return reply.status(401).send({ error: err.message, code: "pco_auth" });
   }
   return reply
