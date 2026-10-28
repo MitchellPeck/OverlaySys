@@ -27,3 +27,5 @@ export { FileDrop } from "./FileDrop";
 export { Menu, useContextMenu } from "./Menu";
 export { type MenuItem, isContextMenuKey } from "./menuModel";
 export { roundTo, formatNumber } from "./numberDraft";
+export { Dialog, DialogHost, useConfirm, usePrompt, confirm, prompt, chooseAction, alertDialog, type ConfirmOptions, type PromptOptions, type ChooseActionOptions, type AlertOptions } from "./Dialog";
+export { ToastHost, toast, useToast, type ToastOptions, type ToastTone } from "./Toast";

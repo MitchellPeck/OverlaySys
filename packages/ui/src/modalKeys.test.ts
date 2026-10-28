@@ -13,6 +13,15 @@ describe("shouldConfirmOnEnter", () => {
   });
 });
 
+describe("shouldConfirmOnEnter with danger", () => {
+  it("confirms a dangerous dialog only when the confirm button is focused", () => {
+    expect(shouldConfirmOnEnter("INPUT", false, { danger: true, focusedIsConfirm: false })).toBe(false);
+    expect(shouldConfirmOnEnter("BUTTON", false, { danger: true, focusedIsConfirm: true })).toBe(false); // native click already fires
+    expect(shouldConfirmOnEnter("DIV", false, { danger: true, focusedIsConfirm: true })).toBe(true);
+    expect(shouldConfirmOnEnter("INPUT", false)).toBe(true);
+  });
+});
+
 describe("nextTrapFocus", () => {
   it("wraps forward from the last and backward from the first", () => {
     expect(nextTrapFocus(3, 2, false)).toBe(0);

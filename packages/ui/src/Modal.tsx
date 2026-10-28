@@ -38,6 +38,11 @@ type Props = {
   placement?: "center" | "top";
   /** Stacking order of the backdrop. Default 1000. */
   zIndex?: number;
+  /**
+   * Dangerous confirm (delete, discard, replace): Enter only confirms when the
+   * focused element is marked `data-dialog-confirm`, never from a field.
+   */
+  danger?: boolean;
   children: ReactNode;
   bodyStyle?: CSSProperties;
   containerStyle?: CSSProperties;
@@ -76,6 +81,7 @@ export function Modal({
   ariaLabel,
   placement = "center",
   zIndex = 1000,
+  danger = false,
   children,
   bodyStyle,
   containerStyle,
@@ -94,8 +100,8 @@ export function Modal({
   wasOpen.current = open;
 
   // Latest handlers, read by the long-lived window listener.
-  const handlers = useRef({ onClose, onCancel, onConfirm });
-  handlers.current = { onClose, onCancel, onConfirm };
+  const handlers = useRef({ onClose, onCancel, onConfirm, danger });
+  handlers.current = { onClose, onCancel, onConfirm, danger };
 
   useEffect(() => {
     if (!open) return;
@@ -112,6 +118,13 @@ export function Modal({
         "[data-autofocus], input:not([type=hidden]):not([disabled]), textarea:not([disabled]), select:not([disabled])",
       );
       (field ?? dialog).focus();
+    }
+    // A button focused on open (Cancel in a confirm) gets a forced ring:
+    // programmatic focus after a mouse click doesn't match :focus-visible, and
+    // the operator must see which button Enter / Space will press.
+    const focused = document.activeElement;
+    if (dialog && focused instanceof HTMLButtonElement && dialog.contains(focused)) {
+      focused.setAttribute("data-focus-visible", "");
     }
 
     return () => {
@@ -144,6 +157,9 @@ export function Modal({
       } else if (e.key === "Enter" && handlers.current.onConfirm) {
         e.preventDefault();
         e.stopPropagation();
+        // Focus is on <body>, not the confirm button: a dangerous dialog
+        // never confirms from here.
+        if (handlers.current.danger) return;
         handlers.current.onConfirm();
       } else if (e.key === "Tab" && dialog) {
         // Pull focus back inside.
@@ -167,7 +183,16 @@ export function Modal({
       (onCancel ?? onClose)?.();
     } else if (e.key === "Enter" && onConfirm) {
       const target = e.target as HTMLElement;
-      if (!shouldConfirmOnEnter(target.tagName, target.isContentEditable)) return;
+      const focusedIsConfirm = target.hasAttribute("data-dialog-confirm");
+      if (!shouldConfirmOnEnter(target.tagName, target.isContentEditable, { danger, focusedIsConfirm })) {
+        // Keep a dangerous dialog's swallowed Enter from reaching window
+        // shortcuts (a focused button still clicks natively).
+        if (danger && target.tagName.toUpperCase() !== "BUTTON" && target.tagName.toUpperCase() !== "TEXTAREA") {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       onConfirm();
@@ -252,6 +277,9 @@ export function Modal({
             lineHeight: 1.5,
             overflow: "auto",
             flex: 1,
+            // Long names and paths wrap instead of widening the dialog.
+            whiteSpace: "normal",
+            overflowWrap: "anywhere",
             ...bodyStyle,
           }}
         >

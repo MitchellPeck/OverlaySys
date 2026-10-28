@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { CloudBoot } from "./components/CloudBoot";
 import { AppShell } from "./shell/AppShell";
+import { DialogHost, ToastHost } from "@overlaysys/ui";
 
 export const metadata = {
   title: "OverlaySys Operator",
@@ -17,6 +18,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <CloudBoot>
           <AppShell>{children}</AppShell>
         </CloudBoot>
+        <DialogHost />
+        <ToastHost />
       </body>
     </html>
   );

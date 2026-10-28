@@ -5,11 +5,22 @@
  * Whether Enter on the focused element should run the modal's onConfirm.
  * Textareas and contentEditable insert a newline; a focused button activates
  * itself natively (confirming too would double-fire).
+ *
+ * A `danger` dialog (delete, discard, replace) never confirms on a stray
+ * Enter: only when the confirm button itself is the focus target
+ * (`focusedIsConfirm`) — and a focused <button> already clicks natively, so in
+ * practice that is the confirm's own wrapper, never an input or Cancel.
  */
-export function shouldConfirmOnEnter(tagName: string, isContentEditable: boolean): boolean {
+export function shouldConfirmOnEnter(
+  tagName: string,
+  isContentEditable: boolean,
+  o?: { danger?: boolean; focusedIsConfirm?: boolean },
+): boolean {
   if (isContentEditable) return false;
   const tag = tagName.toUpperCase();
-  return tag !== "TEXTAREA" && tag !== "BUTTON";
+  if (tag === "TEXTAREA" || tag === "BUTTON") return false;
+  if (o?.danger) return !!o.focusedIsConfirm;
+  return true;
 }
 
 /**
