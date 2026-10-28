@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Show } from "@overlaysys/core";
 import * as shows from "./shows";
 import * as songs from "./songs";
+import { deckRegistrySnapshot } from "./decks";
 import * as hotcards from "./hotcards";
 import { loadScriptureSettings } from "./scriptureSettings";
 import { templateUsage, type TemplateUsage } from "./templateUsage";
@@ -20,6 +21,6 @@ export async function registerTemplateRoutes(app: FastifyInstance): Promise<void
       songs.listSongs(),
       loadScriptureSettings(),
     ]);
-    return templateUsage(req.params.id, { shows: liveShows, hotcards: cards, songs: songList, scripture });
+    return templateUsage(req.params.id, { shows: liveShows, hotcards: cards, songs: songList, scripture, decks: [...deckRegistrySnapshot().values()] });
   });
 }

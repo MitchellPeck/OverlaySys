@@ -19,6 +19,7 @@ import {
 } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as templates from "./templates";
+import { PROTECTED_TEMPLATE_IDS } from "./templateUsage";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as hotcards from "./hotcards";
@@ -460,6 +461,10 @@ export function handleConnection(
           break;
         }
         case "delete_template": {
+          if (PROTECTED_TEMPLATE_IDS.includes(parsed.templateId)) {
+            send({ type: "error", code: "protected", message: `Template "${parsed.templateId}" is built in and can't be deleted.` });
+            break;
+          }
           const ok = await templates.deleteTemplate(parsed.templateId);
           send({ type: "ack", op: "delete_template", id: parsed.templateId });
           if (ok) {

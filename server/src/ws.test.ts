@@ -459,3 +459,14 @@ describe("ws machine-admin operations", () => {
     expect(sock.sent.some((m) => m.type === "error")).toBe(false);
   });
 });
+
+describe("ws delete_template protection", () => {
+  it("refuses to delete the built-in lyric template", async () => {
+    const spy = vi.spyOn(templates, "deleteTemplate");
+    const sock = connect();
+    await sock.client({ type: "delete_template", templateId: "lyric-default" });
+    expect(spy).not.toHaveBeenCalled();
+    expect(sock.sent.some((m) => m.type === "error" && m.code === "protected")).toBe(true);
+    spy.mockRestore();
+  });
+});

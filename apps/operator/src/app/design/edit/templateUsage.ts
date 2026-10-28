@@ -5,6 +5,7 @@ export type TemplateUsage = {
   shows: { id: string; name: string }[];
   hotcards: { id: string; name: string }[];
   songs: { id: string; title: string }[];
+  decks?: { id: string; name: string }[];
   scriptureDefault: boolean;
   protected: boolean;
 };
@@ -30,6 +31,9 @@ function nameList(names: string[]): string {
   return names.length > 3 ? `${head} and ${names.length - 3} more` : head;
 }
 
+/** Ids the server refuses to delete; mirrors PROTECTED_TEMPLATE_IDS so a failed usage fetch can't unlock them. */
+export const PROTECTED_TEMPLATE_IDS: readonly string[] = ["lyric-default"];
+
 export function templateDeleteConfirm(
   name: string,
   u: TemplateUsage | null,
@@ -48,6 +52,7 @@ export function templateDeleteConfirm(
     if (u.shows.length) parts.push(`${plural(u.shows.length, "show")} (${nameList(u.shows.map((s) => s.name))})`);
     if (u.hotcards.length) parts.push(plural(u.hotcards.length, "hotcard"));
     if (u.songs.length) parts.push(plural(u.songs.length, "song default"));
+    if (u.decks?.length) parts.push(`${plural(u.decks.length, "deck")} (${nameList(u.decks.map((d) => d.name))})`);
     if (u.scriptureDefault) parts.push("the scripture defaults");
   }
   if (parts.length === 0) return { blocked: false, title: `Delete "${name}"?`, message: tail, confirmLabel: "Delete" };

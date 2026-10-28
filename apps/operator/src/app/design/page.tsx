@@ -14,7 +14,7 @@ import { isCloudMode } from "@/lib/mode";
 import { StageLayoutSchema } from "@overlaysys/core";
 import type { StageLayoutMeta, TemplateMeta } from "@overlaysys/core";
 import { channelsUsingLayout } from "@/lib/stageLayoutPicker";
-import { fetchTemplateUsage, templateDeleteConfirm } from "./edit/templateUsage";
+import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./edit/templateUsage";
 import {
   deleteTemplateCloud,
   getTemplateCloud,
@@ -281,7 +281,13 @@ function GraphicsList() {
         onCreated={(id) => router.push(`/design/edit?id=${encodeURIComponent(id)}`)}
         deleteFn={deleteTemplate}
         resolveDeleteConfirm={async (t) =>
-          templateDeleteConfirm(t.name || "template", cloud ? null : await fetchTemplateUsage(t.id))
+          templateDeleteConfirm(
+            t.name || "template",
+            (cloud ? null : await fetchTemplateUsage(t.id)) ??
+              (PROTECTED_TEMPLATE_IDS.includes(t.id)
+                ? { shows: [], hotcards: [], songs: [], scriptureDefault: false, protected: true }
+                : null),
+          )
         }
         rowKey={(t) => t.id}
         rowHref={(t) => `/design/edit?id=${encodeURIComponent(t.id)}`}

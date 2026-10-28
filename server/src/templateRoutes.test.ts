@@ -10,6 +10,7 @@ vi.mock("./shows", () => ({
     songs: [],
   }),
 }));
+vi.mock("./decks", () => ({ deckRegistrySnapshot: () => new Map() }));
 vi.mock("./songs", () => ({ listSongs: async () => [] }));
 vi.mock("./hotcards", () => ({
   listHotcardMetas: async () => [{ id: "h1", name: "Welcome", templateId: "lt" }],
@@ -28,6 +29,7 @@ describe("GET /api/templates/:id/usage", () => {
       shows: [{ id: "s1", name: "Sunday" }],
       hotcards: [{ id: "h1", name: "Welcome" }],
       songs: [],
+      decks: [],
       scriptureDefault: false,
       protected: false,
     });

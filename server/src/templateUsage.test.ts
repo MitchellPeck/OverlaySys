@@ -55,4 +55,35 @@ describe("templateUsage", () => {
     expect(u.shows).toEqual([{ id: "s4", name: "Verse" }]);
     expect(u.scriptureDefault).toBe(true);
   });
+
+  describe("decks", () => {
+    const deck = (over: object = {}) => ({ id: "d1", name: "Welcome deck", defaultTemplateId: "x", slides: [], ...over });
+    const slidesShow = (row: object) => ({
+      id: "s9",
+      name: "Deck show",
+      rows: [{ kind: "slides", id: "r", ...row } as never],
+      songs: [],
+    });
+    it("counts a slides row's localSlides template", () => {
+      const input = { ...base(), shows: [slidesShow({ localSlides: [{ id: "a", templateId: "lt", data: {} }] })] };
+      expect(templateUsage("lt", input).shows).toEqual([{ id: "s9", name: "Deck show" }]);
+    });
+    it("counts a referenced deck's slide template and lists the deck", () => {
+      const d = deck({ slides: [{ id: "a", templateId: "lt", data: {} }] });
+      const input = { ...base(), shows: [slidesShow({ deckId: "d1" })], decks: [d] };
+      const u = templateUsage("lt", input);
+      expect(u.shows).toEqual([{ id: "s9", name: "Deck show" }]);
+      expect(u.decks).toEqual([{ id: "d1", name: "Welcome deck" }]);
+    });
+    it("counts a deck defaultTemplateId, and lists unused-by-shows decks", () => {
+      const input = { ...base(), shows: [slidesShow({ deckId: "d1" })], decks: [deck({ defaultTemplateId: "lt" })] };
+      expect(templateUsage("lt", input).shows).toHaveLength(1);
+      expect(templateUsage("lt", { ...base(), decks: [deck({ defaultTemplateId: "lt" })] }).decks).toHaveLength(1);
+    });
+    it("ignores tombstoned decks", () => {
+      const input = { ...base(), shows: [slidesShow({ deckId: "d1" })], decks: [deck({ defaultTemplateId: "lt", deletedAt: "2026-01-01" })] };
+      expect(templateUsage("lt", input).shows).toEqual([]);
+      expect(templateUsage("lt", input).decks).toEqual([]);
+    });
+  });
 });
