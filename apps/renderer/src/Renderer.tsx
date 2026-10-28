@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChannelState, ChannelConfig, StageFeed } from "@overlaysys/core";
+import type { ChannelState, ChannelConfig, MediaPlayback, StageFeed } from "@overlaysys/core";
 import { StageView, serverOffset } from "@overlaysys/stage-widgets";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { WsClient, defaultServerUrl } from "./wsClient";
@@ -50,6 +50,10 @@ export function Renderer({ channel, debug = false }: Props) {
   const subscriptionRef = useRef(createMirrorSubscription(channel, outputLabel(location.search, navigator.userAgent)));
   const clientRef = useRef<WsClient | null>(null);
   const sendRef = useRef((msg: ClientMessage) => clientRef.current?.send(msg));
+  // Mirror windows: the primary's playback ticks + server clock offset, read
+  // by MediaLayer each tick to keep the key video locked to the fill.
+  const primaryPlaybackRef = useRef<{ takenAt: number; playback: MediaPlayback } | null>(null);
+  const serverOffsetRef = useRef(0);
 
   const [status, setStatus] = useState<Status>("connecting");
   const [latestState, setLatestState] = useState<ChannelState | null>(null);
@@ -177,7 +181,12 @@ export function Renderer({ channel, debug = false }: Props) {
 
     const offStatus = client.onStatus((s) => setStatus(s));
     const offMsg = client.on((msg) => {
-      if (msg.type === "hello") {
+      if (msg.type === "media_playback") {
+        if (subscription.source !== channel && subscription.accepts(msg.channel)) {
+          primaryPlaybackRef.current = { takenAt: msg.takenAt, playback: msg.playback };
+        }
+      } else if (msg.type === "hello") {
+        serverOffsetRef.current = msg.serverTime - Date.now();
         // Every hello is a fresh socket (first connect OR a reconnect), so
         // the server knows nothing about us: subscribe to the URL channel,
         // re-subscribe to the mirror source if we already have one, and
@@ -306,6 +315,8 @@ export function Renderer({ channel, debug = false }: Props) {
           matte={matte}
           scale={scale}
           stageSize={stageSize}
+          primaryPlayback={primaryPlaybackRef}
+          serverOffsetMs={serverOffsetRef}
           send={sendRef.current}
         />
       )}

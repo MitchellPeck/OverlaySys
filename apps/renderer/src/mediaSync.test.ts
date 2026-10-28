@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChannelMedia } from "@overlaysys/core";
 import {
   initialMountPlan,
+  mirrorCorrection,
   pendingSeek,
   pickAudioSink,
   readSinkRequest,
@@ -75,5 +76,32 @@ describe("pendingSeek", () => {
   });
   it("treats a different takenAt as unapplied", () => {
     expect(pendingSeek({ ...base, seek: { time: 0, seq: 1 } }, { takenAt: 99, seq: 5 })).toBe(0);
+  });
+});
+
+describe("mirrorCorrection", () => {
+  const playing = (currentTime: number, updatedAt: number) => ({
+    status: "playing" as const,
+    currentTime,
+    duration: 60,
+    updatedAt,
+  });
+  it("leaves an in-sync mirror alone", () => {
+    expect(mirrorCorrection(10.51, playing(10, 1000), 1500)).toEqual({ action: "none" });
+  });
+  it("slows a mirror that is ahead by more than a frame", () => {
+    const fix = mirrorCorrection(10.6, playing(10, 1000), 1500);
+    expect(fix.action).toBe("rate");
+    expect(fix.action === "rate" && fix.rate).toBeLessThan(1);
+  });
+  it("speeds up a mirror that is behind", () => {
+    const fix = mirrorCorrection(10.4, playing(10, 1000), 1500);
+    expect(fix.action === "rate" && fix.rate).toBeGreaterThan(1);
+  });
+  it("seeks when more than 200 ms off", () => {
+    expect(mirrorCorrection(12, playing(10, 1000), 1500)).toEqual({ action: "seek", time: 10.5 });
+  });
+  it("does nothing while the primary isn't playing", () => {
+    expect(mirrorCorrection(3, { ...playing(10, 1000), status: "paused" }, 1500)).toEqual({ action: "none" });
   });
 });
