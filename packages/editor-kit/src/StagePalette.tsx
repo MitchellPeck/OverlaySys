@@ -1,4 +1,6 @@
+import { Plus } from "lucide-react";
 import { STAGE_WIDGET_LABELS, type StageWidgetKind } from "@overlaysys/core";
+import { Button } from "@overlaysys/ui";
 
 export const STAGE_WIDGET_DRAG_TYPE = "application/x-stage-widget";
 
@@ -10,19 +12,21 @@ export function StagePalette({ onAdd }: Props) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
       {kinds.map((kind) => (
-        <button
+        <Button
           key={kind}
-          type="button"
+          size="sm"
+          icon={<Plus size={12} aria-hidden />}
           draggable
+          aria-label={`Add ${STAGE_WIDGET_LABELS[kind]}`}
           onClick={() => onAdd(kind)}
           onDragStart={(e) => {
             e.dataTransfer.setData(STAGE_WIDGET_DRAG_TYPE, kind);
             e.dataTransfer.effectAllowed = "copy";
           }}
-          style={{ cursor: "grab", fontSize: 12, padding: "4px 8px" }}
+          style={{ cursor: "grab" }}
         >
-          + {STAGE_WIDGET_LABELS[kind]}
-        </button>
+          {STAGE_WIDGET_LABELS[kind]}
+        </Button>
       ))}
     </div>
   );

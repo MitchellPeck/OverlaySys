@@ -1,5 +1,6 @@
 import type { StageRect, StageTimerSource, StageWidget, StageWidgetStyle } from "@overlaysys/core";
 import { MIN_WIDGET_SIZE } from "./stageGeometry";
+import { createEditCoalescer } from "./editCoalescer";
 
 /**
  * Partial update for one widget. `rect` / `style` / `props` are shallow-merged
@@ -116,4 +117,23 @@ export function parseNumberDraft(text: string, b: NumberBounds = {}): number | n
   if (b.min !== undefined) n = Math.max(b.min, n);
   if (b.max !== undefined) n = Math.min(b.max, n);
   return n;
+}
+
+/**
+ * Models a typing burst into one text field through the edit coalescer: the
+ * first keystroke commits (one undo entry), the rest apply live onto it.
+ */
+export function coalescedLabelEdits(values: string[]): { undoEntries: number; final: string } {
+  let undoEntries = 0;
+  let final = "";
+  const c = createEditCoalescer<string>(
+    (r) => { undoEntries++; final = r(final) ?? final; },
+    (r) => { final = r(final) ?? final; },
+  );
+  const textInput = { tagName: "INPUT", type: "text" } as unknown as EventTarget;
+  for (const v of values) {
+    c.noteChange(textInput);
+    c.run(() => v);
+  }
+  return { undoEntries, final };
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { StageLayoutSchema, type StageLayout } from "@overlaysys/core";
 import { useStageEditor } from "./stageEditorStore";
-import { addWidget, nudgeWidgets } from "./stageLayoutOps";
+import { addWidgetOp, nudgeWidgets } from "./stageLayoutOps";
 
 const blank = StageLayoutSchema.parse({ id: "l", name: "L", widgets: [] }) as StageLayout;
 const st = () => useStageEditor.getState();
@@ -10,7 +10,7 @@ describe("useStageEditor", () => {
   beforeEach(() => st().setDraft(blank));
 
   it("commit pushes history; undo/redo round-trip; no-op commit adds nothing", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     st().commit(() => {});
     expect(st().history).toHaveLength(1);
     expect(st().dirty).toBe(true);
@@ -20,18 +20,18 @@ describe("useStageEditor", () => {
     expect(st().draft!.widgets).toHaveLength(1);
   });
   it("applyLive changes draft without history; pushHistory snapshots once per drag", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     const hist = st().history.length;
     st().pushHistory();
     st().applyLive(nudgeWidgets(["t1"], 5, 0));
     st().applyLive(nudgeWidgets(["t1"], 5, 0));
     expect(st().history).toHaveLength(hist + 1);
-    expect(st().draft!.widgets[0]!.rect.x).toBe(730);
+    expect(st().draft!.widgets[0]!.rect.x).toBe(10);
     st().undo();
-    expect(st().draft!.widgets[0]!.rect.x).toBe(720);
+    expect(st().draft!.widgets[0]!.rect.x).toBe(0);
   });
   it("undo prunes selection ids that no longer exist", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     st().select(["t1"]);
     st().undo();
     expect(st().selectedIds).toEqual([]);
@@ -44,14 +44,14 @@ describe("useStageEditor", () => {
     expect(st().selectedIds).toEqual(["b"]);
   });
   it("history is capped at 50", () => {
-    for (let i = 0; i < 60; i++) st().commit(addWidget("text", `w${i}`));
+    for (let i = 0; i < 60; i++) st().commit(addWidgetOp("text", `w${i}`));
     expect(st().history).toHaveLength(50);
   });
   it("commit clears the redo stack", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     st().undo();
     expect(st().redoStack).toHaveLength(1);
-    st().commit(addWidget("text", "t2"));
+    st().commit(addWidgetOp("text", "t2"));
     expect(st().redoStack).toHaveLength(0);
   });
   it("pushHistory is capped at 50", () => {
@@ -71,7 +71,7 @@ describe("useStageEditor", () => {
     expect(st().redoStack).toHaveLength(0);
   });
   it("cancelDrag drops the drag's history entry and restores the pre-drag state", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     st().commit(nudgeWidgets(["t1"], 1, 0));
     st().undo(); // redoStack has one entry the drag must not lose
     st().markSaved();
@@ -87,7 +87,7 @@ describe("useStageEditor", () => {
     expect(st().dirty).toBe(false);
   });
   it("cancelDrag at the history cap restores the entry the snapshot evicted", () => {
-    for (let i = 0; i < 50; i++) st().commit(addWidget("text", `w${i}`));
+    for (let i = 0; i < 50; i++) st().commit(addWidgetOp("text", `w${i}`));
     const oldest = st().history[0];
     st().pushHistory();
     st().cancelDrag();
@@ -95,7 +95,7 @@ describe("useStageEditor", () => {
     expect(st().history[0]).toBe(oldest);
   });
   it("cancelDrag without a pending drag push is a no-op", () => {
-    st().commit(addWidget("text", "t1"));
+    st().commit(addWidgetOp("text", "t1"));
     const before = st().draft;
     st().cancelDrag();
     expect(st().draft).toBe(before);

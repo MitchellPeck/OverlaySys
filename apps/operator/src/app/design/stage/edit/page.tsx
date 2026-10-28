@@ -27,7 +27,7 @@ import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useStageEditor } from "@/lib/stageEditorStore";
 import {
-  addWidget,
+  addWidgetOp,
   alignWidgets,
   distributeWidgets,
   duplicateWidgets,
@@ -288,7 +288,7 @@ function StageLayoutEditor() {
   function addKind(kind: StageWidgetKind) {
     if (readOnly) return;
     const id = newWidgetId(kind);
-    commit(addWidget(kind, id));
+    commit(addWidgetOp(kind, id));
     select([id]);
   }
 
@@ -296,7 +296,7 @@ function StageLayoutEditor() {
     if (readOnly) return;
     const id = newWidgetId(kind);
     commit((d) => {
-      addWidget(kind, id)(d);
+      addWidgetOp(kind, id)(d);
       const w = d.widgets.find((x) => x.id === id);
       if (w) w.rect = centeredRectAt(point, w.rect.w, w.rect.h, d.size);
     });

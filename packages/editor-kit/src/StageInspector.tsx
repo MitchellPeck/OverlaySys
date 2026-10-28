@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { StageLayout, StageWidget } from "@overlaysys/core";
+import { Button, Input, NumberInput, SegmentedControl, Select, Switch, Textarea, colors, fontSize, radius } from "@overlaysys/ui";
 import { ColorInput } from "./ColorInput";
+import { FieldRow } from "./FieldRow";
 import { FontInput } from "./FontInput";
+import { FontWeightSelect } from "./FontWeightSelect";
 import { MIN_WIDGET_SIZE, type AlignMode } from "./stageGeometry";
 import {
   decodeTimerSource,
   encodeTimerSource,
-  parseNumberDraft,
   timerSourceOptions,
   type StageWidgetPatch,
   type StageWidgetPropsPatch,
@@ -34,44 +36,73 @@ const ALIGN_BUTTONS: { mode: AlignMode; label: string }[] = [
 const NO_FONTS: { family: string; src: string }[] = [];
 const noop = () => {};
 
-/** `group` renders a div, for rows of buttons (a <label> would forward clicks to the first button). */
-function Row({ label, children, group }: { label: string; children: ReactNode; group?: boolean }) {
-  const Tag = group ? "div" : "label";
-  return (
-    <Tag style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12, margin: "4px 0" }}>
-      <span style={{ color: "var(--text-dim, #9099a8)" }}>{label}</span>
-      {children}
-    </Tag>
-  );
-}
-
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset style={{ border: "1px solid var(--border, #2a2e36)", borderRadius: 4, margin: "8px 0", padding: "4px 8px" }}>
-      <legend style={{ fontSize: 11, textTransform: "uppercase", color: "var(--text-dim, #9099a8)" }}>{title}</legend>
-      {children}
+    <fieldset
+      style={{ border: `1px solid ${colors.border}`, borderRadius: radius.md, margin: "8px 0", padding: "4px 8px 8px", minWidth: 0 }}
+    >
+      <legend style={{ fontSize: fontSize.sm, color: colors.textDim, padding: "0 4px" }}>{title}</legend>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>{children}</div>
     </fieldset>
   );
 }
 
-/** Edits a local draft string; commits (parsed + clamped) on blur or Enter. */
-function NumberField(props: { value: number; onChange: (n: number) => void; min?: number; max?: number; step?: number; int?: boolean }) {
+function Num(props: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+}) {
+  return (
+    <NumberInput
+      id={props.id}
+      aria-label={props.label}
+      value={Number.isFinite(props.value) ? props.value : 0}
+      min={props.min}
+      max={props.max}
+      step={props.step}
+      suffix={props.suffix}
+      int
+      size="sm"
+      onCommit={props.onChange}
+    />
+  );
+}
+
+/** Text that commits once, on blur or Enter, so a typing burst is a single undo step (see `coalescedLabelEdits`). */
+function CommitText(props: { id: string; value: string; onCommit: (v: string) => void; multiline?: boolean; placeholder?: string }) {
   const [draft, setDraft] = useState<string | null>(null);
   useEffect(() => setDraft(null), [props.value]);
   function commit() {
     if (draft === null) return;
-    const n = parseNumberDraft(draft, { min: props.min, max: props.max, step: props.step, int: props.int });
     setDraft(null);
-    if (n !== null && n !== props.value) props.onChange(n);
+    if (draft !== props.value) props.onCommit(draft);
+  }
+  if (props.multiline) {
+    return (
+      <Textarea
+        id={props.id}
+        rows={4}
+        value={draft ?? props.value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commit();
+          else if (e.key === "Escape") setDraft(null);
+        }}
+      />
+    );
   }
   return (
-    <input
-      type="number"
-      value={draft ?? (Number.isFinite(props.value) ? String(props.value) : "0")}
-      min={props.min}
-      max={props.max}
-      step={props.step}
-      style={{ width: 80 }}
+    <Input
+      id={props.id}
+      type="text"
+      placeholder={props.placeholder}
+      value={draft ?? props.value}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -82,40 +113,30 @@ function NumberField(props: { value: number; onChange: (n: number) => void; min?
   );
 }
 
-function Check(props: { value: boolean; onChange: (b: boolean) => void }) {
-  return <input type="checkbox" checked={props.value} onChange={(e) => props.onChange(e.target.checked)} />;
-}
-
-function Slider(props: { value: number; onChange: (n: number) => void; min: number; max: number; step: number }) {
+function Slider(props: { id: string; value: number; onChange: (n: number) => void; min: number; max: number; step: number; label: string }) {
   return (
     <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
       <input
+        id={props.id}
+        aria-label={props.label}
         type="range"
         min={props.min}
         max={props.max}
         step={props.step}
         value={props.value}
+        style={{ flex: 1, accentColor: colors.brandFill }}
         onChange={(e) => props.onChange(e.target.valueAsNumber)}
       />
-      <span style={{ width: 32, textAlign: "right", fontSize: 11 }}>{props.value}</span>
+      <span style={{ width: 32, textAlign: "right", fontSize: fontSize.sm, color: colors.textDim }}>{props.value}</span>
     </span>
   );
 }
 
-function Segmented<T extends string>(props: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+function Toggle(props: { label: string; value: boolean; onChange: (b: boolean) => void }) {
   return (
-    <span style={{ display: "flex", gap: 2 }}>
-      {props.options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => props.onChange(o.value)}
-          style={{ fontWeight: o.value === props.value ? 700 : 400, opacity: o.value === props.value ? 1 : 0.7 }}
-        >
-          {o.label}
-        </button>
-      ))}
-    </span>
+    <FieldRow label={props.label}>
+      {() => <Switch checked={props.value} onChange={props.onChange} aria-label={props.label} />}
+    </FieldRow>
   );
 }
 
@@ -123,7 +144,7 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
   const selected = layout.widgets.filter((w) => selectedIds.includes(w.id));
 
   if (selected.length === 0) {
-    return <p style={{ color: "var(--text-dim, #9099a8)", fontSize: 12, padding: 8 }}>Select a widget to edit it.</p>;
+    return <p style={{ color: colors.textDim, fontSize: fontSize.sm, padding: 8 }}>Select a widget to edit it.</p>;
   }
 
   if (selected.length >= 2) {
@@ -132,19 +153,19 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
         <Section title={`${selected.length} widgets`}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             {ALIGN_BUTTONS.map((b) => (
-              <button key={b.mode} type="button" onClick={() => onAlign(b.mode)}>
+              <Button key={b.mode} size="sm" onClick={() => onAlign(b.mode)}>
                 {b.label}
-              </button>
+              </Button>
             ))}
           </div>
           {selected.length >= 3 && (
-            <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
-              <button type="button" onClick={() => onDistribute("x")}>Distribute horizontally</button>
-              <button type="button" onClick={() => onDistribute("y")}>Distribute vertically</button>
+            <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+              <Button size="sm" onClick={() => onDistribute("x")}>Distribute horizontally</Button>
+              <Button size="sm" onClick={() => onDistribute("y")}>Distribute vertically</Button>
             </div>
           )}
         </Section>
-        <p style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Press Delete to remove the selected widgets.</p>
+        <p style={{ fontSize: fontSize.sm, color: colors.textDim }}>Press Delete to remove the selected widgets.</p>
       </div>
     );
   }
@@ -157,84 +178,127 @@ export function StageInspector({ layout, selectedIds, onPatch, onAlign, onDistri
 
   return (
     <div style={{ padding: 8 }}>
-      <Section title="Rect">
-        <Row label="x"><NumberField value={w.rect.x} onChange={(x) => patch({ rect: { x } })} /></Row>
-        <Row label="y"><NumberField value={w.rect.y} onChange={(y) => patch({ rect: { y } })} /></Row>
-        <Row label="w"><NumberField value={w.rect.w} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { w: v } })} /></Row>
-        <Row label="h"><NumberField value={w.rect.h} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { h: v } })} /></Row>
-      </Section>
-
-      <Section title="Style">
-        <Row label="Font">
-          <FontInput value={s.fontFamily} templateFonts={NO_FONTS} onChange={(fontFamily) => setStyle({ fontFamily })} onAddFont={noop} />
-        </Row>
-        <Row label="Size"><NumberField value={s.fontSize} min={1} onChange={(fontSize) => setStyle({ fontSize })} /></Row>
-        <Row label="Weight">
-          <NumberField value={s.fontWeight} min={100} max={900} step={100} onChange={(fontWeight) => setStyle({ fontWeight })} />
-        </Row>
-        <Row label="Color"><ColorInput value={s.color} onChange={(color) => setStyle({ color })} /></Row>
-        <Row group label="Background">
-          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {s.background !== undefined ? (
-              <>
+      <Section title="Position & size">
+        <FieldRow label="X">{(id) => <Num id={id} label="X" value={w.rect.x} onChange={(x) => patch({ rect: { x } })} />}</FieldRow>
+        <FieldRow label="Y">{(id) => <Num id={id} label="Y" value={w.rect.y} onChange={(y) => patch({ rect: { y } })} />}</FieldRow>
+        <FieldRow label="Width">
+          {(id) => <Num id={id} label="Width" value={w.rect.w} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { w: v } })} />}
+        </FieldRow>
+        <FieldRow label="Height">
+          {(id) => <Num id={id} label="Height" value={w.rect.h} min={MIN_WIDGET_SIZE} onChange={(v) => patch({ rect: { h: v } })} />}
+        </FieldRow>
+        <FieldRow label="Padding">
+          {(id) => <Num id={id} label="Padding" value={s.padding} min={0} onChange={(padding) => setStyle({ padding })} />}
+        </FieldRow>
+        <FieldRow label="Background">
+          {() =>
+            s.background !== undefined ? (
+              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <ColorInput value={s.background} onChange={(background) => setStyle({ background })} />
-                <button type="button" onClick={() => setStyle({ background: undefined })}>Remove</button>
-              </>
+                <Button size="sm" onClick={() => setStyle({ background: undefined })}>Remove</Button>
+              </span>
             ) : (
-              <button type="button" onClick={() => setStyle({ background: "#000000" })}>Add background</button>
-            )}
-          </span>
-        </Row>
-        <Row label="Padding"><NumberField value={s.padding} min={0} onChange={(padding) => setStyle({ padding })} /></Row>
-        <Row group label="Align">
-          <Segmented
-            value={s.align}
-            options={[{ value: "left", label: "L" }, { value: "center", label: "C" }, { value: "right", label: "R" }]}
-            onChange={(align) => setStyle({ align })}
-          />
-        </Row>
-        <Row group label="Vertical">
-          <Segmented
-            value={s.vAlign}
-            options={[{ value: "top", label: "T" }, { value: "middle", label: "M" }, { value: "bottom", label: "B" }]}
-            onChange={(vAlign) => setStyle({ vAlign })}
-          />
-        </Row>
-        <Row group label="Auto-fit"><Check value={s.autoFit} onChange={(autoFit) => setStyle({ autoFit })} /></Row>
-        <Row label="Label">
-          <input
-            type="text"
-            value={s.label ?? ""}
-            onChange={(e) => setStyle({ label: e.target.value === "" ? undefined : e.target.value })}
-          />
-        </Row>
-        <Row label="Border width">
-          <NumberField
-            value={s.border?.width ?? 0}
-            min={0}
-            onChange={(width) =>
-              setStyle({ border: width === 0 ? undefined : { width, color: s.border?.color ?? "#ffffff", radius: s.border?.radius ?? 0 } })
-            }
-          />
-        </Row>
+              <Button size="sm" onClick={() => setStyle({ background: "#000000" })}>Add background</Button>
+            )
+          }
+        </FieldRow>
+        <FieldRow label="Border">
+          {(id) => (
+            <Num
+              id={id}
+              label="Border width"
+              value={s.border?.width ?? 0}
+              min={0}
+              suffix="px"
+              onChange={(width) =>
+                setStyle({ border: width === 0 ? undefined : { width, color: s.border?.color ?? "#ffffff", radius: s.border?.radius ?? 0 } })
+              }
+            />
+          )}
+        </FieldRow>
         {s.border && (
           <>
-            <Row label="Border color">
-              <ColorInput value={s.border.color} onChange={(color) => setStyle({ border: { ...s.border!, color } })} />
-            </Row>
-            <Row label="Border radius">
-              <NumberField value={s.border.radius} min={0} onChange={(radius) => setStyle({ border: { ...s.border!, radius } })} />
-            </Row>
+            <FieldRow label="Border color">
+              {() => <ColorInput value={s.border!.color} onChange={(color) => setStyle({ border: { ...s.border!, color } })} />}
+            </FieldRow>
+            <FieldRow label="Radius">
+              {(id) => (
+                <Num id={id} label="Border radius" value={s.border!.radius} min={0} onChange={(radius) => setStyle({ border: { ...s.border!, radius } })} />
+              )}
+            </FieldRow>
           </>
         )}
       </Section>
 
-      <Section title="Props">
-        {renderProps(w, setProps, timerChoices, channelChoices)}
+      <Section title="Text">
+        <FieldRow label="Font">
+          {() => <FontInput value={s.fontFamily} templateFonts={NO_FONTS} onChange={(fontFamily) => setStyle({ fontFamily })} onAddFont={noop} />}
+        </FieldRow>
+        <FieldRow label="Size">
+          {(id) => <Num id={id} label="Font size" value={s.fontSize} min={1} onChange={(fontSize) => setStyle({ fontSize })} />}
+        </FieldRow>
+        <FieldRow label="Weight">
+          {(id) => <FontWeightSelect id={id} value={s.fontWeight} onChange={(fontWeight) => setStyle({ fontWeight })} />}
+        </FieldRow>
+        <FieldRow label="Color">{() => <ColorInput value={s.color} onChange={(color) => setStyle({ color })} />}</FieldRow>
+        <FieldRow label="Align">
+          {() => (
+            <SegmentedControl
+              size="sm"
+              aria-label="Horizontal align"
+              value={s.align}
+              options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]}
+              onChange={(align) => setStyle({ align })}
+            />
+          )}
+        </FieldRow>
+        <FieldRow label="Vertical">
+          {() => (
+            <SegmentedControl
+              size="sm"
+              aria-label="Vertical align"
+              value={s.vAlign}
+              options={[{ value: "top", label: "Top" }, { value: "middle", label: "Middle" }, { value: "bottom", label: "Bottom" }]}
+              onChange={(vAlign) => setStyle({ vAlign })}
+            />
+          )}
+        </FieldRow>
+        <Toggle label="Auto-fit" value={s.autoFit} onChange={(autoFit) => setStyle({ autoFit })} />
+        <FieldRow label="Label">
+          {(id) => <CommitText id={id} value={s.label ?? ""} onCommit={(v) => setStyle({ label: v === "" ? undefined : v })} />}
+        </FieldRow>
+        <FieldRow label="Label size">
+          {(id) => (
+            <Num
+              id={id}
+              label="Label size"
+              value={s.captionSize ?? 0}
+              min={0}
+              suffix="px"
+              onChange={(v) => setStyle({ captionSize: v === 0 ? undefined : v })}
+            />
+          )}
+        </FieldRow>
+        <FieldRow label="Label color">
+          {() => <ColorInput value={s.captionColor ?? s.color} onChange={(captionColor) => setStyle({ captionColor })} />}
+        </FieldRow>
+        {w.kind === "text" && (
+          <FieldRow label="Text">
+            {(id) => <CommitText id={id} multiline value={w.props.text} onCommit={(text) => setProps({ text })} />}
+          </FieldRow>
+        )}
       </Section>
+
+      {w.kind !== "text" && <Section title="Behaviour">{renderProps(w, setProps, timerChoices, channelChoices)}</Section>}
     </div>
   );
 }
+
+const OVERTIME_OPTIONS = [
+  { value: "text", label: "Text" },
+  { value: "fill", label: "Fill" },
+  { value: "flash", label: "Flash" },
+] as const;
 
 function renderProps(
   w: StageWidget,
@@ -244,102 +308,133 @@ function renderProps(
 ): ReactNode {
   switch (w.kind) {
     case "currentSlide":
-      return <Row group label="Show reference"><Check value={w.props.showReference} onChange={(showReference) => set({ showReference })} /></Row>;
+      return <Toggle label="Show reference" value={w.props.showReference} onChange={(showReference) => set({ showReference })} />;
     case "nextSlide":
       return (
         <>
-          <Row label="Max lines">
-            <NumberField value={w.props.maxLines} min={1} max={10} int onChange={(maxLines) => set({ maxLines })} />
-          </Row>
-          <Row label="Dim opacity">
-            <Slider value={w.props.dimOpacity} min={0} max={1} step={0.05} onChange={(dimOpacity) => set({ dimOpacity })} />
-          </Row>
+          <FieldRow label="Max lines">
+            {(id) => <Num id={id} label="Max lines" value={w.props.maxLines} min={1} max={10} onChange={(maxLines) => set({ maxLines })} />}
+          </FieldRow>
+          <FieldRow label="Dim opacity">
+            {(id) => <Slider id={id} label="Dim opacity" value={w.props.dimOpacity} min={0} max={1} step={0.05} onChange={(dimOpacity) => set({ dimOpacity })} />}
+          </FieldRow>
         </>
       );
     case "rowTitle":
       return (
         <>
-          <Row group label="Show next"><Check value={w.props.showNext} onChange={(showNext) => set({ showNext })} /></Row>
-          <Row group label="Prefer">
-            <Segmented
-              value={w.props.prefer}
-              options={[{ value: "rundown", label: "Rundown" }, { value: "pco", label: "PCO" }]}
-              onChange={(prefer) => set({ prefer })}
-            />
-          </Row>
+          <Toggle label="Show next" value={w.props.showNext} onChange={(showNext) => set({ showNext })} />
+          <FieldRow label="Prefer">
+            {() => (
+              <SegmentedControl
+                size="sm"
+                aria-label="Prefer"
+                value={w.props.prefer}
+                options={[{ value: "rundown", label: "Rundown" }, { value: "pco", label: "PCO" }]}
+                onChange={(prefer) => set({ prefer })}
+              />
+            )}
+          </FieldRow>
         </>
       );
     case "rowCue":
-      return <Row group label="Include next row"><Check value={w.props.includeNextRow} onChange={(includeNextRow) => set({ includeNextRow })} /></Row>;
+      return <Toggle label="Next row" value={w.props.includeNextRow} onChange={(includeNextRow) => set({ includeNextRow })} />;
     case "clock":
       return (
         <>
-          <Row group label="Format">
-            <Segmented
-              value={w.props.format}
-              options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
-              onChange={(format) => set({ format })}
-            />
-          </Row>
-          <Row group label="Seconds"><Check value={w.props.seconds} onChange={(seconds) => set({ seconds })} /></Row>
+          <FieldRow label="Format">
+            {() => (
+              <SegmentedControl
+                size="sm"
+                aria-label="Clock format"
+                value={w.props.format}
+                options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
+                onChange={(format) => set({ format })}
+              />
+            )}
+          </FieldRow>
+          <Toggle label="Seconds" value={w.props.seconds} onChange={(seconds) => set({ seconds })} />
         </>
       );
     case "timer":
       return (
         <>
-          <Row label="Source">
-            <select
-              value={encodeTimerSource(w.props.source)}
-              onChange={(e) => set({ source: decodeTimerSource(e.target.value) })}
-            >
-              {timerSourceOptions(w.props.source, channelChoices, timerChoices).map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Warn below (s)"><NumberField value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} /></Row>
-          <Row label="Warn color"><ColorInput value={w.props.warnColor} onChange={(warnColor) => set({ warnColor })} /></Row>
-          <Row label="Over color"><ColorInput value={w.props.overColor} onChange={(overColor) => set({ overColor })} /></Row>
-          <Row group label="Show label"><Check value={w.props.showLabel} onChange={(showLabel) => set({ showLabel })} /></Row>
+          <FieldRow label="Source">
+            {(id) => (
+              <Select id={id} value={encodeTimerSource(w.props.source)} onChange={(e) => set({ source: decodeTimerSource(e.target.value) })}>
+                {timerSourceOptions(w.props.source, channelChoices, timerChoices).map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            )}
+          </FieldRow>
+          <FieldRow label="Under (s)" hint="Warn when this many seconds or fewer remain">
+            {(id) => <Num id={id} label="Under (s)" value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} />}
+          </FieldRow>
+          <FieldRow label="Warn">{() => <ColorInput value={w.props.warnColor} onChange={(warnColor) => set({ warnColor })} />}</FieldRow>
+          <FieldRow label="Overtime">{() => <ColorInput value={w.props.overColor} onChange={(overColor) => set({ overColor })} />}</FieldRow>
+          <FieldRow label="Over style">
+            {() => (
+              <SegmentedControl
+                size="sm"
+                aria-label="Overtime style"
+                value={w.props.overtimeStyle ?? "text"}
+                options={OVERTIME_OPTIONS.map((o) => ({ ...o }))}
+                onChange={(overtimeStyle) => set({ overtimeStyle })}
+              />
+            )}
+          </FieldRow>
+          <Toggle label="Show label" value={w.props.showLabel} onChange={(showLabel) => set({ showLabel })} />
         </>
       );
     case "videoRemaining":
-      return <Row label="Warn below (s)"><NumberField value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} /></Row>;
+      return (
+        <>
+          <FieldRow label="Under (s)" hint="Warn when this many seconds or fewer remain">
+            {(id) => <Num id={id} label="Under (s)" value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} />}
+          </FieldRow>
+          <FieldRow label="Warn">{() => <ColorInput value={w.props.warnColor ?? "#ffb703"} onChange={(warnColor) => set({ warnColor })} />}</FieldRow>
+          <FieldRow label="Overtime">{() => <ColorInput value={w.props.overColor ?? "#ef233c"} onChange={(overColor) => set({ overColor })} />}</FieldRow>
+        </>
+      );
     case "sermonNotes":
       return (
         <>
-          <Row label="Highlight color"><ColorInput value={w.props.highlightColor} onChange={(highlightColor) => set({ highlightColor })} /></Row>
-          <Row group label="Dim past"><Check value={w.props.dimPast} onChange={(dimPast) => set({ dimPast })} /></Row>
-          <Row group label="Show counter"><Check value={w.props.showCounter} onChange={(showCounter) => set({ showCounter })} /></Row>
-          <Row label="Anchor"><Slider value={w.props.anchor} min={0} max={1} step={0.01} onChange={(anchor) => set({ anchor })} /></Row>
+          <FieldRow label="Highlight" hint="Highlight color">
+            {() => <ColorInput value={w.props.highlightColor} onChange={(highlightColor) => set({ highlightColor })} />}
+          </FieldRow>
+          <Toggle label="Dim past" value={w.props.dimPast} onChange={(dimPast) => set({ dimPast })} />
+          <Toggle label="Counter" value={w.props.showCounter} onChange={(showCounter) => set({ showCounter })} />
+          <Toggle label="Hide if empty" value={w.props.collapseWhenEmpty ?? false} onChange={(collapseWhenEmpty) => set({ collapseWhenEmpty })} />
+          <FieldRow label="Anchor" hint="Where the current point sits, from the top">
+            {(id) => <Slider id={id} label="Anchor" value={w.props.anchor} min={0} max={1} step={0.01} onChange={(anchor) => set({ anchor })} />}
+          </FieldRow>
+          <p style={{ margin: "0 0 0 88px", fontSize: fontSize.sm, color: colors.textDim }}>Where the current point sits, from the top</p>
         </>
       );
     case "message":
-      return <Row group label="Flash"><Check value={w.props.flash} onChange={(flash) => set({ flash })} /></Row>;
+      return <Toggle label="Flash" value={w.props.flash} onChange={(flash) => set({ flash })} />;
     case "serviceProgress":
       return (
         <>
-          <Row group label="Show position"><Check value={w.props.showPosition} onChange={(showPosition) => set({ showPosition })} /></Row>
-          <Row group label="Show end"><Check value={w.props.showEnd} onChange={(showEnd) => set({ showEnd })} /></Row>
-          <Row group label="Show delta"><Check value={w.props.showDelta} onChange={(showDelta) => set({ showDelta })} /></Row>
-          <Row group label="End time">
-            <Segmented
-              value={w.props.clock}
-              options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
-              onChange={(clock) => set({ clock })}
-            />
-          </Row>
+          <Toggle label="Position" value={w.props.showPosition} onChange={(showPosition) => set({ showPosition })} />
+          <Toggle label="End" value={w.props.showEnd} onChange={(showEnd) => set({ showEnd })} />
+          <Toggle label="Delta" value={w.props.showDelta} onChange={(showDelta) => set({ showDelta })} />
+          <FieldRow label="End time">
+            {() => (
+              <SegmentedControl
+                size="sm"
+                aria-label="End time format"
+                value={w.props.clock}
+                options={[{ value: "12h", label: "12h" }, { value: "24h", label: "24h" }]}
+                onChange={(clock) => set({ clock })}
+              />
+            )}
+          </FieldRow>
         </>
       );
     case "text":
-      return (
-        <textarea
-          value={w.props.text}
-          rows={4}
-          style={{ width: "100%" }}
-          onChange={(e) => set({ text: e.target.value })}
-        />
-      );
+      return null;
     default: {
       const _exhaustive: never = w;
       return _exhaustive;

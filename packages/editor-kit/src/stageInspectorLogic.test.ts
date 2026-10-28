@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultStageWidget } from "@overlaysys/core";
 import {
-  applyStageWidgetPatch, decodeTimerSource, encodeTimerSource, moveInOrder, parseNumberDraft, timerSourceOptions,
+  applyStageWidgetPatch, coalescedLabelEdits, decodeTimerSource, encodeTimerSource, moveInOrder, parseNumberDraft, timerSourceOptions,
 } from "./stageInspectorLogic";
 
 const rect = { x: 0, y: 0, w: 100, h: 100 };
@@ -65,5 +65,13 @@ describe("parseNumberDraft", () => {
     expect(parseNumberDraft("3.6", { int: true })).toBe(4);
     expect(parseNumberDraft("", {})).toBeNull();
     expect(parseNumberDraft("abc", {})).toBeNull();
+  });
+});
+
+describe("coalescedLabelEdits", () => {
+  it("turns one typing burst into one undo entry", () => {
+    const r = coalescedLabelEdits(["S", "SE", "SER", "SERMON"]);
+    expect(r.undoEntries).toBe(1);
+    expect(r.final).toBe("SERMON");
   });
 });
