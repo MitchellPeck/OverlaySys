@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { v4 as uuid } from "uuid";
-import { blankTemplate } from "@overlaysys/editor-kit";
+import { TEMPLATE_STARTERS, templateFromStarter } from "@overlaysys/editor-kit";
 import { Button, colors, radius } from "@overlaysys/ui";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { downloadJson } from "@/lib/download";
@@ -20,6 +20,9 @@ import {
   refreshTemplateMetasCloud,
   saveTemplateCloud,
 } from "@/lib/cloudData";
+
+/** How long Export waits for the server to send an uncached template. */
+const EXPORT_TIMEOUT_MS = 5000;
 
 export default function DesignIndexPage() {
   return (
@@ -72,6 +75,16 @@ function StageLayoutsList() {
   const conn = useStore((s) => s.conn);
   const layouts = useStore((s) => s.stageLayouts);
   const channels = useStore((s) => s.channelConfigs);
+
+  // Until the first list arrives, an empty list means "loading", not "none".
+  const [listed, setListed] = useState(false);
+  useEffect(
+    () =>
+      getClient().on((msg) => {
+        if (msg.type === "stage_layout_list") setListed(true);
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (conn === "open") {
@@ -127,7 +140,11 @@ function StageLayoutsList() {
         );
       }}
       itemDisplayName={(l) => l.name || l.id}
-      emptyMessage={<span style={{ color: colors.textDim, fontSize: 13 }}>(loading…)</span>}
+      emptyMessage={
+        <span style={{ color: colors.textDim, fontSize: 13 }}>
+          {listed || layouts.length > 0 ? "No stage layouts yet." : conn === "open" ? "(loading…)" : "Not connected to the server."}
+        </span>
+      }
     />
   );
 }
@@ -140,6 +157,16 @@ function GraphicsList() {
   const { alert, dialog } = useDialog();
   const cloud = isCloudMode();
   const disabled = !cloud && conn !== "open";
+  const [starter, setStarter] = useState("blank");
+  // Until the first list arrives, an empty list means "loading", not "none".
+  const [listed, setListed] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  useEffect(() => {
+    if (cloud) return;
+    return getClient().on((msg) => {
+      if (msg.type === "template_list") setListed(true);
+    });
+  }, [cloud]);
 
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -156,9 +183,12 @@ function GraphicsList() {
 
   useEffect(() => {
     if (cloud) {
-      refreshTemplateMetasCloud().catch((err) =>
-        console.warn("[design] cloud list failed", err),
-      );
+      refreshTemplateMetasCloud()
+        .then(() => setListed(true))
+        .catch((err) => {
+          console.warn("[design] cloud list failed", err);
+          setListError(err instanceof Error ? err.message : String(err));
+        });
     } else if (conn === "open") {
       send({ type: "list_templates" });
     }
@@ -166,7 +196,7 @@ function GraphicsList() {
 
   async function createTemplate(name: string): Promise<string> {
     const id = `template-${uuid().slice(0, 8)}`;
-    const tpl = { ...blankTemplate(id, name), name };
+    const tpl = templateFromStarter(starter, id, name);
     if (cloud) {
       await saveTemplateCloud(tpl);
       await refreshTemplateMetasCloud();
@@ -212,13 +242,19 @@ function GraphicsList() {
       downloadJson(`${id}.json`, cached);
       return;
     }
-    if (conn !== "open") return;
+    if (conn !== "open") {
+      await showError("export", new Error("Not connected to the server."));
+      return;
+    }
     send({ type: "get_template", templateId: id });
     const start = Date.now();
     const tick = () => {
       const c = useStore.getState().templateCache[id];
       if (c) { downloadJson(`${id}.json`, c); return; }
-      if (Date.now() - start > 2000) return;
+      if (Date.now() - start > EXPORT_TIMEOUT_MS) {
+        void showError("export", new Error(`The server didn't send template "${id}" within ${EXPORT_TIMEOUT_MS / 1000} s. Check the connection and try again.`));
+        return;
+      }
       setTimeout(tick, 50);
     };
     setTimeout(tick, 50);
@@ -258,8 +294,41 @@ function GraphicsList() {
           </>
         )}
         itemDisplayName={(t) => t.name || t.id}
+        secondaryActions={
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textDim }}>
+            New from
+            <select
+              value={starter}
+              onChange={(e) => setStarter(e.target.value)}
+              title={TEMPLATE_STARTERS.find((s) => s.id === starter)?.description}
+              aria-label="Starter for new templates"
+              style={{
+                padding: "4px 6px",
+                background: colors.panel,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 3,
+                color: colors.text,
+                fontSize: 12,
+              }}
+            >
+              {TEMPLATE_STARTERS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
         emptyMessage={
-          <span style={{ color: colors.textDim, fontSize: 13 }}>(loading…)</span>
+          <span style={{ color: listError ? colors.danger : colors.textDim, fontSize: 13 }}>
+            {listError
+              ? `Couldn't load templates: ${listError}`
+              : listed || templates.length > 0
+                ? "No templates yet. Pick a starter and press + New."
+                : disabled
+                  ? "Not connected to the server."
+                  : "(loading…)"}
+          </span>
         }
       />
       {dialog}
