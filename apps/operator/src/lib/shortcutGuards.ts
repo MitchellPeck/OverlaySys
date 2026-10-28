@@ -1,5 +1,6 @@
-import { hotcardForKey, hotcardRoute, HotkeySchema, type Hotcard, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
+import { hotcardForKey, hotcardRoute, HotkeySchema, type Hotcard, type HotcardMeta, type Hotkey, type ChannelState, type SongSessionSummary } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { slidesAdvanceMessage, slidesBlankMessage, slidesKeyChannel } from "./slidesRowView";
 
 /** The parts of a KeyboardEvent the guards read; lets tests use plain objects. */
 export type KeyLike = Pick<
@@ -55,6 +56,55 @@ export function hasCommandModifier(e: KeyLike): boolean {
  */
 export function songKeyChannel(sessions: Record<string, SongSessionSummary | null | undefined>): "program" | null {
   return sessions["program"] ? "program" : null;
+}
+
+/** Scripture keys drive the PROGRAM scripture session only, like song keys. */
+export function scriptureKeyChannel(channelStates: Record<string, ChannelState | undefined>): "program" | null {
+  return channelStates["program"]?.scriptureSession ? "program" : null;
+}
+
+export type KeyMode = "song" | "scripture" | "slides" | "rundown";
+
+/** Which live session the keys drive: a program song, then scripture, then slides, else the rundown. */
+export function keyMode(store: {
+  songSessions: Record<string, SongSessionSummary | null | undefined>;
+  channelStates: Record<string, ChannelState>;
+}): KeyMode {
+  if (songKeyChannel(store.songSessions)) return "song";
+  if (scriptureKeyChannel(store.channelStates)) return "scripture";
+  if (slidesKeyChannel(store.channelStates)) return "slides";
+  return "rundown";
+}
+
+/** Space / Shift+Space in the given mode; null in rundown mode (Space takes there). */
+export function advanceMessage(mode: KeyMode, delta: 1 | -1): ClientMessage | null {
+  switch (mode) {
+    case "song":
+      return { type: "song_advance", channel: "program", delta };
+    case "scripture":
+      return { type: "scripture_advance", channel: "program", delta };
+    case "slides":
+      return slidesAdvanceMessage(delta);
+    case "rundown":
+      return null;
+  }
+}
+
+/** The blank key: "." blanks a song; B blanks slides. Null elsewhere. */
+export function blankMessage(mode: KeyMode): ClientMessage | null {
+  switch (mode) {
+    case "song":
+      return { type: "song_blank", channel: "program" };
+    case "slides":
+      return slidesBlankMessage();
+    default:
+      return null;
+  }
+}
+
+/** Esc is a panic key: the first press arms, a second within `windowMs` acts. */
+export function escPress(now: number, lastEscAt: number | null, windowMs = 600): "arm" | "act" {
+  return lastEscAt !== null && now - lastEscAt <= windowMs ? "act" : "arm";
 }
 
 /** The F1–F12 key pressed (Shift allowed); null for anything else or a ⌘/Ctrl/Alt chord. */

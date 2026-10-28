@@ -137,3 +137,37 @@ describe("hotcardAirState", () => {
     expect(hotcardAirState(undefined, {})).toBeNull();
   });
 });
+
+describe("rowAirState other-show", () => {
+  const rows: Row[] = [song("row1", "s1")];
+  const states = (showId: string): Record<string, ChannelState> => ({
+    program: { channel: "program", active: null, songSession: session("s1"), liveRow: { showId, rowId: "x" } },
+  });
+  it("a song live from another show is other-show, not program", () => {
+    const sess = { program: session("s1") };
+    expect(rowAirState(song("row1", "s1"), states("otherShow"), sess, { showId: "show1", rows })).toBe("other-show");
+  });
+  it("a song live from this show still reads program", () => {
+    const sess = { program: session("s1") };
+    expect(rowAirState(song("row1", "s1"), states("show1"), sess, { showId: "show1", rows })).toBe("program");
+  });
+  it("a scripture session from another show is other-show", () => {
+    const st: Record<string, ChannelState> = {
+      program: {
+        channel: "program", active: null, liveRow: { showId: "otherShow", rowId: "q" },
+        scriptureSession: { rowId: "sc", reference: "John 3:16", slideIdx: 0, slideCount: 1, slideReference: "John 3:16", text: "t" },
+      },
+    };
+    expect(rowAirState(scripture("sc"), st, {}, { showId: "show1" })).toBe("other-show");
+  });
+  it("prefers a real preview match over other-show on program", () => {
+    const st = {
+      ...states("otherShow"),
+      preview: { channel: "preview", active: null, songSession: session("s1"), liveRow: { showId: "show1", rowId: "row1" } },
+    } as Record<string, ChannelState>;
+    expect(rowAirState(song("row1", "s1"), st, { program: session("s1"), preview: session("s1") }, { showId: "show1", rows })).toBe("preview");
+  });
+  it("routes slides rows through the adapter (stub: null)", () => {
+    expect(rowAirState({ id: "sl", kind: "slides" } as unknown as Row, {}, {})).toBeNull();
+  });
+});

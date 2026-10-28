@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { HotcardMeta, SongSessionSummary } from "@overlaysys/core";
 import {
+  advanceMessage,
+  blankMessage,
+  escPress,
+  keyMode,
+  scriptureKeyChannel,
   escapeMessages,
   hasCommandModifier,
   hotcardFireMessage,
@@ -179,5 +184,42 @@ describe("hotcardFireMessage (used by the Hotcards panel, the stage panel and th
     expect(hotcardFireMessage({ ...card, channelHint: "preview" }, "take")).toMatchObject({ type: "take", channel: "program" });
     expect(hotcardFireMessage({ ...card, channelHint: "stage" }, "take")).toMatchObject({ type: "take", channel: "stage" });
     expect(hotcardFireMessage({ ...card, channelHint: "stage" }, "cue")).toMatchObject({ type: "cue", channel: "preview" });
+  });
+});
+
+describe("escPress", () => {
+  it("arms then acts within 600 ms", () => {
+    expect(escPress(1000, null)).toBe("arm");
+    expect(escPress(1500, 1000)).toBe("act");
+    expect(escPress(1700, 1000)).toBe("arm");
+  });
+});
+
+describe("keyMode", () => {
+  const scr = { rowId: "r", reference: "x", slideIdx: 0, slideCount: 1, slideReference: "x", text: "" };
+  it("is scripture when a scripture session is live on program", () => {
+    expect(keyMode({ songSessions: {}, channelStates: { program: { channel: "program", active: null, scriptureSession: scr } } })).toBe("scripture");
+    expect(scriptureKeyChannel({ program: { channel: "program", active: null, scriptureSession: scr } })).toBe("program");
+  });
+  it("a program song wins over scripture; preview sessions never drive keys", () => {
+    expect(keyMode({ songSessions: { program: session }, channelStates: { program: { channel: "program", active: null, scriptureSession: scr } } })).toBe("song");
+    expect(keyMode({ songSessions: { preview: session }, channelStates: { preview: { channel: "preview", active: null, scriptureSession: scr } } })).toBe("rundown");
+    expect(scriptureKeyChannel({})).toBeNull();
+  });
+});
+
+describe("advanceMessage / blankMessage", () => {
+  it("sends scripture_advance and song_advance by mode", () => {
+    expect(advanceMessage("scripture", -1)).toEqual({ type: "scripture_advance", channel: "program", delta: -1 });
+    expect(advanceMessage("song", 1)).toEqual({ type: "song_advance", channel: "program", delta: 1 });
+  });
+  it("is null for rundown, and for slides until plan 3", () => {
+    expect(advanceMessage("rundown", 1)).toBeNull();
+    expect(advanceMessage("slides", 1)).toBeNull();
+  });
+  it("blank toggles a song only", () => {
+    expect(blankMessage("song")).toEqual({ type: "song_blank", channel: "program" });
+    expect(blankMessage("scripture")).toBeNull();
+    expect(blankMessage("slides")).toBeNull();
   });
 });

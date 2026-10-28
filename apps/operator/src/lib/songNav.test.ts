@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Song } from "@overlaysys/core";
-import { slideDeltaTo, upcomingSlides } from "./songNav";
+import { sectionAvailable, slideDeltaTo, upcomingSlides } from "./songNav";
 
 const sec = (id: string, n: number) => ({
   id,
@@ -40,5 +40,23 @@ describe("upcomingSlides", () => {
 
   it("stops at the end of the arrangement", () => {
     expect(upcomingSlides(arrangement, sections, { sectionIdx: 5, slideIdx: 1 }, 3)).toEqual([]);
+  });
+});
+
+describe("sectionAvailable", () => {
+  const song = {
+    sections: [
+      { id: "v1", kind: "verse" }, { id: "v2", kind: "verse" }, { id: "c1", kind: "chorus" },
+    ],
+  } as unknown as Pick<Song, "sections">;
+  it("is false when the arrangement has no chorus", () => {
+    expect(sectionAvailable(song, ["v1", "v2"], "chorus", 1)).toBe(false);
+  });
+  it("counts the ordinal among that kind", () => {
+    expect(sectionAvailable(song, ["v1", "c1", "v2"], "verse", 2)).toBe(true);
+    expect(sectionAvailable(song, ["v1", "c1", "v2"], "verse", 3)).toBe(false);
+  });
+  it("ignores arrangement ids with no section", () => {
+    expect(sectionAvailable(song, ["gone", "c1"], "verse", 1)).toBe(false);
   });
 });

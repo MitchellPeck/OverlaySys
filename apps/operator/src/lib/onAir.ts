@@ -62,13 +62,19 @@ function rowTitle(rowId: string, ctx: Ctx): string | null {
 
 /**
  * One-line caption for what a channel is showing, from state the operator
- * already receives. Null when the channel is empty.
+ * already receives. Null when the channel is empty. Every layer is listed,
+ * joined with " · " and prefixed by its layer ("Video: Announcements ·
+ * Lower third: Pastor Placeholder"); a blanked song session leads with "Blanked".
  */
 export function onAirCaption(st: ChannelState | undefined, ctx: Ctx): string | null {
   if (!st) return null;
   const parts: string[] = [];
+  if (st.songSession?.blanked) parts.push("Blanked");
+  if (st.media && st.media.playback.status !== "ended") {
+    parts.push(`Video: ${st.media.label || "Video"}`);
+  }
   if (st.songSession) {
-    parts.push(`${songTitle(st.songSession.songId, ctx)}${st.songSession.blanked ? " (blanked)" : ""}`);
+    parts.push(songTitle(st.songSession.songId, ctx));
   } else if (st.scriptureSession) {
     parts.push(st.scriptureSession.slideReference || st.scriptureSession.reference);
   } else if (st.active && st.active.phase !== "out") {
@@ -81,13 +87,32 @@ export function onAirCaption(st: ChannelState | undefined, ctx: Ctx): string | n
     } else {
       const name = ctx.templates.find((t) => t.id === a.templateId)?.name ?? a.templateId;
       const detail = a.data["title"] ?? a.data["name"] ?? Object.values(a.data).find((v) => v && !v.startsWith("data:"));
-      parts.push(detail ? `${name} · ${detail}` : name);
+      parts.push(detail ? `${name}: ${detail}` : name);
     }
   } else if (st.queuedSong) {
     parts.push(`${st.queuedSong.title} (queued)`);
   }
-  if (st.media && st.media.playback.status !== "ended") {
-    parts.push(st.media.label || "Video");
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
+ * What the Take PVW button (and ⌘Enter) sends. A cued song moves with its
+ * session, a cued scripture slide is taken to program and its preview session
+ * ended; everything else (graphics, video, slides) swaps via the server.
+ * Nothing on PVW sends nothing.
+ */
+export function pvwTakeMessages(pvw: ChannelState | undefined, showId: string | null): ClientMessage[] {
+  if (!pvw || !channelHasContent(pvw)) return [];
+  const lr = pvw.liveRow;
+  if (pvw.songSession && lr && showId && lr.showId === showId) {
+    return [{ type: "song_take_pvw_to_pgm", showId, songRowId: lr.rowId, fromChannel: "preview", toChannel: "program" }];
   }
-  return parts.length > 0 ? parts.join(" + ") : null;
+  if (pvw.scriptureSession && showId) {
+    const s = pvw.scriptureSession;
+    return [
+      { type: "scripture_take_slide", showId, rowId: s.rowId, slideIdx: s.slideIdx, channel: "program" },
+      { type: "scripture_end", channel: "preview" },
+    ];
+  }
+  return [{ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" }];
 }

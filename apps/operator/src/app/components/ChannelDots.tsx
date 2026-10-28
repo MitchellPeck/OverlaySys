@@ -55,7 +55,7 @@ function ChannelDot({ config }: { config: ChannelConfig }) {
   return (
     <span ref={anchorRef} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
       <StatusDot
-        tone={model.tone}
+        tone={model.tone === "blanked" ? "warn" : model.tone}
         label={config.name}
         title={titles.length ? titles.join(" · ") : undefined}
         onClick={() => setMenu((m) => (m === "closed" ? "menu" : "closed"))}

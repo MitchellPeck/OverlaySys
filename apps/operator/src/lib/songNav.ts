@@ -1,4 +1,4 @@
-import type { Song, SongSessionSummary } from "@overlaysys/core";
+import type { SectionKind, Song, SongSessionSummary } from "@overlaysys/core";
 
 type Sections = Pick<Song, "sections">["sections"];
 
@@ -39,6 +39,23 @@ export function slideDeltaTo(
     delta -= n;
   }
   return delta;
+}
+
+/**
+ * Whether the arrangement holds the `ordinal`-th (1-based) section of `kind`
+ * that exists in the song; the C/B/T and 1-9 keys use it to skip dead jumps.
+ */
+export function sectionAvailable(
+  song: Pick<Song, "sections">,
+  arrangement: string[],
+  kind: SectionKind,
+  ordinal: number,
+): boolean {
+  let n = 0;
+  for (const id of arrangement) {
+    if (song.sections.find((s) => s.id === id)?.kind === kind && ++n >= ordinal) return true;
+  }
+  return false;
 }
 
 /** The next `count` slides after the cursor, in arrangement order. */

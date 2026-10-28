@@ -22,7 +22,7 @@ export function channelDotModel(
   channelStates: Record<string, ChannelState>,
   outputs: OutputsState | null = null,
 ): {
-  tone: "live" | "good" | "dim";
+  tone: "live" | "good" | "dim" | "blanked";
   busy: boolean;
   canClear: boolean;
   sourceId: string;
@@ -32,7 +32,9 @@ export function channelDotModel(
   const sourceId = config.mirrorOf ?? config.id;
   const st = channelStates[sourceId];
   const busy = !!st?.active || !!st?.media;
-  const tone = !busy ? "dim" : config.id === "program" ? "live" : "good";
+  // A blanked song session is held, not showing: amber on program.
+  const blankedSong = config.id === "program" && !!st?.songSession?.blanked;
+  const tone = blankedSong ? "blanked" : !busy ? "dim" : config.id === "program" ? "live" : "good";
   // A mirror window subscribes under its own id, so presence is per dot.
   const outputCount = outputs ? (outputs[config.id]?.count ?? 0) : null;
   const presence: OutputPresenceTone =

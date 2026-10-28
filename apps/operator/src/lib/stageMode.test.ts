@@ -86,7 +86,7 @@ describe("shortcutHint", () => {
     const h = shortcutHint({ kind: "song-live", channel: "program", session, selection: { kind: "empty" } });
     expect(h).toContain("Space next");
     expect(h).toContain("1–9, 0 verse");
-    expect(h).toContain("Esc end song");
+    expect(h).toContain("Esc Esc end song");
   });
 
   it("keeps the song hint in song-live even with a row selected", () => {
@@ -110,9 +110,15 @@ describe("shortcutHint", () => {
     );
   });
 
-  it("does not claim Enter/Space work for scripture", () => {
+  it("describes scripture keys while a scripture session is live", () => {
+    expect(shortcutHint({ kind: "scripture", row: show.rows[2] as never, live: true })).toBe(
+      "Space next · Shift+Space previous · Enter cue selection · ⌘Enter take PVW · Esc Esc clear program",
+    );
+  });
+
+  it("describes rundown keys for a selected scripture row that is not live", () => {
     expect(shortcutHint({ kind: "scripture", row: show.rows[2] as never })).toBe(
-      "↑/↓ select · Use the slide strip to take · ⌘Enter PVW → PGM · Esc clear program",
+      "↑/↓ select · Enter cue · Space take · ⌘Enter take PVW · Esc Esc clear program",
     );
   });
 

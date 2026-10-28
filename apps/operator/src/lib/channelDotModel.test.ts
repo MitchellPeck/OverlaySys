@@ -83,3 +83,14 @@ describe("rendererBaseFor", () => {
     expect(rendererHref("http://h:4000/renderer/", "alpha prog")).toBe("http://h:4000/renderer/?channel=alpha%20prog");
   });
 });
+
+describe("channelDotModel blanked", () => {
+  const song = (blanked: boolean) =>
+    ({ channel: "program", active: null, songSession: { songId: "s", lyricTemplateId: "l", arrangement: [], cursor: { sectionIdx: 0, slideIdx: 0 }, blanked, trustMode: false, startedAt: 1 } }) as ChannelState;
+  it("a blanked program song is amber", () => {
+    expect(channelDotModel(cfg("program"), { program: song(true) }).tone).toBe("blanked");
+  });
+  it("an unblanked song session does not change the tone", () => {
+    expect(channelDotModel(cfg("program"), { program: song(false) }).tone).toBe("dim");
+  });
+});

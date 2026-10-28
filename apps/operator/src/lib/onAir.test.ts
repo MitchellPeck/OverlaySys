@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Show } from "@overlaysys/core";
-import { anythingOnAir, channelHasContent, clearChannelMessages, onAirCaption } from "./onAir";
+import { anythingOnAir, channelHasContent, clearChannelMessages, onAirCaption, pvwTakeMessages } from "./onAir";
 
 const show = {
   id: "show",
@@ -26,7 +26,7 @@ describe("onAirCaption", () => {
 
   it("names a graphic by template and its title-ish field", () => {
     const st: ChannelState = { channel: "program", active: { templateId: "l3", data: { name: "Sam" }, phase: "on", takenAt: 1 } };
-    expect(onAirCaption(st, ctx)).toBe("Lower third · Sam");
+    expect(onAirCaption(st, ctx)).toBe("Lower third: Sam");
   });
 
   it("names a song intro from its row", () => {
@@ -35,6 +35,20 @@ describe("onAirCaption", () => {
       active: { templateId: "intro", data: {}, phase: "on", takenAt: 1, subTakeContext: { songRowId: "r1", sub: "intro" } },
     };
     expect(onAirCaption(st, ctx)).toBe("Way Maker · intro");
+  });
+
+  it("leads with Blanked when the song session is blanked", () => {
+    expect(onAirCaption({ channel: "program", active: null, songSession: { ...session, blanked: true } }, ctx)).toBe("Blanked · Way Maker");
+  });
+
+  it("lists video and graphic layers", () => {
+    const st: ChannelState = {
+      channel: "program",
+      active: { templateId: "l3", data: { name: "Pastor Placeholder" }, phase: "on", takenAt: 1 },
+      media: { ...videoMedia, label: "Announcements" },
+    };
+    const c = { ...ctx, templates: [{ id: "l3", name: "L3" }] };
+    expect(onAirCaption(st, c)).toBe("Video: Announcements · L3: Pastor Placeholder");
   });
 
   it("is null for an empty or outgoing channel", () => {
@@ -76,5 +90,35 @@ describe("clearChannelMessages", () => {
       { type: "clear", channel: "program" },
       { type: "media_clear", channel: "program" },
     ]);
+  });
+});
+
+describe("pvwTakeMessages", () => {
+  const pvw = (extra: Partial<ChannelState>): ChannelState => ({ channel: "preview", active: null, ...extra });
+  it("promotes a cued song with its session", () => {
+    expect(pvwTakeMessages(pvw({ songSession: session, liveRow: { showId: "show1", rowId: "row3" } }), "show1")).toEqual([
+      { type: "song_take_pvw_to_pgm", showId: "show1", songRowId: "row3", fromChannel: "preview", toChannel: "program" },
+    ]);
+  });
+  it("moves a cued scripture slide to program and ends the preview session", () => {
+    const scriptureSession = { rowId: "row5", reference: "John 3", slideIdx: 2, slideCount: 4, slideReference: "John 3:3", text: "t" };
+    expect(pvwTakeMessages(pvw({ scriptureSession }), "show1")).toEqual([
+      { type: "scripture_take_slide", showId: "show1", rowId: "row5", slideIdx: 2, channel: "program" },
+      { type: "scripture_end", channel: "preview" },
+    ]);
+  });
+  it("swaps a plain graphic", () => {
+    expect(pvwTakeMessages(pvw({ active: { templateId: "l3", data: {}, phase: "on", takenAt: 1 } }), "show1")).toEqual([
+      { type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" },
+    ]);
+  });
+  it("swaps a song cued from another show instead of promoting it", () => {
+    expect(pvwTakeMessages(pvw({ songSession: session, liveRow: { showId: "other", rowId: "r" } }), "show1")).toEqual([
+      { type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" },
+    ]);
+  });
+  it("is empty with nothing cued", () => {
+    expect(pvwTakeMessages(undefined, "show1")).toEqual([]);
+    expect(pvwTakeMessages(pvw({}), "show1")).toEqual([]);
   });
 });

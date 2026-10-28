@@ -1,6 +1,8 @@
 import type { ChannelState, Hotcard, Show, SongSessionSummary } from "@overlaysys/core";
+import { slidesAirState } from "./slidesRowView";
 
-export type AirState = "program" | "preview" | null;
+/** "other-show": the channel holds a song or scripture row taken from a different show. */
+export type AirState = "program" | "preview" | "other-show" | null;
 
 type Row = Show["rows"][number];
 
@@ -58,16 +60,25 @@ function onChannel(
     }
     case "scripture":
       return st?.scriptureSession?.rowId === row.id || st?.active?.scriptureContext?.rowId === row.id;
-    // [P3.8] neutral until P2a.2 routes slides through slidesAirState
     case "slides":
-      return false;
+      return false; // routed through slidesAirState in rowAirState()
   }
+}
+
+/** True when the channel's session was taken from a different show than ctx's. */
+function fromOtherShow(row: Row, st: ChannelState | undefined, ctx: AirContext | undefined): boolean {
+  if (row.kind !== "song" && row.kind !== "scripture") return false;
+  const lr = st?.liveRow;
+  if (!lr || !ctx?.showId || lr.showId === ctx.showId) return false;
+  return row.kind === "song" ? !!st?.songSession : !!st?.scriptureSession;
 }
 
 /**
  * Whether a rundown row is currently on program or cued on preview, derived
  * only from state the operator already receives. Program wins over preview.
- * Scripture rows light from scriptureSession / scriptureContext.
+ * Scripture rows light from scriptureSession / scriptureContext. A song or
+ * scripture row whose channel session was taken from another show reads
+ * "other-show" (unless the row is also properly on another channel).
  */
 export function rowAirState(
   row: Row,
@@ -75,14 +86,22 @@ export function rowAirState(
   songSessions: Record<string, SongSessionSummary | null>,
   ctx?: AirContext,
 ): AirState {
-  if (onChannel(row, "program", channelStates, songSessions, ctx)) return "program";
+  if (row.kind === "slides") return slidesAirState(row, channelStates);
+  let otherShow = false;
+  const check = (ch: string): boolean => {
+    if (!onChannel(row, ch, channelStates, songSessions, ctx)) return false;
+    if (fromOtherShow(row, channelStates[ch], ctx)) {
+      otherShow = true;
+      return false;
+    }
+    return true;
+  };
+  if (check("program")) return "program";
   // A song routed to another output is on air there; show it as program.
   const extra = row.kind === "song" ? ctx?.songChannel : undefined;
-  if (extra && extra !== "program" && extra !== "preview" && onChannel(row, extra, channelStates, songSessions, ctx)) {
-    return "program";
-  }
-  if (onChannel(row, "preview", channelStates, songSessions, ctx)) return "preview";
-  return null;
+  if (extra && extra !== "program" && extra !== "preview" && check(extra)) return "program";
+  if (check("preview")) return "preview";
+  return otherShow ? "other-show" : null;
 }
 
 /**

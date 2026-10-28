@@ -4,7 +4,7 @@ export type StageMode =
   | { kind: "song-live"; channel: "program" | "preview"; session: SongSessionSummary; selection: StageMode }
   | { kind: "quick-take" }
   | { kind: "song"; row: SongRow }
-  | { kind: "scripture"; row: ScriptureRow }
+  | { kind: "scripture"; row: ScriptureRow; live?: boolean }
   | { kind: "graphic"; row: GraphicRow }
   | { kind: "video"; row: VideoRow }
   | { kind: "slides"; row: SlidesRow } // [P3.8]
@@ -17,6 +17,8 @@ type StageInput = {
   selectedHotcardId: string | null;
   songSessions: Record<string, SongSessionSummary | null>;
   quickTake: boolean;
+  /** A scripture session is live on program (selects the scripture key hint). */
+  scriptureLive?: boolean;
 };
 
 /**
@@ -45,7 +47,7 @@ function selectionModeFor(input: StageInput): StageMode {
       case "song":
         return { kind: "song", row };
       case "scripture":
-        return { kind: "scripture", row };
+        return input.scriptureLive ? { kind: "scripture", row, live: true } : { kind: "scripture", row };
       case "graphic":
         return { kind: "graphic", row };
       case "video":
@@ -65,14 +67,15 @@ export function shortcutHint(mode: StageMode): string {
       // Song keys only drive a program session; with the song merely cued on
       // preview, keys act on the rundown selection.
       if (mode.channel !== "program") return `Song cued on PVW (keys act on the selection) · ${shortcutHint(mode.selection)}`;
-      return "Space next · Shift+Space previous · C/B/T next chorus/bridge/tag · 1–9, 0 verse · . blank · Esc end song";
+      return "Space next · Shift+Space previous · C/B/T chorus/bridge/tag · 1–9, 0 verse · . blank · Esc Esc end song";
     case "quick-take":
       return "Keys act on the rundown selection · use the buttons above for Quick take";
     case "scripture":
-      return "↑/↓ select · Use the slide strip to take · ⌘Enter PVW → PGM · Esc clear program";
+      if (mode.live) return "Space next · Shift+Space previous · Enter cue selection · ⌘Enter take PVW · Esc Esc clear program";
+      return shortcutHint({ kind: "empty" });
     default: {
       const space = mode.kind === "video" ? "Space take / play-pause" : "Space take";
-      return `↑/↓ select · Enter cue · ${space} · ⌘Enter PVW → PGM · Esc clear program`;
+      return `↑/↓ select · Enter cue · ${space} · ⌘Enter take PVW · Esc Esc clear program`;
     }
   }
 }
