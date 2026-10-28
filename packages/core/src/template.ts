@@ -114,13 +114,27 @@ const BaseLayer = {
   visible: z.boolean().default(true),
   transform: TransformSchema,
   clipBy: ClipBySchema.optional(),
+  /** Editor-only: a locked layer can't be dragged, nudged or aligned on the canvas. */
+  locked: z.boolean().optional(),
 };
+
+/**
+ * How a text layer handles content that overflows its box. Absent means
+ * `none` (overflow is clipped, the pre-existing behaviour):
+ * - `shrink`:   reduce the font size until the text fits, down to `minFontSize`.
+ * - `ellipsis`: keep the size, cut off the lines that don't fit with "…".
+ */
+export const TextFitSchema = z.enum(["none", "shrink", "ellipsis"]);
+export type TextFit = z.infer<typeof TextFitSchema>;
 
 const TextLayerSchema = z.object({
   ...BaseLayer,
   type: z.literal("text"),
   content: z.union([z.string(), FieldRefSchema]),
   style: TextStyleSchema,
+  fit: TextFitSchema.optional(),
+  /** Smallest font size `shrink` may use (px). Defaults to 12. */
+  minFontSize: z.number().positive().optional(),
 });
 
 const ImageLayerSchema = z.object({
@@ -240,6 +254,7 @@ export type Layer =
       children: Layer[];
       mask?: MaskShape;
       clipBy?: ClipBy;
+      locked?: boolean;
     };
 
 export const LayerSchema: z.ZodType<Layer, z.ZodTypeDef, unknown> = z.lazy(() =>
@@ -282,6 +297,9 @@ export const TrackSchema = z.object({
     "opacity",
     "w",
     "h",
+    // Left-to-right reveal, 0 (hidden) .. 1 (fully shown). Rendered as a
+    // gradient mask, so it composes with shape clip-paths and clipBy.
+    "wipe",
   ]),
   keyframes: z.array(KeyframeSchema),
 });
@@ -302,6 +320,11 @@ export const TemplateSchema = z.object({
   timelines: z.object({
     in: TimelineSchema,
     out: TimelineSchema,
+    /**
+     * Reserved. Nothing plays it (the renderer runs only in/out) and the
+     * designer doesn't expose it; kept so files that carry one still parse,
+     * and layer deletes still clean its tracks.
+     */
     loop: TimelineSchema.optional(),
   }),
   fonts: z
