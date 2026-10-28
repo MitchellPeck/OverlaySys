@@ -42,6 +42,8 @@ export function Rundown() {
         continue;
       }
       if (r.kind === "video") continue;
+      // [P3.8] placeholder until slides rows have operator UI
+      if (r.kind === "slides") continue;
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -175,6 +177,8 @@ export function Rundown() {
               />
             );
           }
+          // [P3.8] placeholder until slides rows have operator UI
+          if (row.kind === "slides") return null;
           const tplMeta = templates.find((t) => t.id === row.templateId);
           const tpl = templateCache[row.templateId] ?? null;
           return (

@@ -145,6 +145,8 @@ function rowMessages(
       },
     ];
   }
+  // [P3.8] slides rows are not driven from Companion yet
+  if (row.kind === "slides") return [];
   return [
     {
       type: "take",
@@ -183,6 +185,8 @@ function rowPvwPgmMessages(
     // No PVW stage for video (would double audio).
     return [];
   }
+  // [P3.8] slides rows are not driven from Companion yet
+  if (row.kind === "slides") return [];
   return [
     {
       type: "cue",

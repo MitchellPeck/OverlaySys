@@ -58,6 +58,9 @@ function onChannel(
     }
     case "scripture":
       return st?.scriptureSession?.rowId === row.id || st?.active?.scriptureContext?.rowId === row.id;
+    // [P3.8] neutral until P2a.2 routes slides through slidesAirState
+    case "slides":
+      return false;
   }
 }
 

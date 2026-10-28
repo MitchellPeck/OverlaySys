@@ -181,6 +181,8 @@ function rowMatchesPgm(
     return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
   if (row.kind === "video") return false;
+  // [P3.8] slides rows are not driven from Companion yet
+  if (row.kind === "slides") return false;
   if (!active) return false;
   if (active.templateId !== row.templateId) return false;
   const a = active.data;

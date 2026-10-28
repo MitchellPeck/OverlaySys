@@ -90,6 +90,9 @@ export function rowTitle(row: RundownRow, songs: Map<string, Song>, templates: M
       return row.reference;
     case "video":
       return row.label ?? "Video";
+    // [P3.8] placeholder; Task 10 replaces this
+    case "slides":
+      return "Slides";
   }
 }
 
@@ -127,6 +130,9 @@ export function firstContentOf(
     }
     case "video":
       return { kind: "graphic", lines: [row.label ?? "Video"], reference: "Video" };
+    // [P3.8] placeholder; Task 10 replaces this
+    case "slides":
+      return NONE_SLIDE;
   }
 }
 

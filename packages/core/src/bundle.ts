@@ -122,6 +122,11 @@ export function collectDependencies(
           // Video rows reference an asset, not a template; the asset is
           // picked up by collectReferencedAssetFilenames.
           break;
+        // [P3.8] Deck templates are not bundled yet: the bundle store has no decks (Task 11+).
+        case "slides":
+          if (row.templateId) templateIds.add(row.templateId);
+          for (const s of row.localSlides ?? []) if (s.templateId) templateIds.add(s.templateId);
+          break;
       }
     }
   }

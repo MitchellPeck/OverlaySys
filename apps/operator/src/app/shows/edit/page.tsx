@@ -834,6 +834,8 @@ function RundownTable({
               </DraggableRow>
             );
           }
+          // [P3.8] placeholder until slides rows have operator UI
+          if (row.kind === "slides") return null;
           return (
             <RundownRowEditor
               key={row.id}

@@ -69,7 +69,7 @@ export function StageArea() {
         ) : (
           <>
             <SelectionControls mode={mode} />
-            {(mode.kind === "graphic" || mode.kind === "video" || mode.kind === "song" || mode.kind === "scripture") && (
+            {(mode.kind === "graphic" || mode.kind === "video" || mode.kind === "song" || mode.kind === "scripture" || mode.kind === "slides") && (
               <UpNext selectedRowId={mode.row.id} />
             )}
           </>
@@ -134,6 +134,9 @@ function SelectionControls({ mode, compact = false }: { mode: StageMode; compact
           <VideoDetails key={mode.row.id} row={mode.row} />
         </>
       );
+    // [P3.8] placeholder until slides rows have operator UI
+    case "slides":
+      return null;
     case "hotcard": {
       const h = hotcardCache[mode.hotcardId];
       const fields = h ? templateCache[h.templateId]?.fields : undefined;
@@ -421,6 +424,12 @@ function UpNext({ selectedRowId }: { selectedRowId: string }) {
               title = row.reference || "Scripture";
               actions = select(row.id);
               break;
+            // [P3.8] placeholder until slides rows have operator UI
+            case "slides":
+              icon = <Type size={14} />;
+              title = "Slides";
+              actions = select(row.id);
+              break;
           }
           return (
             <div
@@ -484,6 +493,8 @@ function headingFor(mode: StageMode): string {
       return "Graphic";
     case "video":
       return "Video";
+    case "slides":
+      return "Slides";
     case "hotcard":
       return "Hotcard";
     case "empty":

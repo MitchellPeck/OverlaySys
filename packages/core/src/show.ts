@@ -3,6 +3,8 @@ import { DEFAULT_PROJECT_ID } from "./project";
 import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema } from "./channel";
 import { SermonNotesSchema } from "./sermonNotes";
 import { StageLayoutsSchema } from "./stageLayoutRules";
+import { DeckSlideSchema } from "./deck";
+import type { SlidesRowFields } from "./deck";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -225,6 +227,35 @@ const VideoRowObject = z.object({
 export type VideoRow = z.infer<typeof VideoRowObject>;
 export const VideoRowSchema = VideoRowObject.passthrough();
 
+// Strict view of DeckSlide (no passthrough index signature) so the inferred Show type stays Json-compatible.
+type DeckSlideFields = { id: string; templateId?: string; data: Record<string, string>; label?: string };
+
+/** A row that takes slides from a deck (or its own local slides) on air. */
+const SlidesRowObject = z.object({
+  kind: z.literal("slides"),
+  id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
+  deckId: z.string().optional(),
+  slideIds: z.array(z.string()).optional(),
+  templateId: z.string().optional(),
+  fieldOverrides: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+  localSlides: z.array(DeckSlideSchema as unknown as z.ZodType<DeckSlideFields, z.ZodTypeDef, unknown>).optional(),
+  channelHint: z.string().optional(),
+  notes: z.string().optional(),
+  sermonNotesId: z.string().optional(),
+  lengthSec: z.number().int().nonnegative().optional(),
+  lengthSecManual: z.boolean().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
+});
+export type SlidesRow = z.infer<typeof SlidesRowObject>;
+export const SlidesRowSchema = SlidesRowObject.passthrough();
+// Compile-time check that the schema and SlidesRowFields (deck.ts) stay in step.
+const _slidesRowFits: SlidesRowFields = {} as SlidesRow;
+void _slidesRowFits;
+
 const ShowSectionObject = z.object({ id: z.string().min(1), name: z.string() });
 export type ShowSection = z.infer<typeof ShowSectionObject>;
 export const ShowSectionSchema = ShowSectionObject.passthrough();
@@ -245,9 +276,9 @@ export const RundownRowSchema = z.preprocess(
     }
     return raw;
   },
-  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema]),
+  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema, SlidesRowSchema]),
 );
-export type RundownRow = GraphicRow | SongRow | ScriptureRow | VideoRow;
+export type RundownRow = GraphicRow | SongRow | ScriptureRow | VideoRow | SlidesRow;
 
 /**
  * Shows pre-dating the Project concept have no `projectId`. Default missing

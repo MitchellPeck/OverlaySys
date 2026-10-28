@@ -480,4 +480,33 @@ describe("ShowSchema sections and pass-through", () => {
     const row = s.rows[0]!;
     expect(row.kind === "song" && row.sourceRef?.pcoArrangement).toEqual(["v1", "c"]);
   });
+
+  it("parses a slides row with subset, overrides, local slides and an unknown key", () => {
+    const show = ShowSchema.parse({
+      ...base,
+      rows: [
+        {
+          kind: "slides",
+          id: "r",
+          deckId: "d",
+          slideIds: ["a", "a"],
+          fieldOverrides: { a: { text: "Line X" } },
+          localSlides: [{ id: "l1", data: { text: "Line A" } }],
+          stageLayouts: { st: "lay" },
+          sectionId: "sec",
+          later: true,
+        },
+      ],
+    });
+    expect(show.rows[0]).toMatchObject({ kind: "slides", slideIds: ["a", "a"], sectionId: "sec", later: true });
+  });
+
+  it("existing row kinds still parse unchanged alongside slides", () => {
+    const rows = [
+      { kind: "graphic", id: "g", templateId: "t", data: {} },
+      { kind: "video", id: "v", assetUrl: "x" },
+    ];
+    const show = ShowSchema.parse({ ...base, rows });
+    expect(show.rows.map((r) => r.kind)).toEqual(["graphic", "video"]);
+  });
 });
