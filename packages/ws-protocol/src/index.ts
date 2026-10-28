@@ -12,6 +12,8 @@ import {
   ShowSchema,
   StageStateSchema,
   SongSchema,
+  DeckSchema,
+  DeckLicensingSchema,
   HotcardSchema,
   HotkeySchema,
   ProjectSchema,
@@ -357,6 +359,40 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   /** Start polling PCO Services Live for the show's plan (read-only). */
   z.object({ type: z.literal("pco_live_start"), showId: z.string() }),
   z.object({ type: z.literal("pco_live_stop") }),
+  // [P3.4] decks, slides and convert
+  z.object({ type: z.literal("list_decks") }),
+  z.object({ type: z.literal("get_deck"), deckId: z.string() }),
+  z.object({ type: z.literal("save_deck"), deck: DeckSchema }),
+  z.object({ type: z.literal("delete_deck"), deckId: z.string() }),
+  z.object({ type: z.literal("restore_deck"), deckId: z.string() }),
+  z.object({ type: z.literal("duplicate_deck"), deckId: z.string() }),
+  z.object({
+    type: z.literal("slides_take"),
+    showId: z.string(),
+    rowId: z.string(),
+    slideIdx: z.number().int().nonnegative().optional(),
+    channel: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("slides_advance"),
+    channel: z.string(),
+    delta: z.union([z.literal(-1), z.literal(1)]),
+  }),
+  z.object({
+    type: z.literal("slides_goto"),
+    channel: z.string(),
+    slideIdx: z.number().int().nonnegative(),
+  }),
+  z.object({ type: z.literal("slides_blank"), channel: z.string() }),
+  z.object({ type: z.literal("slides_end"), channel: z.string() }),
+  z.object({
+    type: z.literal("convert_song_to_deck"),
+    songId: z.string(),
+    titleSlide: z.boolean(),
+    licensing: DeckLicensingSchema.optional(),
+  }),
+  z.object({ type: z.literal("undo_convert_song"), conversionId: z.string() }),
+  // [/P3.4]
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -595,6 +631,40 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     lastPolledAt: z.number().nullable(),
     service: StageServiceViewSchema.nullable(),
   }),
+  // [P3.4] decks and convert
+  z.object({
+    type: z.literal("deck_list"),
+    decks: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        tags: z.array(z.string()),
+        slideCount: z.number(),
+        licensing: z.enum(["ccli", "public-domain", "own"]),
+        usedBy: z.number(),
+        createdAt: z.string(),
+        updatedAt: z.string().optional(),
+      }),
+    ),
+  }),
+  z.object({ type: z.literal("deck"), deck: DeckSchema }),
+  z.object({
+    type: z.literal("song_converted"),
+    conversionId: z.string(),
+    deckId: z.string(),
+    deckName: z.string(),
+    rows: z.number(),
+    shows: z.number(),
+    warnings: z.array(z.string()),
+  }),
+  z.object({
+    type: z.literal("song_convert_undone"),
+    conversionId: z.string(),
+    songId: z.string(),
+    restoredShows: z.number(),
+    skippedShows: z.number(),
+  }),
+  // [/P3.4]
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type PcoLiveStateMessage = Extract<ServerMessage, { type: "pco_live_state" }>;

@@ -25,6 +25,7 @@ import * as hotcards from "./hotcards";
 import * as projects from "./projects";
 import * as songSession from "./songSession";
 import { handleScriptureMessage } from "./scriptureHandlers";
+import { handleSlidesMessage } from "./slidesHandlers";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
@@ -917,6 +918,23 @@ export function handleConnection(
         case "scripture_end":
           await handleScriptureMessage(parsed, send);
           break;
+        // [P3.4]
+        case "list_decks":
+        case "get_deck":
+        case "save_deck":
+        case "delete_deck":
+        case "restore_deck":
+        case "duplicate_deck":
+        case "slides_take":
+        case "slides_advance":
+        case "slides_goto":
+        case "slides_blank":
+        case "slides_end":
+        case "convert_song_to_deck":
+        case "undo_convert_song":
+          await handleSlidesMessage(parsed, send);
+          break;
+        // [/P3.4]
         case "list_channels": {
           const list = await channelConfigs.listChannelConfigs();
           send({ type: "channel_list", configs: list });
