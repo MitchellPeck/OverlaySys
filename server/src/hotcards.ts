@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Hotcard, HotcardMeta } from "@overlaysys/core";
+import { initialHotkeyAssignments, type Hotcard, type HotcardMeta } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInHotcard } from "./bundleApply";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
@@ -20,7 +20,25 @@ export async function reloadHotcards(): Promise<void> {
       await storage.saveHotcard(normalized);
     }
   }
+  await migrateHotkeys();
   loaded = true;
+}
+
+/**
+ * One-time move from position-based F-keys to explicit `hotkey`s (Default
+ * D6a): projects whose cards all predate hotkeys get F1–F12 in the order
+ * the hotcard list shows them (registry order), saved so every later boot
+ * reads the same keys whatever order readdir returns.
+ */
+async function migrateHotkeys(): Promise<void> {
+  const assignments = initialHotkeyAssignments(liveOnly(REGISTRY.values()));
+  for (const [id, hotkey] of assignments) {
+    const current = REGISTRY.get(id);
+    if (!current) continue;
+    const next = stampWrite({ ...current, hotkey });
+    await storage.saveHotcard(next);
+    REGISTRY.set(id, next);
+  }
 }
 
 async function ensureLoaded(): Promise<void> {
@@ -34,6 +52,7 @@ export async function listHotcardMetas(): Promise<HotcardMeta[]> {
     name: h.name,
     projectId: h.projectId,
     templateId: h.templateId,
+    hotkey: h.hotkey,
   }));
 }
 
@@ -46,7 +65,9 @@ export async function getHotcard(id: string): Promise<Hotcard | null> {
 export async function saveHotcard(hotcard: Hotcard): Promise<Hotcard> {
   await ensureLoaded();
   // See templates.saveTemplate — local writes stamp updatedAt for sync.
-  const normalized = stampWrite(normalizeAssetUrlsInHotcard(hotcard));
+  // A card saved without a hotkey is "no key" (null), not "predates
+  // hotkeys", so the boot migration never assigns it one later.
+  const normalized = stampWrite(normalizeAssetUrlsInHotcard({ ...hotcard, hotkey: hotcard.hotkey ?? null }));
   await storage.saveHotcard(normalized);
   REGISTRY.set(normalized.id, normalized);
   return normalized;
@@ -72,6 +93,8 @@ export async function duplicateHotcard(
     ...src,
     id: `hotcard-${randomUUID().slice(0, 8)}`,
     name: `${src.name} (copy)`,
+    // Two cards on one key would be a conflict; the copy starts unassigned.
+    hotkey: null,
   });
   await storage.saveHotcard(copy);
   REGISTRY.set(copy.id, copy);
