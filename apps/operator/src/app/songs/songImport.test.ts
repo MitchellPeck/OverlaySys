@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { exportFileName } from "../../lib/exportName";
-import { findCcliDuplicate, parseSongImportJson, resolveImportId, uniqueSlug } from "./songImport";
+import type { Song } from "@overlaysys/core";
+import { findCcliDuplicate, parseSongImportJson, resolveImportId, stripServerFields, uniqueSlug } from "./songImport";
+
+describe("stripServerFields", () => {
+  const song = {
+    id: "a", title: "T", sections: [], defaultArrangement: [], customFields: { k: "v" },
+    deletedAt: "2026-01-01", createdAt: "2025-01-01", updatedAt: "2026-02-02",
+  } as unknown as Song;
+  it("removes deletedAt, createdAt and updatedAt but keeps other keys", () => {
+    const r = stripServerFields(song);
+    expect(r).not.toHaveProperty("deletedAt");
+    expect(r).not.toHaveProperty("createdAt");
+    expect(r).not.toHaveProperty("updatedAt");
+    expect(r.customFields).toEqual({ k: "v" });
+  });
+  it("keeps the replaced song's createdAt", () => {
+    expect(stripServerFields(song, { createdAt: "2024-05-05" }).createdAt).toBe("2024-05-05");
+  });
+});
 
 describe("uniqueSlug", () => {
   it("keeps a free slug", () => {

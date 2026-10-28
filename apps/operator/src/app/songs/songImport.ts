@@ -35,6 +35,20 @@ export function resolveImportId(
   return uniqueSlug(slug, taken);
 }
 
+/**
+ * Drop server-managed fields (tombstone and timestamps) from an imported
+ * song.json so a file exported from the trash doesn't import tombstoned and a
+ * Replace doesn't overwrite the existing song's timestamps. On Replace the
+ * existing song's createdAt is kept; the server stamps updatedAt on save.
+ */
+export function stripServerFields(song: Song, replacing?: Pick<SongMeta, "createdAt"> | null): Song {
+  const rest: Song = { ...song };
+  delete rest.deletedAt;
+  delete rest.createdAt;
+  delete rest.updatedAt;
+  return replacing?.createdAt ? { ...rest, createdAt: replacing.createdAt } : rest;
+}
+
 /** Parse an exported song JSON file, validating it with SongSchema. */
 export function parseSongImportJson(text: string): { ok: true; song: Song } | { ok: false; error: string } {
   let raw: unknown;
