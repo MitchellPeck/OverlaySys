@@ -58,6 +58,29 @@ describe("FsStorageAdapter.saveShow keeps local sermon notes", () => {
   });
 });
 
+// Until `shows.extra` is live on every org, a pulled show can arrive without
+// `sections`. The local replica keeps its own; an explicit [] still clears.
+describe("FsStorageAdapter.saveShow keeps local sections", () => {
+  const sections = [{ id: "sec-1", name: "Opening" }];
+
+  it("a pulled show without sections keeps the local sections", async () => {
+    await storage.saveShow(makeShow({ sections, sermonNotes: notes }));
+    const pulled = makeShow({ name: "Renamed in cloud" });
+    delete (pulled as { sections?: unknown }).sections;
+    await new FsStorageAdapter().saveShow("org", pulled);
+    const saved = await storage.loadShow("show-1");
+    expect(saved?.name).toBe("Renamed in cloud");
+    expect(saved?.sections).toEqual(sections);
+    expect(saved?.sermonNotes).toEqual(notes);
+  });
+
+  it("an explicit sections: [] from the cloud clears them", async () => {
+    await storage.saveShow(makeShow({ sections }));
+    await new FsStorageAdapter().saveShow("org", makeShow({ sections: [] }));
+    expect((await storage.loadShow("show-1"))?.sections).toEqual([]);
+  });
+});
+
 // The cloud `hotcards` table has no hotkey column yet (plan 3), so a pulled
 // hotcard arrives without `hotkey`. The local F-key must survive the pull.
 describe("FsStorageAdapter.saveHotcard keeps the local hotkey", () => {

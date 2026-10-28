@@ -60,6 +60,8 @@ export interface Database {
           project_id: string;
           name: string;
           rows: Json;
+          /** Every other show-level field (sections, songs, scheduledFor, sermonNotes, …). Optional column; see docs/cloud-slides-sync-migration.md. */
+          extra: Json | null;
           updated_at: string;
           deleted_at: string | null;
         };
@@ -69,6 +71,7 @@ export interface Database {
           project_id: string;
           name: string;
           rows?: Json;
+          extra?: Json | null;
           updated_at?: string;
           deleted_at?: string | null;
         };
@@ -76,6 +79,7 @@ export interface Database {
           project_id?: string;
           name?: string;
           rows?: Json;
+          extra?: Json | null;
           deleted_at?: string | null;
         };
         Relationships: [];
@@ -90,6 +94,8 @@ export interface Database {
           data: Json;
           channel_hint: string | null;
           notes: string | null;
+          /** "F1".."F12", "none" = deliberately unassigned, null = absent. Optional column; see docs/cloud-slides-sync-migration.md. */
+          hotkey: string | null;
           updated_at: string;
           deleted_at: string | null;
         };
@@ -102,6 +108,7 @@ export interface Database {
           data?: Json;
           channel_hint?: string | null;
           notes?: string | null;
+          hotkey?: string | null;
           updated_at?: string;
           deleted_at?: string | null;
         };
@@ -112,6 +119,7 @@ export interface Database {
           data?: Json;
           channel_hint?: string | null;
           notes?: string | null;
+          hotkey?: string | null;
           deleted_at?: string | null;
         };
         Relationships: [];

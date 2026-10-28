@@ -25,8 +25,25 @@ import {
   type StorageAdapter,
   type Template,
 } from "@overlaysys/core";
-import type { Database } from "./database.types";
+import type { Database, Json } from "./database.types";
 import type { OverlaySysSupabaseClient } from "./index";
+import {
+  hotkeyFromColumn,
+  hotkeyToColumn,
+  showExtra,
+  showInputsFromRow,
+  withOptionalColumn,
+  type OptionalColumn,
+} from "./optionalColumns";
+
+const SHOW_COLUMNS = "id, project_id, name, rows, updated_at, deleted_at";
+const HOTCARD_COLUMNS = "id, project_id, name, template_id, data, channel_hint, notes, updated_at, deleted_at";
+function showSelect(withExtra: boolean): string {
+  return withExtra ? `${SHOW_COLUMNS}, extra` : SHOW_COLUMNS;
+}
+function hotcardSelect(withHotkey: boolean): string {
+  return withHotkey ? `${HOTCARD_COLUMNS}, hotkey` : HOTCARD_COLUMNS;
+}
 
 /**
  * StorageAdapter implementation backed by apps-portal's Supabase. Differs
@@ -43,6 +60,13 @@ import type { OverlaySysSupabaseClient } from "./index";
  */
 export class CloudStorageAdapter implements StorageAdapter {
   constructor(private readonly client: OverlaySysSupabaseClient) {}
+
+  /**
+   * Optional cloud columns this org's schema turned out not to have
+   * (apps-portal migration not applied yet). Queries skip them from then
+   * on; see `withOptionalColumn`.
+   */
+  private missingColumns = new Set<OptionalColumn>();
 
   // ── Projects ───────────────────────────────────────────────────────────
 
@@ -114,29 +138,34 @@ export class CloudStorageAdapter implements StorageAdapter {
     return this.queryShows(orgId, true);
   }
   async getShow(orgId: string, id: string): Promise<Show | null> {
-    const { data, error } = await this.client
-      .from("shows")
-      .select("id, project_id, name, rows, updated_at, deleted_at")
-      .eq("org_id", orgId)
-      .eq("id", id)
-      .maybeSingle();
+    const { data, error } = await withOptionalColumn(this.missingColumns, "shows.extra", (include) =>
+      this.client
+        .from("shows")
+        .select(showSelect(include))
+        .eq("org_id", orgId)
+        .eq("id", id)
+        .maybeSingle(),
+    );
     if (error) throw error;
-    return data ? rowToShow(data) : null;
+    return data ? rowToShow(data as unknown as ShowRow) : null;
   }
   async saveShow(orgId: string, show: Show): Promise<void> {
-    const { error } = await this.client.from("shows").upsert(
-      [
-        {
-          id: show.id,
-          org_id: orgId,
-          project_id: show.projectId,
-          name: show.name,
-          rows: show.rows as unknown as Database["overlaysys"]["Tables"]["shows"]["Row"]["rows"],
-          ...(show.updatedAt ? { updated_at: show.updatedAt } : {}),
-          deleted_at: show.deletedAt ?? null,
-        },
-      ],
-      { onConflict: "org_id,id" },
+    const { error } = await withOptionalColumn(this.missingColumns, "shows.extra", (include) =>
+      this.client.from("shows").upsert(
+        [
+          {
+            id: show.id,
+            org_id: orgId,
+            project_id: show.projectId,
+            name: show.name,
+            rows: show.rows as unknown as Json,
+            ...(include ? { extra: showExtra(show) as unknown as Json } : {}),
+            ...(show.updatedAt ? { updated_at: show.updatedAt } : {}),
+            deleted_at: show.deletedAt ?? null,
+          },
+        ],
+        { onConflict: "org_id,id" },
+      ),
     );
     if (error) throw error;
   }
@@ -154,15 +183,14 @@ export class CloudStorageAdapter implements StorageAdapter {
     includeTombstones: boolean,
     projectId?: string,
   ): Promise<Show[]> {
-    let q = this.client
-      .from("shows")
-      .select("id, project_id, name, rows, updated_at, deleted_at")
-      .eq("org_id", orgId);
-    if (projectId) q = q.eq("project_id", projectId);
-    if (!includeTombstones) q = q.is("deleted_at", null);
-    const { data, error } = await q;
+    const { data, error } = await withOptionalColumn(this.missingColumns, "shows.extra", (include) => {
+      let q = this.client.from("shows").select(showSelect(include)).eq("org_id", orgId);
+      if (projectId) q = q.eq("project_id", projectId);
+      if (!includeTombstones) q = q.is("deleted_at", null);
+      return q;
+    });
     if (error) throw error;
-    return (data ?? []).map(rowToShow);
+    return ((data ?? []) as unknown as ShowRow[]).map(rowToShow);
   }
 
   // ── Hotcards ───────────────────────────────────────────────────────────
@@ -175,34 +203,37 @@ export class CloudStorageAdapter implements StorageAdapter {
     return this.queryHotcards(orgId, true);
   }
   async getHotcard(orgId: string, id: string): Promise<Hotcard | null> {
-    const { data, error } = await this.client
-      .from("hotcards")
-      .select(
-        "id, project_id, name, template_id, data, channel_hint, notes, updated_at, deleted_at",
-      )
-      .eq("org_id", orgId)
-      .eq("id", id)
-      .maybeSingle();
+    const { data, error } = await withOptionalColumn(this.missingColumns, "hotcards.hotkey", (include) =>
+      this.client
+        .from("hotcards")
+        .select(hotcardSelect(include))
+        .eq("org_id", orgId)
+        .eq("id", id)
+        .maybeSingle(),
+    );
     if (error) throw error;
-    return data ? rowToHotcard(data) : null;
+    return data ? rowToHotcard(data as unknown as HotcardRow) : null;
   }
   async saveHotcard(orgId: string, hotcard: Hotcard): Promise<void> {
-    const { error } = await this.client.from("hotcards").upsert(
-      [
-        {
-          id: hotcard.id,
-          org_id: orgId,
-          project_id: hotcard.projectId,
-          name: hotcard.name,
-          template_id: hotcard.templateId,
-          data: hotcard.data as unknown as Database["overlaysys"]["Tables"]["hotcards"]["Row"]["data"],
-          channel_hint: hotcard.channelHint ?? null,
-          notes: hotcard.notes ?? null,
-          ...(hotcard.updatedAt ? { updated_at: hotcard.updatedAt } : {}),
-          deleted_at: hotcard.deletedAt ?? null,
-        },
-      ],
-      { onConflict: "org_id,id" },
+    const { error } = await withOptionalColumn(this.missingColumns, "hotcards.hotkey", (include) =>
+      this.client.from("hotcards").upsert(
+        [
+          {
+            id: hotcard.id,
+            org_id: orgId,
+            project_id: hotcard.projectId,
+            name: hotcard.name,
+            template_id: hotcard.templateId,
+            data: hotcard.data as unknown as Json,
+            channel_hint: hotcard.channelHint ?? null,
+            notes: hotcard.notes ?? null,
+            ...(include ? { hotkey: hotkeyToColumn(hotcard.hotkey) } : {}),
+            ...(hotcard.updatedAt ? { updated_at: hotcard.updatedAt } : {}),
+            deleted_at: hotcard.deletedAt ?? null,
+          },
+        ],
+        { onConflict: "org_id,id" },
+      ),
     );
     if (error) throw error;
   }
@@ -220,17 +251,14 @@ export class CloudStorageAdapter implements StorageAdapter {
     includeTombstones: boolean,
     projectId?: string,
   ): Promise<Hotcard[]> {
-    let q = this.client
-      .from("hotcards")
-      .select(
-        "id, project_id, name, template_id, data, channel_hint, notes, updated_at, deleted_at",
-      )
-      .eq("org_id", orgId);
-    if (projectId) q = q.eq("project_id", projectId);
-    if (!includeTombstones) q = q.is("deleted_at", null);
-    const { data, error } = await q;
+    const { data, error } = await withOptionalColumn(this.missingColumns, "hotcards.hotkey", (include) => {
+      let q = this.client.from("hotcards").select(hotcardSelect(include)).eq("org_id", orgId);
+      if (projectId) q = q.eq("project_id", projectId);
+      if (!includeTombstones) q = q.is("deleted_at", null);
+      return q;
+    });
     if (error) throw error;
-    return (data ?? []).map(rowToHotcard);
+    return ((data ?? []) as unknown as HotcardRow[]).map(rowToHotcard);
   }
 
   // ── JSON-payload tables (songs, templates, channel_configs) ────────────
@@ -533,30 +561,36 @@ function rowToProject(row: {
   };
 }
 
-function rowToShow(row: {
+interface ShowRow {
   id: string;
   project_id: string;
   name: string;
   rows: unknown;
+  /** Absent when the cloud has no `extra` column yet; null on rows written before it. */
+  extra?: unknown;
   updated_at: string;
   deleted_at: string | null;
-}): Show {
-  const parsed = ShowSchema.safeParse({
+}
+
+function rowToShow(row: ShowRow): Show {
+  // `extra` spreads under the columned fields; a null `extra` reads as a
+  // show from before the column (songs []). If `extra` holds something the
+  // schema rejects, fall back to the columned fields alone.
+  let base: Show | null = null;
+  for (const input of showInputsFromRow(row)) {
+    const parsed = ShowSchema.safeParse(input);
+    if (parsed.success) {
+      base = parsed.data;
+      break;
+    }
+  }
+  base ??= {
     id: row.id,
     name: row.name,
     projectId: row.project_id,
-    rows: row.rows,
+    rows: [],
     songs: [],
-  });
-  const base: Show = parsed.success
-    ? parsed.data
-    : {
-        id: row.id,
-        name: row.name,
-        projectId: row.project_id,
-        rows: [],
-        songs: [],
-      };
+  };
   return {
     ...base,
     updatedAt: isoZ(row.updated_at),
@@ -564,7 +598,7 @@ function rowToShow(row: {
   };
 }
 
-function rowToHotcard(row: {
+interface HotcardRow {
   id: string;
   project_id: string;
   name: string;
@@ -572,9 +606,14 @@ function rowToHotcard(row: {
   data: unknown;
   channel_hint: string | null;
   notes: string | null;
+  /** Absent when the cloud has no `hotkey` column yet. */
+  hotkey?: string | null;
   updated_at: string;
   deleted_at: string | null;
-}): Hotcard {
+}
+
+function rowToHotcard(row: HotcardRow): Hotcard {
+  const hotkey = hotkeyFromColumn(row.hotkey ?? null);
   const parsed = HotcardSchema.safeParse({
     id: row.id,
     name: row.name,
@@ -583,6 +622,7 @@ function rowToHotcard(row: {
     data: row.data,
     ...(row.channel_hint ? { channelHint: row.channel_hint } : {}),
     ...(row.notes ? { notes: row.notes } : {}),
+    ...(hotkey !== undefined ? { hotkey } : {}),
   });
   const base: Hotcard = parsed.success
     ? parsed.data

@@ -20,7 +20,16 @@ import {
   type Template,
   type TemplateMeta,
 } from "@overlaysys/core";
-import { ASSETS_BUCKET } from "@overlaysys/supabase";
+import {
+  ASSETS_BUCKET,
+  hotkeyFromColumn,
+  hotkeyToColumn,
+  showExtra,
+  showInputsFromRow,
+  withOptionalColumn,
+  type OptionalColumn,
+} from "@overlaysys/supabase";
+import type { Json } from "@overlaysys/supabase/types";
 import { getCloudClient, getStoredRegistryOrgId } from "./cloudAuth";
 import { useStore, type ShowMeta } from "./store";
 import type { UploadResult } from "./uploadAsset";
@@ -152,50 +161,65 @@ export async function listShowMetasCloud(): Promise<ShowMeta[]> {
   }));
 }
 
+/**
+ * Optional cloud columns (`shows.extra`, `hotcards.hotkey`) this org's
+ * schema turned out not to have yet. Reads and writes skip them from then
+ * on; see `withOptionalColumn` and docs/cloud-slides-sync-migration.md.
+ */
+const missingColumns = new Set<OptionalColumn>();
+
 export async function getShowCloud(id: string): Promise<Show | null> {
   const client = getCloudClient();
   const orgId = getOrgId();
-  const { data, error } = await client
-    .from("shows")
-    .select("id, name, project_id, rows")
-    .eq("org_id", orgId)
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withOptionalColumn(missingColumns, "shows.extra", (include) =>
+    client
+      .from("shows")
+      .select(include ? "id, name, project_id, rows, extra" : "id, name, project_id, rows")
+      .eq("org_id", orgId)
+      .eq("id", id)
+      .maybeSingle(),
+  );
   if (error) throw error;
   if (!data) return null;
   // Validate via Zod so we land in the same shape the rest of the operator
   // expects — silently coerce missing projectId via the schema's preprocessor.
-  return ShowSchema.parse({
-    id: data.id,
-    name: data.name,
-    projectId: data.project_id,
-    rows: data.rows,
-  });
+  // `extra` (every non-columned show field) spreads under the columned ones;
+  // if it holds something the schema rejects, fall back to the columns alone.
+  const [withExtra, plain] = showInputsFromRow(
+    data as unknown as { id: string; name: string; project_id: string; rows: unknown; extra?: unknown },
+  );
+  const parsed = ShowSchema.safeParse(withExtra);
+  return parsed.success ? parsed.data : ShowSchema.parse(plain ?? withExtra);
 }
 
 export async function saveShowCloud(show: Show): Promise<void> {
   const client = getCloudClient();
   const orgId = getOrgId();
-  const { data, error } = await client
-    .from("shows")
-    .upsert(
-      [
-        {
-          id: show.id,
-          org_id: orgId,
-          project_id: show.projectId,
-          name: show.name,
-          // jsonb accepts the structured value directly. Cast via unknown
-          // because Json's index-signature isn't structurally compatible
-          // with our RundownRow discriminated union, but the runtime
-          // shape is fine — Postgres just stores it.
-          rows: show.rows as unknown as Show["rows"],
-          ...(show.updatedAt ? { updated_at: show.updatedAt } : {}),
-        },
-      ],
-      { onConflict: "org_id,id" },
-    )
-    .select();
+  const { data, error } = await withOptionalColumn(missingColumns, "shows.extra", (include) =>
+    client
+      .from("shows")
+      .upsert(
+        [
+          {
+            id: show.id,
+            org_id: orgId,
+            project_id: show.projectId,
+            name: show.name,
+            // jsonb accepts the structured value directly. Cast via unknown
+            // because Json's index-signature isn't structurally compatible
+            // with our RundownRow discriminated union, but the runtime
+            // shape is fine — Postgres just stores it.
+            rows: show.rows as unknown as Show["rows"],
+            // Sections, songs, scheduledFor, sermon notes and any future
+            // show-level key ride in `extra`; `rows` stays the authority.
+            ...(include ? { extra: showExtra(show) as unknown as Json } : {}),
+            ...(show.updatedAt ? { updated_at: show.updatedAt } : {}),
+          },
+        ],
+        { onConflict: "org_id,id" },
+      )
+      .select(),
+  );
   if (error) throw error;
   if (!data || data.length === 0) {
     throw new Error(
@@ -283,66 +307,101 @@ export async function refreshShowMetasCloud(): Promise<void> {
 
 export async function listHotcardMetasCloud(): Promise<HotcardMeta[]> {
   const client = getCloudClient();
-  const { data, error } = await client
-    .from("hotcards")
-    .select("id, name, project_id, template_id")
-    .order("name", { ascending: true });
+  const { data, error } = await withOptionalColumn(missingColumns, "hotcards.hotkey", (include) =>
+    client
+      .from("hotcards")
+      .select(include ? "id, name, project_id, template_id, hotkey" : "id, name, project_id, template_id")
+      .order("name", { ascending: true }),
+  );
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    projectId: row.project_id,
-    templateId: row.template_id,
-  }));
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    name: string;
+    project_id: string;
+    template_id: string;
+    hotkey?: string | null;
+  }[];
+  return rows.map((row) => {
+    const hotkey = hotkeyFromColumn(row.hotkey ?? null);
+    return {
+      id: row.id,
+      name: row.name,
+      projectId: row.project_id,
+      templateId: row.template_id,
+      ...(hotkey !== undefined ? { hotkey } : {}),
+    };
+  });
 }
 
 export async function getHotcardCloud(id: string): Promise<Hotcard | null> {
   const client = getCloudClient();
   const orgId = getOrgId();
-  const { data, error } = await client
-    .from("hotcards")
-    .select("id, name, project_id, template_id, data, channel_hint, notes")
-    .eq("org_id", orgId)
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withOptionalColumn(missingColumns, "hotcards.hotkey", (include) =>
+    client
+      .from("hotcards")
+      .select(
+        include
+          ? "id, name, project_id, template_id, data, channel_hint, notes, hotkey"
+          : "id, name, project_id, template_id, data, channel_hint, notes",
+      )
+      .eq("org_id", orgId)
+      .eq("id", id)
+      .maybeSingle(),
+  );
   if (error) throw error;
   if (!data) return null;
+  const row = data as unknown as {
+    id: string;
+    name: string;
+    project_id: string;
+    template_id: string;
+    data: unknown;
+    channel_hint: string | null;
+    notes: string | null;
+    hotkey?: string | null;
+  };
+  const hotkey = hotkeyFromColumn(row.hotkey ?? null);
   return HotcardSchema.parse({
-    id: data.id,
-    name: data.name,
-    projectId: data.project_id,
-    templateId: data.template_id,
-    data: data.data,
-    ...(data.channel_hint !== null ? { channelHint: data.channel_hint } : {}),
-    ...(data.notes !== null ? { notes: data.notes } : {}),
+    id: row.id,
+    name: row.name,
+    projectId: row.project_id,
+    templateId: row.template_id,
+    data: row.data,
+    ...(row.channel_hint !== null ? { channelHint: row.channel_hint } : {}),
+    ...(row.notes !== null ? { notes: row.notes } : {}),
+    ...(hotkey !== undefined ? { hotkey } : {}),
   });
 }
 
 export async function saveHotcardCloud(hotcard: Hotcard): Promise<void> {
   const client = getCloudClient();
   const orgId = getOrgId();
-  const { data, error } = await client
-    .from("hotcards")
-    .upsert(
-      [
-        {
-          id: hotcard.id,
-          org_id: orgId,
-          project_id: hotcard.projectId,
-          name: hotcard.name,
-          template_id: hotcard.templateId,
-          // Hotcard data is Record<string,string>; jsonb takes the object
-          // directly. Cast through unknown to satisfy the inferred Json
-          // index signature (same reasoning as saveShowCloud).
-          data: hotcard.data as unknown as Hotcard["data"],
-          channel_hint: hotcard.channelHint ?? null,
-          notes: hotcard.notes ?? null,
-          ...(hotcard.updatedAt ? { updated_at: hotcard.updatedAt } : {}),
-        },
-      ],
-      { onConflict: "org_id,id" },
-    )
-    .select();
+  const { data, error } = await withOptionalColumn(missingColumns, "hotcards.hotkey", (include) =>
+    client
+      .from("hotcards")
+      .upsert(
+        [
+          {
+            id: hotcard.id,
+            org_id: orgId,
+            project_id: hotcard.projectId,
+            name: hotcard.name,
+            template_id: hotcard.templateId,
+            // Hotcard data is Record<string,string>; jsonb takes the object
+            // directly. Cast through unknown to satisfy the inferred Json
+            // index signature (same reasoning as saveShowCloud).
+            data: hotcard.data as unknown as Hotcard["data"],
+            channel_hint: hotcard.channelHint ?? null,
+            notes: hotcard.notes ?? null,
+            // "F1".."F12", "none" = deliberately no key, null = absent.
+            ...(include ? { hotkey: hotkeyToColumn(hotcard.hotkey) } : {}),
+            ...(hotcard.updatedAt ? { updated_at: hotcard.updatedAt } : {}),
+          },
+        ],
+        { onConflict: "org_id,id" },
+      )
+      .select(),
+  );
   if (error) throw error;
   if (!data || data.length === 0) {
     throw new Error(

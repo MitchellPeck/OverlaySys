@@ -1,5 +1,7 @@
 # Cloud sermon notes: migration and follow-up
 
+> superseded by `shows.extra` in docs/cloud-slides-sync-migration.md
+
 Sermon notes (`Show.sermonNotes`) only live in the local (desktop) store for now.
 The cloud `shows` table has no column for them, so:
 

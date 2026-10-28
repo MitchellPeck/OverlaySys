@@ -4,6 +4,16 @@ import type { Database } from "./database.types";
 export type { Database } from "./database.types";
 export type OverlaySysSupabaseClient = SupabaseClient<Database, "overlaysys">;
 export { CloudStorageAdapter } from "./cloudStorageAdapter";
+export {
+  hotkeyFromColumn,
+  hotkeyToColumn,
+  isMissingColumnError,
+  isMissingTableError,
+  showExtra,
+  showInputsFromRow,
+  withOptionalColumn,
+  type OptionalColumn,
+} from "./optionalColumns";
 
 export const OVERLAYSYS_SCHEMA = "overlaysys" as const;
 export const ASSETS_BUCKET = "overlaysys-assets" as const;

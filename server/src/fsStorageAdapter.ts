@@ -66,6 +66,17 @@ export function keepLocalSermonNotes(incoming: Show, existing: Show | null): Sho
 }
 
 /**
+ * Stopgap until `shows.extra` is live on every org: a show pulled from a
+ * cloud without the column arrives without `sections`, so keep the
+ * local copy's. An explicit `[]` still clears. See
+ * docs/cloud-slides-sync-migration.md.
+ */
+export function keepLocalSections(incoming: Show, existing: Show | null): Show {
+  if (incoming.sections !== undefined || !existing?.sections) return incoming;
+  return { ...incoming, sections: existing.sections };
+}
+
+/**
  * Stopgap until the cloud `hotcards` table carries `hotkey` (plan 3): a
  * pulled hotcard arrives without it, so keep the local copy's F-key, or
  * its deliberate `null`, rather than wiping it. Without this, a pull would
@@ -150,7 +161,9 @@ export class FsStorageAdapter implements StorageAdapter {
     return s && !s.deletedAt ? s : null;
   }
   async saveShow(_org: string, show: Show): Promise<void> {
-    const merged = show.sermonNotes === undefined ? keepLocalSermonNotes(show, await loadShow(show.id)) : show;
+    const needsLocal = show.sermonNotes === undefined || show.sections === undefined;
+    const existing = needsLocal ? await loadShow(show.id) : null;
+    const merged = keepLocalSections(keepLocalSermonNotes(show, existing), existing);
     await saveShow({
       ...merged,
       updatedAt: merged.updatedAt ?? new Date().toISOString(),
