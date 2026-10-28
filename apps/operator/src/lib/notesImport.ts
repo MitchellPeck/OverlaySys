@@ -1,3 +1,5 @@
+import { titleFromMarkdown } from "@overlaysys/core";
+
 export function titleFromFileName(name: string): string {
   return name.replace(/\.[^.]+$/, "");
 }
@@ -28,7 +30,6 @@ type FileLike = Pick<File, "name" | "size" | "text" | "arrayBuffer">;
 
 export async function notesFromFile(file: FileLike): Promise<{ title: string; body: string }> {
   if (file.size > MAX_IMPORT_BYTES) throw new Error("File is too large (max 5 MB)");
-  const title = titleFromFileName(file.name);
   let body: string;
   if (/\.docx$/i.test(file.name)) {
     const mammoth = await import("mammoth/mammoth.browser");
@@ -38,5 +39,5 @@ export async function notesFromFile(file: FileLike): Promise<{ title: string; bo
     body = normalizeImportedMarkdown(await file.text());
   }
   if (!body) throw new Error("No text found in that file");
-  return { title, body };
+  return { title: titleFromMarkdown(body) ?? titleFromFileName(file.name), body };
 }

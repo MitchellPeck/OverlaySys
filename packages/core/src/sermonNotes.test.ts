@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { ShowSchema } from "./show";
-import { splitPoints } from "./sermonNotes";
+import { splitPoints, titleFromMarkdown } from "./sermonNotes";
 
 describe("splitPoints", () => {
   it("splits on headings of any level, keeping the heading line in the point", () => {
-    const pts = splitPoints("# Intro\nHello\n\n## Point one\nText **bold**\n### Sub\nMore");
+    const pts = splitPoints("## Intro\nHello\n\n## Point one\nText **bold**\n### Sub\nMore");
     expect(pts.map((p) => p.heading)).toEqual(["Intro", "Point one", "Sub"]);
     expect(pts[1]!.markdown).toBe("## Point one\nText **bold**");
+  });
+
+  it("drops a leading H1 title when H2s follow", () => {
+    const md = "# Placeholder sermon\n## Point one\nBody\n## Point two\nBody";
+    expect(splitPoints(md).map((p) => p.heading)).toEqual(["Point one", "Point two"]);
+    expect(titleFromMarkdown(md)).toBe("Placeholder sermon");
+  });
+
+  it("keeps a document of only H1s as points and has no title", () => {
+    const md = "# One\nA\n# Two\nB";
+    expect(splitPoints(md).map((p) => p.heading)).toEqual(["One", "Two"]);
+    expect(titleFromMarkdown(md)).toBeNull();
+  });
+
+  it("has no title for text without headings", () => {
+    expect(titleFromMarkdown("First block\n\nSecond")).toBeNull();
   });
 
   it("keeps text before the first heading as its own point", () => {

@@ -36,6 +36,10 @@ describe("notesFromFile guards", () => {
   it("rejects files over 5 MB", async () => {
     await expect(notesFromFile(mk("a.txt", 5 * 1024 * 1024 + 1, "x"))).rejects.toThrow("File is too large (max 5 MB)");
   });
+  it("uses the H1 as the title when H2s follow, else the file name", async () => {
+    const r = await notesFromFile(mk("file.md", 5, "# Placeholder sermon\n## Point one\nBody"));
+    expect(r.title).toBe("Placeholder sermon");
+  });
   it("returns title and body for good files", async () => {
     await expect(notesFromFile(mk("Sermon.md", 5, "# A"))).resolves.toEqual({ title: "Sermon", body: "# A" });
   });
