@@ -9,7 +9,29 @@ function easingToGsap(e: EasingSpec): string {
   return `cubic-bezier(${e[0]}, ${e[1]}, ${e[2]}, ${e[3]})`;
 }
 
-const PROP_TO_GSAP: Record<string, string> = {
+/** CSS custom property a `wipe` track tweens; the layer's mask reads it. */
+export const WIPE_VAR = "--ovs-wipe";
+
+/** Wipe track value (0 hidden .. 1 shown) as the percentage the mask gradient uses. */
+export function wipeToCss(v: number | string): string {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return `${Math.max(0, Math.min(1, Number.isFinite(n) ? n : 1)) * 100}%`;
+}
+
+/** Left-to-right reveal mask driven by WIPE_VAR (unset = fully shown). */
+export function applyWipeMask(el: HTMLElement): void {
+  const mask = `linear-gradient(to right, #000 var(${WIPE_VAR}, 100%), transparent var(${WIPE_VAR}, 100%))`;
+  el.style.setProperty("mask-image", mask);
+  el.style.setProperty("-webkit-mask-image", mask);
+}
+
+export function clearWipeMask(el: HTMLElement): void {
+  el.style.removeProperty("mask-image");
+  el.style.removeProperty("-webkit-mask-image");
+  el.style.removeProperty(WIPE_VAR);
+}
+
+export const PROP_TO_GSAP: Record<string, string> = {
   x: "x",
   y: "y",
   rotation: "rotation",
@@ -18,6 +40,7 @@ const PROP_TO_GSAP: Record<string, string> = {
   opacity: "opacity",
   w: "width",
   h: "height",
+  wipe: WIPE_VAR,
 };
 
 export function buildGsapTimeline(
@@ -36,10 +59,13 @@ export function buildGsapTimeline(
     // Sort just in case authoring order is not chronological.
     const kfs = [...track.keyframes].sort((a, b) => a.t - b.t);
     if (kfs.length === 0) continue;
+    const isWipe = track.property === "wipe";
+    if (isWipe) applyWipeMask(el);
+    const val = (v: number | string) => (isWipe ? wipeToCss(v) : v);
 
     // Single keyframe: just snap to the value at its time. (No animation.)
     if (kfs.length === 1) {
-      tl.set(el, { [gsapProp]: kfs[0]!.value }, kfs[0]!.t);
+      tl.set(el, { [gsapProp]: val(kfs[0]!.value) }, kfs[0]!.t);
       continue;
     }
 
@@ -63,9 +89,9 @@ export function buildGsapTimeline(
       const dur = cur.t - prev.t;
       tl.fromTo(
         el,
-        { [gsapProp]: prev.value },
+        { [gsapProp]: val(prev.value) },
         {
-          [gsapProp]: cur.value,
+          [gsapProp]: val(cur.value),
           duration: dur,
           ease: easingToGsap(cur.easing),
           immediateRender: false,

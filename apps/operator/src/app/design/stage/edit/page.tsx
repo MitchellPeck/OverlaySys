@@ -31,6 +31,7 @@ import {
   alignWidgets,
   distributeWidgets,
   duplicateWidgets,
+  moveWidgetZ,
   nudgeWidgets,
   patchWidget,
   removeWidgets,
@@ -42,14 +43,12 @@ import {
   centeredRectAt,
   createTrailingThrottle,
   isLocalDraftEdit,
-  sentinelPopAction,
-  shouldDisarmSentinel,
   shouldAdoptIncomingLayout,
-  shouldConfirmLinkNavigation,
   sizePresetKey,
   stageEditorShortcut,
 } from "@/lib/stageDesigner";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
+import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
@@ -60,19 +59,6 @@ const NOOP = () => {};
 /** Delay before the one retry of a get_stage_layout that came back not_found. */
 const NOT_FOUND_RETRY_MS = 300;
 const UNSAVED_PROMPT = "You have unsaved changes to this stage layout. Leave anyway?";
-const SENTINEL_FLAG = "stageUnsavedGuard";
-
-/** The current history entry is an unsaved-changes sentinel. */
-function onSentinelEntry(): boolean {
-  const st = window.history.state as Record<string, unknown> | null;
-  return st?.[SENTINEL_FLAG] === true;
-}
-
-/** Push a same-URL sentinel (keeping Next's state) and return its href. */
-function pushSentinel(): string {
-  window.history.pushState({ ...window.history.state, [SENTINEL_FLAG]: true }, "", window.location.href);
-  return window.location.href;
-}
 
 export default function StageLayoutEditorPage() {
   return (
@@ -209,89 +195,16 @@ function StageLayoutEditor() {
   }, [conn, layoutId, send]);
 
   // ---- Unsaved-changes guard ----
-  useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    // In-app links (Next <Link>, sidebar) navigate client-side, so beforeunload
-    // never fires: catch the click in the capture phase, before Next's handler.
-    const onClick = (e: MouseEvent) => {
-      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-      if (!a) return;
-      const ask = shouldConfirmLinkNavigation({
-        dirty: useStageEditor.getState().dirty,
-        href: a.getAttribute("href") ?? "",
-        currentHref: window.location.href,
-        button: e.button,
-        modified: e.metaKey || e.ctrlKey || e.shiftKey || e.altKey,
-        defaultPrevented: e.defaultPrevented,
-        target: a.getAttribute("target"),
-        download: a.hasAttribute("download"),
-      });
-      if (!ask || window.confirm(UNSAVED_PROMPT)) return;
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    document.addEventListener("click", onClick, true);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      document.removeEventListener("click", onClick, true);
-    };
-  }, [dirty]);
-
-  // Browser Back/Forward bypasses both beforeunload and the link catcher.
-  // While dirty, push a same-URL sentinel entry (spreading Next's own history
-  // state so its router still treats the entry as this page) and remember its
-  // href; popping it asks before leaving. Pushing also truncates forward
-  // history, so Forward can't leave either. Once clean (saved/reverted) the
-  // sentinel is popped again, and a new layoutId (Duplicate routes in place)
-  // starts unarmed, so a stale sentinel can never act for another layout.
-  const armedHrefRef = useRef<string | null>(null);
-  function armSentinel() {
-    armedHrefRef.current = pushSentinel();
-  }
-  useEffect(() => {
-    armedHrefRef.current = null;
-  }, [layoutId]);
+  // On the first render after an in-place layout switch, `dirty` still
+  // belongs to the previous draft; arming then would push a sentinel at the
+  // new URL (and drop Forward history) for no unsaved work.
   const draftId = draft?.id ?? null;
-  useEffect(() => {
-    if (dirty) {
-      // On the first render after an in-place layout switch, `dirty` still
-      // belongs to the previous draft; arming here would push a sentinel at
-      // the new URL (and drop Forward history) for no unsaved work.
-      if (!armedHrefRef.current && draftId === layoutId) armSentinel();
-      return;
-    }
-    const disarm = shouldDisarmSentinel({
-      armedHref: armedHrefRef.current,
-      currentHref: window.location.href,
-      onSentinel: onSentinelEntry(),
-      dirty: false,
-    });
-    armedHrefRef.current = null;
-    // Our popstate handler ignores this pop (nothing is armed any more).
-    if (disarm) window.history.back();
-  }, [dirty, layoutId, draftId]);
-  useEffect(() => {
-    const onPopState = () => {
-      const action = sentinelPopAction({
-        armedHref: armedHrefRef.current,
-        currentHref: window.location.href,
-        onSentinel: onSentinelEntry(),
-        dirty: useStageEditor.getState().dirty,
-        confirm: () => window.confirm(UNSAVED_PROMPT),
-      });
-      if (action === "none") return;
-      armedHrefRef.current = null;
-      if (action === "back") window.history.back();
-      else armSentinel();
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  useUnsavedGuard(dirty, {
+    message: UNSAVED_PROMPT,
+    getDirty: () => useStageEditor.getState().dirty,
+    resetKey: layoutId,
+    canArm: draftId === layoutId,
+  });
 
   // A local edit means any save echo we were waiting for is moot (the draft is
   // dirty, so it won't be adopted anyway); drop the marker so a broadcast that
@@ -411,9 +324,23 @@ function StageLayoutEditor() {
     select(created);
   }
 
+  /** Step every selected widget in z-order (array order, last on top). */
+  function moveSelectionZ(to: "up" | "down" | "top" | "bottom") {
+    const st = useStageEditor.getState();
+    if (readOnly || !st.draft || st.selectedIds.length === 0) return;
+    const index = new Map(st.draft.widgets.map((w, i) => [w.id, i]));
+    // Lead with the widget nearest the destination so they don't leapfrog.
+    const ids = [...st.selectedIds].sort((a, b) =>
+      to === "up" || to === "top" ? index.get(b)! - index.get(a)! : index.get(a)! - index.get(b)!,
+    );
+    commit((d) => {
+      for (const id of ids) moveWidgetZ(id, to)(d);
+    });
+  }
+
   // ---- Keyboard ----
-  const keyActions = useRef({ save, undo, redo, deleteSelection, duplicateSelection, readOnly });
-  keyActions.current = { save, undo, redo, deleteSelection, duplicateSelection, readOnly };
+  const keyActions = useRef({ save, undo, redo, deleteSelection, duplicateSelection, moveSelectionZ, readOnly });
+  keyActions.current = { save, undo, redo, deleteSelection, duplicateSelection, moveSelectionZ, readOnly };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const action = stageEditorShortcut(e);
@@ -433,6 +360,10 @@ function StageLayoutEditor() {
       else if (action === "redo") a.redo();
       else if (action === "delete") a.deleteSelection();
       else if (action === "duplicate") a.duplicateSelection();
+      else if (action === "forward") a.moveSelectionZ("up");
+      else if (action === "backward") a.moveSelectionZ("down");
+      else if (action === "front") a.moveSelectionZ("top");
+      else if (action === "back") a.moveSelectionZ("bottom");
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

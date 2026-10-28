@@ -100,10 +100,11 @@ export function dragResize(
   others: StageRect[],
   canvas: { w: number; h: number },
   threshold: number,
+  min?: number,
 ): { rect: StageRect; guides: Guide[] } {
-  const resized = resizeRect(start, handle, dx, dy);
+  const resized = resizeRect(start, handle, dx, dy, min);
   if (threshold <= 0) return { rect: resized, guides: [] };
-  return snapRect(resized, others, canvas, threshold, draggedEdges(handle));
+  return snapRect(resized, others, canvas, threshold, draggedEdges(handle), min);
 }
 
 /** Arrow key → nudge delta in canvas px (1, or 10 with Shift); null for other keys. */

@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Lock, Unlock } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Lock, Unlock } from "lucide-react";
 import { STAGE_WIDGET_LABELS, type StageLayout } from "@overlaysys/core";
 
 const ICON = 14;
@@ -63,19 +63,21 @@ export function StageWidgetList({ layout, selectedIds, onSelect, onReorder, onTo
             </button>
             <button
               type="button"
-              title="Bring forward"
+              title="Bring forward (⌘])"
+              aria-label="Bring forward"
               disabled={index === last}
               onClick={(e) => { e.stopPropagation(); onReorder(w.id, index + 1); }}
             >
-              ↑
+              <ChevronUp size={ICON} aria-hidden />
             </button>
             <button
               type="button"
-              title="Send backward"
+              title="Send backward (⌘[)"
+              aria-label="Send backward"
               disabled={index === 0}
               onClick={(e) => { e.stopPropagation(); onReorder(w.id, index - 1); }}
             >
-              ↓
+              <ChevronDown size={ICON} aria-hidden />
             </button>
           </div>
         );

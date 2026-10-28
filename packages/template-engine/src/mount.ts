@@ -1,13 +1,18 @@
-import type { BlinkOnTake, Template } from "@overlaysys/core";
+import type { BlinkOnTake, Field, Layer, Template } from "@overlaysys/core";
 import { computeTimeDisplay } from "@overlaysys/core";
 import gsap from "gsap";
 import {
+  applyLayerAppearance,
+  applyTransform,
+  applyVisibility,
   buildTemplateDom,
   updateTemplateData,
   type LayerNodeMap,
 } from "./dom";
 import { ensureTemplateFonts } from "./fonts";
-import { buildGsapTimeline } from "./gsap-timeline";
+import { PROP_TO_GSAP, WIPE_VAR, buildGsapTimeline, clearWipeMask } from "./gsap-timeline";
+import { planTemplatePatch } from "./patchPlan";
+import { applyShrinkFit } from "./textFit";
 
 export type MountMode = "live" | "edit";
 
@@ -20,6 +25,62 @@ export type MountMode = "live" | "edit";
  * fade — short enough to feel snappy, long enough to read as a transition.
  */
 const DEFAULT_OUT_DURATION_S = 0.5;
+
+/**
+ * Longest a fresh live mount waits for its fonts and images before the IN
+ * animation starts. Long enough to cover a cached font / decoded image (no
+ * first-take font flash), short enough that a slow asset never holds a take.
+ */
+export const ASSET_WAIT_CAP_MS = 300;
+
+function eachLayer(layers: Layer[], fn: (l: Layer) => void): void {
+  for (const l of layers) {
+    fn(l);
+    if (l.type === "group") eachLayer(l.children, fn);
+  }
+}
+
+/** Font shorthand that makes `document.fonts.load` fetch a text layer's face. */
+function fontSpec(l: Extract<Layer, { type: "text" }>): string {
+  const s = l.style;
+  return `${s.italic ? "italic " : ""}${s.fontWeight} ${s.fontSize}px ${s.fontFamily}`;
+}
+
+/**
+ * Resolve when the template's embedded fonts, the faces its text layers use
+ * and its images are ready, or after `capMs`, whichever is first. Never
+ * rejects.
+ */
+function waitForAssets(
+  template: Template,
+  nodes: LayerNodeMap,
+  fontsLoading: Promise<void>,
+  capMs: number,
+): Promise<void> {
+  const tasks: Promise<unknown>[] = [fontsLoading.catch(() => {})];
+  const fonts = typeof document !== "undefined" && "fonts" in document ? document.fonts : null;
+  eachLayer(template.layers, (l) => {
+    if (l.type === "text" && fonts) {
+      try {
+        tasks.push(fonts.load(fontSpec(l)).catch(() => {}));
+      } catch {
+        // An unparseable family name; the cap still bounds the wait.
+      }
+    } else if (l.type === "image") {
+      const img = nodes.get(l.id) as HTMLImageElement | undefined;
+      if (img && img.getAttribute("src") && typeof img.decode === "function") {
+        tasks.push(img.decode().catch(() => {}));
+      }
+    }
+  });
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, capMs);
+    void Promise.all(tasks).then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 /**
  * Restart a paused timeline from t=0, but force GSAP to actually write the
@@ -96,12 +157,24 @@ export type MountedTemplate = {
   root: HTMLElement;
   /** Map of layerId → DOM element (useful for editor selection overlays). */
   nodes: LayerNodeMap;
-  /** GSAP timelines. In `edit` mode they are paused at t=0 — scrub via seek(). */
-  timelines: {
+  /**
+   * GSAP timelines. In `edit` mode they are paused at t=0 — scrub via seek().
+   * `patch()` rebuilds them, so read this property each time.
+   */
+  readonly timelines: {
     in: gsap.core.Timeline;
     out: gsap.core.Timeline;
   };
-  /** Play the `in` timeline. Resolves when the in-animation completes. */
+  /**
+   * Resolves once the template's fonts and images are ready, or after
+   * ASSET_WAIT_CAP_MS. In `live` mode the mount stays invisible until then
+   * (or until playIn starts), so the first take doesn't flash fallback fonts.
+   */
+  ready: Promise<void>;
+  /**
+   * Play the `in` timeline. Resolves when the in-animation completes. On a
+   * fresh mount it first waits for `ready`.
+   */
   playIn(): Promise<void>;
   /**
    * Play the `out` timeline AND a root-opacity fade in parallel. Resolves
@@ -127,6 +200,23 @@ export type MountedTemplate = {
   playBlink(opts: BlinkOnTake): Promise<void>;
   /** Seek a named timeline to a given time (for editor scrubbing). */
   seek(timeline: "in" | "out", time: number): void;
+  /**
+   * Editor scrub: show `timeline` at `time`, parking the other one at the
+   * design pose (`in` at its end, `out` at its start). Re-applied after patch().
+   */
+  scrub(timeline: "in" | "out", time: number): void;
+  /**
+   * Apply an edited version of the template to the existing DOM (restyle the
+   * changed layers, rebuild the timelines). Returns false when the change is
+   * structural (layers added/removed/reordered, fields, fonts, size, video
+   * source…); the caller then destroys and remounts.
+   */
+  patch(next: Template): boolean;
+  /**
+   * The animated value a track property currently has on a layer (x/y are
+   * translate offsets), or null for an unknown layer/property.
+   */
+  getProperty(layerId: string, property: string): number | null;
   /** Hot-update field-bound text/image content without re-animating. */
   update(data: Record<string, string>): void;
   /** Tear down: remove from DOM and kill timelines. */
@@ -166,13 +256,14 @@ export function mountTemplate(
   options: { mode?: MountMode } = {},
 ): MountedTemplate {
   const mode = options.mode ?? "live";
+  let current = template;
   const merged = withDefaults(template, initialData);
-  // Kick off font registration in the background. Mount stays synchronous —
-  // the browser repaints text once each FontFace resolves, so the only
-  // visible effect is a brief FOUT on the very first mount of a template
-  // that uses a not-yet-cached font.
-  void ensureTemplateFonts(template);
+  // Font registration starts now; mount stays synchronous. A live mount is
+  // kept invisible until `ready` (fonts + images, capped) so the first take
+  // doesn't paint a fallback face and then swap it in.
+  const fontsLoading = ensureTemplateFonts(template);
   const { root, nodes, timeBindings } = buildTemplateDom(template, merged);
+  if (mode === "live") root.style.visibility = "hidden";
   host.appendChild(root);
 
   // Edit mode wants clicks on layers to reach the editor's pointerdown
@@ -180,12 +271,78 @@ export function mountTemplate(
   // and similar passive hosts can't accidentally interact.
   if (mode === "edit") root.style.pointerEvents = "auto";
 
-  const inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
-  const outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
+  let inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
+  let outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
   // Note: edit-mode callers (the Canvas component) drive initial scrub
-  // explicitly via seek() so they own the "design pose" semantics.
+  // explicitly via seek()/scrub() so they own the "design pose" semantics.
+  let lastScrub: { which: "in" | "out"; time: number } | null = null;
 
   let currentData = merged;
+  let destroyed = false;
+  let outStarted = false;
+  let playInRequested = false;
+  let assetsSettled = false;
+  let revealed = mode !== "live";
+  function reveal(): void {
+    if (revealed) return;
+    revealed = true;
+    root.style.visibility = "";
+  }
+
+  /** Shrink-to-fit text layers; needs layout, so only once attached. */
+  function fitText(): void {
+    if (destroyed) return;
+    eachLayer(current.layers, (l) => {
+      if (l.type !== "text" || l.fit !== "shrink") return;
+      const el = nodes.get(l.id);
+      if (el) applyShrinkFit(el, l);
+    });
+  }
+  fitText();
+
+  const ready = waitForAssets(template, nodes, fontsLoading, ASSET_WAIT_CAP_MS).then(() => {
+    assetsSettled = true;
+    // Font metrics may have changed the fit.
+    fitText();
+    // Nobody is going to play this mount in: show it as built.
+    if (!playInRequested) reveal();
+  });
+
+  function startIn(): Promise<void> {
+    // Empty timelines (no tracks, or all tracks dropped because their
+    // target layers don't exist) have duration 0 in GSAP 3 — and
+    // tl.totalDuration(spec.duration) is a no-op on a children-less
+    // timeline, so the spec's declared duration doesn't materialize.
+    // restart()ing such a timeline never fires onComplete, which hangs
+    // every awaiter (notably the renderer's sequential out→in transition,
+    // which leaves the previous template stuck on screen forever).
+    if (inTl.duration() === 0) {
+      reveal();
+      return Promise.resolve();
+    }
+    // Priming (inside playFromStart) writes the from-values synchronously,
+    // so revealing just before it never shows the design pose.
+    const p = playFromStart(inTl);
+    reveal();
+    return p;
+  }
+
+  function applyScrub(which: "in" | "out", time: number): void {
+    // Both timelines target the same DOM. The active one is seeked; the
+    // other is parked at the boundary that represents the design pose so
+    // its values don't linger on the canvas.
+    if (which === "in") outTl.totalProgress(0).pause();
+    else inTl.totalProgress(1).pause();
+    const tl = which === "in" ? inTl : outTl;
+    tl.pause();
+    tl.seek(Math.max(0, Math.min(time, tl.duration())));
+  }
+
+  function fieldsMap(t: Template): Map<string, Field> {
+    const m = new Map<string, Field>();
+    for (const f of t.fields) m.set(f.key, f);
+    return m;
+  }
 
   // Blink overlay state. We share one overlay div across rapid re-takes;
   // restarting the CSS animation just resets the same node rather than
@@ -248,19 +405,23 @@ export function mountTemplate(
   return {
     root,
     nodes,
-    timelines: { in: inTl, out: outTl },
+    get timelines() {
+      return { in: inTl, out: outTl };
+    },
+    ready,
     playIn() {
-      // Empty timelines (no tracks, or all tracks dropped because their
-      // target layers don't exist) have duration 0 in GSAP 3 — and
-      // tl.totalDuration(spec.duration) is a no-op on a children-less
-      // timeline, so the spec's declared duration doesn't materialize.
-      // restart()ing such a timeline never fires onComplete, which hangs
-      // every awaiter (notably the renderer's sequential out→in transition,
-      // which leaves the previous template stuck on screen forever).
-      if (inTl.duration() === 0) return Promise.resolve();
-      return playFromStart(inTl);
+      playInRequested = true;
+      if (assetsSettled || destroyed) return startIn();
+      return ready.then(() => {
+        // A newer take may have played this mount out (or destroyed it)
+        // while we waited; don't run the IN over that.
+        if (destroyed || outStarted) return;
+        return startIn();
+      });
     },
     playOut() {
+      outStarted = true;
+      reveal();
       // Always pair the template's OUT with a root-opacity fade so the
       // mount visibly exits regardless of what the OUT timeline targets.
       // Without this, templates whose OUT only animates a subset of
@@ -275,6 +436,7 @@ export function mountTemplate(
       return Promise.all([fade, playFromStart(outTl)]).then(() => undefined);
     },
     playOutTimeline() {
+      reveal();
       // Mirror of playIn's empty-timeline guard: a zero-duration outTl
       // would never resolve via playFromStart, so short-circuit. Caller
       // owns deciding whether layers outside outTl should also animate
@@ -320,13 +482,67 @@ export function mountTemplate(
       tl.pause();
       tl.seek(Math.max(0, Math.min(time, tl.duration())));
     },
+    scrub(which, time) {
+      lastScrub = { which, time };
+      applyScrub(which, time);
+    },
+    patch(next) {
+      if (destroyed) return false;
+      const plan = planTemplatePatch(current, next);
+      if (!plan) return false;
+      if (plan.layers.length === 0 && !plan.timelines) {
+        current = next;
+        return true;
+      }
+      const data = withDefaults(next, currentData);
+      const fields = fieldsMap(next);
+      inTl.kill();
+      outTl.kill();
+      // A changed timeline can leave stale animated values on any layer it
+      // used to target, so then every layer is reset to its static pose.
+      const restyle: Layer[] = [];
+      if (plan.timelines) eachLayer(next.layers, (l) => restyle.push(l));
+      else restyle.push(...plan.layers);
+      for (const l of restyle) {
+        const el = nodes.get(l.id);
+        if (!el) continue;
+        // Drop GSAP's cached transform (x/y translate etc.) with the inline
+        // transform; the rebuilt timelines write animated values back.
+        gsap.set(el, { clearProps: "transform" });
+        clearWipeMask(el);
+        applyLayerAppearance(el, l, data, fields);
+        applyTransform(el, l.transform);
+        applyVisibility(el, l);
+      }
+      current = next;
+      currentData = data;
+      inTl = buildGsapTimeline(next.timelines.in, nodes, { paused: true });
+      outTl = buildGsapTimeline(next.timelines.out, nodes, { paused: true });
+      if (lastScrub) applyScrub(lastScrub.which, lastScrub.time);
+      fitText();
+      return true;
+    },
+    getProperty(layerId, property) {
+      const el = nodes.get(layerId);
+      const prop = PROP_TO_GSAP[property];
+      if (!el || !prop) return null;
+      if (prop === WIPE_VAR) {
+        const v = parseFloat(el.style.getPropertyValue(WIPE_VAR));
+        return Number.isFinite(v) ? v / 100 : 1;
+      }
+      const v = gsap.getProperty(el, prop);
+      const n = typeof v === "number" ? v : parseFloat(String(v));
+      return Number.isFinite(n) ? n : null;
+    },
     update(data) {
       // Re-derive against defaults each time so removing a key falls back
       // to the field default rather than persisting a stale value.
-      currentData = withDefaults(template, { ...currentData, ...data });
-      updateTemplateData(template, currentData, nodes as LayerNodeMap);
+      currentData = withDefaults(current, { ...currentData, ...data });
+      updateTemplateData(current, currentData, nodes as LayerNodeMap);
+      fitText();
     },
     destroy() {
+      destroyed = true;
       stopTicker();
       if (blinkTimeout) {
         clearTimeout(blinkTimeout);

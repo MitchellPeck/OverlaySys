@@ -9,6 +9,7 @@ import type {
   Shadow,
 } from "@overlaysys/core";
 import { resolveBinding } from "./bindings";
+import { applyTextFitStyles } from "./textFit";
 
 export type LayerNodeMap = Map<string, HTMLElement>;
 
@@ -56,7 +57,7 @@ function applyVideoCrop(
   v.style.transform = `translate(${tx}%, ${ty}%) scale(${sx}, ${sy})`;
 }
 
-function applyTransform(el: HTMLElement, t: Transform): void {
+export function applyTransform(el: HTMLElement, t: Transform): void {
   el.style.position = "absolute";
   el.style.left = `${t.x}px`;
   el.style.top = `${t.y}px`;
@@ -229,6 +230,84 @@ function buildClipPathForReveal(
   }
 }
 
+export function applyVisibility(el: HTMLElement, layer: Layer): void {
+  el.style.display = layer.visible ? "" : "none";
+}
+
+function groupMaskCss(layer: Extract<Layer, { type: "group" }>): string {
+  const m = layer.mask;
+  if (!m) return "";
+  if (m.kind === "rect") {
+    return `polygon(${m.x}px ${m.y}px, ${m.x + m.w}px ${m.y}px, ${m.x + m.w}px ${m.y + m.h}px, ${m.x}px ${m.y + m.h}px)`;
+  }
+  const cx = m.x + m.w / 2;
+  const cy = m.y + m.h / 2;
+  return `ellipse(${m.w / 2}px ${m.h / 2}px at ${cx}px ${cy}px)`;
+}
+
+/**
+ * Write a layer's type-specific appearance (text style + content, image
+ * src/fit, shape fill/geometry/filters, group mask) onto its existing node.
+ * Shared by the initial build and the editor's incremental patch, so both
+ * paint the same thing. Video and the transform/visibility are not handled
+ * here. Text content bound to a time field is left to the mount's ticker
+ * once it has painted.
+ */
+export function applyLayerAppearance(
+  el: HTMLElement,
+  layer: Layer,
+  data: Record<string, string>,
+  fieldsByKey: Map<string, Field>,
+): void {
+  switch (layer.type) {
+    case "text": {
+      const span = el.firstElementChild as HTMLElement | null;
+      if (!span) return;
+      applyTextStyle(el, span, layer.style, data);
+      const timeBound =
+        typeof layer.content !== "string" && fieldsByKey.get(layer.content.fieldKey)?.type === "time";
+      if (!timeBound || !span.textContent) span.textContent = resolveBinding(layer.content, data);
+      applyTextFitStyles(span, layer);
+      return;
+    }
+    case "image": {
+      const img = el as HTMLImageElement;
+      const src = resolveBinding(layer.src, data);
+      if (img.getAttribute("src") !== src) img.src = src;
+      img.style.objectFit = layer.fit;
+      return;
+    }
+    case "shape": {
+      el.style.background = fillToCss(layer.fill, data);
+      if (layer.shape === "ellipse") {
+        el.style.borderRadius = "50%";
+        el.style.clipPath = "";
+      } else if (layer.shape === "rect") {
+        el.style.borderRadius = cornerRadiusToCss(layer.cornerRadius);
+        el.style.clipPath = "";
+      } else {
+        // triangle / polygon / star — use clip-path on the same box.
+        el.style.borderRadius = "";
+        el.style.clipPath =
+          shapeClipPath(layer.shape, layer.sides, layer.starPoints, layer.starInnerRatio) ?? "";
+      }
+      // Edge effects: blur + drop-shadow combined into a single filter.
+      // drop-shadow follows the clip-path/border-radius (unlike box-shadow),
+      // so non-rect shapes get correct shadows.
+      const filters: string[] = [];
+      if (layer.blur > 0) filters.push(`blur(${layer.blur}px)`);
+      if (layer.shadow) filters.push(shadowToFilter(layer.shadow, data));
+      el.style.filter = filters.join(" ");
+      return;
+    }
+    case "group":
+      el.style.clipPath = groupMaskCss(layer);
+      return;
+    case "video":
+      return;
+  }
+}
+
 function buildLayer(
   layer: Layer,
   data: Record<string, string>,
@@ -246,8 +325,8 @@ function buildLayer(
       el.dataset["layerId"] = layer.id;
       el.dataset["layerType"] = "text";
       const span = document.createElement("span");
-      applyTextStyle(el, span, layer.style, data);
-      span.textContent = resolveBinding(layer.content, data);
+      el.appendChild(span);
+      applyLayerAppearance(el, layer, data, fieldsByKey);
       // If the content binds to a time-typed field, register the span so the
       // mount's rAF loop ticks it every frame. The initial textContent above
       // is just a placeholder until the first tick fires.
@@ -257,14 +336,12 @@ function buildLayer(
           timeBindings.push({ el: span, field: f });
         }
       }
-      el.appendChild(span);
       break;
     }
     case "image": {
       el = document.createElement("img");
       const img = el as HTMLImageElement;
-      img.src = resolveBinding(layer.src, data);
-      img.style.objectFit = layer.fit;
+      applyLayerAppearance(img, layer, data, fieldsByKey);
       img.style.width = "100%";
       img.style.height = "100%";
       img.dataset["layerId"] = layer.id;
@@ -344,48 +421,16 @@ function buildLayer(
       el = document.createElement("div");
       el.dataset["layerId"] = layer.id;
       el.dataset["layerType"] = "shape";
-      el.style.background = fillToCss(layer.fill, data);
       el.style.width = "100%";
       el.style.height = "100%";
-
-      if (layer.shape === "ellipse") {
-        el.style.borderRadius = "50%";
-      } else if (layer.shape === "rect") {
-        el.style.borderRadius = cornerRadiusToCss(layer.cornerRadius);
-      } else {
-        // triangle / polygon / star — use clip-path on the same box.
-        const cp = shapeClipPath(
-          layer.shape,
-          layer.sides,
-          layer.starPoints,
-          layer.starInnerRatio,
-        );
-        if (cp) el.style.clipPath = cp;
-      }
-
-      // Edge effects: blur + drop-shadow combined into a single filter.
-      // drop-shadow follows the clip-path/border-radius (unlike box-shadow),
-      // so non-rect shapes get correct shadows.
-      const filters: string[] = [];
-      if (layer.blur > 0) filters.push(`blur(${layer.blur}px)`);
-      if (layer.shadow) filters.push(shadowToFilter(layer.shadow, data));
-      if (filters.length > 0) el.style.filter = filters.join(" ");
+      applyLayerAppearance(el, layer, data, fieldsByKey);
       break;
     }
     case "group": {
       el = document.createElement("div");
       el.dataset["layerId"] = layer.id;
       el.dataset["layerType"] = "group";
-      if (layer.mask) {
-        const m = layer.mask;
-        if (m.kind === "rect") {
-          el.style.clipPath = `polygon(${m.x}px ${m.y}px, ${m.x + m.w}px ${m.y}px, ${m.x + m.w}px ${m.y + m.h}px, ${m.x}px ${m.y + m.h}px)`;
-        } else {
-          const cx = m.x + m.w / 2;
-          const cy = m.y + m.h / 2;
-          el.style.clipPath = `ellipse(${m.w / 2}px ${m.h / 2}px at ${cx}px ${cy}px)`;
-        }
-      }
+      applyLayerAppearance(el, layer, data, fieldsByKey);
       // Children's clipPath coords are in the group's local box, so
       // pass the group's transform.w/h (fall back to the outer parent
       // size when the group hasn't declared explicit dimensions).
@@ -403,7 +448,7 @@ function buildLayer(
   }
 
   applyTransform(el, layer.transform);
-  if (!layer.visible) el.style.display = "none";
+  applyVisibility(el, layer);
   nodes.set(layer.id, el);
 
   // Reveal-edge clip: wrap the layer in a parent-spanning clip container

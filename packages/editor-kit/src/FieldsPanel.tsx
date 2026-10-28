@@ -1,28 +1,33 @@
 import type { Draft } from "immer";
+import { useEffect, useRef, useState } from "react";
 import type { Field, Template } from "@overlaysys/core";
 import { ColorInput } from "./ColorInput";
 import { ImageInput } from "./ImageInput";
 import { VideoInput } from "./VideoInput";
+import { useEditCoalescer } from "./editCoalescer";
+import { fieldKeyError, fieldUsage, removeField, renameFieldKey } from "./templateOps";
 
 type Props = {
   template: Template;
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
+  /** Apply without a new undo step (typing coalesces into one step per field edit). */
+  onLive?: (recipe: (d: Draft<Template>) => void) => void;
   /** Optional uploader for image/video field-default file pickers. Without
    * it, picked files fall back to inline data URLs. */
   onUpload?: (file: File) => Promise<string>;
 };
 
-export function FieldsPanel({ template, onCommit, onUpload }: Props) {
+export function FieldsPanel({ template, onCommit: commitStep, onLive, onUpload }: Props) {
+  const { commit: onCommit, handlers } = useEditCoalescer(commitStep, onLive);
   function add() {
     const key = uniqueKey(template.fields);
     onCommit((d) => {
       d.fields.push({ key, label: key, type: "text", default: "" });
     });
   }
+  // Bound layers keep showing the field's default as a literal.
   function remove(key: string) {
-    onCommit((d) => {
-      d.fields = d.fields.filter((f) => f.key !== key);
-    });
+    onCommit(removeField(key));
   }
   function patch(key: string, patch: Partial<Field>) {
     onCommit((d) => {
@@ -33,7 +38,7 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
   }
 
   return (
-    <div>
+    <div {...handlers}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)", textTransform: "uppercase", letterSpacing: 1.2 }}>
           Fields ({template.fields.length})
@@ -46,11 +51,11 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
         </p>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {template.fields.map((f, i) => (
-            // Use index, not f.key, as the React key. Typing in the field-key
-            // input mutates f.key, which would otherwise remount this <li>
-            // (and unmount its inputs) on every keystroke, killing cursor
-            // position. Index is stable while editing a single field.
+          {template.fields.map((f, i) => {
+            const usedBy = fieldUsage(template, f.key);
+            return (
+            // Index, not f.key, as the React key: a rename must not remount
+            // the row (and drop focus) when it commits.
             <li
               key={i}
               style={{
@@ -62,11 +67,11 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
               }}
             >
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6 }}>
-                <input
+                <FieldKeyInput
+                  fields={template.fields}
+                  index={i}
                   value={f.key}
-                  onChange={(e) => patch(f.key, { key: e.target.value })}
-                  style={{ ...inputStyle, fontFamily: "ui-monospace, monospace", fontSize: 11 }}
-                  title="Field key (used by template authors and CSV import)"
+                  onRename={(next) => onCommit(renameFieldKey(f.key, next))}
                 />
                 <input
                   value={f.label}
@@ -151,13 +156,89 @@ export function FieldsPanel({ template, onCommit, onUpload }: Props) {
               <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>default</span>
                 <DefaultEditor field={f} onChange={(v) => patch(f.key, { default: v })} onUpload={onUpload} />
-                <button onClick={() => remove(f.key)} style={delBtnStyle}>×</button>
+                <button
+                  onClick={() => remove(f.key)}
+                  style={delBtnStyle}
+                  aria-label={`Remove field ${f.key}`}
+                  title={
+                    usedBy.length > 0
+                      ? `Remove — ${usedBy.join(", ")} will keep its current default as fixed content`
+                      : "Remove field"
+                  }
+                >
+                  ×
+                </button>
               </div>
+              {usedBy.length > 0 && (
+                <div style={{ marginTop: 4, fontSize: 10, color: "var(--text-dim, #9099a8)" }}>
+                  used by {usedBy.join(", ")}
+                </div>
+              )}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * Field key editor. Commits on blur / Enter (not per keystroke, which would
+ * break every binding mid-word), rewrites the layers bound to the old key,
+ * and refuses empty, malformed or duplicate keys. Escape reverts.
+ */
+function FieldKeyInput({
+  fields,
+  index,
+  value,
+  onRename,
+}: {
+  fields: readonly Field[];
+  index: number;
+  value: string;
+  onRename: (next: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const skipRef = useRef(false);
+  useEffect(() => setText(value), [value]);
+  const next = text.trim();
+  const error = next === value ? null : fieldKeyError(fields, index, next);
+
+  function commit() {
+    if (skipRef.current) {
+      skipRef.current = false;
+      setText(value);
+      return;
+    }
+    if (next === value || error) {
+      setText(value);
+      return;
+    }
+    onRename(next);
+  }
+
+  return (
+    <input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          skipRef.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+      aria-invalid={!!error}
+      style={{
+        ...inputStyle,
+        fontFamily: "ui-monospace, monospace",
+        fontSize: 11,
+        borderColor: error ? "var(--red, #f87171)" : undefined,
+      }}
+      title={error ?? "Field key (used by bindings and CSV import). Renaming updates bound layers."}
+    />
   );
 }
 

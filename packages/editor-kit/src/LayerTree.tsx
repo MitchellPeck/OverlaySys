@@ -1,29 +1,58 @@
 import type { Draft } from "immer";
 import { useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Eye,
+  EyeOff,
+  Film,
+  Folder,
+  Image as ImageIcon,
+  Lock,
+  Square,
+  Trash2,
+  Type,
+  Unlock,
+  type LucideIcon,
+} from "lucide-react";
 import type { Layer, Template } from "@overlaysys/core";
 import { flattenLayersForDisplay, moveLayer } from "./utils";
+import { duplicateLayers, moveLayersZ, newLayerId, removeLayers, toggleLayerLocked, toggleLayerVisible } from "./templateOps";
 
 type Props = {
   template: Template;
   selectedId: string | null;
+  /** Every selected layer; defaults to the primary alone. */
+  selectedIds?: string[];
   onSelect: (id: string | null) => void;
+  /** Replace the selection, or toggle ids in/out of it (Shift / ⌘-click). Falls back to onSelect. */
+  onSelectLayers?: (ids: string[], additive: boolean) => void;
   /** Mutate draft + history. */
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
 };
 
-const ICON_BY_TYPE: Record<string, string> = {
-  text: "T",
-  image: "🖼",
-  shape: "▭",
-  group: "📁",
+const ICON = 14;
+
+const ICON_BY_TYPE: Record<Layer["type"], LucideIcon> = {
+  text: Type,
+  image: ImageIcon,
+  video: Film,
+  shape: Square,
+  group: Folder,
 };
 
 type DropZone = "before" | "into" | "after";
 
-export function LayerTree({ template, selectedId, onSelect, onCommit }: Props) {
+export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, onSelect, onSelectLayers, onCommit }: Props) {
   // Photoshop ordering: top of panel = on top of z-stack, with group children
   // expanding beneath their header. flattenLayersForDisplay handles both.
   const flat = flattenLayersForDisplay(template.layers);
+  const selectedIds = selectedIdsProp ?? (selectedId ? [selectedId] : []);
+  const select = (ids: string[], additive: boolean) => {
+    if (onSelectLayers) onSelectLayers(ids, additive);
+    else onSelect(ids[ids.length - 1] ?? null);
+  };
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; zone: DropZone } | null>(null);
 
@@ -42,23 +71,44 @@ export function LayerTree({ template, selectedId, onSelect, onCommit }: Props) {
 
   return (
     <div>
-      <Toolbar selectedId={selectedId} onCommit={onCommit} onSelect={onSelect} />
+      <Toolbar selectedIds={selectedIds} onCommit={onCommit} onSelect={select} />
 
       {flat.length === 0 ? (
         <p style={{ color: "var(--text-dim, #9099a8)", fontSize: 12, padding: 8 }}>
           Empty template. Use the toolbar to add a layer.
         </p>
       ) : (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        <ul role="listbox" aria-label="Layers" aria-multiselectable style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {flat.map(({ layer, depth }) => {
-            const selected = layer.id === selectedId;
+            const selected = selectedIds.includes(layer.id);
+            const TypeIcon = ICON_BY_TYPE[layer.type] ?? Square;
             const isDragging = dragId === layer.id;
             const dt = dropTarget?.id === layer.id ? dropTarget.zone : null;
             return (
               <li
                 key={layer.id}
+                role="option"
+                aria-selected={selected}
+                aria-label={`${layer.name} (${layer.type}${layer.visible ? "" : ", hidden"}${layer.locked ? ", locked" : ""})`}
+                tabIndex={0}
                 draggable
-                onClick={() => onSelect(layer.id)}
+                onClick={(e) => select([layer.id], e.shiftKey || e.metaKey || e.ctrlKey)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    // Keep Space from also reaching the page's play/pause shortcut.
+                    e.preventDefault();
+                    e.stopPropagation();
+                    select([layer.id], e.shiftKey || e.metaKey || e.ctrlKey);
+                  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const sib = (e.key === "ArrowDown"
+                      ? e.currentTarget.nextElementSibling
+                      : e.currentTarget.previousElementSibling) as HTMLElement | null;
+                    sib?.focus();
+                  }
+                }}
                 onDragStart={(e) => {
                   setDragId(layer.id);
                   e.dataTransfer.effectAllowed = "move";
@@ -122,26 +172,36 @@ export function LayerTree({ template, selectedId, onSelect, onCommit }: Props) {
               >
                 {dt === "before" && <DropLine position="top" />}
                 {dt === "after" && <DropLine position="bottom" />}
-                <button
-                  title={layer.visible ? "Hide" : "Show"}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCommit((d) => {
-                      const l = findInDraft(d.layers, layer.id);
-                      if (l) l.visible = !l.visible;
-                    });
-                  }}
-                  style={visBtn}
-                >
-                  {layer.visible ? "👁" : "—"}
-                </button>
-                <span style={{ width: 16, fontSize: 11, color: "var(--text-dim, #9099a8)", textAlign: "center" }}>
-                  {ICON_BY_TYPE[layer.type] ?? "?"}
-                </span>
+                <TypeIcon size={ICON} aria-hidden style={{ flexShrink: 0, color: "var(--text-dim, #9099a8)" }} />
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {layer.name}
                 </span>
-                <span style={{ fontSize: 10, color: "var(--text-dim, #9099a8)" }}>{layer.type}</span>
+                <button
+                  type="button"
+                  title={layer.visible ? "Hide" : "Show"}
+                  aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`}
+                  aria-pressed={!layer.visible}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCommit(toggleLayerVisible(layer.id));
+                  }}
+                  style={iconBtn}
+                >
+                  {layer.visible ? <Eye size={ICON} aria-hidden /> : <EyeOff size={ICON} aria-hidden />}
+                </button>
+                <button
+                  type="button"
+                  title={layer.locked ? "Unlock" : "Lock"}
+                  aria-label={`${layer.locked ? "Unlock" : "Lock"} ${layer.name}`}
+                  aria-pressed={!!layer.locked}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCommit(toggleLayerLocked(layer.id));
+                  }}
+                  style={{ ...iconBtn, opacity: layer.locked ? 1 : 0.45 }}
+                >
+                  {layer.locked ? <Lock size={ICON} aria-hidden /> : <Unlock size={ICON} aria-hidden />}
+                </button>
               </li>
             );
           })}
@@ -169,62 +229,38 @@ function DropLine({ position }: { position: "top" | "bottom" }) {
 }
 
 function Toolbar({
-  selectedId,
+  selectedIds,
   onCommit,
   onSelect,
 }: {
-  selectedId: string | null;
+  selectedIds: string[];
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
-  onSelect: (id: string | null) => void;
+  onSelect: (ids: string[], additive: boolean) => void;
 }) {
+  const none = selectedIds.length === 0;
+
   function add(type: Layer["type"]) {
-    const id = `${type}-${Math.random().toString(36).slice(2, 8)}`;
+    const id = newLayerId(type);
     onCommit((d) => {
       const layer: Layer = makeLayer(type, id);
       d.layers.push(layer);
     });
-    onSelect(id);
+    onSelect([id], false);
   }
 
+  // Copies keep their animation tracks and become the selection.
   function duplicate() {
-    if (!selectedId) return;
-    onCommit((d) => {
-      const idx = topLevelIndex(d.layers, selectedId);
-      if (idx === -1) {
-        // Selected layer is nested — duplicate inside its parent group.
-        duplicateInTree(d.layers, selectedId);
-        return;
-      }
-      const original = d.layers[idx]!;
-      const copy = JSON.parse(JSON.stringify(original)) as Layer;
-      reassignIds(copy);
-      d.layers.splice(idx + 1, 0, copy);
-    });
+    if (none) return;
+    const created: string[] = [];
+    onCommit(duplicateLayers(selectedIds, created));
+    if (created.length > 0) onSelect(created, false);
   }
 
+  // Also drops the layers' tracks and any clipBy that referenced them.
   function remove() {
-    if (!selectedId) return;
-    onCommit((d) => {
-      // Collect every id in the deleted subtree (the layer + all descendants
-      // for groups) so the timeline cleanup catches nested layers too.
-      const removedIds = new Set<string>();
-      collectLayerIds(d.layers, selectedId, removedIds);
-      removeLayerById(d.layers, selectedId);
-      if (removedIds.size > 0) {
-        d.timelines.in.tracks = d.timelines.in.tracks.filter(
-          (t) => !removedIds.has(t.layerId),
-        );
-        d.timelines.out.tracks = d.timelines.out.tracks.filter(
-          (t) => !removedIds.has(t.layerId),
-        );
-        if (d.timelines.loop) {
-          d.timelines.loop.tracks = d.timelines.loop.tracks.filter(
-            (t) => !removedIds.has(t.layerId),
-          );
-        }
-      }
-    });
-    onSelect(null);
+    if (none) return;
+    onCommit(removeLayers(selectedIds));
+    onSelect([], false);
   }
 
   return (
@@ -235,8 +271,18 @@ function Toolbar({
       <ToolBtn onClick={() => add("video")}>+ Video</ToolBtn>
       <ToolBtn onClick={() => add("group")}>+ Group</ToolBtn>
       <div style={{ width: 1, background: "var(--border, #2a2e36)", margin: "0 4px" }} />
-      <ToolBtn onClick={duplicate} disabled={!selectedId}>Dup</ToolBtn>
-      <ToolBtn onClick={remove} disabled={!selectedId} kind="danger">Del</ToolBtn>
+      <ToolBtn onClick={() => onCommit(moveLayersZ(selectedIds, "up"))} disabled={none} label="Bring forward (⌘])">
+        <ChevronUp size={ICON} aria-hidden />
+      </ToolBtn>
+      <ToolBtn onClick={() => onCommit(moveLayersZ(selectedIds, "down"))} disabled={none} label="Send backward (⌘[)">
+        <ChevronDown size={ICON} aria-hidden />
+      </ToolBtn>
+      <ToolBtn onClick={duplicate} disabled={none} label="Duplicate (⌘D)">
+        <Copy size={ICON} aria-hidden />
+      </ToolBtn>
+      <ToolBtn onClick={remove} disabled={none} kind="danger" label="Delete (Del)">
+        <Trash2 size={ICON} aria-hidden />
+      </ToolBtn>
     </div>
   );
 }
@@ -246,17 +292,25 @@ function ToolBtn({
   onClick,
   disabled,
   kind,
+  label,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   kind?: "danger";
+  /** Accessible name + tooltip for icon-only buttons. */
+  label?: string;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
+      title={label}
+      aria-label={label}
       style={{
+        display: "inline-flex",
+        alignItems: "center",
         padding: "4px 8px",
         background: kind === "danger" ? "transparent" : "var(--panel-2, #1c1f25)",
         color: kind === "danger" ? "var(--red, #f87171)" : "var(--text, #e9eaee)",
@@ -275,13 +329,14 @@ function ToolBtn({
   );
 }
 
-const visBtn: React.CSSProperties = {
+const iconBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   background: "transparent",
   border: "none",
   color: "var(--text-dim, #9099a8)",
-  fontSize: 12,
-  padding: 0,
-  width: 14,
+  padding: 2,
   cursor: "pointer",
 };
 
@@ -355,76 +410,6 @@ function makeLayer(type: Layer["type"], id: string): Layer {
     case "group":
       return { ...base, type: "group", children: [] };
   }
-}
-
-function findInDraft(layers: Draft<Layer>[], id: string): Draft<Layer> | null {
-  for (const l of layers) {
-    if (l.id === id) return l;
-    if (l.type === "group") {
-      const f = findInDraft(l.children, id);
-      if (f) return f;
-    }
-  }
-  return null;
-}
-
-function topLevelIndex(layers: Layer[], id: string): number {
-  return layers.findIndex((l) => l.id === id);
-}
-
-function removeLayerById(layers: Draft<Layer>[], id: string): boolean {
-  for (let i = 0; i < layers.length; i++) {
-    if (layers[i]!.id === id) {
-      layers.splice(i, 1);
-      return true;
-    }
-    const l = layers[i]!;
-    if (l.type === "group" && removeLayerById(l.children, id)) return true;
-  }
-  return false;
-}
-
-/**
- * Walk the tree to find `targetId` and collect its id plus every
- * descendant id (for groups). Used to clean up timeline tracks for any
- * layer that's about to be removed.
- */
-function collectLayerIds(layers: Draft<Layer>[], targetId: string, out: Set<string>): boolean {
-  for (const l of layers) {
-    if (l.id === targetId) {
-      collectAllIds(l, out);
-      return true;
-    }
-    if (l.type === "group") {
-      if (collectLayerIds(l.children, targetId, out)) return true;
-    }
-  }
-  return false;
-}
-function collectAllIds(layer: Draft<Layer>, out: Set<string>): void {
-  out.add(layer.id);
-  if (layer.type === "group") {
-    for (const c of layer.children) collectAllIds(c, out);
-  }
-}
-
-function duplicateInTree(layers: Draft<Layer>[], id: string): boolean {
-  for (let i = 0; i < layers.length; i++) {
-    if (layers[i]!.id === id) {
-      const copy = JSON.parse(JSON.stringify(layers[i])) as Layer;
-      reassignIds(copy);
-      layers.splice(i + 1, 0, copy as Draft<Layer>);
-      return true;
-    }
-    const l = layers[i]!;
-    if (l.type === "group" && duplicateInTree(l.children, id)) return true;
-  }
-  return false;
-}
-
-function reassignIds(layer: Layer): void {
-  layer.id = `${layer.type}-${Math.random().toString(36).slice(2, 8)}`;
-  if (layer.type === "group") for (const c of layer.children) reassignIds(c);
 }
 
 function capitalize(s: string): string {
