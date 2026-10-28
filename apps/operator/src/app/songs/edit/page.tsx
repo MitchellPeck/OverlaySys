@@ -1,17 +1,30 @@
 "use client";
 
-import { Suspense, useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { Music } from "lucide-react";
 import { type Song } from "@overlaysys/core";
 import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { PasteLyricsModal } from "../PasteLyricsModal";
 import { SongDraftEditor } from "./SongDraftEditor";
+import {
+  SAVE_ACK_TIMEOUT_MS,
+  decideIncomingSong,
+  sameSongContent,
+  type SaveStatus,
+} from "./songDraftOps";
 import { isCloudMode } from "@/lib/mode";
 import {
   getSongCloud,
@@ -40,9 +53,27 @@ function SongEditorPageInner() {
   const setSongInStore = useStore((s) => s.setSong);
   const templates = useStore((s) => s.templates);
   const [draft, setDraft] = useState<Song | null>(cached ?? null);
+  /** Last version known to be on the server; `dirty` compares against it. */
+  const [baseline, setBaseline] = useState<Song | null>(cached ?? null);
+  /** A server copy that arrived while the draft had unsaved edits. */
+  const [conflict, setConflict] = useState<Song | null>(null);
+  /** One level of undo for "Paste lyrics": the draft before the paste. */
+  const [pasteUndo, setPasteUndo] = useState<Song | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>({ kind: "idle" });
   const [pasteOpen, setPasteOpen] = useState(false);
   const { alert, dialog } = useDialog();
   const cloud = isCloudMode();
+
+  // Refs mirror state for the WS listener and the incoming-song effect,
+  // which must decide against the latest values, not a render snapshot.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const baselineRef = useRef(baseline);
+  baselineRef.current = baseline;
+  const savingRef = useRef<{ sent: Song; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  const dirty = !!draft && !!baseline && !sameSongContent(draft, baseline);
+  const canSave = !!draft && (cloud || conn === "open") && saveStatus.kind !== "saving";
 
   // SongDraftEditor speaks React's setState shape so that several of its
   // updaters landing in one commit compose instead of clobbering each other.
@@ -69,10 +100,7 @@ function SongEditorPageInner() {
       if (!cached) {
         getSongCloud(id)
           .then((s) => {
-            if (s) {
-              setSongInStore(s);
-              setDraft(s);
-            }
+            if (s) setSongInStore(s);
           })
           .catch((err) => console.warn("[songs/edit] cloud load failed", err));
       }
@@ -87,26 +115,149 @@ function SongEditorPageInner() {
     if (conn === "open" && templates.length === 0) send({ type: "list_templates" });
   }, [cloud, conn, cached, id, send, templates.length, setSongInStore]);
 
+  // Every server copy of this song (load reply, our own save echo, another
+  // client's save) lands in the store's songCache. Adopt it only when that
+  // can't lose unsaved edits; otherwise raise the "changed elsewhere" banner.
   useEffect(() => {
-    if (cached) setDraft(cached);
+    if (!cached) return;
+    const decision = decideIncomingSong(
+      { draft: draftRef.current, baseline: baselineRef.current },
+      cached,
+    );
+    if (decision === "adopt") {
+      setDraft(cached);
+      setBaseline(cached);
+      setConflict(null);
+    } else if (decision === "rebase") {
+      setBaseline(cached);
+    } else {
+      setConflict(cached);
+    }
   }, [cached]);
+
+  // Save acks. The server answers save_song with { ack, op: "save_song", id }
+  // before broadcasting the echo; a failure comes back as a generic error.
+  useEffect(() => {
+    if (cloud) return;
+    const off = getClient().on((msg) => {
+      const pending = savingRef.current;
+      if (!pending) return;
+      if (msg.type === "ack" && msg.op === "save_song" && msg.id === pending.sent.id) {
+        clearTimeout(pending.timer);
+        savingRef.current = null;
+        // Ref too: the echo can be handled before the next render.
+        baselineRef.current = pending.sent;
+        setBaseline(pending.sent);
+        setSaveStatus({ kind: "saved", at: Date.now() });
+      } else if (msg.type === "error" && (msg.code === "handler_error" || msg.code === "bad_message")) {
+        clearTimeout(pending.timer);
+        savingRef.current = null;
+        setSaveStatus({ kind: "failed", reason: msg.message });
+      }
+    });
+    return off;
+  }, [cloud]);
+
+  // A dropped socket mid-save means the ack can't arrive.
+  useEffect(() => {
+    if (cloud || conn === "open") return;
+    const pending = savingRef.current;
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    savingRef.current = null;
+    setSaveStatus({ kind: "failed", reason: "Disconnected from the server before the save was confirmed." });
+  }, [cloud, conn]);
+
+  useEffect(() => () => {
+    if (savingRef.current) clearTimeout(savingRef.current.timer);
+  }, []);
+
+  // Unsaved-changes guard for reloads / closing the window.
+  // TODO(unsaved-guard): wire useUnsavedGuard(dirty) for in-app navigation.
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
 
   if (!draft) return <div style={{ padding: 24 }}>Loading…</div>;
 
   async function save() {
-    if (!draft) return;
+    const current = draftRef.current;
+    if (!current || !canSave) return;
     if (cloud) {
+      setSaveStatus({ kind: "saving" });
       try {
-        await saveSongCloud(draft);
+        await saveSongCloud(current);
         await refreshSongMetasCloud();
-        setSongInStore(draft);
+        // Baseline first, so the store echo below reads as our own save.
+        baselineRef.current = current;
+        setBaseline(current);
+        setSongInStore(current);
+        setSaveStatus({ kind: "saved", at: Date.now() });
       } catch (err) {
+        setSaveStatus({ kind: "failed", reason: err instanceof Error ? err.message : String(err) });
         await showCloudError("save", err);
       }
       return;
     }
-    send({ type: "save_song", song: draft });
+    if (conn !== "open") {
+      setSaveStatus({ kind: "failed", reason: "Not connected to the server." });
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (savingRef.current?.sent !== current) return;
+      savingRef.current = null;
+      setSaveStatus({ kind: "failed", reason: "The server didn't confirm the save." });
+    }, SAVE_ACK_TIMEOUT_MS);
+    savingRef.current = { sent: current, timer };
+    setSaveStatus({ kind: "saving" });
+    setConflict(null);
+    send({ type: "save_song", song: current });
   }
+
+  function reloadFromServer() {
+    if (!conflict) return;
+    setDraft(conflict);
+    setBaseline(conflict);
+    setConflict(null);
+    setPasteUndo(null);
+  }
+
+  function keepMine() {
+    // The server copy becomes the baseline so the draft stays dirty and the
+    // next Save deliberately overwrites it.
+    if (conflict) setBaseline(conflict);
+    setConflict(null);
+  }
+
+  function applyPaste(patch: Partial<Song>) {
+    setPasteUndo(draftRef.current);
+    setDraft((d) => (d ? { ...d, ...patch } : d));
+  }
+
+  function undoPaste() {
+    if (pasteUndo) setDraft(pasteUndo);
+    setPasteUndo(null);
+  }
+
+  const statusText =
+    saveStatus.kind === "saving"
+      ? "Saving…"
+      : saveStatus.kind === "failed"
+        ? `Save failed — ${saveStatus.reason}`
+        : dirty
+          ? "Unsaved changes"
+          : saveStatus.kind === "saved"
+            ? "Saved"
+            : "";
+  const statusColor =
+    saveStatus.kind === "failed" ? colors.errorText : dirty ? colors.warn : colors.textDim;
+  const offline = !cloud && conn !== "open";
 
   return (
     <>
@@ -118,16 +269,53 @@ function SongEditorPageInner() {
         }
         actions={
           <>
+            <span role="status" aria-live="polite" style={{ fontSize: 12, color: statusColor, marginRight: 4 }}>
+              {offline ? "Offline — can't save" : statusText}
+            </span>
+            {pasteUndo && (
+              <Button onClick={undoPaste} size="sm" title="Restore the song body from before the paste">
+                Undo paste
+              </Button>
+            )}
             <Button onClick={() => setPasteOpen((v) => !v)} size="sm">Paste lyrics…</Button>
-            <Button onClick={save} variant="primary" size="sm">Save</Button>
+            <Button
+              onClick={save}
+              variant="primary"
+              size="sm"
+              disabled={!canSave}
+              title={offline ? "Not connected to the server" : undefined}
+            >
+              {saveStatus.kind === "saving" ? "Saving…" : "Save"}
+            </Button>
           </>
         }
       />
       <PageBody maxWidth={1100} style={{ height: "100%" }}>
+        {conflict && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              marginBottom: 12,
+              border: `1px solid ${colors.warn}`,
+              borderRadius: 6,
+              fontSize: 13,
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              This song was changed elsewhere while you have unsaved edits.
+            </span>
+            <Button size="sm" onClick={reloadFromServer}>Reload theirs</Button>
+            <Button size="sm" variant="primary" onClick={keepMine}>Keep mine</Button>
+          </div>
+        )}
         {pasteOpen && (
           <PasteLyricsModal
             song={draft}
-            onApply={(patch) => setDraft((d) => (d ? { ...d, ...patch } : d))}
+            onApply={applyPaste}
             onClose={() => setPasteOpen(false)}
           />
         )}

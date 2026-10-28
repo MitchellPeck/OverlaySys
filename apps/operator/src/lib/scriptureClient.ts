@@ -69,6 +69,70 @@ export interface ApiBibleStatus {
   state: ApiBibleState;
   bibleId?: string;
   message?: string;
+  /** Registered API.Bible translations (absent on older servers). */
+  translations?: { id: string; bibleId: string; abbreviation: string; name: string }[];
+  /** "default" = NIV only; "custom" = picked on the settings page. */
+  selection?: "default" | "custom";
+}
+
+export interface ApiBibleSummary {
+  bibleId: string;
+  abbreviation: string;
+  name: string;
+  language: string;
+  languageName?: string;
+}
+
+/** Every Bible the configured key licenses. */
+export async function listApiBibles(): Promise<ApiBibleSummary[]> {
+  const r = await fetch(`${httpBase()}/api/scripture/api-bible/bibles`);
+  const body = (await r.json().catch(() => ({}))) as { bibles?: ApiBibleSummary[]; message?: string };
+  if (!r.ok) throw new Error(body.message ?? `api-bible bibles: ${r.status}`);
+  return body.bibles ?? [];
+}
+
+/** Replace the registered API.Bible translations with these Bibles. */
+export async function saveApiBibleTranslations(bibleIds: string[]): Promise<ApiBibleStatus> {
+  const r = await fetch(`${httpBase()}/api/scripture/api-bible/translations`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ bibleIds }),
+  });
+  const body = (await r.json().catch(() => ({}))) as ApiBibleStatus & { message?: string };
+  if (!r.ok) throw new Error(body.message ?? `api-bible translations: ${r.status}`);
+  return body;
+}
+
+/** Translations plus the install-wide default (listed first by the server). */
+export async function getTranslationsWithDefault(): Promise<{
+  translations: TranslationMeta[];
+  defaultTranslation: string | null;
+  storedDefault: string | null;
+}> {
+  const r = await fetch(`${httpBase()}/api/scripture/translations`);
+  if (!r.ok) throw new Error(`translations: ${r.status}`);
+  const body = (await r.json()) as {
+    translations: TranslationMeta[];
+    defaultTranslation?: string | null;
+    storedDefault?: string | null;
+  };
+  return {
+    translations: body.translations,
+    defaultTranslation: body.defaultTranslation ?? null,
+    storedDefault: body.storedDefault ?? null,
+  };
+}
+
+export async function putDefaultTranslation(id: string | null): Promise<void> {
+  const r = await fetch(`${httpBase()}/api/scripture/default-translation`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ defaultTranslation: id }),
+  });
+  if (!r.ok) {
+    const body = (await r.json().catch(() => ({}))) as { message?: string };
+    throw new Error(body.message ?? `default translation: ${r.status}`);
+  }
 }
 
 export async function getApiBibleStatus(): Promise<ApiBibleStatus> {

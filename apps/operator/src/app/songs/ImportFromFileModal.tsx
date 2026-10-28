@@ -5,16 +5,22 @@ import {
   parseSongSelectText,
   slugifyTitle,
   type Song,
+  type SongMeta,
 } from "@overlaysys/core";
 import { Button, Field, Input, Modal, colors } from "@overlaysys/ui";
+import { findCcliDuplicate, resolveImportId, uniqueSlug, type ImportChoice } from "./songImport";
 
 interface Props {
+  /** Receives the song with its final id already resolved (replace or suffixed copy). */
   onSubmit: (song: Song) => void;
   onCancel: () => void;
+  /** Every id in use, including trashed songs, so an import never overwrites one. */
   existingIds: Set<string>;
+  /** Live songs, for the CCLI duplicate check. */
+  existingSongs: readonly SongMeta[];
 }
 
-export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) {
+export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingSongs }: Props) {
   const [parseError, setParseError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
@@ -24,10 +30,13 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
   const [sections, setSections] = useState<Song["sections"]>([]);
   const [arrangement, setArrangement] = useState<string[]>([]);
   const [filename, setFilename] = useState<string>("");
+  /** The CCLI duplicate being asked about; null when no choice is pending. */
+  const [duplicate, setDuplicate] = useState<SongMeta | null>(null);
 
   async function readFile(file: File) {
     setFilename(file.name);
     setParseError(null);
+    setDuplicate(null);
     const text = await file.text();
     try {
       const r = parseSongSelectText(text);
@@ -46,13 +55,20 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
     }
   }
 
-  function save() {
+  function save(choice?: ImportChoice) {
     if (!slug || !title || sections.length === 0) {
       setParseError("title, slug, and at least one section are required");
       return;
     }
+    const dup = findCcliDuplicate(ccli, existingSongs);
+    if (dup && !choice) {
+      // Ask inline: Replace / Import as copy / Cancel. Closing the modal is
+      // Cancel — nothing is imported without an explicit choice.
+      setDuplicate(dup);
+      return;
+    }
     const song: Song = {
-      id: slug,
+      id: resolveImportId(slug, existingIds, dup, choice ?? "copy"),
       title,
       sections,
       defaultArrangement: arrangement,
@@ -69,21 +85,29 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
       open
       onClose={onCancel}
       onCancel={onCancel}
-      onConfirm={sections.length > 0 && slug && title ? save : undefined}
+      onConfirm={sections.length > 0 && slug && title && !duplicate ? () => save() : undefined}
       size="md"
       title="Import song from file"
       footer={
-        <>
-          <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
-          <Button
-            onClick={save}
-            disabled={sections.length === 0 || !slug || !title}
-            variant="primary"
-            size="sm"
-          >
-            Save song
-          </Button>
-        </>
+        duplicate ? (
+          <>
+            <Button onClick={() => setDuplicate(null)} variant="ghost" size="sm">Cancel</Button>
+            <Button onClick={() => save("copy")} size="sm">Import as copy</Button>
+            <Button onClick={() => save("replace")} variant="destructive" size="sm">Replace</Button>
+          </>
+        ) : (
+          <>
+            <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+            <Button
+              onClick={() => save()}
+              disabled={sections.length === 0 || !slug || !title}
+              variant="primary"
+              size="sm"
+            >
+              Save song
+            </Button>
+          </>
+        )
       }
     >
       <input
@@ -95,6 +119,26 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
         }}
         style={{ marginBottom: 12 }}
       />
+
+      {duplicate && (
+        <div
+          role="alert"
+          style={{
+            padding: "8px 12px",
+            marginBottom: 12,
+            border: `1px solid ${colors.warn}`,
+            borderRadius: 6,
+            fontSize: 13,
+          }}
+        >
+          A song with CCLI # <strong>{ccli.trim()}</strong> already exists:{" "}
+          <strong>{duplicate.title || duplicate.id}</strong>.
+          <br />
+          <strong>Replace</strong> overwrites that song&apos;s lyrics and details.{" "}
+          <strong>Import as copy</strong> adds this one as{" "}
+          <code>{uniqueSlug(slug, existingIds)}</code>.
+        </div>
+      )}
 
       {parseError && (
         <p style={{ color: colors.errorText, fontSize: 12 }}>
@@ -110,18 +154,31 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
           <Field
             label="Slug"
             layout="inline"
-            hint={existingIds.has(slug) ? "Slug collides with existing song" : undefined}
+            hint={
+              existingIds.has(slug)
+                ? `In use — will be saved as ${uniqueSlug(slug, existingIds)}`
+                : undefined
+            }
           >
             <Input
               value={slug}
-              onChange={(e) => setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase())}
+              onChange={(e) => {
+                setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase());
+                setDuplicate(null);
+              }}
             />
           </Field>
           <Field label="Author" layout="inline">
             <Input value={author} onChange={(e) => setAuthor(e.target.value)} />
           </Field>
           <Field label="CCLI #" layout="inline">
-            <Input value={ccli} onChange={(e) => setCcli(e.target.value)} />
+            <Input
+              value={ccli}
+              onChange={(e) => {
+                setCcli(e.target.value);
+                setDuplicate(null);
+              }}
+            />
           </Field>
           <Field label="Copyright" layout="inline">
             <Input value={copyright} onChange={(e) => setCopyright(e.target.value)} />
@@ -137,11 +194,4 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds }: Props) 
       )}
     </Modal>
   );
-}
-
-function uniqueSlug(base: string, existing: Set<string>): string {
-  if (!existing.has(base)) return base;
-  let n = 2;
-  while (existing.has(`${base}-${n}`)) n++;
-  return `${base}-${n}`;
 }

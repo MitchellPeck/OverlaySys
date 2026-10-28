@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addBreak, removeBreak, moveBreak, nudgeTarget, isVerseBoundary,
-  slideStarts, slideCharCounts, stableSlideIds,
+  slideStarts, slideCharCounts, stableSlideIds, lyricSlideStats, LYRIC_SLIDE_BUDGET,
 } from "./slideBreaks";
 
 // verse 0: "a b c" (words 0-2), verse 1: "d e" (words 3-4), verse 2: "f" (word 5)
@@ -76,5 +76,24 @@ describe("helpers", () => {
     expect(ids[0]).toBe("slide-0");
     expect(ids[2]).toBe("slide-1");
     expect(new Set(ids).size).toBe(3);
+  });
+});
+
+describe("lyricSlideStats", () => {
+  it("counts chars with line breaks as one space and ignores trailing empty lines", () => {
+    expect(lyricSlideStats(["abc", "de", ""])).toEqual({ chars: 6, lines: 2, overChars: false, overLines: false });
+  });
+  it("reports an empty slide as zero", () => {
+    expect(lyricSlideStats([""])).toMatchObject({ chars: 0, lines: 0 });
+  });
+  it("flags lines and chars over budget", () => {
+    expect(lyricSlideStats(["a", "b", "c"], { maxChars: 4, maxLines: 2 })).toMatchObject({
+      overChars: true,
+      overLines: true,
+    });
+  });
+  it("defaults to the lyric budget", () => {
+    expect(lyricSlideStats(["x".repeat(LYRIC_SLIDE_BUDGET.maxChars + 1)]).overChars).toBe(true);
+    expect(lyricSlideStats(["x".repeat(LYRIC_SLIDE_BUDGET.maxChars)]).overChars).toBe(false);
   });
 });

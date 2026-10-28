@@ -80,6 +80,20 @@ export interface ImportPlanRequest {
   /** Fallback templates when an item config omits `templateId`. */
   defaultLyricTemplateId?: string;
   defaultGraphicTemplateId?: string;
+  /**
+   * Existing-show target: move the rows imported from this plan into plan
+   * order (rows not from this plan keep their slots). Off by default — the
+   * operator may have reordered on purpose.
+   */
+  reorderToPlan?: boolean;
+}
+
+/** A row imported from this plan whose PCO item is no longer in the plan. */
+export interface RemovedPlanRow {
+  rowId: string;
+  itemId: string;
+  /** Best-effort label for the UI (song title, graphic text, reference). */
+  label?: string;
 }
 
 export interface ImportPlanResult {
@@ -99,6 +113,14 @@ export interface ImportPlanResult {
    * push they keep rendering the pre-import content.
    */
   writtenSongIds: string[];
+  /**
+   * Rows in the target show imported from this plan whose item has since
+   * been removed from the plan. They are left in place for the operator to
+   * review and delete.
+   */
+  removedRows: RemovedPlanRow[];
+  /** Whether re-imported rows were moved into plan order (reorderToPlan). */
+  reordered: boolean;
   warnings: string[];
   errors: { itemId: string; message: string }[];
 }
@@ -125,6 +147,121 @@ function carryOver(old: RundownRow, row: RundownRow): RundownRow {
     if (old.lengthSec !== undefined) next.lengthSec = old.lengthSec;
     else delete next.lengthSec;
   }
+  return next;
+}
+
+/**
+ * Song fields the operator sets in the library (templates, intro/outro
+ * mappings, channel). A re-import refreshes lyrics and PCO metadata, but a
+ * PCO song carries none of these, so an incoming `undefined` means "not
+ * specified" and the library's value is kept.
+ */
+export const OPERATOR_SONG_DEFAULT_KEYS = [
+  "defaultLyricTemplateId",
+  "defaultIntroTemplateId",
+  "defaultIntroFieldMap",
+  "defaultIntroFieldLiterals",
+  "defaultOutroTemplateId",
+  "defaultOutroFieldMap",
+  "defaultOutroFieldLiterals",
+  "defaultChannel",
+] as const satisfies readonly (keyof Song)[];
+
+export function keepSongDefaults(existing: Song | undefined, next: Song): Song {
+  if (!existing) return next;
+  const out: Song = { ...next };
+  for (const key of OPERATOR_SONG_DEFAULT_KEYS) {
+    if (out[key] === undefined && existing[key] !== undefined) {
+      (out as Record<string, unknown>)[key] = existing[key];
+    }
+  }
+  return out;
+}
+
+function isFromPlan(r: RundownRow, serviceTypeId: string, planId: string): boolean {
+  const ref = r.sourceRef;
+  return !!ref && ref.provider === "pco" && ref.serviceTypeId === serviceTypeId && ref.planId === planId;
+}
+
+/** Where a plan item already lives: the shows holding a row imported from it. */
+export interface ImportedItemShow {
+  showId: string;
+  showName: string;
+}
+
+/**
+ * itemId → shows that already contain a row imported from that item of
+ * (serviceTypeId, planId). Drives the "already imported" badge.
+ */
+export function findImportedItems(
+  liveShows: readonly Pick<Show, "id" | "name" | "rows">[],
+  serviceTypeId: string,
+  planId: string,
+): Record<string, ImportedItemShow[]> {
+  const out: Record<string, ImportedItemShow[]> = {};
+  for (const show of liveShows) {
+    const seen = new Set<string>();
+    for (const r of show.rows) {
+      if (!isFromPlan(r, serviceTypeId, planId)) continue;
+      const itemId = r.sourceRef!.itemId;
+      if (seen.has(itemId)) continue;
+      seen.add(itemId);
+      (out[itemId] ??= []).push({ showId: show.id, showName: show.name });
+    }
+  }
+  return out;
+}
+
+/** Rows imported from (serviceTypeId, planId) whose item id isn't in the plan any more. */
+export function findRemovedPlanRows(
+  rows: readonly RundownRow[],
+  serviceTypeId: string,
+  planId: string,
+  planItemIds: ReadonlySet<string>,
+  songTitle: (songId: string) => string | undefined,
+): RemovedPlanRow[] {
+  const out: RemovedPlanRow[] = [];
+  for (const r of rows) {
+    if (!isFromPlan(r, serviceTypeId, planId) || planItemIds.has(r.sourceRef!.itemId)) continue;
+    let label: string | undefined;
+    if (r.kind === "song") label = songTitle(r.songId);
+    else if (r.kind === "graphic") label = Object.values(r.data ?? {}).find((v) => typeof v === "string" && v.trim());
+    else if (r.kind === "scripture") label = r.reference;
+    out.push({ rowId: r.id, itemId: r.sourceRef!.itemId, ...(label ? { label } : {}) });
+  }
+  return out;
+}
+
+/**
+ * Put rows sourced from (serviceTypeId, planId) and still in the plan into
+ * plan order, reusing the slots those rows occupy. Every other row (manual,
+ * other plans, removed from the plan) keeps its index. Returns the same
+ * array when nothing moves.
+ */
+export function reorderRowsToPlan(
+  rows: RundownRow[],
+  serviceTypeId: string,
+  planId: string,
+  planOrder: readonly string[],
+): RundownRow[] {
+  const rank = new Map(planOrder.map((id, i) => [id, i]));
+  const slots: number[] = [];
+  const planRows: RundownRow[] = [];
+  rows.forEach((r, i) => {
+    if (isFromPlan(r, serviceTypeId, planId) && rank.has(r.sourceRef!.itemId)) {
+      slots.push(i);
+      planRows.push(r);
+    }
+  });
+  const sorted = planRows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => rank.get(a.r.sourceRef!.itemId)! - rank.get(b.r.sourceRef!.itemId)! || a.i - b.i)
+    .map((x) => x.r);
+  if (sorted.every((r, i) => r === planRows[i])) return rows;
+  const next = rows.slice();
+  slots.forEach((slot, i) => {
+    next[slot] = sorted[i]!;
+  });
   return next;
 }
 
@@ -249,6 +386,10 @@ export async function importPlan(
       songToSave = built.song;
     }
 
+    // Re-import refreshes lyrics/metadata but must not wipe the operator's
+    // library defaults (templates, intro/outro, channel).
+    songToSave = keepSongDefaults(existing, songToSave);
+
     try {
       await songs.saveSong(songToSave);
     } catch (err) {
@@ -275,6 +416,8 @@ export async function importPlan(
         ok: false,
         counts,
         writtenSongIds: [...writtenSongIds],
+        removedRows: [],
+        reordered: false,
         warnings,
         errors: [{ itemId: "", message: "existing target requires showId" }],
       };
@@ -285,6 +428,8 @@ export async function importPlan(
         ok: false,
         counts,
         writtenSongIds: [...writtenSongIds],
+        removedRows: [],
+        reordered: false,
         warnings,
         errors: [{ itemId: "", message: `show ${req.target.showId} not found` }],
       };
@@ -373,6 +518,35 @@ export async function importPlan(
     counts.rows++;
   }
 
+  // Rows from earlier imports of this plan whose item was since removed in
+  // PCO: flag them (left in place) so the operator can review.
+  const titleById = new Map(library.map((s) => [s.id, s.title]));
+  const removedRows = findRemovedPlanRows(
+    show.rows,
+    req.serviceTypeId,
+    req.planId,
+    new Set(allItems.map((i) => i.id)),
+    (id) => titleById.get(id),
+  );
+  if (removedRows.length > 0) {
+    warnings.push(
+      `${removedRows.length} row${removedRows.length === 1 ? " was" : "s were"} removed from the plan in Planning Center: ` +
+        removedRows.map((r) => r.label ?? r.itemId).join(", "),
+    );
+  }
+
+  let reordered = false;
+  if (req.reorderToPlan) {
+    // getPlanItems returns plan order already; sort by sequence defensively.
+    const planOrder = allItems
+      .map((it, i) => ({ id: it.id, seq: it.sequence ?? i }))
+      .sort((a, b) => a.seq - b.seq)
+      .map((x) => x.id);
+    const next = reorderRowsToPlan(show.rows, req.serviceTypeId, req.planId, planOrder);
+    reordered = next !== show.rows;
+    show.rows = next;
+  }
+
   // Date the show from the plan. A show that already has a date keeps it —
   // the operator may have set it deliberately.
   const serviceDate = planServiceDate(req.planDate);
@@ -390,6 +564,8 @@ export async function importPlan(
     showId: parsed.id,
     counts,
     writtenSongIds: [...writtenSongIds],
+    removedRows,
+    reordered,
     warnings,
     errors,
   };

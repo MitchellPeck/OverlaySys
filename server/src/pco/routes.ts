@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { PcoConfigSchema, buildItemPreview } from "@overlaysys/core";
 import * as songs from "../songs";
-import { listShowMetas } from "../shows";
+import { getShow, listShowMetas } from "../shows";
 import { listSongMetas } from "../songs";
 import { loadPcoConfig, savePcoConfig } from "../storage";
 import { broadcast } from "../broadcast";
@@ -15,7 +15,7 @@ import {
   setPcoAuthorization,
 } from "./pcoTokens";
 import { PcoAuthError, createPcoClient, type PcoClient } from "./pcoClient";
-import { importPlan, type ImportPlanRequest } from "./importPlan";
+import { findImportedItems, importPlan, type ImportPlanRequest } from "./importPlan";
 
 /**
  * Planning Center Services REST surface. Token receipt mirrors the cloud
@@ -101,7 +101,15 @@ export async function registerPcoRoutes(app: FastifyInstance): Promise<void> {
         const items = await requireClient().getPlanItems(serviceTypeId, req.params.planId);
         const library = await songs.listSongs();
         const previews = items.map((i) => buildItemPreview(i, library));
-        return { items, previews };
+        // Which shows already hold rows from this plan's items ("already
+        // imported" badges). Small: a handful of shows per project.
+        const liveShows = [];
+        for (const m of await listShowMetas()) {
+          const show = await getShow(m.id);
+          if (show) liveShows.push(show);
+        }
+        const imported = findImportedItems(liveShows, serviceTypeId, req.params.planId);
+        return { items, previews, imported };
       } catch (err) {
         return pcoErrorReply(reply, err);
       }

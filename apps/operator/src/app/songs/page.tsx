@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import { Button, colors } from "@overlaysys/ui";
+import { Button, Modal, Select, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { ManagementList } from "@/app/components/ManagementList";
 import { ImportFromFileModal } from "./ImportFromFileModal";
+import { CcliReportModal } from "./CcliReportModal";
 import { downloadJson } from "@/lib/download";
-import type { Song, SongMeta } from "@overlaysys/core";
+import type { Song } from "@overlaysys/core";
 import { isCloudMode } from "@/lib/mode";
 import {
   deleteSongCloud,
@@ -18,22 +19,91 @@ import {
   refreshSongMetasCloud,
   saveSongCloud,
 } from "@/lib/cloudData";
+import {
+  mergeLibrary,
+  songMatches,
+  sortLibrary,
+  type LibraryRow,
+  type LibrarySort,
+} from "./librarySearch";
+import { fetchSongLibrary, restoreDeletedSong, type SongLibrary } from "./libraryClient";
+
+const SORT_KEY = "overlaysys.songs.sort";
+const SAVE_ACK_TIMEOUT_MS = 8000;
+
+function loadSort(): LibrarySort {
+  try {
+    return window.localStorage.getItem(SORT_KEY) === "recent" ? "recent" : "title";
+  } catch {
+    return "title";
+  }
+}
+
+/** Send save_song and resolve on the server's ack; reject on error, disconnect or timeout. */
+function saveSongAcked(song: Song): Promise<void> {
+  const client = getClient();
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const cleanups: (() => void)[] = [];
+    const finish = (err?: Error) => {
+      if (done) return;
+      done = true;
+      for (const c of cleanups) c();
+      if (err) reject(err);
+      else resolve();
+    };
+    const timer = setTimeout(() => finish(new Error("The server didn't confirm the save.")), SAVE_ACK_TIMEOUT_MS);
+    cleanups.push(() => clearTimeout(timer));
+    cleanups.push(
+      client.on((msg) => {
+        if (msg.type === "ack" && msg.op === "save_song" && msg.id === song.id) finish();
+        else if (msg.type === "error" && (msg.code === "handler_error" || msg.code === "bad_message"))
+          finish(new Error(msg.message));
+      }),
+    );
+    // onStatus reports the current status synchronously; any later change
+    // away from "open" means the ack can no longer arrive on this socket.
+    let first = true;
+    const offStatus = client.onStatus((s) => {
+      const wasFirst = first;
+      first = false;
+      if (s !== "open" && !(wasFirst && s === "connecting")) {
+        finish(new Error("Disconnected from the server before the save was confirmed."));
+      }
+    });
+    if (done) offStatus();
+    else cleanups.push(offStatus);
+    if (!done) client.send({ type: "save_song", song });
+  });
+}
+
+function formatDate(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+}
 
 export default function SongsPage() {
   const { send } = useWs();
   const router = useRouter();
   const songs = useStore((s) => s.songs);
   const conn = useStore((s) => s.conn);
-  const { alert, confirm, dialog } = useDialog();
+  const { alert, dialog } = useDialog();
   const [importOpen, setImportOpen] = useState(false);
+  const [ccliOpen, setCcliOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [library, setLibrary] = useState<SongLibrary | null>(null);
+  const [sort, setSort] = useState<LibrarySort>("title");
   const cloud = isCloudMode();
   const disabled = !cloud && conn !== "open";
 
+  useEffect(() => setSort(loadSort()), []);
+
   async function showError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.warn(`[songs] cloud ${action} failed`, err);
+    console.warn(`[songs] ${action} failed`, err);
     await alert({
-      title: `Cloud ${action} failed`,
+      title: `${cloud ? "Cloud " : ""}${action} failed`,
       message: (
         <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
           {message}
@@ -52,6 +122,29 @@ export default function SongsPage() {
     }
   }, [cloud, conn, send]);
 
+  // Usage counts, edit dates, lyrics for search and the trash come from the
+  // local server's library route; refetch whenever the WS list changes.
+  useEffect(() => {
+    if (cloud || conn !== "open") return;
+    let cancelled = false;
+    void fetchSongLibrary().then((lib) => {
+      if (!cancelled) setLibrary(lib);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cloud, conn, songs]);
+
+  const rows = useMemo(
+    () => sortLibrary(mergeLibrary(songs, library?.songs ?? null), sort),
+    [songs, library, sort],
+  );
+  const deleted = library?.deleted ?? [];
+  const allIds = useMemo(
+    () => new Set([...songs.map((s) => s.id), ...deleted.map((d) => d.id)]),
+    [songs, deleted],
+  );
+
   async function createSong(title: string): Promise<string> {
     const id = `song-${uuid().slice(0, 8)}`;
     const song: Song = {
@@ -68,13 +161,7 @@ export default function SongsPage() {
       defaultArrangement: ["v1"],
       customFields: {},
     };
-    if (cloud) {
-      await saveSongCloud(song);
-      await refreshSongMetasCloud();
-      return id;
-    }
-    if (conn !== "open") throw new Error("WS not connected");
-    send({ type: "save_song", song });
+    await persistSong(song);
     return id;
   }
 
@@ -84,46 +171,18 @@ export default function SongsPage() {
       await refreshSongMetasCloud();
       return;
     }
-    send({ type: "save_song", song });
+    if (conn !== "open") throw new Error("Not connected to the server.");
+    await saveSongAcked(song);
   }
 
   async function handleImportSubmit(song: Song) {
+    // The modal resolved the id (Replace keeps the duplicate's id; anything
+    // else is auto-suffixed), so this is a plain save.
     try {
-      if (song.ccliNumber) {
-        const existing = songs.find(
-          (s) => s.ccliNumber === song.ccliNumber && s.id !== song.id,
-        );
-        if (existing) {
-          const replace = await confirm({
-            title: "Song already exists",
-            message: (
-              <>
-                A song with CCLI # <strong>{song.ccliNumber}</strong> already exists:{" "}
-                <strong>{existing.title || existing.id}</strong>.
-                <br />
-                Click <strong>Replace</strong> to overwrite that song, or <strong>Cancel</strong> to import as a new copy.
-              </>
-            ),
-            confirmLabel: "Replace",
-            cancelLabel: "Import as new copy",
-            destructive: true,
-          });
-          if (replace) {
-            await persistSong({ ...song, id: existing.id });
-          } else {
-            const baseSlug = song.id;
-            let n = 2;
-            while (songs.some((s) => s.id === `${baseSlug}-${n}`)) n++;
-            await persistSong({ ...song, id: `${baseSlug}-${n}` });
-          }
-          setImportOpen(false);
-          return;
-        }
-      }
       await persistSong(song);
       setImportOpen(false);
     } catch (err) {
-      await showError("import", err);
+      await showError("Import", err);
     }
   }
 
@@ -133,7 +192,7 @@ export default function SongsPage() {
         const song = await getSongCloud(id);
         if (song) downloadJson(`${id}.json`, song);
       } catch (err) {
-        await showError("export", err);
+        await showError("Export", err);
       }
       return;
     }
@@ -154,7 +213,7 @@ export default function SongsPage() {
     setTimeout(tick, 50);
   }
 
-  async function deleteSong(meta: SongMeta): Promise<void> {
+  async function deleteSong(meta: LibraryRow): Promise<void> {
     if (cloud) {
       await deleteSongCloud(meta.id);
       await refreshSongMetasCloud();
@@ -163,37 +222,95 @@ export default function SongsPage() {
     send({ type: "delete_song", songId: meta.id });
   }
 
+  async function restore(id: string) {
+    try {
+      await restoreDeletedSong(id);
+      setLibrary(await fetchSongLibrary());
+    } catch (err) {
+      await showError("Restore", err);
+    }
+  }
+
   return (
     <>
-      <ManagementList<SongMeta>
+      <ManagementList<LibraryRow>
         title="Songs"
         entityNoun="song"
-        items={songs}
+        items={rows}
         disabled={disabled}
-        secondaryActions={
-          <Button
-            onClick={() => setImportOpen(true)}
-            disabled={disabled}
-            size="sm"
+        filter={songMatches}
+        filterPlaceholder={
+          library ? "Filter by title, author, CCLI # or lyrics…" : "Filter by title, author or CCLI #…"
+        }
+        toolbar={
+          <Select
+            value={sort}
+            aria-label="Sort songs"
+            onChange={(e) => {
+              const next = e.target.value === "recent" ? "recent" : "title";
+              setSort(next);
+              try {
+                window.localStorage.setItem(SORT_KEY, next);
+              } catch {
+                // preference just isn't remembered
+              }
+            }}
+            style={{ width: "auto" }}
           >
-            Import from file…
-          </Button>
+            <option value="title">Title A–Z</option>
+            <option value="recent">Recently edited</option>
+          </Select>
+        }
+        secondaryActions={
+          <>
+            {!cloud && (
+              <Button onClick={() => setCcliOpen(true)} size="sm" disabled={disabled}>
+                CCLI report…
+              </Button>
+            )}
+            {!cloud && deleted.length > 0 && (
+              <Button onClick={() => setTrashOpen(true)} size="sm" disabled={disabled}>
+                Recently deleted ({deleted.length})
+              </Button>
+            )}
+            <Button
+              onClick={() => setImportOpen(true)}
+              disabled={disabled}
+              size="sm"
+            >
+              Import from file…
+            </Button>
+          </>
         }
         createFn={createSong}
         onCreated={(id) => router.push(`/songs/edit?id=${encodeURIComponent(id)}`)}
         deleteFn={deleteSong}
+        deleteNote={!cloud && library ? "You can restore it from Recently deleted." : undefined}
+        deleteConfirmDetails={(s) =>
+          s.usedIn ? (
+            <span style={{ color: colors.warn }}>
+              {`Used in ${s.usedIn} show${s.usedIn === 1 ? "" : "s"}`}
+              {s.usedInShows?.length
+                ? ` (${s.usedInShows.join(", ")}${s.usedIn > s.usedInShows.length ? ", …" : ""})`
+                : ""}
+              {". Those rundown rows will show the song as missing."}
+            </span>
+          ) : null
+        }
         rowKey={(s) => s.id}
         rowHref={(s) => `/songs/edit?id=${encodeURIComponent(s.id)}`}
         rowPrimary={(s) => s.title || <em style={{ color: colors.textDim }}>(untitled)</em>}
-        rowSecondary={(s) =>
-          [
-            s.id,
+        rowSecondary={(s) => {
+          const edited = formatDate(s.updatedAt);
+          return [
             s.author ? `by ${s.author}` : null,
             s.ccliNumber ? `CCLI ${s.ccliNumber}` : null,
-          ].filter(Boolean).join(" · ")
-        }
+            s.usedIn ? `in ${s.usedIn} show${s.usedIn === 1 ? "" : "s"}` : null,
+            edited ? `edited ${edited}` : null,
+          ].filter(Boolean).join(" · ") || " ";
+        }}
         rowActions={(s) => (
-          <Button onClick={() => exportSong(s.id)} size="sm" style={{ width: 64 }}>
+          <Button onClick={() => exportSong(s.id)} size="sm" style={{ width: 64 }} aria-label={`Export ${s.title || s.id}`}>
             Export
           </Button>
         )}
@@ -201,10 +318,55 @@ export default function SongsPage() {
       />
       {importOpen && (
         <ImportFromFileModal
-          existingIds={new Set(songs.map((s) => s.id))}
+          existingIds={allIds}
+          existingSongs={songs}
           onCancel={() => setImportOpen(false)}
           onSubmit={(song) => handleImportSubmit(song)}
         />
+      )}
+      {ccliOpen && <CcliReportModal onClose={() => setCcliOpen(false)} />}
+      {trashOpen && (
+        <Modal
+          open
+          onClose={() => setTrashOpen(false)}
+          onCancel={() => setTrashOpen(false)}
+          size="md"
+          title="Recently deleted songs"
+          footer={<Button onClick={() => setTrashOpen(false)} size="sm">Close</Button>}
+        >
+          {deleted.length === 0 ? (
+            <p style={{ fontSize: 13, color: colors.textDim }}>Nothing in Recently deleted.</p>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {deleted.map((d) => (
+                <li
+                  key={d.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 0",
+                    borderBottom: `1px solid ${colors.border}`,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13 }}>{d.title || d.id}</div>
+                    <div style={{ fontSize: 11, color: colors.textDim }}>
+                      {[
+                        d.author ? `by ${d.author}` : null,
+                        d.ccliNumber ? `CCLI ${d.ccliNumber}` : null,
+                        formatDate(d.deletedAt) ? `deleted ${formatDate(d.deletedAt)}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={() => restore(d.id)} disabled={disabled}>
+                    Restore
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Modal>
       )}
       {dialog}
     </>

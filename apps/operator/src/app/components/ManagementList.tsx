@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Button, EntityList, EntityRow, IconButton, colors } from "@overlaysys/ui";
+import { useState, type ReactNode } from "react";
+import { Button, EntityList, EntityRow, IconButton, Input, colors } from "@overlaysys/ui";
 import { useDialog } from "@/lib/dialog";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -86,6 +86,20 @@ export interface ManagementListProps<T> {
    * warn about orphaned shows/hotcards before destructive confirm.
    */
   deleteConfirmDetails?: (item: T) => ReactNode;
+
+  /**
+   * Show a filter box above the list; items for which this returns false
+   * are hidden while a query is typed. The query is passed untrimmed.
+   */
+  filter?: (item: T, query: string) => boolean;
+  /** Placeholder for the filter box. */
+  filterPlaceholder?: string;
+
+  /** Extra controls rendered next to the filter box (e.g. a sort picker). */
+  toolbar?: ReactNode;
+
+  /** Replaces "This cannot be undone." in the delete confirm (e.g. when deletes go to a trash). */
+  deleteNote?: ReactNode;
 }
 
 function capitalize(s: string): string {
@@ -122,8 +136,14 @@ export function ManagementList<T>({
   canDelete,
   cannotDeleteReason,
   deleteConfirmDetails,
+  filter,
+  filterPlaceholder,
+  toolbar,
+  deleteNote,
 }: ManagementListProps<T>) {
   const { prompt, confirm, alert, dialog } = useDialog();
+  const [query, setQuery] = useState("");
+  const visible = filter && query.trim() ? items.filter((item) => filter(item, query)) : items;
 
   async function handleCreate() {
     const name = await prompt({
@@ -153,7 +173,7 @@ export function ManagementList<T>({
       title: `Delete ${entityNoun}`,
       message: (
         <>
-          Delete <strong>{name}</strong>? This cannot be undone.
+          Delete <strong>{name}</strong>? {deleteNote ?? "This cannot be undone."}
           {details && (
             <>
               <br />
@@ -197,13 +217,32 @@ export function ManagementList<T>({
       />
       <PageBody maxWidth={maxWidth} style={{ height: "100%" }}>
         {bodyHeader}
+        {(filter || toolbar) && items.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+            {filter && (
+              <Input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={filterPlaceholder ?? `Filter ${entityNoun}s…`}
+                aria-label={`Filter ${entityNoun}s`}
+                style={{ flex: 1 }}
+              />
+            )}
+            {toolbar}
+          </div>
+        )}
         {items.length === 0 ? (
           <p style={{ color: colors.textDim, fontSize: 13 }}>
             {emptyMessage ?? `No ${entityNoun}s yet. Create one to get started.`}
           </p>
+        ) : visible.length === 0 ? (
+          <p style={{ color: colors.textDim, fontSize: 13 }}>
+            No {entityNoun}s match “{query.trim()}”.
+          </p>
         ) : (
           <EntityList>
-            {items.map((item) => {
+            {visible.map((item) => {
               const deletable = canDelete ? canDelete(item) : true;
               const blockedReason = !deletable
                 ? cannotDeleteReason?.(item) ?? `This ${entityNoun} can't be deleted`

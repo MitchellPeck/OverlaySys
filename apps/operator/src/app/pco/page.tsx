@@ -164,7 +164,12 @@ export default function PcoPage() {
   const [previews, setPreviews] = useState<Record<string, ItemPreview>>({});
   const [cfgs, setCfgs] = useState<Record<string, ItemCfg>>({});
   const [loadingItems, setLoadingItems] = useState(false);
+  /** itemId → shows that already hold a row imported from it. */
+  const [imported, setImported] = useState<Record<string, { showId: string; showName: string }[]>>({});
   const seededRef = useRef<Set<string>>(new Set());
+  /** Latest plan request; a slower reply for an earlier pick is dropped. */
+  const planRequestRef = useRef(0);
+  const serviceTypeRequestRef = useRef(0);
 
   // Drafts for songs this import would create, keyed by plan item id. They are
   // built here (not on the server) so the operator can configure templates,
@@ -176,6 +181,7 @@ export default function PcoPage() {
   const [editingSongItemId, setEditingSongItemId] = useState<string | null>(null);
 
   const [targetMode, setTargetMode] = useState<"new" | "existing">("new");
+  const [reorderToPlan, setReorderToPlan] = useState(false);
   const [newName, setNewName] = useState("");
   const [existingShowId, setExistingShowId] = useState("");
 
@@ -315,27 +321,40 @@ export default function PcoPage() {
   }
 
   async function onPickServiceType(id: string) {
+    // Invalidate any in-flight plan-items request for the old service type.
+    planRequestRef.current += 1;
     setServiceTypeId(id);
     setPlans([]);
     setPlanId("");
     setItems([]);
+    setImported({});
+    setLoadingItems(false);
     if (!id) return;
+    const stRequest = ++serviceTypeRequestRef.current;
     try {
-      setPlans(await listPlans(id));
+      const fetched = await listPlans(id);
+      if (stRequest === serviceTypeRequestRef.current) setPlans(fetched);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (stRequest === serviceTypeRequestRef.current) setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   async function onPickPlan(id: string) {
+    const requestId = ++planRequestRef.current;
     setPlanId(id);
     setItems([]);
+    setImported({});
     setResult(null);
-    if (!id) return;
+    if (!id) {
+      setLoadingItems(false);
+      return;
+    }
     setLoadingItems(true);
     setError(null);
     try {
-      const { items: fetched, previews: pv } = await getPlanItems(serviceTypeId, id);
+      const { items: fetched, previews: pv, imported: importedMap } = await getPlanItems(serviceTypeId, id);
+      // The operator picked another plan while this one loaded: drop it.
+      if (requestId !== planRequestRef.current) return;
       const map: Record<string, ItemPreview> = {};
       for (const p of pv) map[p.itemId] = p;
       const def = templates[0]?.id ?? "";
@@ -366,13 +385,22 @@ export default function PcoPage() {
       setItems(fetched);
       setPreviews(map);
       setCfgs(nextCfgs);
+      setImported(importedMap ?? {});
       const plan = plans.find((p) => p.id === id);
       if (plan) setNewName(planLabel(plan));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (requestId === planRequestRef.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoadingItems(false);
+      if (requestId === planRequestRef.current) setLoadingItems(false);
     }
+  }
+
+  function setAllIncluded(include: boolean) {
+    setCfgs((prev) => {
+      const next: Record<string, ItemCfg> = {};
+      for (const [k, c] of Object.entries(prev)) next[k] = c.include === include ? c : { ...c, include };
+      return next;
+    });
   }
 
   const patch = useCallback((itemId: string, updater: (c: ItemCfg) => ItemCfg) => {
@@ -566,9 +594,12 @@ export default function PcoPage() {
             ? { mode: "new", name: newName, projectId: currentProjectId }
             : { mode: "existing", showId: existingShowId },
         items: payload,
+        ...(targetMode === "existing" && reorderToPlan ? { reorderToPlan: true } : {}),
       });
       setResult(res);
-      if (res.ok && res.showId) await openShow(res.showId);
+      // Stay on the page when rows were dropped from the plan, so the
+      // operator sees which ones to review.
+      if (res.ok && res.showId && !res.removedRows?.length) await openShow(res.showId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -598,20 +629,18 @@ export default function PcoPage() {
                     label="Application ID"
                     hint="The first value of your Personal Access Token (PCO may label it “Client ID”)."
                   >
-                    <input
+                    <Input
                       value={patAppId}
                       onChange={(e) => setPatAppId(e.target.value)}
                       autoComplete="off"
-                      style={inputStyle}
                     />
                   </Field>
                   <Field label="Secret">
-                    <input
+                    <Input
                       type="password"
                       value={patSecret}
                       onChange={(e) => setPatSecret(e.target.value)}
                       autoComplete="off"
-                      style={inputStyle}
                     />
                   </Field>
                   <div>
@@ -676,6 +705,19 @@ export default function PcoPage() {
             {items.length > 0 && (
               <Panel title={`Items (${includedCount}/${items.length} selected)`}>
                 <Stack gap={2}>
+                  <Inline gap={2} align="center">
+                    <Button size="sm" onClick={() => setAllIncluded(true)} disabled={includedCount === items.length}>
+                      Select all
+                    </Button>
+                    <Button size="sm" onClick={() => setAllIncluded(false)} disabled={includedCount === 0}>
+                      Deselect all
+                    </Button>
+                    {Object.keys(imported).length > 0 && (
+                      <span style={{ color: colors.textDim, fontSize: 12 }}>
+                        {items.filter((i) => imported[i.id]?.length).length} of {items.length} already imported
+                      </span>
+                    )}
+                  </Inline>
                   {items.map((item) => {
                     const cfg = cfgs[item.id];
                     if (!cfg) return null;
@@ -684,6 +726,7 @@ export default function PcoPage() {
                         key={item.id}
                         item={item}
                         preview={previews[item.id]}
+                        importedIn={imported[item.id]}
                         cfg={cfg}
                         templates={templates}
                         template={templateCache[cfg.graphicTemplateId] ?? null}
@@ -826,19 +869,32 @@ export default function PcoPage() {
                   </Field>
                   {targetMode === "new" ? (
                     <Field label="New show name">
-                      <input value={newName} onChange={(e) => setNewName(e.target.value)} style={inputStyle} />
+                      <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
                     </Field>
                   ) : (
-                    <Field label="Existing show">
-                      <Select value={existingShowId} onChange={(e) => setExistingShowId(e.target.value)}>
-                        <option value="">— choose —</option>
-                        {showMetas.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
+                    <>
+                      <Field label="Existing show">
+                        <Select value={existingShowId} onChange={(e) => setExistingShowId(e.target.value)}>
+                          <option value="">— choose —</option>
+                          {showMetas.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: colors.text }}>
+                        <input
+                          type="checkbox"
+                          checked={reorderToPlan}
+                          onChange={(e) => setReorderToPlan(e.target.checked)}
+                        />
+                        Reorder rows from this plan to match Planning Center
+                        <span style={{ color: colors.textDim, fontSize: 12 }}>
+                          (rows you added by hand keep their place)
+                        </span>
+                      </label>
+                    </>
                   )}
                   <div>
                     <Button variant="primary" disabled={!canImport} onClick={() => void doImport()}>
@@ -858,7 +914,25 @@ export default function PcoPage() {
                     {result.counts.rows} row(s) · {result.counts.songsCreated} song(s) created ·{" "}
                     {result.counts.songsLinked} linked · {result.counts.songsUpdated} updated
                   </p>
-                  {result.warnings.map((w, i) => (
+                  {result.reordered && (
+                    <p style={{ color: colors.textDim, fontSize: 13 }}>Rows reordered to match the plan.</p>
+                  )}
+                  {!!result.removedRows?.length && (
+                    <div style={{ fontSize: 13, color: colors.warn }}>
+                      <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} />{" "}
+                      {result.removedRows.length} row{result.removedRows.length === 1 ? " is" : "s are"} no
+                      longer in the Planning Center plan and {result.removedRows.length === 1 ? "was" : "were"} left in
+                      the show for you to review:
+                      <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
+                        {result.removedRows.map((r) => (
+                          <li key={r.rowId}>{r.label ?? r.itemId}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {result.warnings
+                    .filter((w) => !(result.removedRows?.length && /removed from the plan/.test(w)))
+                    .map((w, i) => (
                     <p key={i} style={{ color: colors.textDim, fontSize: 13 }}>
                       <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {w}
                     </p>
@@ -890,20 +964,10 @@ export default function PcoPage() {
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "4px 8px",
-  background: colors.panel2,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 4,
-  color: colors.text,
-  fontSize: 13,
-  boxSizing: "border-box",
-};
-
 function ItemConfigCard({
   item,
   preview,
+  importedIn,
   cfg,
   templates,
   template,
@@ -922,6 +986,7 @@ function ItemConfigCard({
 }: {
   item: PcoPlanItem;
   preview: ItemPreview | undefined;
+  importedIn: { showId: string; showName: string }[] | undefined;
   cfg: ItemCfg;
   templates: { id: string; name: string }[];
   template: Template | null;
@@ -950,11 +1015,21 @@ function ItemConfigCard({
       }}
     >
       <Inline gap={2} align="center">
-        <input type="checkbox" checked={cfg.include} onChange={onToggleInclude} />
+        <input
+          type="checkbox"
+          checked={cfg.include}
+          onChange={onToggleInclude}
+          aria-label={`Include ${item.title}`}
+        />
         <strong style={{ color: colors.text }}>{item.title}</strong>
         <Pill tone={isSong ? "accent" : "dim"}>
           {item.itemType}
         </Pill>
+        {!!importedIn?.length && (
+          <Pill tone="good" title={`Already in: ${importedIn.map((s) => s.showName).join(", ")}`}>
+            already imported
+          </Pill>
+        )}
       </Inline>
 
       {cfg.include && (
