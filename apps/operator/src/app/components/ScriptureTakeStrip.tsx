@@ -25,6 +25,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
   const liveIdx = ch?.scriptureSession?.rowId === row.id ? ch.scriptureSession.slideIdx : null;
   const queued = ch?.queuedScripture?.rowId === row.id;
   const showIntro = settings ? hasScriptureIntro(row, settings) : false;
+  const disconnected = useStore((s) => s.conn) !== "open";
   const onAir = (on: boolean) => (on ? { outline: `2px solid ${colors.onair}`, outlineOffset: 1 } : {});
 
   return (
@@ -34,6 +35,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
           size="md"
           variant="ghost"
           aria-pressed={queued}
+          disabled={disconnected}
           onClick={() => send({ type: "scripture_take_intro", showId: show.id, rowId: row.id, channel })}
           style={{ minWidth: 100, ...onAir(queued) }}
         >
@@ -46,6 +48,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
           size="md"
           variant="primary"
           aria-pressed={liveIdx === i}
+          disabled={disconnected}
           onClick={() => send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: i, channel })}
           style={{ flex: "1 1 auto", minWidth: 120, ...onAir(liveIdx === i) }}
         >

@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { HotcardMeta } from "@overlaysys/core";
-import { Button, PanelHeader, colors } from "@overlaysys/ui";
+import { Button, Kbd, PanelHeader, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { hotcardAirState, type AirState } from "@/lib/rowAirState";
+import { hotcardKeyLabel } from "@/lib/shortcutGuards";
 import { useWs } from "@/lib/useWs";
 
 type View = "grid" | "list";
@@ -19,7 +21,13 @@ export function HotcardsPanel() {
   const selectedHotcardId = useStore((s) => s.selectedHotcardId);
   const setSelectedHotcard = useStore((s) => s.setSelectedHotcard);
 
+  const channelStates = useStore((s) => s.channelStates);
   const [view, setView] = useState<View>("grid");
+  // On-air only where the store already knows it: a live graphic with this
+  // hotcard's template and data.
+  const air: Record<string, AirState> = {};
+  for (const h of hotcards) air[h.id] = hotcardAirState(hotcardCache[h.id], channelStates);
+  const disconnected = conn !== "open";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -102,6 +110,8 @@ export function HotcardsPanel() {
             onSelect={setSelectedHotcard}
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
+            air={air}
+            disconnected={disconnected}
           />
         ) : (
           <ListView
@@ -111,6 +121,8 @@ export function HotcardsPanel() {
             onSelect={setSelectedHotcard}
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
+            air={air}
+            disconnected={disconnected}
           />
         )}
       </div>
@@ -152,6 +164,8 @@ function GridView({
   onSelect,
   onCue,
   onTake,
+  air,
+  disconnected,
 }: {
   hotcards: HotcardMeta[];
   templates: { id: string; name: string }[];
@@ -159,18 +173,22 @@ function GridView({
   onSelect: (id: string) => void;
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
+  air: Record<string, AirState>;
+  disconnected: boolean;
 }) {
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
         gap: 8,
       }}
     >
-      {hotcards.map((h) => {
+      {hotcards.map((h, i) => {
         const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
         const selected = h.id === selectedId;
+        const fkey = hotcardKeyLabel(i);
+        const onAir = air[h.id];
         return (
           <div
             key={h.id}
@@ -192,19 +210,29 @@ function GridView({
             style={{
               textAlign: "left",
               background: selected ? "rgba(255, 58, 58, 0.12)" : colors.panel2,
-              border: selected
+              border: onAir === "program"
+                ? `2px solid ${colors.onair}`
+                : onAir === "preview"
+                ? `1px solid ${colors.ok}`
+                : selected
                 ? `1px solid ${colors.accent}`
                 : `1px solid ${colors.border}`,
               borderRadius: 6,
-              padding: 10,
+              padding: onAir === "program" ? 9 : 10,
               cursor: "pointer",
               display: "flex",
               flexDirection: "column",
               gap: 4,
               minHeight: 78,
             }}
+            aria-label={`${h.name}${onAir === "program" ? " (on air)" : onAir === "preview" ? " (on preview)" : ""}`}
           >
-            <div style={{ fontWeight: 600, fontSize: 13, color: colors.text }}>{h.name}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: colors.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {h.name}
+              </div>
+              {fkey && <Kbd title={`${fkey} take · Shift+${fkey} cue`}>{fkey}</Kbd>}
+            </div>
             <div
               style={{
                 fontSize: 10,
@@ -223,6 +251,7 @@ function GridView({
                   onCue(h);
                 }}
                 size="sm"
+                disabled={disconnected}
                 style={{ flex: 1, fontSize: 11 }}
               >
                 Cue
@@ -235,6 +264,7 @@ function GridView({
                 }}
                 variant="primary"
                 size="sm"
+                disabled={disconnected}
                 style={{ flex: 1, fontSize: 11 }}
               >
                 Take
@@ -254,6 +284,8 @@ function ListView({
   onSelect,
   onCue,
   onTake,
+  air,
+  disconnected,
 }: {
   hotcards: HotcardMeta[];
   templates: { id: string; name: string }[];
@@ -261,13 +293,17 @@ function ListView({
   onSelect: (id: string) => void;
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
+  air: Record<string, AirState>;
+  disconnected: boolean;
 }) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
       <tbody>
-        {hotcards.map((h) => {
+        {hotcards.map((h, i) => {
           const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
           const selected = h.id === selectedId;
+          const fkey = hotcardKeyLabel(i);
+          const onAir = air[h.id];
           return (
             <tr
               key={h.id}
@@ -278,14 +314,21 @@ function ListView({
               }}
               style={{
                 background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
-                borderLeft: selected
+                borderLeft: onAir === "program"
+                  ? `3px solid ${colors.onair}`
+                  : onAir === "preview"
+                  ? `3px solid ${colors.ok}`
+                  : selected
                   ? `3px solid ${colors.accent}`
                   : "3px solid transparent",
                 cursor: "pointer",
               }}
             >
               <td style={td()}>
-                <div style={{ fontWeight: 600 }}>{h.name}</div>
+                <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "baseline" }}>
+                  {h.name}
+                  {fkey && <Kbd title={`${fkey} take · Shift+${fkey} cue`}>{fkey}</Kbd>}
+                </div>
                 <div
                   style={{
                     fontSize: 10,
@@ -306,6 +349,7 @@ function ListView({
                       onCue(h);
                     }}
                     size="sm"
+                    disabled={disconnected}
                     style={{ width: 56, fontSize: 11 }}
                   >
                     Cue
@@ -318,6 +362,7 @@ function ListView({
                     }}
                     variant="primary"
                     size="sm"
+                    disabled={disconnected}
                     style={{ width: 56, fontSize: 11 }}
                   >
                     Take
