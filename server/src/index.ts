@@ -33,6 +33,9 @@ import { registerStageSettingsRoutes } from "./stageSettings";
 import { initApiBible } from "./apiBible/config";
 import { registerApiBibleRoutes } from "./apiBible/routes";
 import { registerSongLibraryRoutes } from "./songLibraryRoute";
+// [P2b.12]
+import { registerTemplateRoutes } from "./templateRoutes";
+// [/P2b.12]
 import { startApiBibleRefresh } from "./apiBible/refresh";
 import { listenWithFallback } from "./serverBoot";
 import os from "node:os";
@@ -196,6 +199,9 @@ await registerScriptureRoutes(app);
 await registerStageSettingsRoutes(app);
 await registerApiBibleRoutes(app);
 await registerSongLibraryRoutes(app);
+// [P2b.12]
+await registerTemplateRoutes(app);
+// [/P2b.12]
 
 app.get("/api/templates", async () => {
   return { templates: await listTemplateMetas() };

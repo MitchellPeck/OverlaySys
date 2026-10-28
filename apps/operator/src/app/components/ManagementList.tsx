@@ -100,6 +100,15 @@ export interface ManagementListProps<T> {
 
   /** Replaces "This cannot be undone." in the delete confirm (e.g. when deletes go to a trash). */
   deleteNote?: ReactNode;
+
+  /**
+   * Async override of the whole delete confirm (title, message, button). When
+   * `blocked`, only an OK dialog is shown and `deleteFn` is never called.
+   * Returning null falls back to the standard confirm.
+   */
+  resolveDeleteConfirm?: (
+    item: T,
+  ) => Promise<{ blocked: boolean; title: string; message: string; confirmLabel: string } | null>;
 }
 
 function capitalize(s: string): string {
@@ -140,6 +149,7 @@ export function ManagementList<T>({
   filterPlaceholder,
   toolbar,
   deleteNote,
+  resolveDeleteConfirm,
 }: ManagementListProps<T>) {
   const { prompt, confirm, alert, dialog } = useDialog();
   const [query, setQuery] = useState("");
@@ -169,22 +179,29 @@ export function ManagementList<T>({
   async function handleDelete(item: T) {
     const name = itemDisplayName ? itemDisplayName(item) : rowKey(item);
     const details = deleteConfirmDetails?.(item);
-    const ok = await confirm({
-      title: `Delete ${entityNoun}`,
-      message: (
-        <>
-          Delete <strong>{name}</strong>? {deleteNote ?? "This cannot be undone."}
-          {details && (
+    const custom = resolveDeleteConfirm ? await resolveDeleteConfirm(item) : null;
+    if (custom?.blocked) {
+      await alert({ title: custom.title, message: custom.message, okLabel: custom.confirmLabel });
+      return;
+    }
+    const ok = custom
+      ? await confirm({ title: custom.title, message: custom.message, confirmLabel: custom.confirmLabel, destructive: true })
+      : await confirm({
+          title: `Delete ${entityNoun}`,
+          message: (
             <>
-              <br />
-              {details}
+              Delete <strong>{name}</strong>? {deleteNote ?? "This cannot be undone."}
+              {details && (
+                <>
+                  <br />
+                  {details}
+                </>
+              )}
             </>
-          )}
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
+          ),
+          confirmLabel: "Delete",
+          destructive: true,
+        });
     if (!ok) return;
     try {
       await deleteFn(item);
