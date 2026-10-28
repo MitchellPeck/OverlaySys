@@ -68,7 +68,7 @@ export function PasteLyricsModal({ song, onApply, onClose }: Props) {
         mono
         aria-label="Lyrics to paste"
       />
-      {parsed.songSelect && (
+      {parsed.format === "songselect" && (
         <div style={{ marginTop: 8, fontSize: 12, color: colors.textDim }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <input
@@ -136,7 +136,7 @@ export function PasteLyricsModal({ song, onApply, onClose }: Props) {
 
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Button onClick={apply} variant="primary" size="sm" disabled={!parsed.ok}>
-          Replace song body{parsed.songSelect ? " (SongSelect detected)" : ""}
+          Replace song body{parsed.format === "songselect" ? " (SongSelect detected)" : ""}
         </Button>
         <Button onClick={onClose} size="sm">Cancel</Button>
       </div>

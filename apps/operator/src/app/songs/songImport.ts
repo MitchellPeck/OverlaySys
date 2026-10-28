@@ -1,4 +1,4 @@
-import type { SongMeta } from "@overlaysys/core";
+import { SongSchema, type Song, type SongMeta } from "@overlaysys/core";
 
 /** `base`, or `base-2`, `base-3`… — the first one not in `taken`. */
 export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
@@ -33,4 +33,17 @@ export function resolveImportId(
 ): string {
   if (duplicate && choice === "replace") return duplicate.id;
   return uniqueSlug(slug, taken);
+}
+
+/** Parse an exported song JSON file, validating it with SongSchema. */
+export function parseSongImportJson(text: string): { ok: true; song: Song } | { ok: false; error: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "This file isn't valid JSON." };
+  }
+  const r = SongSchema.safeParse(raw);
+  if (!r.success) return { ok: false, error: "This file isn't an OverlaySys song." };
+  return { ok: true, song: r.data };
 }
