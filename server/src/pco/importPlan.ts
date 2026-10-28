@@ -30,6 +30,9 @@ import * as songs from "../songs";
 import * as shows from "../shows";
 import { getTemplate, listTemplateMetas } from "../templates";
 import { loadPcoConfig } from "../storage";
+// [P2b.27]
+import { linkedRowArrangement, mergeReimportedArrangement } from "./linkedArrangement";
+// [/P2b.27]
 import { loadScriptureSettings } from "../scriptureSettings";
 import type { PcoClient } from "./pcoClient";
 import { buildImportedScriptureRow } from "./scriptureImport";
@@ -347,6 +350,9 @@ export async function importPlan(
   // Items whose song could not be persisted. They are skipped in the row loop
   // rather than silently falling through to a graphic row.
   const failedItems = new Set<string>();
+  // [P2b.27] Linked songs follow that week's PCO sequence on the row only.
+  const songSequenceByItem = new Map<string, string[] | undefined>();
+  // [/P2b.27]
 
   for (const item of chosen) {
     const cfg = cfgById.get(item.id)!;
@@ -355,6 +361,9 @@ export async function importPlan(
 
     if (cfg.songAction === "link" && cfg.songId) {
       songIdByItem.set(item.id, cfg.songId);
+      // [P2b.27]
+      songSequenceByItem.set(item.id, effectiveLyricsArrangement(item)?.sequence);
+      // [/P2b.27]
       counts.songsLinked++;
       continue;
     }
@@ -364,6 +373,9 @@ export async function importPlan(
       const match = matchLibrarySong(pcoSong, library);
       if (match && match.confidence !== "pco-id") {
         songIdByItem.set(item.id, match.song.id);
+        // [P2b.27]
+        songSequenceByItem.set(item.id, effectiveLyricsArrangement(item)?.sequence);
+        // [/P2b.27]
         counts.songsLinked++;
         continue;
       }
@@ -496,6 +508,22 @@ export async function importPlan(
         continue;
       }
       row = buildSongRow({ rowId, songId, lyricTemplateId, sourceRef });
+      // [P2b.27] Linked: arrangement from PCO's sequence, unless the operator edited it.
+      {
+        const linkedSong = library.find((s) => s.id === songId);
+        const fromPco =
+          songSequenceByItem.has(item.id) && linkedSong
+            ? linkedRowArrangement(linkedSong, songSequenceByItem.get(item.id))
+            : undefined;
+        const prev = existingIdx >= 0 ? show.rows[existingIdx] : undefined;
+        const merged = mergeReimportedArrangement(prev?.kind === "song" ? prev : undefined, fromPco);
+        row = {
+          ...row,
+          ...(merged.arrangement ? { arrangement: merged.arrangement } : {}),
+          sourceRef: { ...sourceRef, ...(merged.pcoArrangement ? { pcoArrangement: merged.pcoArrangement } : {}) },
+        };
+      }
+      // [/P2b.27]
       show.songs = ensureShowSongEntry(show.songs, songId);
     } else if (cfg.kind === "scripture") {
       if (!cfg.reference?.trim() || !cfg.translation) {

@@ -767,3 +767,87 @@ describe("importPlan — header sections", () => {
     expect(show.rows.map((x) => x.sourceRef?.itemId)).toEqual(["i1", "i3", "i5"]);
   });
 });
+
+describe("importPlan — linked song arrangement [P2b.27]", () => {
+  const sec = (id: string, label: string) => ({ id, kind: "verse", label, slides: [{ id: `${id}s`, lines: ["x"] }] });
+  const linked = () =>
+    SongSchema.parse({
+      id: "amazing-grace",
+      title: "Amazing Grace",
+      ccliNumber: "22025",
+      sections: [sec("v1", "Verse 1"), sec("c1", "Chorus"), sec("v2", "Verse 2"), sec("b1", "Bridge")],
+      defaultArrangement: ["v1", "c1"],
+      customFields: {},
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    });
+  const clientWith = (sequence: string[] | undefined): PcoClient => ({
+    ...fakeClient,
+    getPlanItems: async () => [
+      {
+        id: "item-A",
+        title: "Amazing Grace",
+        sequence: 1,
+        itemType: "song",
+        song: { id: "pco-song-A", title: "Amazing Grace", ccliNumber: "22025" },
+        arrangement: { id: "arr-A", lyrics: "Verse 1\nline", ...(sequence ? { sequence } : {}) },
+      },
+    ],
+  });
+  const SEQ = ["Verse 1", "Chorus", "Chorus", "Bridge"];
+
+  async function run(client: PcoClient, cfg: Record<string, unknown>, target: ImportPlanRequest["target"]) {
+    const request = {
+      ...baseReq,
+      items: [{ itemId: "item-A", kind: "song", templateId: "tpl-lyric", ...cfg }],
+      target,
+    } as ImportPlanRequest;
+    const result = await importPlan(client, request, NOW);
+    return { result, show: await shows.getShow(result.showId!) };
+  }
+
+  for (const [name, cfg] of [
+    ["explicit link", { songAction: "link", songId: "amazing-grace" }],
+    ["auto CCLI match", {}],
+  ] as const) {
+    it(`${name}: row follows the sequence, library song untouched`, async () => {
+      await songs.saveSong(linked());
+      const before = await songs.getSong("amazing-grace");
+      const { result, show } = await run(clientWith(SEQ), cfg, { mode: "new", name: "S" });
+      expect(result.writtenSongIds).toEqual([]);
+      const row = show?.rows[0];
+      expect(row?.kind === "song" && row.arrangement).toEqual(["v1", "c1", "c1", "b1"]);
+      const after = await songs.getSong("amazing-grace");
+      expect(after?.defaultArrangement).toEqual(["v1", "c1"]);
+      expect(after?.updatedAt).toBe(before?.updatedAt);
+    });
+  }
+
+  it("leaves arrangement undefined when no labels match", async () => {
+    await songs.saveSong(linked());
+    const { show } = await run(clientWith(["Tag"]), {}, { mode: "new", name: "S" });
+    const row = show?.rows[0];
+    expect(row?.kind === "song" && row.arrangement).toBeUndefined();
+  });
+
+  it("re-import keeps the operator's edit to the row arrangement", async () => {
+    await songs.saveSong(linked());
+    const first = await run(clientWith(SEQ), {}, { mode: "new", name: "S" });
+    const showId = first.result.showId!;
+    const edited = structuredClone(first.show!);
+    const r0 = edited.rows[0]!;
+    if (r0.kind === "song") r0.arrangement = ["v2", "b1"];
+    await shows.saveShow(edited);
+
+    const second = await run(clientWith(["Verse 2"]), {}, { mode: "existing", showId });
+    const row = second.show?.rows[0];
+    expect(row?.kind === "song" && row.arrangement).toEqual(["v2", "b1"]);
+  });
+
+  it("re-import follows PCO's new sequence when the operator didn't edit", async () => {
+    await songs.saveSong(linked());
+    const first = await run(clientWith(SEQ), {}, { mode: "new", name: "S" });
+    const second = await run(clientWith(["Verse 2"]), {}, { mode: "existing", showId: first.result.showId! });
+    const row = second.show?.rows[0];
+    expect(row?.kind === "song" && row.arrangement).toEqual(["v2"]);
+  });
+});
