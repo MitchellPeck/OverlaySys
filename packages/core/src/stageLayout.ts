@@ -28,6 +28,9 @@ export const StageWidgetStyleSchema = z.object({
   autoFit: z.boolean().default(true),
   /** Small caption drawn above the content, e.g. "NEXT". */
   label: z.string().optional(),
+  /** Caption (label) size in px; renderer default when absent. */
+  captionSize: z.number().positive().optional(),
+  captionColor: z.string().optional(),
   border: z
     .object({ width: z.number().min(0), color: z.string(), radius: z.number().min(0) })
     .optional(),
@@ -95,13 +98,21 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
         warnColor: z.string().default("#ffb703"),
         overColor: z.string().default("#ef233c"),
         showLabel: z.boolean().default(false),
+        /** How overtime is shown. Renderer treats undefined as "text" for stored layouts. */
+        overtimeStyle: z.enum(["text", "fill", "flash"]).optional(),
       })
       .default({}),
   }),
   z.object({
     ...base,
     kind: z.literal("videoRemaining"),
-    props: z.object({ warnBelowSec: z.number().min(0).default(30) }).default({}),
+    props: z
+      .object({
+        warnBelowSec: z.number().min(0).default(30),
+        warnColor: z.string().optional(),
+        overColor: z.string().optional(),
+      })
+      .default({}),
   }),
   z.object({
     ...base,
@@ -113,6 +124,8 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
         showCounter: z.boolean().default(true),
         /** Where the active point's top sits, as a fraction of the widget height. */
         anchor: z.number().min(0).max(1).default(0.33),
+        /** Hide the widget (and its caption) while there are no notes. */
+        collapseWhenEmpty: z.boolean().optional(),
       })
       .default({}),
   }),
@@ -243,6 +256,21 @@ export function isBuiltInStageLayoutId(id: string): boolean {
 export function defaultStageWidget(kind: StageWidgetKind, id: string, rect: StageRect): StageWidget {
   return StageWidgetSchema.parse({ id, kind, rect });
 }
+
+/** Starting rect size / style / props for a widget added from the palette (applied over the schema defaults). */
+export const NEW_WIDGET_DEFAULTS: Partial<
+  Record<StageWidgetKind, { rect?: Partial<StageRect>; style?: Partial<StageWidgetStyle>; props?: object }>
+> = {
+  timer: {
+    rect: { w: 600, h: 300 },
+    style: { fontSize: 160, autoFit: false },
+    props: { showLabel: true, overtimeStyle: "fill" },
+  },
+  message: {
+    style: { align: "center", vAlign: "middle", color: "#000000", background: "#ffd166", autoFit: true, fontSize: 52 },
+  },
+  currentSlide: { rect: { w: 1200, h: 400 }, style: { fontSize: 72 } },
+};
 
 /** Palette names, one per widget kind. */
 export const STAGE_WIDGET_LABELS: Record<StageWidgetKind, string> = {
