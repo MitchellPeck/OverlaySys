@@ -49,6 +49,11 @@ describe("layoutRules and stageLayouts schemas", () => {
       const withLayouts = RundownRowSchema.parse({ ...r, stageLayouts: { stage1: "lyrics" } }) as { stageLayouts?: unknown };
       expect(withLayouts.stageLayouts).toEqual({ stage1: "lyrics" });
       expect((RundownRowSchema.parse(r) as { stageLayouts?: unknown }).stageLayouts).toBeUndefined();
+      expect(RundownRowSchema.safeParse({ ...r, stageLayouts: { stage1: 5 } }).success).toBe(false);
+      expect(RundownRowSchema.safeParse({ ...r, stageLayouts: "x" }).success).toBe(false);
     }
+  });
+  it("layoutRules rejects non-string values", () => {
+    expect(ChannelConfigSchema.safeParse({ id: "s", name: "S", kind: "stage", layoutRules: { song: 5 } }).success).toBe(false);
   });
 });
