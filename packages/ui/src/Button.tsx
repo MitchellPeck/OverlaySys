@@ -1,12 +1,16 @@
-import type { ButtonHTMLAttributes, CSSProperties } from "react";
-import { colors, control, fontWeight, lineHeight, type ControlSize } from "./tokens";
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
+import { fontWeight, type ControlSize } from "./tokens";
+import { sizeStyle, variantStyle, type ButtonVariant } from "./buttonStyles";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "destructive" | "success" | "onair";
+export type { ButtonVariant } from "./buttonStyles";
 
 type Props = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type"> & {
   variant?: ButtonVariant;
+  /** `sm` 24 px, `md` 28 px (`lg` 32 px still accepted). */
   size?: ControlSize;
   block?: boolean;
+  /** Leading icon, usually a lucide icon at size 14. */
+  icon?: ReactNode;
   type?: "button" | "submit" | "reset";
 };
 
@@ -14,44 +18,35 @@ export function Button({
   variant = "secondary",
   size = "md",
   block = false,
+  icon,
   type = "button",
   style,
   disabled,
+  children,
   ...rest
 }: Props) {
-  const c = control[size];
   const base: CSSProperties = {
-    padding: `${c.padY}px ${c.padX}px`,
-    fontSize: c.fontSize,
-    borderRadius: c.radius,
+    display: block ? "flex" : "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     fontWeight: fontWeight.semibold,
-    lineHeight: lineHeight.tight,
+    lineHeight: 1,
+    fontFamily: "inherit",
     cursor: disabled ? "not-allowed" : "pointer",
-    border: "1px solid transparent",
-    background: "transparent",
-    color: colors.text,
-    opacity: disabled ? 0.6 : 1,
+    flexShrink: 0,
     ...(block ? { width: "100%" } : null),
-    ...variantStyle(variant),
+    ...sizeStyle(size),
+    ...variantStyle(variant, !!disabled),
   };
-  return <button {...rest} type={type} disabled={disabled} style={{ ...base, ...style }} />;
-}
-
-function variantStyle(v: ButtonVariant): CSSProperties {
-  switch (v) {
-    case "primary":
-      return { background: colors.accent, color: "#fff", borderColor: colors.accent };
-    case "secondary":
-      return { background: colors.panel2, color: colors.text, borderColor: colors.border };
-    case "ghost":
-      return { background: "transparent", color: colors.text, borderColor: colors.border };
-    case "danger":
-      return { background: "transparent", color: colors.red, borderColor: colors.red };
-    case "destructive":
-      return { background: colors.red, color: "#fff", borderColor: colors.red };
-    case "success":
-      return { background: colors.ok, color: "#04231a", borderColor: colors.ok };
-    case "onair":
-      return { background: colors.onair, color: "#fff", borderColor: colors.onair };
-  }
+  return (
+    <button {...rest} type={type} disabled={disabled} style={{ ...base, ...style }}>
+      {icon != null ? (
+        <span aria-hidden style={{ display: "inline-flex", flexShrink: 0 }}>
+          {icon}
+        </span>
+      ) : null}
+      {children}
+    </button>
+  );
 }

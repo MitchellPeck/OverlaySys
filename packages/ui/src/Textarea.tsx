@@ -1,5 +1,5 @@
 import type { TextareaHTMLAttributes, CSSProperties } from "react";
-import { colors, control, radius, type ControlSize } from "./tokens";
+import { colors, control, fontFamily, radius, type ControlSize } from "./tokens";
 
 type Props = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   size?: ControlSize;
@@ -11,14 +11,14 @@ export function Textarea({ size = "sm", invalid = false, mono = false, style, ..
   const c = control[size];
   const base: CSSProperties = {
     width: "100%",
-    padding: `${size === "sm" ? 6 : c.padY}px ${c.padX - 2}px`,
-    background: colors.panel2,
-    border: `1px solid ${invalid ? colors.red : colors.border}`,
-    borderRadius: size === "sm" ? radius.sm : radius.md,
+    padding: `6px ${c.padX - 2}px`,
+    background: colors.surface2,
+    border: `1px solid ${invalid ? colors.danger : colors.border}`,
+    borderRadius: radius.md,
     color: colors.text,
     fontSize: c.fontSize,
     outline: "none",
-    fontFamily: mono ? "ui-monospace, monospace" : undefined,
+    fontFamily: mono ? fontFamily.mono : "inherit",
     resize: "vertical",
     boxSizing: "border-box",
     lineHeight: 1.4,

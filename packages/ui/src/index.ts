@@ -15,3 +15,8 @@ export { Kbd } from "./Kbd";
 export { EntityList, EntityRow } from "./EntityList";
 export { PanelHeader } from "./PanelHeader";
 export { AreaTabs, type AreaTabItem } from "./AreaTabs";
+export { variantStyle, sizeStyle } from "./buttonStyles";
+export { type IconButtonTone } from "./IconButton";
+export { DeleteButton } from "./DeleteButton";
+export { Tooltip } from "./Tooltip";
+export { KindBar } from "./KindBar";
