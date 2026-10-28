@@ -24,7 +24,37 @@ export async function listSongMetas(): Promise<SongMeta[]> {
     title: s.title,
     ccliNumber: s.ccliNumber,
     author: s.author,
+    updatedAt: s.updatedAt,
   }));
+}
+
+/** Tombstoned songs, newest deletion first — the library's Recently Deleted view. */
+export async function listDeletedSongs(): Promise<Song[]> {
+  await ensureLoaded();
+  return Array.from(REGISTRY.values())
+    .filter((s) => !isLive(s))
+    .sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""));
+}
+
+/**
+ * Bring a tombstoned song back. A fresh write (stampWrite clears deletedAt
+ * and moves updatedAt forward) so the sync engine propagates the restore.
+ * Returns null when the id is unknown or the song isn't deleted.
+ */
+export async function restoreSong(id: string): Promise<Song | null> {
+  await ensureLoaded();
+  const current = REGISTRY.get(id);
+  if (!current || isLive(current)) return null;
+  const restored = stampWrite(current);
+  await storage.saveSong(restored);
+  REGISTRY.set(id, restored);
+  return restored;
+}
+
+/** Every id on disk, live or tombstoned — imports must not reuse a trashed id. */
+export async function listAllSongIds(): Promise<string[]> {
+  await ensureLoaded();
+  return Array.from(REGISTRY.keys());
 }
 
 export async function getSong(id: string): Promise<Song | null> {

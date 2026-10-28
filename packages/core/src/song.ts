@@ -81,7 +81,13 @@ export const SongSchema = z.preprocess(
 );
 export type Song = z.infer<typeof SongSchema>;
 
-export type SongMeta = Pick<Song, "id" | "title" | "ccliNumber" | "author">;
+/**
+ * List-row view of a song. `updatedAt` is optional and additive: the local
+ * server includes it for the library's "recently edited" sort; the WS
+ * song_list schema currently drops it.
+ */
+export type SongMeta = Pick<Song, "id" | "title" | "ccliNumber" | "author"> &
+  Partial<Pick<Song, "updatedAt">>;
 
 /**
  * Lightweight description of a live SongSession sent to clients via
