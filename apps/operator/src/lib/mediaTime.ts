@@ -48,3 +48,34 @@ export function remainingTone(remaining: number, duration: number): RemainingTon
   if (remaining <= END_WARN_S) return "warn";
   return "normal";
 }
+
+/** A monitor video further than this from the output's position is re-seeked. */
+export const PREVIEW_DRIFT_S = 0.5;
+/** How often a monitor video is checked for drift. */
+export const PREVIEW_SYNC_INTERVAL_MS = 2_000;
+
+/**
+ * Where a PVW/PGM monitor's muted copy of a channel video should be, from
+ * the renderer's last report. Unlike `displayTime`, the extrapolation isn't
+ * capped: the monitor video plays on its own between reports, so capping
+ * would drag it back. `time` is null until a renderer has reported a
+ * position (status "loading"), so the monitor isn't seeked to 0 meanwhile.
+ */
+export function previewVideoSync(
+  m: ChannelMedia,
+  heardAtLocal: number,
+  nowLocal: number,
+): { time: number | null; paused: boolean } {
+  const { status, currentTime, duration } = m.playback;
+  const paused = m.paused || status === "paused" || status === "ended" || status === "error";
+  if (status === "loading") return { time: null, paused };
+  let time = currentTime;
+  if (status === "playing" && !m.paused) time += Math.max(0, (nowLocal - heardAtLocal) / 1000);
+  if (duration > 0) time = Math.min(time, duration);
+  return { time, paused };
+}
+
+/** True when the monitor video has drifted far enough from the target to seek. */
+export function previewNeedsSeek(current: number, target: number | null): boolean {
+  return target !== null && Math.abs(current - target) > PREVIEW_DRIFT_S;
+}

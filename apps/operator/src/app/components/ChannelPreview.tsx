@@ -1,14 +1,15 @@
 "use client";
 
-import { Play } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ChannelConfig, ChannelState } from "@overlaysys/core";
+import { Pause, Play } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { ChannelConfig, ChannelMedia, ChannelState } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock } from "@/lib/mediaTake";
-import { displayTime } from "@/lib/mediaTime";
+import { displayTime, previewNeedsSeek, previewVideoSync, PREVIEW_SYNC_INTERVAL_MS } from "@/lib/mediaTime";
+import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
@@ -186,6 +187,9 @@ export function ChannelPreview({ config, state }: Props) {
           : bg,
       }}
     >
+      {state?.media && (
+        <MonitorVideo key={state.media.takenAt} media={state.media} heardAt={heardAt} matte={matte} />
+      )}
       <div
         ref={stageRef}
         style={{
@@ -199,7 +203,7 @@ export function ChannelPreview({ config, state }: Props) {
           filter: matte ? "brightness(0) invert(1)" : undefined,
         }}
       />
-      {!state?.active && (
+      {!state?.active && !state?.media && (
         <div
           style={{
             position: "absolute",
@@ -230,9 +234,67 @@ export function ChannelPreview({ config, state }: Props) {
             pointerEvents: "none",
           }}
         >
-          <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
+          {state.media.paused ? (
+            <Pause size={14} aria-label="Paused" style={{ verticalAlign: "-2px" }} />
+          ) : (
+            <Play size={14} aria-label="Playing" style={{ verticalAlign: "-2px" }} />
+          )}{" "}
+          {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Muted copy of the channel's video under the template stage, so the
+ * monitor shows what the output shows. It plays on its own and is pulled
+ * back to the renderer's reported position on mount, on any transport
+ * change, and whenever it drifts (checked every 2 s).
+ */
+function MonitorVideo({ media, heardAt, matte }: { media: ChannelMedia; heardAt: number; matte: boolean }) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  const latest = useRef({ media, heardAt });
+  latest.current = { media, heardAt };
+
+  const sync = useCallback(() => {
+    const v = ref.current;
+    if (!v) return;
+    const { time, paused } = previewVideoSync(latest.current.media, latest.current.heardAt, Date.now());
+    if (time !== null && previewNeedsSeek(v.currentTime, time)) v.currentTime = time;
+    if (paused && !v.paused) v.pause();
+    else if (!paused && v.paused) v.play().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    sync();
+  }, [sync, media.paused, media.playback.status, media.seek?.seq]);
+
+  useEffect(() => {
+    const id = setInterval(sync, PREVIEW_SYNC_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [sync]);
+
+  return (
+    <video
+      ref={ref}
+      src={resolveAssetUrl(media.assetUrl)}
+      poster={videoPosterUrl(media.assetUrl) ?? undefined}
+      muted
+      playsInline
+      preload="auto"
+      onLoadedMetadata={sync}
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: "contain",
+        background: "#000",
+        pointerEvents: "none",
+        filter: matte ? "brightness(0) invert(1)" : undefined,
+      }}
+    />
   );
 }

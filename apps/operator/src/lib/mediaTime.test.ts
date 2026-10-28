@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelMedia } from "@overlaysys/core";
-import { displayStatus, displayTime, NO_RENDERER_MS, remainingTone } from "./mediaTime";
+import { displayStatus, displayTime, NO_RENDERER_MS, previewNeedsSeek, previewVideoSync, remainingTone } from "./mediaTime";
 
 const m = (over: Partial<ChannelMedia["playback"]> = {}, rest: Partial<ChannelMedia> = {}): ChannelMedia => ({
   rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
@@ -59,5 +59,36 @@ describe("remainingTone", () => {
 
   it("stays normal while the duration is unknown", () => {
     expect(remainingTone(0, 0)).toBe("normal");
+  });
+});
+
+describe("previewVideoSync", () => {
+  it("targets the reported position plus local time since the report while playing", () => {
+    expect(previewVideoSync(m(), 5_000, 7_000)).toEqual({ time: 12, paused: false });
+  });
+
+  it("does not cap the extrapolation (the monitor keeps rolling between reports) but stops at duration", () => {
+    expect(previewVideoSync(m(), 5_000, 15_000).time).toBe(20);
+    expect(previewVideoSync(m({ currentTime: 299 }), 5_000, 15_000).time).toBe(300);
+  });
+
+  it("holds the reported frame while paused, by status or by the declared flag", () => {
+    expect(previewVideoSync(m({ status: "paused" }), 5_000, 9_000)).toEqual({ time: 10, paused: true });
+    expect(previewVideoSync(m({}, { paused: true }), 5_000, 9_000)).toEqual({ time: 10, paused: true });
+  });
+
+  it("has no target until a renderer reports, and pauses on ended/error", () => {
+    expect(previewVideoSync(m({ status: "loading", currentTime: 0 }), 0, 0)).toEqual({ time: null, paused: false });
+    expect(previewVideoSync(m({ status: "ended" }), 0, 0).paused).toBe(true);
+    expect(previewVideoSync(m({ status: "error" }), 0, 0).paused).toBe(true);
+  });
+});
+
+describe("previewNeedsSeek", () => {
+  it("seeks only when drift is over half a second", () => {
+    expect(previewNeedsSeek(10, 10.4)).toBe(false);
+    expect(previewNeedsSeek(10, 10.6)).toBe(true);
+    expect(previewNeedsSeek(11, 10)).toBe(true);
+    expect(previewNeedsSeek(10, null)).toBe(false);
   });
 });
