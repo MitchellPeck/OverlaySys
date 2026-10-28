@@ -50,6 +50,10 @@ describe("originAllowed", () => {
     expect(originAllowed("http://192.168.1.99:4000", ctx())).toBe(false);
     expect(originAllowed("null", ctx())).toBe(false);
   });
+  it("allows a page from the same host name the browser used to reach us", () => {
+    expect(originAllowed("http://graphics.church.lan:3000", ctx(), "graphics.church.lan:4000")).toBe(true);
+    expect(originAllowed("http://evil.example", ctx(), "graphics.church.lan:4000")).toBe(false);
+  });
   it("honours the explicit allow-list", () => {
     expect(originAllowed("https://tablet.lan:8443", ctx({ extraOrigins: ["https://tablet.lan:8443"] }))).toBe(true);
   });

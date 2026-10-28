@@ -75,7 +75,7 @@ function isLoopbackHostname(host: string): boolean {
   return h === "localhost" || h.endsWith(".localhost") || isLoopbackAddress(h);
 }
 
-export function originAllowed(origin: string | undefined, ctx: SecurityContext): boolean {
+export function originAllowed(origin: string | undefined, ctx: SecurityContext, hostHeader?: string): boolean {
   // Non-browser clients (Companion, OBS's own fetches, curl, the Electron
   // main process) don't send Origin.
   if (origin === undefined || origin === "") return true;
@@ -90,7 +90,15 @@ export function originAllowed(origin: string | undefined, ctx: SecurityContext):
   const host = u.hostname.toLowerCase();
   if (isLoopbackHostname(host)) return true;
   if (ctx.ownAddresses.includes(host)) return true;
-  return ctx.ownHostnames.includes(host);
+  if (ctx.ownHostnames.includes(host)) return true;
+  // The page came from the same host name the browser used to reach us
+  // (e.g. a DNS name like graphics.church.lan, any port). Note this also
+  // admits a DNS-rebinding page; set a LAN token where that matters.
+  if (hostHeader) {
+    const reqHost = hostHeader.replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+    if (reqHost && reqHost === host.replace(/^\[|\]$/g, "")) return true;
+  }
+  return false;
 }
 
 function readCookie(header: string | undefined, name: string): string | null {
@@ -139,7 +147,8 @@ export function tokenMatches(expected: string, given: string | null): boolean {
  */
 export function checkRequest(req: RequestLike, ctx: SecurityContext): CheckResult {
   const origin = req.headers["origin"];
-  if (!originAllowed(typeof origin === "string" ? origin : undefined, ctx)) {
+  const host = req.headers["host"];
+  if (!originAllowed(typeof origin === "string" ? origin : undefined, ctx, typeof host === "string" ? host : undefined)) {
     return { ok: false, status: 403, reason: `origin not allowed: ${String(origin)}` };
   }
   const local = isLocalAddress(req.remoteAddress, ctx.ownAddresses);

@@ -74,7 +74,8 @@ await loadSecuritySettings();
 // decides whether a browser may READ a response; the onRequest hook below is
 // what actually refuses a cross-site POST before it runs.
 await app.register(cors, {
-  origin: (origin, cb) => cb(null, originAllowed(origin, securityContext())),
+  delegator: (req, cb) =>
+    cb(null, { origin: originAllowed(req.headers.origin, securityContext(), req.headers.host) }),
 });
 
 // Routes that hand the server machine-level credentials. Only the desktop
