@@ -56,9 +56,12 @@ function ShowPageLocal() {
     if (show) localStorage.setItem(SELECTED_SHOW_KEY, show.id);
   }, [show?.id]);
 
+  // useWs only applies a `show` broadcast for the loaded show, so a save of
+  // some other show (any console) never replaces this rundown. The one other
+  // show we accept is the one the Show picker just asked for.
   useEffect(() => {
     const off = getClient().on((msg) => {
-      if (msg.type === "show") useStore.getState().setShow(msg.show);
+      if (msg.type === "show") useStore.getState().adoptRequestedShow(msg.show);
     });
     return off;
   }, []);

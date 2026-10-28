@@ -68,6 +68,12 @@ type StoreState = {
   templateCache: Record<string, Template>;
   showMetas: ShowMeta[];
   show: Show | null;
+  /**
+   * Show the operator explicitly asked to switch to (Show picker). A `show`
+   * broadcast for a different id than the loaded one is only adopted when it
+   * matches this; any other broadcast is someone else's save.
+   */
+  requestedShowId: string | null;
   selectedRowId: string | null;
   selectedHotcardId: string | null;
   /** Session-only field edits for graphic rows (rowId → key → value). Cleared when a different show loads. */
@@ -117,6 +123,9 @@ type StoreState = {
   setTemplate: (t: Template) => void;
   setShowMetas: (s: ShowMeta[]) => void;
   setShow: (s: Show | null) => void;
+  setRequestedShowId: (id: string | null) => void;
+  /** Adopt a broadcast show if it is the loaded show or the requested one. Returns whether it was adopted. */
+  adoptRequestedShow: (s: Show) => boolean;
   setSelectedRow: (id: string | null) => void;
   setSelectedHotcard: (id: string | null) => void;
   setChannelState: (s: ChannelState) => void;
@@ -191,6 +200,7 @@ export const useStore = create<StoreState>((set) => ({
   templateCache: {},
   showMetas: [],
   show: null,
+  requestedShowId: null,
   selectedRowId: null,
   selectedHotcardId: null,
   rowDataOverrides: {},
@@ -237,23 +247,34 @@ export const useStore = create<StoreState>((set) => ({
   setShowMetas: (s) => set({ showMetas: s }),
   setShow: (s) =>
     set((cur) => {
+      // A selected hotcard survives a show (re-)broadcast: auto-selecting row 1
+      // here would make the next Space take row 1 instead of the hotcard.
+      const keepHotcard = cur.selectedHotcardId != null;
       const nextRowId =
-        s && s.rows.length > 0
+        keepHotcard
+          ? null
+          : s && s.rows.length > 0
           ? cur.selectedRowId && s.rows.some((r) => r.id === cur.selectedRowId)
             ? cur.selectedRowId
             : s.rows[0]!.id
           : null;
       return {
         show: s,
+        requestedShowId: s && cur.requestedShowId === s.id ? null : cur.requestedShowId,
         selectedRowId: nextRowId,
-        // Auto-promoting a row to selected should clear any prior hotcard
-        // selection so the mutually-exclusive contract holds.
-        selectedHotcardId: nextRowId != null ? null : cur.selectedHotcardId,
+        selectedHotcardId: keepHotcard ? cur.selectedHotcardId : null,
         // Edits belong to one show; a re-broadcast of the same show keeps them.
         // Edits for rows no longer in the show are dropped.
         rowDataOverrides: s && cur.show && s.id === cur.show.id ? pruneOverrides(cur.rowDataOverrides, s) : {},
       };
     }),
+  setRequestedShowId: (id) => set({ requestedShowId: id }),
+  adoptRequestedShow: (s) => {
+    const cur = useStore.getState();
+    if (cur.show?.id === s.id || cur.requestedShowId !== s.id) return false;
+    cur.setShow(s);
+    return true;
+  },
   setRowFieldOverride: (rowId, key, value, original) =>
     set((cur) => {
       const row = { ...cur.rowDataOverrides[rowId] };
