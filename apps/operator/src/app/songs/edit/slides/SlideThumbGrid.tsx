@@ -1,10 +1,9 @@
 "use client";
 import { useRef, useState, type CSSProperties } from "react";
 import { MoreHorizontal, Plus } from "lucide-react";
-import { Button, colors, IconButton, radius } from "@overlaysys/ui";
+import { Button, colors, IconButton, radius, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { sectionChipTextColor } from "./sectionColors";
-import { useContextMenu, type MenuItem } from "./menuCompat";
 
 export type SlideCard = {
   id: string;
