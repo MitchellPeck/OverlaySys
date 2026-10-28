@@ -1,7 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import type {
   ChannelConfig,
+  Deck,
   Hotcard,
+  PcoItemMapping,
   Project,
   ProjectChannelOverride,
   Show,
@@ -28,6 +30,8 @@ function makeMemAdapter(): StorageAdapter {
   const stageLayouts = new Map<string, StageLayout>();
   const channels = new Map<string, ChannelConfig>();
   const overrides = new Map<string, ProjectChannelOverride>();
+  const decks = new Map<string, Deck>();
+  const mappings = new Map<string, PcoItemMapping>();
 
   const live = <T extends { deletedAt?: string }>(items: T[]): T[] =>
     items.filter((i) => !i.deletedAt);
@@ -97,6 +101,21 @@ function makeMemAdapter(): StorageAdapter {
     deleteProjectChannelOverride: async (_, pid, cid) =>
       overrides.delete(`${pid}:${cid}`),
 
+    listDecks: async () => live([...decks.values()]),
+    listDecksSince: async () => [...decks.values()],
+    getDeck: async (_, id) => decks.get(id) ?? null,
+    saveDeck: async (_, d) => {
+      decks.set(d.id, d);
+    },
+    deleteDeck: async (_, id) => decks.delete(id),
+
+    listPcoItemMappings: async () => live([...mappings.values()]),
+    listPcoItemMappingsSince: async () => [...mappings.values()],
+    savePcoItemMapping: async (_, m) => {
+      mappings.set(m.id, m);
+    },
+    deletePcoItemMapping: async (_, id) => mappings.delete(id),
+
     putAsset: async () => undefined,
     hasAsset: async () => false,
     getAssetUrl: async () => null,
@@ -122,6 +141,30 @@ function makeStageLayout(overrides: Partial<StageLayout> = {}): StageLayout {
     name: "Mine",
     ...overrides,
   });
+}
+
+function makeDeck(overrides: Partial<Deck> = {}): Deck {
+  return {
+    id: "deck-1",
+    name: "Deck 1",
+    tags: [],
+    defaultTemplateId: "tpl-1",
+    licensing: { kind: "own" },
+    slides: [{ id: "s1", data: { text: "Line A" } }],
+    createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeMapping(overrides: Partial<PcoItemMapping> = {}): PcoItemMapping {
+  return {
+    id: "pcoSong:42",
+    key: "pcoSong:42",
+    kind: "slides",
+    deckId: "deck-1",
+    updatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
 }
 
 function makeChannel(overrides: Partial<ChannelConfig> = {}): ChannelConfig {
@@ -316,6 +359,77 @@ describe("syncEngine.sync", () => {
     expect(r.perTable.projects.pushed).toBe(1); // other tables still ran
     await sync(local, remote, ORG);
     expect(info).toHaveBeenCalledTimes(1); // logged once, not every pass
+    info.mockRestore();
+  });
+
+  it("decks: remote-only pulls, newer local pushes, tombstones propagate", async () => {
+    await remote.saveDeck(ORG, makeDeck({ updatedAt: "2026-05-01T00:00:00Z" }));
+    let r = await sync(local, remote, ORG);
+    expect(r.perTable.decks).toEqual({ pulled: 1, pushed: 0 });
+    expect((await local.getDeck(ORG, "deck-1"))?.name).toBe("Deck 1");
+
+    await local.saveDeck(ORG, makeDeck({ name: "Edited", updatedAt: "2026-05-02T00:00:00Z" }));
+    r = await sync(local, remote, ORG);
+    expect(r.perTable.decks).toEqual({ pulled: 0, pushed: 1 });
+    expect((await remote.getDeck(ORG, "deck-1"))?.name).toBe("Edited");
+
+    await remote.saveDeck(
+      ORG,
+      makeDeck({ updatedAt: "2026-05-03T00:00:00Z", deletedAt: "2026-05-03T00:00:00Z" }),
+    );
+    r = await sync(local, remote, ORG);
+    expect(r.perTable.decks).toEqual({ pulled: 1, pushed: 0 });
+    expect(await local.listDecks(ORG)).toEqual([]);
+    const [row] = await local.listDecksSince(ORG, "");
+    expect(row?.deletedAt).toBe("2026-05-03T00:00:00Z");
+  });
+
+  it("pcoItemMappings: LWW by updatedAt on the mapping id", async () => {
+    await local.savePcoItemMapping(ORG, makeMapping({ deckId: "deck-local", updatedAt: "2026-05-02T00:00:00Z" }));
+    await remote.savePcoItemMapping(ORG, makeMapping({ deckId: "deck-remote", updatedAt: "2026-05-01T00:00:00Z" }));
+    await remote.savePcoItemMapping(
+      ORG,
+      makeMapping({ id: "title:psalm 23", key: "title:psalm 23", deckId: "deck-23", updatedAt: "2026-05-01T00:00:00Z" }),
+    );
+    let r = await sync(local, remote, ORG);
+    expect(r.perTable.pcoItemMappings).toEqual({ pulled: 1, pushed: 1 });
+    expect((await remote.listPcoItemMappings(ORG)).find((m) => m.id === "pcoSong:42")?.deckId).toBe("deck-local");
+    expect((await local.listPcoItemMappings(ORG)).find((m) => m.id === "title:psalm 23")?.deckId).toBe("deck-23");
+
+    await remote.savePcoItemMapping(ORG, makeMapping({ deckId: "deck-newer", updatedAt: "2026-05-03T00:00:00Z" }));
+    r = await sync(local, remote, ORG);
+    expect(r.perTable.pcoItemMappings).toEqual({ pulled: 1, pushed: 0 });
+    expect((await local.listPcoItemMappings(ORG)).find((m) => m.id === "pcoSong:42")?.deckId).toBe("deck-newer");
+  });
+
+  it("a missing remote decks table is skipped quietly", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    _resetSyncEngineForTest();
+    remote.listDecksSince = async () => {
+      throw { code: "42P01", message: 'relation "overlaysys.decks" does not exist' };
+    };
+    await local.saveDeck(ORG, makeDeck({ updatedAt: "2026-05-01T00:00:00Z" }));
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([]);
+    expect(r.perTable.decks).toEqual({ pulled: 0, pushed: 0 });
+    expect(await local.getDeck(ORG, "deck-1")).not.toBeNull(); // local deck untouched
+    expect(info).toHaveBeenCalledWith("[sync] remote decks table unavailable; skipping until it is migrated");
+    info.mockRestore();
+  });
+
+  it("a missing remote pco_item_mappings table (PGRST205) is skipped quietly", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    _resetSyncEngineForTest();
+    remote.listPcoItemMappingsSince = async () => {
+      throw { code: "PGRST205", message: "Could not find the table 'overlaysys.pco_item_mappings' in the schema cache" };
+    };
+    await local.savePcoItemMapping(ORG, makeMapping());
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([]);
+    expect(r.perTable.pcoItemMappings).toEqual({ pulled: 0, pushed: 0 });
+    expect(await local.listPcoItemMappings(ORG)).toHaveLength(1);
+    await sync(local, remote, ORG);
+    expect(info).toHaveBeenCalledTimes(1);
     info.mockRestore();
   });
 

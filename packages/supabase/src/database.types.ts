@@ -187,6 +187,50 @@ export interface Database {
         };
         Relationships: [];
       };
+      /** Slides decks (JSON payload). Optional table; see docs/cloud-slides-sync-migration.md. */
+      decks: {
+        Row: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
+      /** Remembered PCO item -> deck choices (JSON payload; id = mapping key). Optional table; see docs/cloud-slides-sync-migration.md. */
+      pco_item_mappings: {
+        Row: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       asset_index: {
         Row: {
           sha256: string;

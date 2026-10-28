@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ShowSchema, type Hotcard, type Project, type Show } from "@overlaysys/core";
+import { ShowSchema, type Deck, type Hotcard, type PcoItemMapping, type Project, type Show } from "@overlaysys/core";
 import { CloudStorageAdapter } from "./cloudStorageAdapter";
 import { _resetOptionalColumnsForTest, showExtra } from "./optionalColumns";
 import type { OverlaySysSupabaseClient } from "./index";
@@ -356,5 +356,57 @@ describe("CloudStorageAdapter optional columns", () => {
     expect(pulled?.hotkey).toBeUndefined();
     expect((await adapter.getHotcard(ORG, "a"))?.name).toBe("Pastor");
     expect(info.mock.calls.filter((c) => String(c[0]).includes("hotcards.hotkey"))).toHaveLength(1);
+  });
+});
+
+// ── JSON-payload tables for slides: decks and pco_item_mappings ───────────
+
+describe("CloudStorageAdapter decks and PCO item mappings", () => {
+  const PAYLOAD_COLS = ["id", "org_id", "payload", "updated_at", "deleted_at"];
+  const deck: Deck = {
+    id: "deck-1",
+    name: "Deck 1",
+    tags: ["liturgy"],
+    defaultTemplateId: "tpl-1",
+    licensing: { kind: "public-domain" },
+    slides: [{ id: "s1", data: { text: "Line A" } }],
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-28T10:00:00.000Z",
+  };
+
+  it("saveDeck upserts { id, org_id, payload, updated_at, deleted_at }; listDecksSince normalises updatedAt to Z", async () => {
+    const tables = { decks: new FakeTable("decks", new Set(PAYLOAD_COLS)) };
+    const adapter = new CloudStorageAdapter(makeMultiClient(tables));
+    await adapter.saveDeck(ORG, deck);
+    const [stored] = tables.decks.rows;
+    expect(Object.keys(stored!).sort()).toEqual([...PAYLOAD_COLS].sort());
+    expect(stored).toMatchObject({ id: "deck-1", org_id: ORG, updated_at: deck.updatedAt, deleted_at: null });
+    expect(stored!["payload"]).toEqual(deck);
+
+    // PostgREST spells timestamptz with an offset.
+    stored!["updated_at"] = "2026-10-28T10:00:00+00:00";
+    const [pulled] = await adapter.listDecksSince(ORG, "");
+    expect(pulled).toEqual({ ...deck, updatedAt: "2026-10-28T10:00:00.000Z" });
+    expect(await adapter.getDeck(ORG, "deck-1")).toMatchObject({ name: "Deck 1" });
+
+    await adapter.saveDeck(ORG, { ...deck, id: "deck-2", deletedAt: "2026-10-28T11:00:00.000Z" });
+    expect((await adapter.listDecks(ORG)).map((d) => d.id)).toEqual(["deck-1"]);
+    expect((await adapter.listDecksSince(ORG, "")).map((d) => d.id)).toEqual(["deck-1", "deck-2"]);
+  });
+
+  it("savePcoItemMapping round-trips through pco_item_mappings", async () => {
+    const tables = { pco_item_mappings: new FakeTable("pco_item_mappings", new Set(PAYLOAD_COLS)) };
+    const adapter = new CloudStorageAdapter(makeMultiClient(tables));
+    const m: PcoItemMapping = {
+      id: "title:psalm 23",
+      key: "title:psalm 23",
+      kind: "slides",
+      deckId: "deck-1",
+      updatedAt: "2026-10-28T10:00:00.000Z",
+    };
+    await adapter.savePcoItemMapping(ORG, m);
+    expect(tables.pco_item_mappings.rows[0]).toMatchObject({ id: m.id, org_id: ORG, payload: m });
+    expect(await adapter.listPcoItemMappingsSince(ORG, "")).toEqual([m]);
+    expect(await adapter.listPcoItemMappings(ORG)).toEqual([m]);
   });
 });

@@ -25,6 +25,8 @@ import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
+import { listDeckMetas, reloadDecks } from "./decks";
+import { reloadItemMappings } from "./pco/itemMappings";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
 
@@ -270,10 +272,18 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
         configs: await listChannelConfigs(),
       });
     }
-    // Confidence monitors render rows, songs and templates and read channel
-    // configs (kind, follows, layout) — rebuild them against pulled data.
+    if (touched("decks")) {
+      await reloadDecks();
+      broadcast({ type: "deck_list", decks: await listDeckMetas() });
+    }
+    if (touched("pcoItemMappings")) {
+      await reloadItemMappings();
+    }
+    // Confidence monitors render rows, songs, decks and templates and read
+    // channel configs (kind, follows, layout) — rebuild them against pulled data.
     if (
       touched("templates") ||
+      touched("decks") ||
       touched("stageLayouts") ||
       touched("shows") ||
       touched("songs") ||

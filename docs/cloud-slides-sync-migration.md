@@ -6,7 +6,74 @@ apps-portal repo. They are **never applied from this repo**.
 
 ## 1. Decks and PCO mappings tables
 
-_Added by the decks and PCO mappings sync task (P3.6)._
+Slides decks and remembered PCO item mappings sync the same way stage layouts do
+(`docs/cloud-stage-layouts-migration.md`): JSON-payload tables, last-write-wins on
+`updated_at`, soft deletes via `deleted_at`. A deck's payload is the whole `Deck`; a
+mapping's payload is the whole `PcoItemMapping`, and its `id` is the mapping key
+(`pcoSong:<id>` or `title:<normalised>`).
+
+```sql
+create table if not exists overlaysys.decks (
+  id text not null,
+  org_id uuid not null,
+  payload jsonb not null,
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  primary key (org_id, id)
+);
+alter table overlaysys.decks enable row level security;
+grant select, insert, update, delete on overlaysys.decks to authenticated, service_role;
+create policy "decks_select_members" on overlaysys.decks for select using (overlaysys.is_org_member(org_id));
+create policy "decks_insert_members" on overlaysys.decks for insert with check (overlaysys.is_org_member(org_id));
+create policy "decks_update_members" on overlaysys.decks for update using (overlaysys.is_org_member(org_id));
+create policy "decks_delete_members" on overlaysys.decks for delete using (overlaysys.is_org_member(org_id));
+create trigger decks_updated_at before update on overlaysys.decks
+  for each row execute function overlaysys.set_updated_at();
+
+create table if not exists overlaysys.pco_item_mappings (
+  id text not null,
+  org_id uuid not null,
+  payload jsonb not null,
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  primary key (org_id, id)
+);
+alter table overlaysys.pco_item_mappings enable row level security;
+grant select, insert, update, delete on overlaysys.pco_item_mappings to authenticated, service_role;
+create policy "pco_item_mappings_select_members" on overlaysys.pco_item_mappings for select using (overlaysys.is_org_member(org_id));
+create policy "pco_item_mappings_insert_members" on overlaysys.pco_item_mappings for insert with check (overlaysys.is_org_member(org_id));
+create policy "pco_item_mappings_update_members" on overlaysys.pco_item_mappings for update using (overlaysys.is_org_member(org_id));
+create policy "pco_item_mappings_delete_members" on overlaysys.pco_item_mappings for delete using (overlaysys.is_org_member(org_id));
+create trigger pco_item_mappings_updated_at before update on overlaysys.pco_item_mappings
+  for each row execute function overlaysys.set_updated_at();
+```
+
+(`overlaysys.set_updated_at()` is the trigger function used by every table in
+`supabase/migrations/0001_init.sql`.)
+
+### After applying: regenerate types
+
+Regenerate the `Database` types in `packages/supabase` so `Tables["decks"]` and
+`Tables["pco_item_mappings"]` come from the live schema (hand-written entries
+mirroring `stage_layouts` are in `packages/supabase/src/database.types.ts` until
+then). Then run `NOTIFY pgrst, 'reload schema';` so PostgREST sees the tables at
+once (see §2).
+
+### Until applied: skipped quietly
+
+Both kinds (`decks`, `pcoItemMappings`) are in the sync engine's `OPTIONAL_TABLES`.
+When listing the remote table fails with a missing-table error (Postgres `42P01`,
+PostgREST `PGRST205`, "relation … does not exist" or "Could not find the table"),
+the table is skipped for that pass. It is not counted in the pass's errors, so
+the sync status pill stays clean, and the server logs one info line per kind per
+process:
+
+- `[sync] remote decks table unavailable; skipping until it is migrated`
+- `[sync] remote pcoItemMappings table unavailable; skipping until it is migrated`
+
+Local decks and mappings are never touched by a skipped pass; they start syncing
+on the first pass after the migration is applied. Any other failure on these
+tables is still reported as a sync error.
 
 ## 2. Show and hotcard columns
 

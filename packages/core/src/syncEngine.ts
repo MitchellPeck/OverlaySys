@@ -17,7 +17,9 @@
 
 import type {
   ChannelConfig,
+  Deck,
   Hotcard,
+  PcoItemMapping,
   Project,
   ProjectChannelOverride,
   Show,
@@ -78,7 +80,9 @@ export type SyncEntityKind =
   | "templates"
   | "stageLayouts"
   | "channelConfigs"
-  | "projectChannelOverrides";
+  | "projectChannelOverrides"
+  | "decks"
+  | "pcoItemMappings";
 
 /**
  * Epoch millis for an ISO timestamp; 0 for missing/unparseable so a
@@ -129,6 +133,8 @@ export async function sync(
       stageLayouts: { pulled: 0, pushed: 0 },
       channelConfigs: { pulled: 0, pushed: 0 },
       projectChannelOverrides: { pulled: 0, pushed: 0 },
+      decks: { pulled: 0, pushed: 0 },
+      pcoItemMappings: { pulled: 0, pushed: 0 },
     },
   };
 
@@ -196,6 +202,26 @@ export async function sync(
     result,
   });
 
+  await reconcileTable<Deck>({
+    kind: "decks",
+    listLocal: () => local.listDecksSince(orgId, ""),
+    listRemote: () => remote.listDecksSince(orgId, ""),
+    keyOf: (d) => d.id,
+    pushToRemote: (d) => remote.saveDeck(orgId, d),
+    pushToLocal: (d) => local.saveDeck(orgId, d),
+    result,
+  });
+
+  await reconcileTable<PcoItemMapping>({
+    kind: "pcoItemMappings",
+    listLocal: () => local.listPcoItemMappingsSince(orgId, ""),
+    listRemote: () => remote.listPcoItemMappingsSince(orgId, ""),
+    keyOf: (m) => m.id,
+    pushToRemote: (m) => remote.savePcoItemMapping(orgId, m),
+    pushToLocal: (m) => local.savePcoItemMapping(orgId, m),
+    result,
+  });
+
   await reconcileTable<ChannelConfig>({
     kind: "channelConfigs",
     listLocal: () => local.listChannelConfigsSince(orgId, ""),
@@ -220,10 +246,12 @@ export async function sync(
 }
 
 /**
- * Tables that may not exist remotely yet (stage_layouts needs an apps-portal
- * migration). A missing table there is skipped rather than counted as an error.
+ * Tables that may not exist remotely yet (each needs an apps-portal
+ * migration: stage_layouts in docs/cloud-stage-layouts-migration.md; decks
+ * and pco_item_mappings in docs/cloud-slides-sync-migration.md). A missing
+ * table there is skipped rather than counted as an error.
  */
-const OPTIONAL_TABLES = new Set<SyncEntityKind>(["stageLayouts"]);
+const OPTIONAL_TABLES = new Set<SyncEntityKind>(["stageLayouts", "decks", "pcoItemMappings"]);
 const loggedMissing = new Set<SyncEntityKind>();
 
 export function _resetSyncEngineForTest(): void {
@@ -268,7 +296,8 @@ async function reconcileTable<
   } catch (err) {
     if (OPTIONAL_TABLES.has(kind) && isMissingTableError(err)) {
       // The remote table isn't migrated yet (see
-      // docs/cloud-stage-layouts-migration.md): skip it quietly.
+      // docs/cloud-stage-layouts-migration.md and
+      // docs/cloud-slides-sync-migration.md): skip it quietly.
       if (!loggedMissing.has(kind)) {
         loggedMissing.add(kind);
         console.info(`[sync] remote ${kind} table unavailable; skipping until it is migrated`);

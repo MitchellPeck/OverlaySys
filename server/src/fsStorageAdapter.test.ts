@@ -2,9 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { SPEAKER_LAYOUT, ShowSchema, StageLayoutSchema, type Hotcard, type Show } from "@overlaysys/core";
+import {
+  SPEAKER_LAYOUT,
+  ShowSchema,
+  StageLayoutSchema,
+  type Deck,
+  type Hotcard,
+  type PcoItemMapping,
+  type Show,
+} from "@overlaysys/core";
 import * as storage from "./storage";
 import { FsStorageAdapter } from "./fsStorageAdapter";
+import { reloadItemMappings } from "./pco/itemMappings";
 
 // The cloud `shows` table has no sermon-notes column yet, so a pulled show
 // arrives without `sermonNotes`. The local replica must not lose them.
@@ -163,5 +172,82 @@ describe("FsStorageAdapter stage layouts", () => {
     const adapter = new FsStorageAdapter();
     await adapter.saveStageLayout("org", StageLayoutSchema.parse({ ...SPEAKER_LAYOUT, id: "speaker" }));
     expect(await adapter.listStageLayoutsSince("org", "")).toEqual([]);
+  });
+});
+
+describe("FsStorageAdapter decks", () => {
+  const deck = (extra: Partial<Deck> = {}): Deck => ({
+    id: "deck-a",
+    name: "Deck A",
+    tags: [],
+    defaultTemplateId: "tpl-1",
+    licensing: { kind: "own" },
+    slides: [{ id: "s1", data: { text: "Line A" } }],
+    createdAt: "2026-10-01T00:00:00.000Z",
+    ...extra,
+  });
+
+  it("save -> listDecksSince includes tombstones; listDecks and getDeck hide them", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.saveDeck("org", deck({ updatedAt: "2026-10-02T00:00:00.000Z" }));
+    await adapter.saveDeck("org", deck({ id: "deck-b", name: "Gone", updatedAt: "2026-10-02T00:00:00.000Z" }));
+    expect((await adapter.listDecks("org")).map((d) => d.id).sort()).toEqual(["deck-a", "deck-b"]);
+
+    expect(await adapter.deleteDeck("org", "deck-b")).toBe(true);
+    expect((await adapter.listDecks("org")).map((d) => d.id)).toEqual(["deck-a"]);
+    const since = await adapter.listDecksSince("org", "");
+    expect(since.map((d) => d.id).sort()).toEqual(["deck-a", "deck-b"]);
+    expect(since.find((d) => d.id === "deck-b")?.deletedAt).toBeTruthy();
+    expect(await adapter.getDeck("org", "deck-b")).toBeNull();
+    expect((await adapter.getDeck("org", "deck-a"))?.name).toBe("Deck A");
+    expect(await adapter.deleteDeck("org", "nope")).toBe(false);
+  });
+
+  it("a pulled deck keeps its incoming updatedAt (not re-stamped)", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.saveDeck("org", deck({ updatedAt: "2026-10-02T00:00:00.000Z" }));
+    expect((await adapter.getDeck("org", "deck-a"))?.updatedAt).toBe("2026-10-02T00:00:00.000Z");
+    const tomb = deck({ updatedAt: "2026-10-03T00:00:00.000Z", deletedAt: "2026-10-03T00:00:00.000Z" });
+    await adapter.saveDeck("org", tomb);
+    const [row] = await adapter.listDecksSince("org", "");
+    expect(row).toMatchObject({ updatedAt: "2026-10-03T00:00:00.000Z", deletedAt: "2026-10-03T00:00:00.000Z" });
+  });
+});
+
+describe("FsStorageAdapter PCO item mappings", () => {
+  beforeEach(async () => {
+    // The store caches per process; point it at this test's data dir.
+    await reloadItemMappings();
+  });
+
+  const mapping = (extra: Partial<PcoItemMapping> = {}): PcoItemMapping => ({
+    id: "pcoSong:42",
+    key: "pcoSong:42",
+    kind: "slides",
+    deckId: "deck-a",
+    updatedAt: "2026-10-02T00:00:00.000Z",
+    ...extra,
+  });
+
+  it("save -> listPcoItemMappingsSince includes tombstones; list hides them", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.savePcoItemMapping("org", mapping());
+    await adapter.savePcoItemMapping("org", mapping({ id: "title:psalm 23", key: "title:psalm 23", deckId: "deck-23" }));
+    expect((await adapter.listPcoItemMappings("org")).map((m) => m.id).sort()).toEqual(["pcoSong:42", "title:psalm 23"]);
+
+    expect(await adapter.deletePcoItemMapping("org", "title:psalm 23")).toBe(true);
+    expect((await adapter.listPcoItemMappings("org")).map((m) => m.id)).toEqual(["pcoSong:42"]);
+    const since = await adapter.listPcoItemMappingsSince("org", "");
+    expect(since.map((m) => m.id).sort()).toEqual(["pcoSong:42", "title:psalm 23"]);
+    expect(since.find((m) => m.id === "title:psalm 23")?.deletedAt).toBeTruthy();
+    expect(await adapter.deletePcoItemMapping("org", "nope")).toBe(false);
+  });
+
+  it("a pulled mapping keeps its incoming updatedAt and survives a reload from disk", async () => {
+    const adapter = new FsStorageAdapter();
+    const tomb = mapping({ updatedAt: "2026-10-05T00:00:00.000Z", deletedAt: "2026-10-05T00:00:00.000Z" });
+    await adapter.savePcoItemMapping("org", tomb);
+    await reloadItemMappings();
+    expect(await adapter.listPcoItemMappingsSince("org", "")).toEqual([tomb]);
   });
 });

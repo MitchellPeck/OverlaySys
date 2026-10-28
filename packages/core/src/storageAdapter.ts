@@ -5,6 +5,8 @@ import type { Song } from "./song";
 import type { Template } from "./template";
 import type { StageLayout } from "./stageLayout";
 import type { ChannelConfig, ProjectChannelOverride } from "./channelConfig";
+import type { Deck } from "./deck";
+import type { PcoItemMapping } from "./slidesMapping";
 
 /**
  * Backend-agnostic persistence interface for OverlaySys's domain entities.
@@ -74,6 +76,19 @@ export interface StorageAdapter {
   getStageLayout(orgId: string, id: string): Promise<StageLayout | null>;
   saveStageLayout(orgId: string, l: StageLayout): Promise<void>;
   deleteStageLayout(orgId: string, id: string): Promise<boolean>;
+
+  // ── Slides decks (org library — global, no project scoping) ────────────
+  listDecks(orgId: string): Promise<Deck[]>;
+  listDecksSince(orgId: string, watermark: string): Promise<Deck[]>;
+  getDeck(orgId: string, id: string): Promise<Deck | null>;
+  saveDeck(orgId: string, d: Deck): Promise<void>;
+  deleteDeck(orgId: string, id: string): Promise<boolean>;
+
+  // ── PCO item mappings (remembered PCO item -> deck choices) ───────────
+  listPcoItemMappings(orgId: string): Promise<PcoItemMapping[]>;
+  listPcoItemMappingsSince(orgId: string, watermark: string): Promise<PcoItemMapping[]>;
+  savePcoItemMapping(orgId: string, m: PcoItemMapping): Promise<void>;
+  deletePcoItemMapping(orgId: string, id: string): Promise<boolean>;
 
   // ── Channels (org library, configured online, synced to devices) ──────
   //
@@ -148,6 +163,8 @@ export interface SyncCursor {
   templates: string;
   channelConfigs: string;
   projectChannelOverrides: string;
+  decks: string;
+  pcoItemMappings: string;
 }
 
 /**
@@ -162,6 +179,8 @@ export const EMPTY_SYNC_CURSOR: SyncCursor = {
   templates: "",
   channelConfigs: "",
   projectChannelOverrides: "",
+  decks: "",
+  pcoItemMappings: "",
 };
 
 /**
@@ -181,7 +200,9 @@ export type PendingWriteKind =
   | "song"
   | "template"
   | "channelConfig"
-  | "projectChannelOverride";
+  | "projectChannelOverride"
+  | "deck"
+  | "pcoItemMapping";
 
 export interface PendingWrite {
   kind: PendingWriteKind;

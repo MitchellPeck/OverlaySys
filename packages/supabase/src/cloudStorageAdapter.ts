@@ -8,7 +8,9 @@
 
 import {
   ChannelConfigSchema,
+  DeckSchema,
   HotcardSchema,
+  PcoItemMappingSchema,
   ProjectChannelOverrideSchema,
   ProjectSchema,
   ShowSchema,
@@ -16,7 +18,9 @@ import {
   StageLayoutSchema,
   TemplateSchema,
   type ChannelConfig,
+  type Deck,
   type Hotcard,
+  type PcoItemMapping,
   type Project,
   type ProjectChannelOverride,
   type Show,
@@ -35,6 +39,15 @@ import {
   withOptionalColumn,
   type OptionalColumn,
 } from "./optionalColumns";
+
+/** The JSON-payload tables (`id, org_id, payload, updated_at, deleted_at`). */
+type PayloadTable =
+  | "songs"
+  | "templates"
+  | "stage_layouts"
+  | "channel_configs"
+  | "decks"
+  | "pco_item_mappings";
 
 const SHOW_COLUMNS = "id, project_id, name, rows, updated_at, deleted_at";
 const HOTCARD_COLUMNS = "id, project_id, name, template_id, data, channel_hint, notes, updated_at, deleted_at";
@@ -261,7 +274,7 @@ export class CloudStorageAdapter implements StorageAdapter {
     return ((data ?? []) as unknown as HotcardRow[]).map(rowToHotcard);
   }
 
-  // ── JSON-payload tables (songs, templates, channel_configs) ────────────
+  // ── JSON-payload tables (songs, templates, stage_layouts, decks, …) ────
 
   async listSongs(orgId: string): Promise<Song[]> {
     return this.queryPayloadTable(orgId, "songs", false, SongSchema);
@@ -312,6 +325,37 @@ export class CloudStorageAdapter implements StorageAdapter {
   }
   async deleteStageLayout(orgId: string, id: string): Promise<boolean> {
     return this.softDeletePayload(orgId, "stage_layouts", id);
+  }
+
+  async listDecks(orgId: string): Promise<Deck[]> {
+    return this.queryPayloadTable(orgId, "decks", false, DeckSchema);
+  }
+  async listDecksSince(orgId: string, _watermark: string): Promise<Deck[]> {
+    void _watermark;
+    return this.queryPayloadTable(orgId, "decks", true, DeckSchema);
+  }
+  async getDeck(orgId: string, id: string): Promise<Deck | null> {
+    return this.getPayload(orgId, "decks", id, DeckSchema);
+  }
+  async saveDeck(orgId: string, d: Deck): Promise<void> {
+    return this.savePayload(orgId, "decks", d);
+  }
+  async deleteDeck(orgId: string, id: string): Promise<boolean> {
+    return this.softDeletePayload(orgId, "decks", id);
+  }
+
+  async listPcoItemMappings(orgId: string): Promise<PcoItemMapping[]> {
+    return this.queryPayloadTable(orgId, "pco_item_mappings", false, PcoItemMappingSchema);
+  }
+  async listPcoItemMappingsSince(orgId: string, _watermark: string): Promise<PcoItemMapping[]> {
+    void _watermark;
+    return this.queryPayloadTable(orgId, "pco_item_mappings", true, PcoItemMappingSchema);
+  }
+  async savePcoItemMapping(orgId: string, m: PcoItemMapping): Promise<void> {
+    return this.savePayload(orgId, "pco_item_mappings", m);
+  }
+  async deletePcoItemMapping(orgId: string, id: string): Promise<boolean> {
+    return this.softDeletePayload(orgId, "pco_item_mappings", id);
   }
 
   async listChannelConfigs(orgId: string): Promise<ChannelConfig[]> {
@@ -436,7 +480,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async queryPayloadTable<T>(
     orgId: string,
-    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
+    table: PayloadTable,
     includeTombstones: boolean,
     schema: { safeParse: (raw: unknown) => { success: boolean; data?: T } },
   ): Promise<T[]> {
@@ -462,7 +506,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async getPayload<T>(
     orgId: string,
-    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
+    table: PayloadTable,
     id: string,
     schema: { safeParse: (raw: unknown) => { success: boolean; data?: T } },
   ): Promise<T | null> {
@@ -485,7 +529,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async savePayload(
     orgId: string,
-    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
+    table: PayloadTable,
     entity: { id: string; updatedAt?: string; deletedAt?: string },
   ): Promise<void> {
     const { error } = await this.client.from(table).upsert(
@@ -505,7 +549,7 @@ export class CloudStorageAdapter implements StorageAdapter {
 
   private async softDeletePayload(
     orgId: string,
-    table: "songs" | "templates" | "stage_layouts" | "channel_configs",
+    table: PayloadTable,
     id: string,
   ): Promise<boolean> {
     const { error } = await this.client

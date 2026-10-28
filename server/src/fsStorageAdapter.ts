@@ -19,7 +19,9 @@ import writeAtomic from "write-file-atomic";
 import {
   ProjectChannelOverrideSchema,
   type ChannelConfig,
+  type Deck,
   type Hotcard,
+  type PcoItemMapping,
   type Project,
   type ProjectChannelOverride,
   type Show,
@@ -30,6 +32,12 @@ import {
   type Template,
 } from "@overlaysys/core";
 import { withoutBuiltIn } from "./stageLayouts";
+import { loadAllDecks, loadDeck, writeDeck } from "./decksStore";
+import {
+  deleteItemMapping,
+  listItemMappings,
+  putItemMapping,
+} from "./pco/itemMappings";
 import {
   dataRoot,
   loadAllChannelConfigs,
@@ -261,6 +269,50 @@ export class FsStorageAdapter implements StorageAdapter {
   }
   async deleteStageLayout(_org: string, id: string): Promise<boolean> {
     return softDeleteVia(await loadStageLayout(id), (l) => saveStageLayout(l));
+  }
+
+  // ── Slides decks ───────────────────────────────────────────────────────
+  //
+  // Writes go straight to decksStore (not the registry in decks.ts, which
+  // re-stamps `updatedAt` for operator edits) so a pulled deck keeps its
+  // incoming timestamp. cloudSync's fan-out reloads the registry afterwards.
+  async listDecks(_org: string): Promise<Deck[]> {
+    return live(await loadAllDecks());
+  }
+  async listDecksSince(_org: string, _watermark: string): Promise<Deck[]> {
+    return loadAllDecks();
+  }
+  async getDeck(_org: string, id: string): Promise<Deck | null> {
+    const d = await loadDeck(id);
+    return d && !d.deletedAt ? d : null;
+  }
+  async saveDeck(_org: string, deck: Deck): Promise<void> {
+    await writeDeck({
+      ...deck,
+      updatedAt: deck.updatedAt ?? new Date().toISOString(),
+    });
+  }
+  async deleteDeck(_org: string, id: string): Promise<boolean> {
+    const current = await loadDeck(id);
+    if (!current || current.deletedAt) return false;
+    return softDeleteVia(current, (d) => writeDeck(d));
+  }
+
+  // ── PCO item mappings ──────────────────────────────────────────────────
+  //
+  // putItemMapping stores the record as-is (tombstones and `updatedAt`
+  // included), which is exactly what a pull needs.
+  async listPcoItemMappings(_org: string): Promise<PcoItemMapping[]> {
+    return listItemMappings();
+  }
+  async listPcoItemMappingsSince(_org: string, _watermark: string): Promise<PcoItemMapping[]> {
+    return listItemMappings({ includeDeleted: true });
+  }
+  async savePcoItemMapping(_org: string, m: PcoItemMapping): Promise<void> {
+    await putItemMapping(m);
+  }
+  async deletePcoItemMapping(_org: string, id: string): Promise<boolean> {
+    return deleteItemMapping(id);
   }
 
   // ── Channel configs ────────────────────────────────────────────────────
