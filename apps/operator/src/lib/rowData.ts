@@ -1,5 +1,6 @@
 import type { GraphicRow, Show } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { cueTakeRoute } from "./airRoute";
 
 type Row = Show["rows"][number];
 
@@ -36,7 +37,7 @@ export function graphicRowMessage(
 ): ClientMessage {
   return {
     type,
-    channel: row.channelHint ?? (type === "cue" ? "preview" : "program"),
+    channel: cueTakeRoute(row.channelHint, type),
     templateId: row.templateId,
     data: effectiveRowData(row, overrides),
     ...(showId ? { source: { showId, rowId: row.id } } : {}),

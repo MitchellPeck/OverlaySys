@@ -23,11 +23,7 @@ export function songTakeChannel(row: SongRow, show: Show | null, caches: Caches)
   return songRowChannel(row, show, caches) ?? "program";
 }
 
-/**
- * Channel a song cue goes to. A song routed to program cues on preview (a cue
- * must never go live); one routed to another output cues there, as before.
- */
-export function songCueChannel(row: SongRow, show: Show | null, caches: Caches): string {
-  const ch = songRowChannel(row, show, caches);
-  return ch && ch !== "program" ? ch : "preview";
+/** Channel a song cue goes to: always preview. A cue never goes live, whatever the routing. */
+export function songCueChannel(_row: SongRow, _show: Show | null, _caches: Caches): string {
+  return "preview";
 }

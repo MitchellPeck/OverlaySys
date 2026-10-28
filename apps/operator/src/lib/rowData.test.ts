@@ -92,10 +92,16 @@ describe("graphicRowMessage", () => {
     );
   });
 
-  it("uses the row's channelHint for both", () => {
-    const row = graphic("a", {}, "lower");
-    expect(graphicRowMessage(row, "cue", {})).toMatchObject({ channel: "lower" });
-    expect(graphicRowMessage(row, "take", {})).toMatchObject({ channel: "lower" });
+  it("a graphic row hinted to program cues on preview", () => {
+    const row = graphic("r", { title: "A" }, "program");
+    expect(graphicRowMessage(row, "cue", {}, "s")).toMatchObject({ type: "cue", channel: "preview" });
+    expect(graphicRowMessage(row, "take", {}, "s")).toMatchObject({ type: "take", channel: "program" });
+  });
+
+  it("a graphic row hinted to another output takes there but still cues on preview", () => {
+    const row = graphic("r", { title: "A" }, "stage-1");
+    expect(graphicRowMessage(row, "cue", {}, "s")).toMatchObject({ type: "cue", channel: "preview" });
+    expect(graphicRowMessage(row, "take", {}, "s")).toMatchObject({ type: "take", channel: "stage-1" });
   });
 
   it("sends effective data", () => {

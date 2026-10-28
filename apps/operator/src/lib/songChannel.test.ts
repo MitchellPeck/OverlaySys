@@ -29,6 +29,12 @@ describe("songRowChannel", () => {
     expect(songTakeChannel(row(), show(), empty)).toBe("program");
     expect(songCueChannel(row(), show(), empty)).toBe("preview");
     expect(songCueChannel(row({ channelHint: "program" }), show(), empty)).toBe("preview");
-    expect(songCueChannel(row({ channelHint: "lyrics" }), show(), empty)).toBe("lyrics");
+  });
+
+  it("songCueChannel is preview even when the song routes to another output", () => {
+    const empty = { songCache: {}, templateCache: {} };
+    const r = row({ channelHint: "lyrics-out" });
+    expect(songCueChannel(r, show(), empty)).toBe("preview");
+    expect(songTakeChannel(r, show(), empty)).toBe("lyrics-out");
   });
 });
