@@ -1,4 +1,5 @@
 import { BrowserWindow, screen } from "electron";
+import { escapeHtml } from "./diagnostics";
 
 /**
  * Open a transparent, click-through overlay on each display showing a
@@ -35,7 +36,7 @@ export function identifyDisplays(durationMs = 2000): void {
 
     const html = `<!doctype html><html><body style="margin:0;background:transparent;display:flex;align-items:center;justify-content:center;height:100vh;">
 <div style="font-family:system-ui,sans-serif;font-size:240px;font-weight:900;color:#fff;text-shadow:0 8px 32px rgba(0,0,0,0.85),0 0 4px rgba(0,0,0,1);line-height:1;">${i + 1}</div>
-<div style="position:fixed;bottom:24px;left:0;right:0;text-align:center;font-family:system-ui,sans-serif;font-size:18px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,0.9);">${d.label || `Display ${i + 1}`}</div>
+<div style="position:fixed;bottom:24px;left:0;right:0;text-align:center;font-family:system-ui,sans-serif;font-size:18px;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,0.9);">${escapeHtml(d.label || `Display ${i + 1}`)}</div>
 </body></html>`;
     win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
