@@ -133,3 +133,9 @@ describe("stageTime", () => {
     });
   });
 });
+
+describe("formatRemaining (shared)", () => {
+  it("formats m:ss", () => {
+    expect(formatRemaining(65)).toBe("1:05");
+  });
+});

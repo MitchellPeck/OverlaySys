@@ -221,8 +221,8 @@ export const SCRIPTURE_LAYOUT: StageLayout = StageLayoutSchema.parse({
   size: { w: 1920, h: 1080 },
   background: "#000000",
   widgets: [
-    { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1300, h: 820 }, props: { showReference: true }, style: { fontSize: 64, label: "SCRIPTURE" } },
-    { id: "next", kind: "nextSlide", rect: { x: 24, y: 860, w: 1300, h: 100 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT VERSE" } },
+    { id: "current", kind: "currentSlide", rect: { x: 24, y: 24, w: 1300, h: 780 }, props: { showReference: true }, style: { fontSize: 64, label: "SCRIPTURE" } },
+    { id: "next", kind: "nextSlide", rect: { x: 24, y: 820, w: 1300, h: 140 }, style: { fontSize: 48, color: "#bbbbbb", label: "NEXT VERSE" } },
     { id: "timer", kind: "timer", rect: { x: 1348, y: 24, w: 548, h: 180 }, props: { overtimeStyle: "fill" }, style: { fontSize: 96, align: "center", vAlign: "middle", autoFit: false } },
     { id: "clock", kind: "clock", rect: { x: 1348, y: 220, w: 548, h: 120 }, style: { fontSize: 72, align: "center", vAlign: "middle", autoFit: false } },
     { id: "notes", kind: "sermonNotes", rect: { x: 1348, y: 356, w: 548, h: 604 }, props: { collapseWhenEmpty: true }, style: { fontSize: 48, label: "NOTES", border: { width: 2, color: "#333333", radius: 12 }, autoFit: false } },

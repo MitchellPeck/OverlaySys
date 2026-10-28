@@ -10,4 +10,6 @@ export {
   pickStageTimer,
   serviceProgressText,
 } from "./stageTime";
-export { fitFontSize } from "./fitText";
+export { fitFontSize, searchFontSize, type FitResult } from "./fitText";
+export { captionFontSize, defaultCaption, type CurrentKind } from "./captionStyle";
+export { overtimeView, pulseOn, type OvertimeStyle, type OvertimeView } from "./timerOvertime";
