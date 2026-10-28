@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RundownRow, Show } from "@overlaysys/core";
+import { moveRow } from "@overlaysys/core";
 import { canSave, dropTarget, insertRowsAfter, nameForSave, nudgeRow, removeRowAt, restoreRow } from "./showEditOps";
 
 const g = (id: string, sectionId?: string, extra: Record<string, unknown> = {}) =>
@@ -59,10 +60,27 @@ describe("showEditOps", () => {
     expect(ids(nudgeRow(mk(), "b2", 1))).toEqual(ids(mk()));
   });
   it("dropTarget before a row in another section yields that section and index", () => {
-    expect(dropTarget(mk(), { overRowId: "b2", half: "before" })).toEqual({ toSectionId: "B", toIndex: 1 });
-    expect(dropTarget(mk(), { overRowId: "a1", half: "after" })).toEqual({ toSectionId: "A", toIndex: 1 });
-    expect(dropTarget(mk(), { overSectionId: "B", at: "end" })).toEqual({ toSectionId: "B", toIndex: 2 });
-    expect(dropTarget(mk(), { overSectionId: "A", at: "start" })).toEqual({ toSectionId: "A", toIndex: 0 });
+    expect(dropTarget(mk(), { overRowId: "b2", half: "before" }, "a1")).toEqual({ toSectionId: "B", toIndex: 1 });
+    expect(dropTarget(mk(), { overSectionId: "B", at: "end" }, "a1")).toEqual({ toSectionId: "B", toIndex: 2 });
+    expect(dropTarget(mk(), { overSectionId: "A", at: "start" }, "b1")).toEqual({ toSectionId: "A", toIndex: 0 });
+  });
+  it("dropTarget feeds moveRow correctly: drag down, drag up, self, unknown", () => {
+    const apply = (rowId: string, pos: Parameters<typeof dropTarget>[1]) => {
+      const t = dropTarget(mk(), pos, rowId);
+      return t ? ids(moveRow(mk(), rowId, t.toSectionId, t.toIndex)) : null;
+    };
+    // a1 dropped after a2 -> a2, a1
+    expect(apply("a1", { overRowId: "a2", half: "after" })).toEqual(["a2:A", "a1:A", "a3:A", "b1:B", "b2:B"]);
+    // a1 dropped before a3 -> a2, a1, a3
+    expect(apply("a1", { overRowId: "a3", half: "before" })).toEqual(["a2:A", "a1:A", "a3:A", "b1:B", "b2:B"]);
+    // a3 dropped before a1 (up)
+    expect(apply("a3", { overRowId: "a1", half: "before" })).toEqual(["a3:A", "a1:A", "a2:A", "b1:B", "b2:B"]);
+    // a1 to end of section A
+    expect(apply("a1", { overSectionId: "A", at: "end" })).toEqual(["a2:A", "a3:A", "a1:A", "b1:B", "b2:B"]);
+    // cross-section
+    expect(apply("a1", { overRowId: "b2", half: "after" })).toEqual(["a2:A", "a3:A", "b1:B", "b2:B", "a1:B"]);
+    expect(dropTarget(mk(), { overRowId: "a1", half: "after" }, "a1")).toBeNull();
+    expect(dropTarget(mk(), { overRowId: "nope", half: "after" }, "a1")).toBeNull();
   });
   it("canSave explains why not", () => {
     expect(canSave({ connected: false, cloud: false, dirty: true, saving: false })).toEqual({ ok: false, reason: "Not connected" });
@@ -80,5 +98,9 @@ describe("showEditOps", () => {
   });
   it("insertRowsAfter with null anchor goes to the start of the section", () => {
     expect(ids(insertRowsAfter(mk(), null, "B", [g("n1")]))).toEqual(["a1:A", "a2:A", "a3:A", "n1:B", "b1:B", "b2:B"]);
+  });
+  it("insertRowsAfter skips a duplicate id without moving the anchor", () => {
+    const out = insertRowsAfter(mk(), "a1", null, [g("a2"), g("n1"), g("n2")]);
+    expect(ids(out)).toEqual(["a1:A", "n1:A", "n2:A", "a2:A", "a3:A", "b1:B", "b2:B"]);
   });
 });

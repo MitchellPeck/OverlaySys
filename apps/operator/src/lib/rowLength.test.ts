@@ -16,7 +16,7 @@ describe("rowLength", () => {
   it("decimal minutes", () => {
     expect(parseRowLength("1.5")).toEqual({ ok: true, sec: 90 });
   });
-  it.each([["5", 300], ["4.5", 270], ["1:30", 90], ["90s", 90], ["2m", 120], ["2m30s", 150], ["1:02:03", 3723], ["0", undefined], ["", undefined]])(
+  it.each([["5", 300], ["4.5", 270], ["1:30", 90], ["90s", 90], ["2m", 120], ["2m30s", 150], ["1:02:03", 3723], ["0", undefined], ["0s", undefined], ["0:00", undefined], ["", undefined]])(
     "parseRowLength(%s) [D13]",
     (t, sec) => expect(parseRowLength(t as string)).toEqual({ ok: true, sec }),
   );

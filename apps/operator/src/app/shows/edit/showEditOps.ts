@@ -41,17 +41,26 @@ export function nudgeRow(show: Show, rowId: string, delta: -1 | 1): Show {
 }
 
 /**
- * Resolve a drop position to a destination section and index. The index is in
- * the destination group as currently displayed (the dragged row still in it).
+ * Resolve a drop position to a destination section and an index that is correct
+ * for core moveRow (which removes the dragged row first). Returns null for a
+ * no-op: dropping on the dragged row itself, or over an unknown row.
  */
-export function dropTarget(show: Show, pos: DropPos): { toSectionId: string | null; toIndex: number } {
-  const groups = groupRowsBySection(show);
+export function dropTarget(
+  show: Show,
+  pos: DropPos,
+  draggedRowId: string,
+): { toSectionId: string | null; toIndex: number } | null {
+  const groups = groupRowsBySection(show).map((g) => ({
+    ...g,
+    rows: g.rows.filter((r) => r.id !== draggedRowId),
+  }));
   if ("overRowId" in pos) {
+    if (pos.overRowId === draggedRowId) return null;
     for (const g of groups) {
       const i = g.rows.findIndex((r) => r.id === pos.overRowId);
       if (i >= 0) return { toSectionId: g.section?.id ?? null, toIndex: pos.half === "before" ? i : i + 1 };
     }
-    return { toSectionId: null, toIndex: show.rows.length };
+    return null;
   }
   const g = groups.find((x) => (x.section?.id ?? null) === pos.overSectionId);
   if (!g) return { toSectionId: pos.overSectionId, toIndex: 0 };
@@ -85,6 +94,7 @@ export function insertRowsAfter(
   let out = show;
   let anchor = afterRowId;
   for (const row of rows) {
+    if (out.rows.some((r) => r.id === row.id)) continue; // duplicate id: skipped, anchor stays put
     const groups = groupRowsBySection(out);
     let sid = sectionId;
     let at = 0;
