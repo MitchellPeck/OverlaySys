@@ -2,11 +2,11 @@ import gsap from "gsap";
 import type { Timeline as TemplateTimeline, EasingSpec } from "@overlaysys/core";
 import type { LayerNodeMap } from "./dom";
 
-function easingToGsap(e: EasingSpec): string {
+import { cubicBezierEase } from "./cubicBezier";
+
+export function easingToGsap(e: EasingSpec): string | ((t: number) => number) {
   if (typeof e === "string") return e;
-  // cubic-bezier tuple → gsap CustomEase string fallback: power2 default
-  // (Without the CustomEase plugin we approximate with a steps-of-bezier string.)
-  return `cubic-bezier(${e[0]}, ${e[1]}, ${e[2]}, ${e[3]})`;
+  return cubicBezierEase(e[0], e[1], e[2], e[3]);
 }
 
 /** CSS custom property a `wipe` track tweens; the layer's mask reads it. */
