@@ -9,7 +9,7 @@ import * as songs from "../songs";
 import * as shows from "../shows";
 import { reloadTemplates } from "../templates";
 import type { PcoClient } from "./pcoClient";
-import { importPlan, type ImportPlanRequest } from "./importPlan";
+import { findImportedItems, importPlan, type ImportPlanRequest } from "./importPlan";
 
 let tmpDir: string;
 let prevDataDir: string | undefined;
@@ -591,5 +591,104 @@ describe("importPlan row length", () => {
     const first = await importPlan(clientWith(300), req, NOW);
     await importPlan(clientWith(undefined), { ...req, target: { mode: "existing", showId: first.showId } }, NOW);
     expect((await shows.getShow(first.showId!))?.rows[0]?.lengthSec).toBeUndefined();
+  });
+});
+
+describe("importPlan — re-sync", () => {
+  function previouslyImported(extra: Partial<Song> = {}): Song {
+    return SongSchema.parse({
+      id: "legacy-id",
+      title: "Brand New Song",
+      sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["old"] }] }],
+      defaultArrangement: ["v1"],
+      customFields: { [PCO_SONG_ID_KEY]: "pco-song-B" },
+      defaultLyricTemplateId: "tpl-mine",
+      defaultIntroTemplateId: "tpl-intro-mine",
+      defaultIntroFieldMap: { line1: "title" },
+      defaultOutroTemplateId: "tpl-outro-mine",
+      defaultChannel: "ch-mine",
+      ...extra,
+    });
+  }
+
+  const onlyB = (song?: Song): Omit<ImportPlanRequest, "target"> => ({
+    ...baseReq,
+    items: [{ itemId: "item-B", kind: "song", songAction: "create", templateId: "tpl-lyric", ...(song ? { song } : {}) }],
+  });
+
+  it("keeps library song defaults when a re-import rebuilds the song from PCO", async () => {
+    await songs.saveSong(previouslyImported());
+    await importPlan(fakeClient, { ...onlyB(), target: { mode: "new", name: "S" } }, NOW);
+    const saved = await songs.getSong("legacy-id");
+    expect(saved?.sections[0]?.slides[0]?.lines).toEqual(["fresh lyric line"]);
+    expect(saved).toMatchObject({
+      defaultLyricTemplateId: "tpl-mine",
+      defaultIntroTemplateId: "tpl-intro-mine",
+      defaultIntroFieldMap: { line1: "title" },
+      defaultOutroTemplateId: "tpl-outro-mine",
+      defaultChannel: "ch-mine",
+    });
+  });
+
+  it("a client draft's own defaults win; ones it leaves unset are kept", async () => {
+    await songs.saveSong(previouslyImported());
+    const draft = configuredDraft({ defaultChannel: undefined, defaultOutroTemplateId: undefined });
+    await importPlan(fakeClient, { ...onlyB(draft), target: { mode: "new", name: "S" } }, NOW);
+    const saved = await songs.getSong("legacy-id");
+    expect(saved).toMatchObject({
+      defaultLyricTemplateId: "tpl-lyric",
+      defaultIntroTemplateId: "tpl-intro",
+      defaultOutroTemplateId: "tpl-outro-mine",
+      defaultChannel: "ch-mine",
+    });
+  });
+
+  it("flags rows whose item was removed from the plan, leaving them in place", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const first = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "S" } }, NOW);
+    const withoutC: PcoClient = { ...fakeClient, getPlanItems: async () => ITEMS.filter((i) => i.id !== "item-C") };
+    const second = await importPlan(
+      withoutC,
+      { ...baseReq, items: baseReq.items.filter((i) => i.itemId !== "item-C"), target: { mode: "existing", showId: first.showId } },
+      NOW,
+    );
+    expect(second.removedRows).toEqual([
+      { rowId: expect.any(String), itemId: "item-C", label: "Welcome & Offering" },
+    ]);
+    expect(second.warnings.join(" ")).toMatch(/removed from the plan/);
+    expect((await shows.getShow(first.showId!))?.rows).toHaveLength(3);
+  });
+
+  it("findImportedItems maps plan items to the shows that hold them", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const first = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "Sunday" } }, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    const imported = findImportedItems([show], "st-1", "plan-1");
+    expect(Object.keys(imported).sort()).toEqual(["item-A", "item-B", "item-C"]);
+    expect(imported["item-A"]).toEqual([{ showId: show.id, showName: "Sunday" }]);
+    expect(findImportedItems([show], "st-1", "other-plan")).toEqual({});
+  });
+
+  it("reorders plan rows to plan order only when asked, keeping manual rows in their slots", async () => {
+    await songs.saveSong(existingLibrarySong());
+    const first = await importPlan(fakeClient, { ...baseReq, target: { mode: "new", name: "S" } }, NOW);
+    const showId = first.showId!;
+    // Operator moved item-C to the top and added a manual row in slot 1.
+    const show = (await shows.getShow(showId))!;
+    const [a, b, c] = show.rows;
+    const manual = { ...c!, id: "manual", sourceRef: undefined };
+    await shows.saveShow({ ...show, rows: [c!, manual, a!, b!] });
+
+    const keep = await importPlan(fakeClient, { ...baseReq, target: { mode: "existing", showId } }, NOW);
+    expect(keep.reordered).toBe(false);
+    expect((await shows.getShow(showId))!.rows.map((r) => r.sourceRef?.itemId ?? r.id)).toEqual([
+      "item-C", "manual", "item-A", "item-B",
+    ]);
+
+    const re = await importPlan(fakeClient, { ...baseReq, reorderToPlan: true, target: { mode: "existing", showId } }, NOW);
+    expect(re.reordered).toBe(true);
+    expect((await shows.getShow(showId))!.rows.map((r) => r.sourceRef?.itemId ?? r.id)).toEqual([
+      "item-A", "manual", "item-B", "item-C",
+    ]);
   });
 });
