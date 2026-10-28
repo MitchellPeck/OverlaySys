@@ -72,7 +72,14 @@ export async function listSongs(): Promise<Song[]> {
 export async function saveSong(song: Song): Promise<Song> {
   await ensureLoaded();
   // See templates.saveTemplate — local writes stamp updatedAt for sync.
-  const stamped = stampWrite(song);
+  // createdAt: existing record's value, else the incoming one, else now, but
+  // only for an id the registry has never seen (live or tombstoned). An
+  // existing song without createdAt is deliberately left without one.
+  const existing = REGISTRY.get(song.id);
+  const createdAt = existing
+    ? existing.createdAt ?? undefined
+    : song.createdAt ?? new Date().toISOString();
+  const stamped = stampWrite(createdAt ? { ...song, createdAt } : { ...song, createdAt: undefined });
   await storage.saveSong(stamped);
   REGISTRY.set(stamped.id, stamped);
   return stamped;

@@ -36,6 +36,9 @@ export type ShowMeta = {
   name: string;
   projectId: string;
   rowCount: number;
+  scheduledFor?: string;
+  updatedAt?: string;
+  totalLengthSec?: number;
 };
 
 export type SttMatchStrategy = "coverage" | "neighborhood" | "audible";

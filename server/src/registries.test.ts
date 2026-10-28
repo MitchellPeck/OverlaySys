@@ -8,6 +8,7 @@ import * as templates from "./templates";
 import * as channelConfigs from "./channelConfigs";
 import * as projects from "./projects";
 import * as shows from "./shows";
+import * as songs from "./songs";
 
 /**
  * The WS write path (operator edits) goes through these registries, while
@@ -143,6 +144,46 @@ describe("registry deletes leave tombstones and hide them", () => {
     expect((await storage.loadProject("p1"))?.deletedAt).toBeTruthy();
     expect(await projects.getProject("p1")).toBeNull();
     expect((await projects.listProjects()).map((p) => p.id)).not.toContain("p1");
+  });
+});
+
+describe("list metadata and song createdAt", () => {
+  const baseSong = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: id,
+    sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "v1s1", lines: ["Line one"] }] }],
+    defaultArrangement: ["v1"],
+    customFields: {},
+    ...over,
+  });
+
+  it("saveSong stamps createdAt for a new id only", async () => {
+    await songs.reloadSongs();
+    const created = await songs.saveSong(baseSong("s-new") as never);
+    expect(created.createdAt).toBeTruthy();
+    // Existing song without createdAt is never stamped.
+    await storage.saveSong(baseSong("s-old") as never);
+    await songs.reloadSongs();
+    const old = await songs.saveSong(baseSong("s-old", { title: "edited" }) as never);
+    expect(old.createdAt).toBeUndefined();
+    // Existing song with createdAt keeps it even if the incoming one differs.
+    const again = await songs.saveSong({ ...created, createdAt: "1999-01-01T00:00:00.000Z" } as never);
+    expect(again.createdAt).toBe(created.createdAt);
+  });
+
+  it("listShowMetas includes updatedAt and totalLengthSec", async () => {
+    await shows.reloadShows();
+    const row = (id: string, lengthSec?: number) => ({ kind: "graphic", id, templateId: "t", data: {}, lengthSec });
+    await shows.saveShow({
+      id: "sh1", name: "A", projectId: "p", songs: [],
+      rows: [row("r1", 120), row("r2", 30), row("r3")],
+    } as never);
+    await shows.saveShow({ id: "sh2", name: "B", projectId: "p", songs: [], rows: [row("r1")] } as never);
+    const metas = await shows.listShowMetas();
+    const a = metas.find((x) => x.id === "sh1")!;
+    expect(a.totalLengthSec).toBe(150);
+    expect(a.updatedAt).toBeTruthy();
+    expect(metas.find((x) => x.id === "sh2")!.totalLengthSec).toBeUndefined();
   });
 });
 

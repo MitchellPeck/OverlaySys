@@ -361,6 +361,11 @@ export const TemplateSchema = z.object({
    */
   defaultChannel: z.string().optional(),
   /**
+   * What this template is for. Explicit role wins over name-based inference
+   * (see operator templateRoles.ts). Unset means "infer from the name".
+   */
+  role: z.enum(["graphic", "lyric", "scripture", "title"]).optional(),
+  /**
    * ISO timestamp of the last write. Set by writers on every save; consumed
    * by the sync engine for last-writer-wins. Optional for backwards
    * compatibility with pre-sync JSON; new writes always set it.
@@ -376,4 +381,4 @@ export type BlinkOnTake = NonNullable<z.infer<typeof TemplateSchema>["blinkOnTak
 // full template body fetch. `defaultChannel` is here so adding a row in the
 // rundown editor can prefill channelHint from `templates[i].defaultChannel`
 // before the body has been loaded into the cache.
-export type TemplateMeta = Pick<Template, "id" | "name" | "size" | "defaultChannel">;
+export type TemplateMeta = Pick<Template, "id" | "name" | "size" | "defaultChannel" | "role" | "updatedAt">;

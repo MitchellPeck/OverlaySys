@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Show, Song } from "@overlaysys/core";
+import { resolveShowDate, toISODate } from "@overlaysys/core";
 import * as songs from "./songs";
 import * as shows from "./shows";
 import { broadcast } from "./broadcast";
@@ -25,6 +26,9 @@ export interface LibrarySong {
   author?: string;
   ccliNumber?: string;
   updatedAt?: string;
+  createdAt?: string;
+  /** YYYY-MM-DD of the latest dated show (on or before today) using this song. */
+  lastUsed?: string;
   /** Live shows with at least one row for this song. */
   usedIn: number;
   /** Names of those shows (capped), for the delete warning. */
@@ -55,10 +59,21 @@ export function songLyricsText(song: Song): string {
 export function buildSongLibrary(
   live: readonly Song[],
   deleted: readonly Song[],
-  liveShows: readonly Pick<Show, "name" | "rows">[],
+  liveShows: readonly (Pick<Show, "name" | "rows"> & Partial<Pick<Show, "scheduledFor">>)[],
+  today: string = toISODate(new Date()),
 ): SongLibraryResponse {
   const usage = new Map<string, string[]>();
+  const lastUsed = new Map<string, string>();
   for (const show of liveShows) {
+    const date = resolveShowDate({ name: show.name, scheduledFor: show.scheduledFor });
+    const past = date !== null && date <= today ? date : null;
+    if (past) {
+      for (const row of show.rows) {
+        if (row.kind !== "song") continue;
+        const prev = lastUsed.get(row.songId);
+        if (!prev || past > prev) lastUsed.set(row.songId, past);
+      }
+    }
     const ids = new Set<string>();
     for (const row of show.rows) if (row.kind === "song") ids.add(row.songId);
     for (const id of ids) {
@@ -76,6 +91,8 @@ export function buildSongLibrary(
         author: s.author,
         ccliNumber: s.ccliNumber,
         updatedAt: s.updatedAt,
+        createdAt: s.createdAt,
+        lastUsed: lastUsed.get(s.id),
         usedIn: names.length,
         usedInShows: names.slice(0, USED_IN_NAMES_CAP),
         lyrics: songLyricsText(s),

@@ -28,16 +28,36 @@ async function ensureLoaded(): Promise<void> {
 }
 
 export async function listShowMetas(): Promise<
-  { id: string; name: string; projectId: string; rowCount: number; scheduledFor?: string }[]
+  {
+    id: string;
+    name: string;
+    projectId: string;
+    rowCount: number;
+    scheduledFor?: string;
+    updatedAt?: string;
+    totalLengthSec?: number;
+  }[]
 > {
   await ensureLoaded();
-  return liveOnly(REGISTRY.values()).map((s) => ({
-    id: s.id,
-    name: s.name,
-    projectId: s.projectId,
-    rowCount: s.rows.length,
-    scheduledFor: s.scheduledFor,
-  }));
+  return liveOnly(REGISTRY.values()).map((s) => {
+    let total = 0;
+    let anyLength = false;
+    for (const r of s.rows) {
+      if (typeof r.lengthSec === "number") {
+        total += r.lengthSec;
+        anyLength = true;
+      }
+    }
+    return {
+      id: s.id,
+      name: s.name,
+      projectId: s.projectId,
+      rowCount: s.rows.length,
+      scheduledFor: s.scheduledFor,
+      updatedAt: s.updatedAt,
+      ...(anyLength ? { totalLengthSec: total } : {}),
+    };
+  });
 }
 
 export async function getShow(id: string): Promise<Show | null> {

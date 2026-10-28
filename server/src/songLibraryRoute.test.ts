@@ -39,6 +39,27 @@ describe("buildSongLibrary", () => {
   });
 });
 
+describe("buildSongLibrary createdAt and lastUsed", () => {
+  it("passes createdAt through and reports lastUsed as the latest past show date", () => {
+    const lib = buildSongLibrary(
+      [song("a", { createdAt: "2026-01-02T00:00:00.000Z" }), song("b")],
+      [],
+      [
+        { name: "Old", scheduledFor: "2020-03-01", rows: [songRow("r1", "a")] },
+        { name: "Newer", scheduledFor: "2021-04-05", rows: [songRow("r2", "a")] },
+        { name: "Future", scheduledFor: "2999-01-01", rows: [songRow("r3", "a"), songRow("r4", "b")] },
+        { name: "Undated", rows: [songRow("r5", "b")] },
+      ],
+    );
+    const a = lib.songs.find((s) => s.id === "a")!;
+    expect(a.createdAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(a.lastUsed).toBe("2021-04-05");
+    const b = lib.songs.find((s) => s.id === "b")!;
+    expect(b.createdAt).toBeUndefined();
+    expect(b.lastUsed).toBeUndefined();
+  });
+});
+
 describe("parseReportRange", () => {
   it("accepts open ranges", () => {
     expect(parseReportRange(undefined, undefined)).toEqual({});

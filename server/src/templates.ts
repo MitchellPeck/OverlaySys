@@ -41,6 +41,8 @@ export async function listTemplateMetas(): Promise<TemplateMeta[]> {
     // editor, take panel) can prefill channelHint without needing the
     // template body in cache.
     ...(t.defaultChannel ? { defaultChannel: t.defaultChannel } : {}),
+    ...(t.role ? { role: t.role } : {}),
+    ...(t.updatedAt ? { updatedAt: t.updatedAt } : {}),
   }));
 }
 

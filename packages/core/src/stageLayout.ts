@@ -221,11 +221,18 @@ export const StageLayoutMetaSchema = z.object({
   name: z.string(),
   size: z.object({ w: z.number().positive(), h: z.number().positive() }),
   builtIn: z.boolean(),
+  updatedAt: z.string().optional(),
 });
 export type StageLayoutMeta = z.infer<typeof StageLayoutMetaSchema>;
 
 export function stageLayoutMeta(l: StageLayout): StageLayoutMeta {
-  return { id: l.id, name: l.name, size: { ...l.size }, builtIn: l.builtIn === true };
+  return {
+    id: l.id,
+    name: l.name,
+    size: { ...l.size },
+    builtIn: l.builtIn === true,
+    ...(l.updatedAt ? { updatedAt: l.updatedAt } : {}),
+  };
 }
 
 export function isBuiltInStageLayoutId(id: string): boolean {

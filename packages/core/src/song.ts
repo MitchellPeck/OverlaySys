@@ -75,6 +75,12 @@ export const SongSchema = z.preprocess(
      * compatibility with pre-sync JSON; new writes always set it.
      */
     updatedAt: z.string().optional(),
+    /**
+     * ISO timestamp of first creation. Stamped by the server's saveSong only
+     * for a brand-new id; songs that predate this field stay without it and
+     * the library falls back to `updatedAt`.
+     */
+    createdAt: z.string().optional(),
     /** Soft-delete tombstone; see hotcard.ts for the rationale. */
     deletedAt: z.string().optional(),
   }),
@@ -87,7 +93,7 @@ export type Song = z.infer<typeof SongSchema>;
  * song_list schema currently drops it.
  */
 export type SongMeta = Pick<Song, "id" | "title" | "ccliNumber" | "author"> &
-  Partial<Pick<Song, "updatedAt">>;
+  Partial<Pick<Song, "updatedAt" | "createdAt">>;
 
 /**
  * Lightweight description of a live SongSession sent to clients via
