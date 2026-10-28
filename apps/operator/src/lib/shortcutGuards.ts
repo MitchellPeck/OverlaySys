@@ -1,4 +1,4 @@
-import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
+import { hotcardForKey, HotkeySchema, type ChannelState, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { clearChannelMessages } from "./onAir";
 
@@ -58,16 +58,20 @@ export function songKeyChannel(sessions: Record<string, SongSessionSummary | nul
   return sessions["program"] ? "program" : null;
 }
 
-/** F1–F12 → hotcard index 0–11; null for anything else or a ⌘/Ctrl/Alt chord. */
-export function hotcardIndexForKey(e: KeyLike): number | null {
+/** The F1–F12 key pressed (Shift allowed); null for anything else or a ⌘/Ctrl/Alt chord. */
+export function hotkeyForEvent(e: KeyLike): Hotkey | null {
   if (hasCommandModifier(e)) return null;
-  const m = /^F([1-9]|1[0-2])$/.exec(e.code);
-  return m ? Number(m[1]) - 1 : null;
+  const parsed = HotkeySchema.safeParse(e.code);
+  return parsed.success ? parsed.data : null;
 }
 
-/** Label shown on a hotcard tile for its F-key, if it has one. */
-export function hotcardKeyLabel(index: number): string | null {
-  return index >= 0 && index < 12 ? `F${index + 1}` : null;
+/**
+ * The current project's hotcard assigned to the pressed F-key, or null.
+ * Keys come from each card's explicit `hotkey`, never its list position.
+ */
+export function hotcardForEvent<T extends HotcardMeta>(e: KeyLike, hotcards: readonly T[], projectId: string): T | null {
+  const k = hotkeyForEvent(e);
+  return k ? hotcardForKey(hotcards, k, projectId) : null;
 }
 
 /**

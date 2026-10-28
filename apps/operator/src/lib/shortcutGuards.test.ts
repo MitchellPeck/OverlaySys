@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
+import type { ChannelState, HotcardMeta, SongSessionSummary } from "@overlaysys/core";
 import {
   escapeMessages,
   hasCommandModifier,
+  hotcardForEvent,
   hotcardRoute,
-  hotcardIndexForKey,
+  hotkeyForEvent,
   isIgnoredRepeat,
   isTextEntryTarget,
   shouldIgnoreGlobalKey,
@@ -88,17 +89,43 @@ describe("songKeyChannel", () => {
   });
 });
 
-describe("hotcardIndexForKey", () => {
-  it("maps F1–F12 to 0–11, with or without Shift", () => {
-    expect(hotcardIndexForKey(key("F1"))).toBe(0);
-    expect(hotcardIndexForKey(key("F12"))).toBe(11);
-    expect(hotcardIndexForKey(key("F3", { shiftKey: true }))).toBe(2);
+describe("hotkeyForEvent", () => {
+  it("reads F1–F12, with or without Shift", () => {
+    expect(hotkeyForEvent(key("F1"))).toBe("F1");
+    expect(hotkeyForEvent(key("F12"))).toBe("F12");
+    expect(hotkeyForEvent(key("F3", { shiftKey: true }))).toBe("F3");
   });
 
   it("ignores other keys and command chords", () => {
-    expect(hotcardIndexForKey(key("F13"))).toBeNull();
-    expect(hotcardIndexForKey(key("KeyF"))).toBeNull();
-    expect(hotcardIndexForKey(key("F5", { metaKey: true }))).toBeNull();
+    expect(hotkeyForEvent(key("F13"))).toBeNull();
+    expect(hotkeyForEvent(key("KeyF"))).toBeNull();
+    expect(hotkeyForEvent(key("F5", { metaKey: true }))).toBeNull();
+  });
+});
+
+describe("hotcardForEvent (F-keys come from each card's hotkey)", () => {
+  const cards: HotcardMeta[] = [
+    { id: "hotcard-a", name: "Pastor", templateId: "l3", projectId: "sun", hotkey: "F4" },
+    { id: "hotcard-b", name: "Welcome", templateId: "l3", projectId: "sun", hotkey: "F1" },
+    { id: "hotcard-c", name: "Other", templateId: "l3", projectId: "youth", hotkey: "F2" },
+    { id: "hotcard-d", name: "Unkeyed", templateId: "l3", projectId: "sun", hotkey: null },
+  ];
+
+  it("fires the card whose hotkey matches, whatever the list order", () => {
+    expect(hotcardForEvent(key("F4"), cards, "sun")?.id).toBe("hotcard-a");
+    expect(hotcardForEvent(key("F4"), [...cards].reverse(), "sun")?.id).toBe("hotcard-a");
+    expect(hotcardForEvent(key("F1", { shiftKey: true }), cards, "sun")?.id).toBe("hotcard-b");
+  });
+
+  it("never fires another project's card or falls back to position", () => {
+    expect(hotcardForEvent(key("F2"), cards, "sun")).toBeNull();
+    expect(hotcardForEvent(key("F3"), cards, "sun")).toBeNull();
+    expect(hotcardForEvent(key("F2"), cards, "youth")?.id).toBe("hotcard-c");
+  });
+
+  it("is null for non-F-keys and chords", () => {
+    expect(hotcardForEvent(key("Space"), cards, "sun")).toBeNull();
+    expect(hotcardForEvent(key("F4", { ctrlKey: true }), cards, "sun")).toBeNull();
   });
 });
 

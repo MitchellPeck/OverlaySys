@@ -9,8 +9,9 @@ import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import {
   escapeMessages,
   hasCommandModifier,
-  hotcardIndexForKey,
+  hotcardForEvent,
   hotcardRoute,
+  hotkeyForEvent,
   isIgnoredRepeat,
   shouldIgnoreGlobalKey,
   songKeyChannel,
@@ -21,7 +22,8 @@ import {
  * Global keyboard shortcuts for the show page.
  *
  * Always:
- *   F1..F12         take hotcard 1..12 (Shift: cue it on preview)
+ *   F1..F12         take the current project's hotcard assigned that key
+ *                   (Shift: cue it on preview)
  *
  * When NO song session is live on program (graphic mode):
  *   ↑/↓             navigate rundown
@@ -56,9 +58,9 @@ export function useGlobalShortcuts(): void {
       const client = getClient();
       const send = client.send.bind(client);
 
-      const hotkeyIdx = hotcardIndexForKey(e);
-      if (hotkeyIdx !== null) {
-        const meta = store.hotcards[hotkeyIdx];
+      if (hotkeyForEvent(e)) {
+        // An F-key with no card in this project falls through to the browser.
+        const meta = hotcardForEvent(e, store.hotcards, store.currentProjectId);
         if (!meta) return;
         e.preventDefault();
         const full = store.hotcardCache[meta.id];

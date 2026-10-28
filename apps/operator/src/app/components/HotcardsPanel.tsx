@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { HotcardMeta } from "@overlaysys/core";
 import { Button, Kbd, PanelHeader, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { hotcardAirState, type AirState } from "@/lib/rowAirState";
-import { hotcardKeyLabel, hotcardRoute } from "@/lib/shortcutGuards";
+import { hotcardRoute } from "@/lib/shortcutGuards";
 import { useWs } from "@/lib/useWs";
 
 type View = "grid" | "list";
@@ -15,7 +15,13 @@ const VIEW_STORAGE_KEY = "overlaysys:hotcardsView";
 export function HotcardsPanel() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
-  const hotcards = useStore((s) => s.hotcards);
+  const allHotcards = useStore((s) => s.hotcards);
+  const currentProjectId = useStore((s) => s.currentProjectId);
+  // Only this project's cards: F-keys are scoped to the project too.
+  const hotcards = useMemo(
+    () => allHotcards.filter((h) => h.projectId === currentProjectId),
+    [allHotcards, currentProjectId],
+  );
   const hotcardCache = useStore((s) => s.hotcardCache);
   const templates = useStore((s) => s.templates);
   const selectedHotcardId = useStore((s) => s.selectedHotcardId);
@@ -180,10 +186,10 @@ function GridView({
         gap: 8,
       }}
     >
-      {hotcards.map((h, i) => {
+      {hotcards.map((h) => {
         const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
         const selected = h.id === selectedId;
-        const fkey = hotcardKeyLabel(i);
+        const fkey = h.hotkey ?? null;
         const onAir = air[h.id];
         return (
           <div
@@ -295,10 +301,10 @@ function ListView({
   return (
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
       <tbody>
-        {hotcards.map((h, i) => {
+        {hotcards.map((h) => {
           const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
           const selected = h.id === selectedId;
-          const fkey = hotcardKeyLabel(i);
+          const fkey = h.hotkey ?? null;
           const onAir = air[h.id];
           return (
             <tr
