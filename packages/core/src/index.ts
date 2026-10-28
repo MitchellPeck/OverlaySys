@@ -33,3 +33,4 @@ export * from "./deck";
 export * from "./slides";
 export * from "./chordPro";
 export * from "./stageLayoutRules";
+export * from "./slidesMapping";
