@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_PROJECT_ID } from "./project";
 import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema } from "./channel";
 import { SermonNotesSchema } from "./sermonNotes";
+import { StageLayoutsSchema } from "./stageLayoutRules";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -24,6 +25,8 @@ const GraphicRowObject = z.object({
   id: z.string(),
   /** Id of the show section this row belongs to; absent means no section. */
   sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
   templateId: z.string(),
   data: z.record(z.string(), z.string()),
   channelHint: z.string().optional(),
@@ -44,6 +47,8 @@ const SongRowObject = z.object({
   id: z.string(),
   /** Id of the show section this row belongs to; absent means no section. */
   sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
   songId: z.string(),
   lyricTemplateId: z.string(),
   arrangement: z.array(z.string()).optional(),
@@ -137,6 +142,8 @@ const ScriptureRowObject = z.object({
   id: z.string(),
   /** Id of the show section this row belongs to; absent means no section. */
   sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
   /** Normalized reference string, e.g. "John 3:16-18". */
   reference: z.string(),
   /** TranslationMeta.id from @overlaysys/scripture. */
@@ -196,6 +203,8 @@ const VideoRowObject = z.object({
   id: z.string(),
   /** Id of the show section this row belongs to; absent means no section. */
   sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
   assetUrl: z.string(),
   label: z.string().optional(),
   durationSec: z.number().optional(),

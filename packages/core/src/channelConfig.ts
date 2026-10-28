@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { StageLayoutRulesSchema } from "./stageLayoutRules";
 
 /**
  * A channel's *configuration* — separate from its runtime state. The runtime
@@ -50,6 +51,8 @@ export const ChannelConfigSchema = z.object({
   follows: z.string().optional(),
   /** Stage only: StageLayout id; unset or unknown falls back to the built-in Speaker layout. */
   layoutId: z.string().optional(),
+  /** Stage only: layoutId per live row kind; layoutId above is the default. */
+  layoutRules: StageLayoutRulesSchema.optional(),
   /**
    * ISO timestamp of the last write. Set by the cloud (or by callers in
    * local mode) on every save. Used by the sync engine for last-writer-wins
