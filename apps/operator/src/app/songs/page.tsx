@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import { Button, Modal, Select, colors } from "@overlaysys/ui";
+import { Button, Modal, Select, colors, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
@@ -86,6 +86,7 @@ function formatDate(iso: string | undefined): string | null {
 export default function SongsPage() {
   const { send } = useWs();
   const router = useRouter();
+  const toast = useToast();
   const songs = useStore((s) => s.songs);
   const conn = useStore((s) => s.conn);
   const { alert, dialog } = useDialog();
@@ -181,6 +182,8 @@ export default function SongsPage() {
     try {
       await persistSong(song);
       setImportOpen(false);
+      toast({ tone: "ok", message: `Imported ${song.title || song.id}` });
+      router.push(`/songs/edit?id=${encodeURIComponent(song.id)}`);
     } catch (err) {
       await showError("Import", err);
     }

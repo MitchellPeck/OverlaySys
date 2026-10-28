@@ -270,7 +270,7 @@ function SongEditorPageInner() {
                 Undo paste
               </Button>
             )}
-            <Button onClick={() => setPasteOpen((v) => !v)} size="sm">Paste lyrics…</Button>
+            <Button onClick={() => setPasteOpen((v) => !v)} size="sm">{pasteOpen ? "Close paste" : "Paste lyrics…"}</Button>
             <Button
               onClick={save}
               variant="primary"

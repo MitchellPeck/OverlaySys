@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import {
-  parseSongSelectText,
   slugifyTitle,
   type Song,
   type SongMeta,
 } from "@overlaysys/core";
-import { Button, Field, Input, Modal, colors } from "@overlaysys/ui";
-import { findCcliDuplicate, resolveImportId, uniqueSlug, type ImportChoice } from "./songImport";
+import { Button, Field, FileDrop, Input, Modal, colors } from "@overlaysys/ui";
+import { parsePastedLyrics } from "./pasteLyrics";
+import { findCcliDuplicate, parseSongImportJson, resolveImportId, uniqueSlug, type ImportChoice } from "./songImport";
 
 interface Props {
   /** Receives the song with its final id already resolved (replace or suffixed copy). */
@@ -30,34 +30,62 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
   const [sections, setSections] = useState<Song["sections"]>([]);
   const [arrangement, setArrangement] = useState<string[]>([]);
   const [filename, setFilename] = useState<string>("");
+  const [file, setFile] = useState<File | null>(null);
+  /** The parsed song.json, so keys we don't edit survive the import. */
+  const [base, setBase] = useState<Song | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   /** The CCLI duplicate being asked about; null when no choice is pending. */
   const [duplicate, setDuplicate] = useState<SongMeta | null>(null);
 
-  async function readFile(file: File) {
-    setFilename(file.name);
+  function reset() {
+    setSections([]);
+    setArrangement([]);
+    setBase(null);
+    setNotice(null);
+  }
+
+  async function readFile(f: File) {
+    setFile(f);
+    setFilename(f.name);
     setParseError(null);
     setDuplicate(null);
-    const text = await file.text();
-    try {
-      const r = parseSongSelectText(text);
-      const t = r.meta.title ?? file.name.replace(/\.[^.]+$/, "");
+    const text = await f.text();
+    const stem = f.name.replace(/\.[^.]+$/, "");
+    const fill = (t: string, a: string, c: string, cr: string) => {
       setTitle(t);
       setSlug(uniqueSlug(slugifyTitle(t), existingIds));
-      setAuthor(r.meta.authors?.join(", ") ?? "");
-      setCcli(r.meta.ccliNumber ?? "");
-      setCopyright(r.meta.copyright ?? "");
-      setSections(r.sections);
-      setArrangement(r.defaultArrangement);
-    } catch (err) {
-      setParseError(err instanceof Error ? err.message : String(err));
-      setSections([]);
-      setArrangement([]);
+      setAuthor(a);
+      setCcli(c);
+      setCopyright(cr);
+    };
+    reset();
+    if (/\.json$/i.test(f.name)) {
+      const r = parseSongImportJson(text);
+      if (!r.ok) {
+        setParseError(r.error);
+        return;
+      }
+      const s = r.song;
+      fill(s.title || stem, s.author ?? "", s.ccliNumber ?? "", s.copyright ?? "");
+      setBase(s);
+      setSections(s.sections);
+      setArrangement(s.defaultArrangement);
+      return;
     }
+    const r = parsePastedLyrics({ id: slugifyTitle(stem), title: stem }, text, true, f.name);
+    if (!r.ok) {
+      setParseError(r.error);
+      return;
+    }
+    fill(r.patch.title ?? stem, r.patch.author ?? "", r.patch.ccliNumber ?? "", r.patch.copyright ?? "");
+    setNotice(r.notice);
+    setSections(r.patch.sections);
+    setArrangement(r.patch.defaultArrangement);
   }
 
   function save(choice?: ImportChoice) {
     if (!slug || !title || sections.length === 0) {
-      setParseError("title, slug, and at least one section are required");
+      setParseError("Couldn't find any verses or choruses in this file.");
       return;
     }
     const dup = findCcliDuplicate(ccli, existingSongs);
@@ -68,15 +96,16 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
       return;
     }
     const song: Song = {
+      customFields: {},
+      ...base,
       id: resolveImportId(slug, existingIds, dup, choice ?? "copy"),
       title,
       sections,
       defaultArrangement: arrangement,
-      customFields: {},
     };
-    if (author) song.author = author;
-    if (ccli) song.ccliNumber = ccli;
-    if (copyright) song.copyright = copyright;
+    if (author) song.author = author; else delete song.author;
+    if (ccli) song.ccliNumber = ccli; else delete song.ccliNumber;
+    if (copyright) song.copyright = copyright; else delete song.copyright;
     onSubmit(song);
   }
 
@@ -87,11 +116,12 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
       onCancel={onCancel}
       onConfirm={sections.length > 0 && slug && title && !duplicate ? () => save() : undefined}
       size="md"
+      containerStyle={{ width: 560, minWidth: 560, maxWidth: 560 }}
       title="Import song from file"
       footer={
         duplicate ? (
           <>
-            <Button onClick={() => setDuplicate(null)} variant="ghost" size="sm">Cancel</Button>
+            <Button onClick={() => setDuplicate(null)} variant="ghost" size="sm">Back</Button>
             <Button onClick={() => save("copy")} size="sm">Import as copy</Button>
             <Button onClick={() => save("replace")} variant="destructive" size="sm">Replace</Button>
           </>
@@ -110,15 +140,21 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
         )
       }
     >
-      <input
-        type="file"
-        accept=".txt,.cho"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) readFile(f);
-        }}
-        style={{ marginBottom: 12 }}
-      />
+      <div style={{ marginBottom: 12 }}>
+        <FileDrop
+          accept=".txt,.cho,.chordpro,.chopro,.json"
+          hint="Drop a SongSelect .txt, ChordPro .cho or song .json file, or browse"
+          file={file}
+          onFile={(f) => void readFile(f)}
+          onClear={() => {
+            setFile(null);
+            setFilename("");
+            setParseError(null);
+            setDuplicate(null);
+            reset();
+          }}
+        />
+      </div>
 
       {duplicate && (
         <div
@@ -142,7 +178,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
 
       {parseError && (
         <p style={{ color: colors.errorText, fontSize: 12 }}>
-          Parse failed: {parseError}
+          {parseError}
         </p>
       )}
 
@@ -150,23 +186,6 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
         <>
           <Field label="Title" layout="inline">
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </Field>
-          <Field
-            label="Slug"
-            layout="inline"
-            hint={
-              existingIds.has(slug)
-                ? `In use — will be saved as ${uniqueSlug(slug, existingIds)}`
-                : undefined
-            }
-          >
-            <Input
-              value={slug}
-              onChange={(e) => {
-                setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase());
-                setDuplicate(null);
-              }}
-            />
           </Field>
           <Field label="Author" layout="inline">
             <Input value={author} onChange={(e) => setAuthor(e.target.value)} />
@@ -183,10 +202,39 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
           <Field label="Copyright" layout="inline">
             <Input value={copyright} onChange={(e) => setCopyright(e.target.value)} />
           </Field>
+          {notice && <p style={{ fontSize: 12, color: colors.textDim, marginTop: 8 }}>{notice}</p>}
           <p style={{ fontSize: 12, color: colors.textDim, marginTop: 8 }}>
-            <strong>{sections.length}</strong> section(s) detected:{" "}
-            {sections.map((s) => s.label).join(", ")}
+            <strong>{sections.length}</strong> section{sections.length === 1 ? "" : "s"} found:
           </p>
+          <ul style={{ fontSize: 12, color: colors.textDim, margin: "0 0 8px", paddingLeft: 16 }}>
+            {sections.map((s) => (
+              <li key={s.id}>
+                <strong style={{ color: colors.text }}>{s.label}</strong> {s.slides[0]?.lines[0] ?? ""}
+              </li>
+            ))}
+          </ul>
+          <details style={{ fontSize: 12, color: colors.textDim }}>
+            <summary style={{ cursor: "pointer", minHeight: 24 }}>Advanced</summary>
+            <div style={{ marginTop: 6 }}>
+              <Field
+                label="Slug"
+                layout="inline"
+                hint={
+                  existingIds.has(slug)
+                    ? `In use — will be saved as ${uniqueSlug(slug, existingIds)}`
+                    : undefined
+                }
+              >
+                <Input
+                  value={slug}
+                  onChange={(e) => {
+                    setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase());
+                    setDuplicate(null);
+                  }}
+                />
+              </Field>
+            </div>
+          </details>
           <p style={{ fontSize: 11, color: colors.textDim }}>
             Loaded from: <code>{filename}</code>
           </p>
