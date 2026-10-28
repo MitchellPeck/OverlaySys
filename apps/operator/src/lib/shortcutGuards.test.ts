@@ -214,13 +214,13 @@ describe("advanceMessage / blankMessage", () => {
     expect(advanceMessage("scripture", -1)).toEqual({ type: "scripture_advance", channel: "program", delta: -1 });
     expect(advanceMessage("song", 1)).toEqual({ type: "song_advance", channel: "program", delta: 1 });
   });
-  it("is null for rundown, and for slides until plan 3", () => {
+  it("is null for rundown, and slides advances program", () => {
     expect(advanceMessage("rundown", 1)).toBeNull();
-    expect(advanceMessage("slides", 1)).toBeNull();
+    expect(advanceMessage("slides", 1)).toEqual({ type: "slides_advance", channel: "program", delta: 1 });
   });
-  it("blank toggles a song only", () => {
+  it("blank toggles a song or slides only", () => {
     expect(blankMessage("song")).toEqual({ type: "song_blank", channel: "program" });
     expect(blankMessage("scripture")).toBeNull();
-    expect(blankMessage("slides")).toBeNull();
+    expect(blankMessage("slides")).toEqual({ type: "slides_blank", channel: "program" });
   });
 });

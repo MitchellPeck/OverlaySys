@@ -99,6 +99,9 @@ function bootstrap(): void {
         client.send({ type: "list_stage_layouts" });
         client.send({ type: "list_shows" });
         client.send({ type: "list_songs" });
+        // [P3.13]
+        client.send({ type: "list_decks" });
+        // [/P3.13]
         client.send({ type: "list_hotcards" });
         client.send({ type: "list_channels" });
         client.send({ type: "list_projects" });
@@ -143,6 +146,17 @@ function bootstrap(): void {
       case "song_list":
         store.setSongs(msg.songs);
         break;
+      // [P3.13]
+      case "deck_list":
+        store.setDecks(msg.decks);
+        break;
+      case "deck":
+        store.upsertDeck(msg.deck);
+        break;
+      case "song_converted":
+        store.setLastSongConversion(msg);
+        break;
+      // [/P3.13]
       case "song":
         store.setSong(msg.song);
         break;

@@ -13,6 +13,8 @@ import type {
   TemplateMeta,
   Song,
   SongMeta,
+  Deck,
+  DeckMeta,
   SongSessionSummary,
   Hotcard,
   HotcardMeta,
@@ -100,6 +102,11 @@ type StoreState = {
    */
   projectChannelOverrides: Record<string, ProjectChannelOverride>;
 
+  // [P3.13]
+  decks: DeckMeta[];
+  deckCache: Record<string, Deck>;
+  lastSongConversion: Extract<ServerMessage, { type: "song_converted" }> | null;
+  // [/P3.13]
   songs: SongMeta[];
   songCache: Record<string, Song>;
   showCache: Record<string, Show>;
@@ -140,6 +147,11 @@ type StoreState = {
   setProjectChannelOverride: (override: ProjectChannelOverride) => void;
   removeProjectChannelOverride: (projectId: string, channelId: string) => void;
   setSongs: (songs: SongMeta[]) => void;
+  // [P3.13]
+  setDecks: (d: DeckMeta[]) => void;
+  upsertDeck: (d: Deck) => void;
+  setLastSongConversion: (m: Extract<ServerMessage, { type: "song_converted" }> | null) => void;
+  // [/P3.13]
   setSong: (song: Song) => void;
   setShowFull: (show: Show) => void;
   setSongSession: (channel: string, session: SongSessionSummary | null) => void;
@@ -215,6 +227,11 @@ export const useStore = create<StoreState>((set) => ({
   mediaHeardAt: {},
   channelConfigs: [],
   projectChannelOverrides: {},
+  // [P3.13]
+  decks: [],
+  deckCache: {},
+  lastSongConversion: null,
+  // [/P3.13]
   songs: [],
   songCache: {},
   showCache: {},
@@ -360,6 +377,11 @@ export const useStore = create<StoreState>((set) => ({
       return { projectChannelOverrides: next };
     }),
   setSongs: (songs) => set({ songs }),
+  // [P3.13]
+  setDecks: (decks) => set({ decks }),
+  upsertDeck: (d) => set((s) => ({ deckCache: { ...s.deckCache, [d.id]: d } })),
+  setLastSongConversion: (m) => set({ lastSongConversion: m }),
+  // [/P3.13]
   setSong: (song) => set((s) => ({ songCache: { ...s.songCache, [song.id]: song } })),
   setShowFull: (show) =>
     set((s) => ({ showCache: { ...s.showCache, [show.id]: show } })),
