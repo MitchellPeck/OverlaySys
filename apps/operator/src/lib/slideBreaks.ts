@@ -1,4 +1,4 @@
-import type { PassageWord } from "@overlaysys/scripture";
+import type { PassageWord, SlideBudget } from "@overlaysys/scripture";
 
 // Pure operations behind ScriptureSlideEditor. A break is the word index
 // where a new slide starts; 0 and >= wordCount are never valid, so no
@@ -88,4 +88,36 @@ export function stableSlideIds(prevIds: string[], prevStarts: number[], nextStar
     taken.add(fresh);
     return fresh;
   });
+}
+
+// ── Lyric slides ─────────────────────────────────────────────────────────────
+// Song slides are typed by hand rather than split from a passage, so the
+// song editor only reports against a budget instead of re-splitting. Same
+// SlideBudget shape as scripture; maxLines here counts typed lines.
+
+/** Default budget for a lyric slide: what reads comfortably on a lower third. */
+export const LYRIC_SLIDE_BUDGET: SlideBudget = { maxChars: 160, maxLines: 4 };
+
+export interface LyricSlideStats {
+  /** Characters across all lines, counting each line break as one space. */
+  chars: number;
+  /** Typed lines; trailing empty lines (a stray Enter) aren't counted. */
+  lines: number;
+  overChars: boolean;
+  overLines: boolean;
+}
+
+export function lyricSlideStats(
+  lines: readonly string[],
+  budget: SlideBudget = LYRIC_SLIDE_BUDGET,
+): LyricSlideStats {
+  const kept = lines.slice();
+  while (kept.length > 0 && kept[kept.length - 1]!.trim() === "") kept.pop();
+  const chars = kept.reduce((n, l) => n + l.trim().length, 0) + Math.max(0, kept.length - 1);
+  return {
+    chars,
+    lines: kept.length,
+    overChars: chars > budget.maxChars,
+    overLines: budget.maxLines !== undefined && kept.length > budget.maxLines,
+  };
 }

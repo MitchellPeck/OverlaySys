@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { ArrowDown, ArrowUp, X } from "lucide-react";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import {
   type Song,
@@ -9,7 +9,7 @@ import {
   listSongFieldDescriptors,
   suggestFieldMap,
 } from "@overlaysys/core";
-import { Button, Field, Input, Panel, Select, Textarea, colors } from "@overlaysys/ui";
+import { Button, Field, IconButton, Input, Panel, Select, Textarea, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
@@ -17,6 +17,8 @@ import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
 import { FieldMappingTable } from "./FieldMappingTable";
+import { moveByOne, nextSlideId } from "./songDraftOps";
+import { LYRIC_SLIDE_BUDGET, lyricSlideStats } from "@/lib/slideBreaks";
 
 /**
  * Controlled editor for a single {@link Song} draft: metadata, custom fields,
@@ -69,6 +71,10 @@ export function SongDraftEditor({
       next.splice(adjustedTo, 0, removed);
       return { ...d, sections: next };
     });
+  }
+
+  function nudgeSection(idx: number, delta: -1 | 1) {
+    onChange((d) => ({ ...d, sections: moveByOne(d.sections, idx, delta) }));
   }
 
   // Fetch full template payloads for the intro/outro defaults so we can show
@@ -229,7 +235,7 @@ export function SongDraftEditor({
       if (!sec) return d;
       sections[secIdx] = {
         ...sec,
-        slides: [...sec.slides, { id: `${sec.id}s${sec.slides.length + 1}`, lines: [""] }],
+        slides: [...sec.slides, { id: nextSlideId(d, sec), lines: [""] }],
       };
       return { ...d, sections };
     });
@@ -455,6 +461,7 @@ export function SongDraftEditor({
                     onClick={() => removeCustomField(k)}
                     size="sm"
                     title="Remove this field"
+                    aria-label={`Remove field ${k}`}
                   >
                     ×
                   </Button>
@@ -699,7 +706,7 @@ export function SongDraftEditor({
                     setSecDropZone(null);
                   }}
                   title="Drag to reorder section"
-                  aria-label="Drag handle"
+                  aria-hidden
                   style={{
                     cursor: "grab",
                     color: colors.textDim,
@@ -710,23 +717,37 @@ export function SongDraftEditor({
                 >
                   ⋮⋮
                 </span>
+                <IconButton
+                  onClick={() => nudgeSection(secIdx, -1)}
+                  disabled={secIdx === 0}
+                  title="Move section up"
+                  aria-label={`Move ${sec.label || "section"} up`}
+                >
+                  <ArrowUp size={14} aria-hidden />
+                </IconButton>
+                <IconButton
+                  onClick={() => nudgeSection(secIdx, 1)}
+                  disabled={secIdx === draft.sections.length - 1}
+                  title="Move section down"
+                  aria-label={`Move ${sec.label || "section"} down`}
+                >
+                  <ArrowDown size={14} aria-hidden />
+                </IconButton>
                 <Input
                   value={sec.label}
                   onChange={(e) => updateSection(secIdx, { label: e.target.value })}
+                  aria-label="Section label"
                   style={{ fontWeight: 600, flex: 1 }}
                 />
                 <Select
+                  aria-label="Section kind"
                   value={sec.kind}
                   onChange={(e) => updateSection(secIdx, { kind: e.target.value as Section["kind"] })}
                   style={{ width: "auto" }}
                 >
-                  <option value="verse">verse</option>
-                  <option value="chorus">chorus</option>
-                  <option value="bridge">bridge</option>
-                  <option value="tag">tag</option>
-                  <option value="intro">intro</option>
-                  <option value="outro">outro</option>
-                  <option value="other">other</option>
+                  {SECTION_KINDS.map((k) => (
+                    <option key={k} value={k}>{KIND_OPTION_LABEL[k]}</option>
+                  ))}
                 </Select>
                 <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
                   {sec.id}
@@ -745,20 +766,45 @@ export function SongDraftEditor({
                   Delete section
                 </Button>
               </div>
-              {sec.slides.map((slide, slideIdx) => (
-                <div key={slide.id} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                  <Textarea
-                    value={slide.lines.join("\n")}
-                    onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
-                    rows={2}
-                    mono
-                    style={{ flex: 1 }}
-                  />
-                  <Button onClick={() => removeSlide(secIdx, slideIdx)} size="sm" disabled={sec.slides.length <= 1}>
-                    <X size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
-                  </Button>
-                </div>
-              ))}
+              {sec.slides.map((slide, slideIdx) => {
+                const stats = lyricSlideStats(slide.lines);
+                const over = stats.overChars || stats.overLines;
+                const statsId = `slide-stats-${sec.id}-${slide.id}`;
+                return (
+                  <div key={slide.id} style={{ marginBottom: 6 }}>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Textarea
+                        value={slide.lines.join("\n")}
+                        onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
+                        rows={2}
+                        mono
+                        invalid={over}
+                        aria-label={`${sec.label || "Section"}, slide ${slideIdx + 1}`}
+                        aria-describedby={statsId}
+                        style={{ flex: 1 }}
+                      />
+                      <Button
+                        onClick={() => removeSlide(secIdx, slideIdx)}
+                        size="sm"
+                        disabled={sec.slides.length <= 1}
+                        aria-label={`Remove slide ${slideIdx + 1} of ${sec.label || "section"}`}
+                        title={sec.slides.length <= 1 ? "A section must keep at least one slide" : "Remove slide"}
+                      >
+                        <X size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
+                      </Button>
+                    </div>
+                    <div
+                      id={statsId}
+                      style={{ fontSize: 10, marginTop: 2, color: over ? colors.errorText : colors.textDim }}
+                    >
+                      {stats.lines} line{stats.lines === 1 ? "" : "s"} · {stats.chars} chars
+                      {stats.overLines && ` · over ${LYRIC_SLIDE_BUDGET.maxLines} lines`}
+                      {stats.overChars && ` · over ${LYRIC_SLIDE_BUDGET.maxChars} chars`}
+                      {over && " — may not fit the lyric template"}
+                    </div>
+                  </div>
+                );
+              })}
               <Button onClick={() => addSlide(secIdx)} size="sm">+ Slide</Button>
             </Panel>
           </div>
@@ -777,6 +823,7 @@ export function SongDraftEditor({
             addSection(v);
             e.currentTarget.value = "";
           }}
+          aria-label="Add other section"
           style={{ width: "auto" }}
         >
           <option value="">+ Other section…</option>
@@ -794,13 +841,26 @@ export function SongDraftEditor({
           onChange={(next) => setMeta("defaultArrangement", next)}
         />
         <p style={{ fontSize: 10, color: colors.textDim, marginTop: 4 }}>
-          Sections can repeat. Drag chips to reorder.
+          Sections can repeat. Drag chips or use the arrows to reorder.
         </p>
       </Panel>
       {dialog}
     </>
   );
 }
+
+const SECTION_KINDS: Section["kind"][] = ["verse", "chorus", "bridge", "tag", "intro", "outro", "other"];
+
+/** Kind names in the kind picker: Title Case, matching the + Verse / + Tag buttons. */
+const KIND_OPTION_LABEL: Record<Section["kind"], string> = {
+  verse: "Verse",
+  chorus: "Chorus",
+  bridge: "Bridge",
+  tag: "Tag",
+  intro: "Intro",
+  outro: "Outro",
+  other: "Other",
+};
 
 const SECTION_ID_PREFIX: Record<Section["kind"], string> = {
   verse: "v",
@@ -908,33 +968,45 @@ function ArrangementEditor({
               }}
             >
               <span style={{ color: colors.textDim, width: 24, textAlign: "right" }}>{i + 1}.</span>
+              <IconButton
+                onClick={() => onChange(moveByOne(arrangement, i, -1))}
+                disabled={i === 0}
+                size={22}
+                title="Move earlier"
+                aria-label={`Move ${section?.label ?? sectionId} (position ${i + 1}) earlier`}
+              >
+                <ArrowUp size={12} aria-hidden />
+              </IconButton>
+              <IconButton
+                onClick={() => onChange(moveByOne(arrangement, i, 1))}
+                disabled={i === arrangement.length - 1}
+                size={22}
+                title="Move later"
+                aria-label={`Move ${section?.label ?? sectionId} (position ${i + 1}) later`}
+              >
+                <ArrowDown size={12} aria-hidden />
+              </IconButton>
               <span aria-hidden style={{ color: colors.textDim }}>⋮⋮</span>
               <span style={{ fontWeight: 600 }}>{section?.label ?? sectionId}</span>
               <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
                 {sectionId}{!section && " (missing)"}
               </span>
-              <button
+              <IconButton
                 onClick={() => remove(i)}
-                title="Remove"
-                style={{
-                  marginLeft: "auto",
-                  padding: "2px 8px",
-                  background: "transparent",
-                  color: colors.textDim,
-                  border: `1px solid ${colors.border}`,
-                  borderRadius: 3,
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
+                size={22}
+                title="Remove from arrangement"
+                aria-label={`Remove ${section?.label ?? sectionId} (position ${i + 1}) from arrangement`}
+                style={{ marginLeft: "auto", color: colors.textDim }}
               >
-                ×
-              </button>
+                <X size={12} aria-hidden />
+              </IconButton>
             </div>
           );
         })}
       </div>
       <Select
         value=""
+        aria-label="Add section to arrangement"
         onChange={(e) => {
           const v = e.target.value;
           if (v) add(v);
