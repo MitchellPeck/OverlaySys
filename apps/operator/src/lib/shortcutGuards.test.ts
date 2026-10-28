@@ -3,6 +3,7 @@ import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
 import {
   escapeMessages,
   hasCommandModifier,
+  hotcardRoute,
   hotcardIndexForKey,
   isIgnoredRepeat,
   isTextEntryTarget,
@@ -119,5 +120,25 @@ describe("escapeMessages", () => {
   it("leaves a video on preview alone", () => {
     const channelStates = { preview: { channel: "preview", active: null, media } as ChannelState };
     expect(escapeMessages({ channelStates })).toEqual([{ type: "clear", channel: "program" }]);
+  });
+});
+
+describe("hotcardRoute (Default D7a: the hint is Take's default output; Cue is always Preview)", () => {
+  const table: [string | undefined, "cue" | "take", string][] = [
+    [undefined, "cue", "preview"],
+    [undefined, "take", "program"],
+    ["program", "cue", "preview"],
+    ["program", "take", "program"],
+    ["preview", "cue", "preview"],
+    ["preview", "take", "program"],
+    ["", "cue", "preview"],
+    ["", "take", "program"],
+    ["stage", "cue", "preview"],
+    ["stage", "take", "stage"],
+    ["stream", "cue", "preview"],
+    ["stream", "take", "stream"],
+  ];
+  it.each(table)("hint %s, %s → %s", (hint, action, expected) => {
+    expect(hotcardRoute(hint, action)).toBe(expected);
   });
 });

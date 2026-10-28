@@ -6,7 +6,7 @@ import type { HotcardMeta } from "@overlaysys/core";
 import { Button, Kbd, PanelHeader, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { hotcardAirState, type AirState } from "@/lib/rowAirState";
-import { hotcardKeyLabel } from "@/lib/shortcutGuards";
+import { hotcardKeyLabel, hotcardRoute } from "@/lib/shortcutGuards";
 import { useWs } from "@/lib/useWs";
 
 type View = "grid" | "list";
@@ -58,12 +58,8 @@ export function HotcardsPanel() {
       send({ type: "get_hotcard", hotcardId: meta.id });
       return;
     }
-    const channel = full.channelHint ?? target;
-    if (target === "preview") {
-      send({ type: "cue", channel, templateId: full.templateId, data: full.data });
-    } else {
-      send({ type: "take", channel, templateId: full.templateId, data: full.data });
-    }
+    const action = target === "preview" ? "cue" : "take";
+    send({ type: action, channel: hotcardRoute(full.channelHint, action), templateId: full.templateId, data: full.data });
   }
 
   const header = (
