@@ -195,6 +195,34 @@ and Stage layouts tabs), Hotcards, Slides decks (and later others).
   rebuilt with the same controls, page model and save model (call; not
   separately mocked).
 
+## Stage screens choose their layout dynamically (owner)
+
+Stage screens are no longer tied to one layout (ProPresenter-style). Each
+stage channel resolves its layout at any moment by this precedence (owner):
+
+1. **Manual switch** — from Live's stage drawer (and Companion); applies
+   immediately and lasts **until the next item goes live**, then the rules
+   below take over again (owner).
+2. **Item override** — a rundown item can set the layout for specific stage
+   screens while it is live (owner); set per screen in the item's editor
+   under "Stage screens" (call). Screens it doesn't list fall through.
+3. **Item-type rules** — per stage screen, a map from item kind (song,
+   scripture, slides, graphic, video) to layout (owner), e.g. band screen:
+   song → Lyrics, scripture → Scripture.
+4. **Screen default layout** — when nothing matches or nothing is live.
+
+- Rules and default are set per stage screen in Settings → Channels,
+  replacing the single Layout picker (call).
+- Live's stage drawer shows, per stage screen, its current layout and why
+  ("manual", "item", "rule: song", "default"), with a picker to switch (call).
+- "Next item goes live" = a new rundown row taken on the output that stage
+  screen follows; slide/section changes within the same item don't count
+  (call).
+- Existing stage channels migrate: their `layoutId` becomes the default, no
+  rules — nothing changes until rules are added (call).
+- The server resolves the layout (it already builds each stage feed); the
+  manual override is server state so every operator/Companion sees it.
+
 ## Slides decks (owner; Q1–Q9 accepted as recommended)
 
 **What**: a library of reusable slide decks (anthem, Gloria Patri,
