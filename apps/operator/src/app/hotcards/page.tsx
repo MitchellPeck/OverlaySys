@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import type { Hotcard, HotcardMeta } from "@overlaysys/core";
-import { Button, colors } from "@overlaysys/ui";
+import { hotkeyConflicts, type Hotcard, type HotcardMeta } from "@overlaysys/core";
+import { Button, Kbd, colors } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
@@ -31,6 +31,7 @@ export default function HotcardsIndexPage() {
   const projects = useStore((s) => s.projects);
   const { alert, dialog } = useDialog();
   const hotcards = allHotcards.filter((h) => h.projectId === currentProjectId);
+  const conflicts = hotkeyConflicts(hotcards, currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
   const disabled = !cloud && conn !== "open";
@@ -157,11 +158,12 @@ export default function HotcardsIndexPage() {
       return;
     }
     if (conn !== "open") return;
+    // A moved card drops its F-key: it would likely clash in the new project.
     const cached = useStore.getState().hotcardCache[id];
     if (cached) {
       send({
         type: "save_hotcard",
-        hotcard: { ...cached, projectId: nextProjectId },
+        hotcard: { ...cached, projectId: nextProjectId, hotkey: null },
       });
       return;
     }
@@ -172,7 +174,7 @@ export default function HotcardsIndexPage() {
       if (fresh) {
         send({
           type: "save_hotcard",
-          hotcard: { ...fresh, projectId: nextProjectId },
+          hotcard: { ...fresh, projectId: nextProjectId, hotkey: null },
         });
         return;
       }
@@ -201,7 +203,31 @@ export default function HotcardsIndexPage() {
         deleteFn={deleteHotcard}
         rowKey={(h) => h.id}
         rowHref={(h) => `/hotcards/edit?id=${encodeURIComponent(h.id)}`}
-        rowPrimary={(h) => h.name}
+        rowPrimary={(h) => {
+          const clash = h.hotkey ? conflicts[h.hotkey] : undefined;
+          return (
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 10 }}>
+              <span
+                style={{ display: "inline-block", width: 34, flexShrink: 0 }}
+                title={
+                  clash
+                    ? `${h.hotkey} is assigned to ${clash.length} cards in this project; only one fires`
+                    : h.hotkey
+                      ? `${h.hotkey} takes this card on Live · Shift+${h.hotkey} cues it`
+                      : "No F-key: set one in the editor"
+                }
+              >
+                {h.hotkey ? (
+                  <Kbd>{h.hotkey}</Kbd>
+                ) : (
+                  <span aria-label="No F-key" style={{ color: colors.textDim }}>—</span>
+                )}
+                {clash && <span aria-label="F-key conflict" style={{ color: colors.warn, marginLeft: 2 }}>!</span>}
+              </span>
+              {h.name}
+            </span>
+          );
+        }}
         rowSecondary={(h) => {
           const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
           return `${h.id} · ${tplName}`;

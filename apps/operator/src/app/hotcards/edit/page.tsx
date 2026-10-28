@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { produce } from "immer";
-import type { ChannelConfig, Hotcard, Template } from "@overlaysys/core";
+import { HOTKEYS, type ChannelConfig, type Hotcard, type Hotkey, type Template } from "@overlaysys/core";
+import { hotkeyConflictWarning, hotkeyOwners } from "@/lib/hotcardKeys";
 import { Button, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -39,6 +40,7 @@ function HotcardEditPageInner() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
+  const allHotcards = useStore((s) => s.hotcards);
   const setTemplate = useStore((s) => s.setTemplate);
   const channelConfigs = useResolvedChannelConfigs();
   const takeableChannels = useMemo(
@@ -233,6 +235,7 @@ function HotcardEditPageInner() {
   }
 
   const template = templateCache[draft.templateId] ?? null;
+  const keyWarning = hotkeyConflictWarning(allHotcards, draft);
 
   return (
     <div
@@ -298,6 +301,23 @@ function HotcardEditPageInner() {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </Select>
+          </Row>
+
+          <Row label="F-key">
+            <HotkeySelect
+              value={draft.hotkey ?? null}
+              owners={hotkeyOwners(allHotcards, draft.projectId, draft.id)}
+              onChange={(v) =>
+                update((h) => {
+                  h.hotkey = v;
+                })
+              }
+            />
+            {keyWarning && (
+              <div role="alert" style={{ marginTop: 4, fontSize: 11, color: colors.warn }}>
+                {keyWarning}
+              </div>
+            )}
           </Row>
 
           <Row label="Channel hint">
@@ -369,6 +389,34 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
+  );
+}
+
+function HotkeySelect({
+  value,
+  owners,
+  onChange,
+}: {
+  value: Hotkey | null;
+  owners: Partial<Record<Hotkey, string[]>>;
+  onChange: (v: Hotkey | null) => void;
+}) {
+  return (
+    <Select
+      aria-label="F-key"
+      value={value ?? ""}
+      onChange={(e) => onChange((e.target.value || null) as Hotkey | null)}
+    >
+      <option value="">None</option>
+      {HOTKEYS.map((k) => {
+        const taken = owners[k];
+        return (
+          <option key={k} value={k}>
+            {taken ? `${k} (used by ${taken.join(", ")})` : k}
+          </option>
+        );
+      })}
+    </Select>
   );
 }
 
