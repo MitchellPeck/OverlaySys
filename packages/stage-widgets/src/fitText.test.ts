@@ -11,6 +11,9 @@ describe("searchFontSize", () => {
   it("returns min when nothing fits", () => {
     expect(searchFontSize(80, 12, () => false)).toBe(12);
   });
+  it("never returns more than max when the floor is larger", () => {
+    expect(searchFontSize(36, 48, () => false)).toBe(36);
+  });
   it("probes O(log n) sizes", () => {
     let calls = 0;
     searchFontSize(200, 10, (s) => {

@@ -4,8 +4,9 @@
  * measurement by useFitText.
  */
 export function searchFontSize(maxSize: number, minSize: number, fits: (size: number) => boolean): number {
-  let lo = Math.ceil(minSize);
   let hi = Math.floor(maxSize);
+  // The floor never exceeds the configured max: text must not render larger than the layout allows.
+  let lo = Math.min(Math.ceil(minSize), hi);
   if (fits(hi)) return hi;
   let best = lo;
   while (lo <= hi) {

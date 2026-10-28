@@ -5,7 +5,7 @@ import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { parseNotesMarkdown, type Span } from "./notesMarkdown";
 import { overflowDirection } from "./notesOverflow";
 import { useFitText } from "./useFitText";
-import { captionFontSize, defaultCaption, type CurrentKind } from "./captionStyle";
+import { captionFontSize, resolveCaption, type CurrentKind } from "./captionStyle";
 import { fitFontSize } from "./fitText";
 import { overtimeView, pulseOn } from "./timerOvertime";
 import { formatClockDisplay, formatRemaining, pickStageTimer, serviceProgressText, stageTimerView, videoRemainingSec } from "./stageTime";
@@ -16,12 +16,15 @@ const EMPTY = "—";
 function Frame({
   widget,
   label,
+  forceLabel,
   background,
   rect,
   children,
 }: {
   widget: StageWidget;
   label?: string;
+  /** Wins over style.label (resolved caption). */
+  forceLabel?: string;
   /** Overrides style.background (overtime fill, message flash). */
   background?: string;
   /** Overrides the widget rect (message bar growing upward). */
@@ -29,7 +32,7 @@ function Frame({
   children: ReactNode;
 }) {
   const st = widget.style;
-  const caption = st.label || label;
+  const caption = forceLabel ?? (st.label || label);
   const r = rect ?? widget.rect;
   const box: CSSProperties = {
     position: "absolute",
@@ -126,27 +129,12 @@ function FitBody({
 }
 
 const CURRENT_KIND: Record<string, CurrentKind | undefined> = { lyric: "song", scripture: "scripture", graphic: "graphic" };
-const KIND_NAMES = ["lyrics", "scripture", "graphic", "slides", "video"];
-
 function currentKindOf(feed: StageFeed): CurrentKind | undefined {
   return CURRENT_KIND[feed.current.kind];
 }
 
 function currentCaption(widget: StageWidget, feed: StageFeed): string | undefined {
-  return defaultCaption(widget.kind, currentKindOf(feed));
-}
-
-/**
- * style.label wins, except when it is itself a content-kind name that
- * contradicts what is live (the Scripture layout says "SCRIPTURE" while a lower third is up).
- */
-function currentLabelOverride(widget: StageWidget, feed: StageFeed): { widget?: StageWidget } {
-  const live = currentCaption(widget, feed);
-  const lab = widget.style.label;
-  if (live && lab && KIND_NAMES.includes(lab.toLowerCase()) && lab.toLowerCase() !== live.toLowerCase()) {
-    return { widget: { ...widget, style: { ...widget.style, label: live } } as StageWidget };
-  }
-  return {};
+  return resolveCaption(widget.kind, widget.style.label, currentKindOf(feed));
 }
 
 /** lucide "pause" glyph, inlined so the package needs no icon dependency. */
@@ -314,7 +302,7 @@ export function StageWidgetView({
     case "currentSlide": {
       const ref = widget.props.showReference ? feed.current.reference : undefined;
       return (
-        <Frame widget={widget} label={currentCaption(widget, feed)} {...currentLabelOverride(widget, feed)}>
+        <Frame widget={widget} forceLabel={currentCaption(widget, feed)}>
           {ref && <div style={{ fontSize: 24, color: "#888", fontFamily: widget.style.fontFamily }}>{ref}</div>}
           <FitBody widget={widget} text={slideText(feed.current)} />
         </Frame>
