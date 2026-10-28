@@ -1,21 +1,12 @@
 "use client";
 
-import type { ChannelState } from "@overlaysys/core";
-import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { Button, colors, space } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
-import { channelHasContent, onAirCaption } from "@/lib/onAir";
+import { channelHasContent, clearChannelMessages, onAirCaption } from "@/lib/onAir";
 import { useTakeFeedback } from "../hooks/useTakeFeedback";
 import { monitorColumns } from "./Monitors";
-
-/** Messages that empty a channel: graphics/song/scripture via clear, plus any media. */
-function clearMessages(st: ChannelState | undefined, channel: string): ClientMessage[] {
-  const msgs: ClientMessage[] = [{ type: "clear", channel }];
-  if (st?.media) msgs.push({ type: "media_clear", channel });
-  return msgs;
-}
 
 /**
  * "What's on air" under the monitors: program and preview captions with the
@@ -59,7 +50,7 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
       destructive: true,
     });
     if (!ok) return;
-    for (const [ch, st] of live) for (const m of clearMessages(st, ch)) send(m);
+    for (const [ch, st] of live) for (const m of clearChannelMessages(st, ch)) send(m);
   }
 
   const blurAfter = (fn: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -99,7 +90,7 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
           variant="ghost"
           disabled={disconnected || !channelHasContent(pvw)}
           title={offline}
-          onClick={blurAfter(() => clearMessages(pvw, "preview").forEach(send))}
+          onClick={blurAfter(() => clearChannelMessages(pvw, "preview").forEach(send))}
         >
           Clear
         </Button>
@@ -116,7 +107,7 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
             variant="ghost"
             disabled={disconnected || !channelHasContent(pgm)}
             title={offline}
-            onClick={blurAfter(() => clearMessages(pgm, "program").forEach(send))}
+            onClick={blurAfter(() => clearChannelMessages(pgm, "program").forEach(send))}
           >
             Clear
           </Button>

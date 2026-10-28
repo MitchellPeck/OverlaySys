@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Show } from "@overlaysys/core";
-import { anythingOnAir, channelHasContent, onAirCaption } from "./onAir";
+import { anythingOnAir, channelHasContent, clearChannelMessages, onAirCaption } from "./onAir";
 
 const show = {
   id: "show",
@@ -50,5 +50,31 @@ describe("anythingOnAir / channelHasContent", () => {
     expect(anythingOnAir({ program: { channel: "program", active: null, songSession: { ...session, blanked: true } } })).toBe(false);
     expect(anythingOnAir({ program: { channel: "program", active: null } })).toBe(false);
     expect(channelHasContent({ channel: "program", active: null, songSession: { ...session, blanked: true } })).toBe(true);
+  });
+});
+
+const videoMedia = {
+  rowId: "v1",
+  assetUrl: "/assets/v.mp4",
+  volume: 1,
+  endAction: "clear",
+  transitionIn: { style: "fade", durationMs: 500 },
+  transitionOut: { style: "fade", durationMs: 500 },
+  takenAt: 1,
+  paused: false,
+  playback: { status: "playing", currentTime: 3, duration: 60, updatedAt: 1 },
+} as NonNullable<ChannelState["media"]>;
+
+describe("clearChannelMessages", () => {
+  it("clears graphics only when no media is on the channel", () => {
+    expect(clearChannelMessages({ channel: "program", active: null }, "program")).toEqual([{ type: "clear", channel: "program" }]);
+    expect(clearChannelMessages(undefined, "preview")).toEqual([{ type: "clear", channel: "preview" }]);
+  });
+
+  it("adds media_clear when a video is on the channel", () => {
+    expect(clearChannelMessages({ channel: "program", active: null, media: videoMedia }, "program")).toEqual([
+      { type: "clear", channel: "program" },
+      { type: "media_clear", channel: "program" },
+    ]);
   });
 });

@@ -7,6 +7,7 @@ import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 import { graphicRowMessage } from "@/lib/rowData";
 import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import {
+  escapeMessages,
   hasCommandModifier,
   hotcardIndexForKey,
   isIgnoredRepeat,
@@ -25,7 +26,7 @@ import {
  *   ↑/↓             navigate rundown
  *   Enter           cue selected → preview
  *   Space           take selected → program
- *   Esc             clear program
+ *   Esc             clear program (graphics and video)
  *   ⌘/Ctrl+Enter   PVW → PGM swap
  *
  * When a song session IS live on program (song mode):
@@ -131,7 +132,7 @@ export function useGlobalShortcuts(): void {
         }
       } else if (e.code === "Escape") {
         e.preventDefault();
-        send({ type: "clear", channel: "program" });
+        for (const m of escapeMessages(store)) send(m);
       }
     }
 

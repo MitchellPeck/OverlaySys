@@ -1,4 +1,5 @@
 import type { ChannelState, Show, SongMeta, TemplateMeta } from "@overlaysys/core";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
 
 type Ctx = {
   show: Show | null;
@@ -24,6 +25,17 @@ export function anythingOnAir(channelStates: Record<string, ChannelState>): bool
 export function channelHasContent(st: ChannelState | undefined): boolean {
   if (!st) return false;
   return !!(st.songSession || st.scriptureSession || st.queuedSong || st.queuedScripture || st.media || (st.active && st.active.phase !== "out"));
+}
+
+/**
+ * Messages that empty a channel: graphics, song and scripture via `clear`,
+ * plus `media_clear` when a video is on it. The PGM/PVW Clear buttons and
+ * the global Esc key all use this, so "clear" always means the whole channel.
+ */
+export function clearChannelMessages(st: ChannelState | undefined, channel: string): ClientMessage[] {
+  const msgs: ClientMessage[] = [{ type: "clear", channel }];
+  if (st?.media) msgs.push({ type: "media_clear", channel });
+  return msgs;
 }
 
 function songTitle(songId: string, ctx: Ctx): string {

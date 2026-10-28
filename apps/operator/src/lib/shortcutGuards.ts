@@ -1,4 +1,6 @@
-import type { SongSessionSummary } from "@overlaysys/core";
+import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { clearChannelMessages } from "./onAir";
 
 /** The parts of a KeyboardEvent the guards read; lets tests use plain objects. */
 export type KeyLike = Pick<
@@ -66,4 +68,12 @@ export function hotcardIndexForKey(e: KeyLike): number | null {
 /** Label shown on a hotcard tile for its F-key, if it has one. */
 export function hotcardKeyLabel(index: number): string | null {
   return index >= 0 && index < 12 ? `F${index + 1}` : null;
+}
+
+/**
+ * What Esc sends in graphic mode: clear everything on program, video
+ * included. Song mode's Esc (end song) is handled before this.
+ */
+export function escapeMessages(store: { channelStates: Record<string, ChannelState | undefined> }): ClientMessage[] {
+  return clearChannelMessages(store.channelStates["program"], "program");
 }

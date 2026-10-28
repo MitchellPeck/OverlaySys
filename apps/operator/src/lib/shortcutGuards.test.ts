@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { SongSessionSummary } from "@overlaysys/core";
+import type { ChannelState, SongSessionSummary } from "@overlaysys/core";
 import {
+  escapeMessages,
   hasCommandModifier,
   hotcardIndexForKey,
   isIgnoredRepeat,
@@ -97,5 +98,26 @@ describe("hotcardIndexForKey", () => {
     expect(hotcardIndexForKey(key("F13"))).toBeNull();
     expect(hotcardIndexForKey(key("KeyF"))).toBeNull();
     expect(hotcardIndexForKey(key("F5", { metaKey: true }))).toBeNull();
+  });
+});
+
+describe("escapeMessages", () => {
+  const media = { rowId: "v1", assetUrl: "/assets/v.mp4", paused: false } as NonNullable<ChannelState["media"]>;
+
+  it("clears program graphics", () => {
+    expect(escapeMessages({ channelStates: {} })).toEqual([{ type: "clear", channel: "program" }]);
+  });
+
+  it("also clears a video on program (the panic key empties air)", () => {
+    const channelStates = { program: { channel: "program", active: null, media } as ChannelState };
+    expect(escapeMessages({ channelStates })).toEqual([
+      { type: "clear", channel: "program" },
+      { type: "media_clear", channel: "program" },
+    ]);
+  });
+
+  it("leaves a video on preview alone", () => {
+    const channelStates = { preview: { channel: "preview", active: null, media } as ChannelState };
+    expect(escapeMessages({ channelStates })).toEqual([{ type: "clear", channel: "program" }]);
   });
 });
