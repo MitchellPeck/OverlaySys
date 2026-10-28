@@ -194,6 +194,12 @@ export type MountedTemplate = {
    */
   playOutTimeline(): Promise<void>;
   /**
+   * Auto-out exit: play ONLY the template's `out` timeline when it has one,
+   * so a designed exit isn't cut short by the root fade; with no OUT, fall
+   * back to the default root fade so the graphic still leaves visibly.
+   */
+  playAutoOut(): Promise<void>;
+  /**
    * Flash a color overlay above the template `count` times. Each cycle takes
    * `durationMs` (split evenly between opacity 0→1 and 1→0). The overlay is
    * cleaned up when the animation finishes; calling again while a previous
@@ -489,6 +495,12 @@ export function mountTemplate(
       // owns deciding whether layers outside outTl should also animate
       // (see playOut for the full-mount-fade variant).
       if (outTl.duration() === 0) return Promise.resolve();
+      return playFromStart(outTl);
+    },
+    playAutoOut() {
+      outStarted = true;
+      reveal();
+      if (outTl.duration() === 0) return playDefaultOut(root);
       return playFromStart(outTl);
     },
     playBlink(opts) {

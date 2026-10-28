@@ -92,7 +92,7 @@ async function maybeScheduleAutoOut(
     ) {
       // An intro fading out on its own still leaves its song queued for the
       // section buttons that follow.
-      clear(channel, { keepQueuedSong: true });
+      clear(channel, { keepQueuedSong: true, reason: "auto" });
     }
   }, ms);
   autoOutTimers.set(channel, timer);
@@ -248,7 +248,7 @@ export function takeInternal(channel: string, templateId: string, data: Record<s
 
 export function clear(
   channel: string,
-  options?: { keepQueuedSong?: boolean },
+  options?: { keepQueuedSong?: boolean; reason?: "auto" },
 ): void {
   if (!clearIsInternal) {
     // External clear ends any live song session on this channel; without this
@@ -275,7 +275,7 @@ export function clear(
     if (!s.active) emit(channel);
   }
   if (!s.active) return;
-  s.active = { ...s.active, phase: "out" };
+  s.active = { ...s.active, phase: "out", ...(options?.reason === "auto" ? { outReason: "auto" as const } : {}) };
   states.set(channel, s);
   emit(channel);
   // After a short grace, drop to null so reconnecting renderers don't replay.

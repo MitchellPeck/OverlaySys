@@ -23,6 +23,10 @@ class FakeMount implements PlayerMount {
     this.log.push("outTl");
     return Promise.resolve();
   }
+  playAutoOut() {
+    this.log.push("autoOut");
+    return Promise.resolve();
+  }
   update(d: Record<string, string>) {
     this.data = d;
     this.log.push("update");
@@ -161,6 +165,40 @@ describe("channelPlayer", () => {
     // A second out delivery doesn't replay the animation.
     await player.apply(take("a", 1, {}, "out"));
     expect(mounts[0]!.log.filter((l) => l === "out")).toHaveLength(1);
+  });
+
+  it("an auto-out clear plays the template's own out (no fade), a manual clear the fade", async () => {
+    const { player, loader, mounts } = setup();
+    const p = player.apply(take("a", 1));
+    loader.received(tpl("a"));
+    await p;
+    await player.apply(state({ templateId: "a", data: {}, phase: "out", takenAt: 1, outReason: "auto" }));
+    expect(mounts[0]!.log).toEqual(["in", "autoOut"]);
+    expect(mounts[0]!.destroyed).toBe(true);
+
+    const q = player.apply(take("b", 2));
+    loader.received(tpl("b"));
+    await q;
+    await player.apply(take("b", 2, {}, "out"));
+    expect(mounts[1]!.log).toEqual(["in", "out"]);
+  });
+
+  it("the server dropping active mid auto-out doesn't restart it as a fade", async () => {
+    const { player, loader, mounts } = setup();
+    const p = player.apply(take("a", 1));
+    loader.received(tpl("a"));
+    await p;
+    let finish!: () => void;
+    mounts[0]!.playAutoOut = () => {
+      mounts[0]!.log.push("autoOut");
+      return new Promise<void>((r) => (finish = r));
+    };
+    const out = player.apply(state({ templateId: "a", data: {}, phase: "out", takenAt: 1, outReason: "auto" }));
+    const gone = player.apply(state(null));
+    finish();
+    await Promise.all([out, gone]);
+    expect(mounts[0]!.log).toEqual(["in", "autoOut"]);
+    expect(mounts[0]!.destroyed).toBe(true);
   });
 
   it("a newer take while loading wins", async () => {

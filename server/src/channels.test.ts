@@ -57,6 +57,15 @@ describe("channels auto-out", () => {
     // At T=autoOutMs, the timer fires and clear() runs → phase "out".
     vi.advanceTimersByTime(1);
     expect(channels.getState("test").active?.phase).toBe("out");
+    // Marked so the renderer plays the template's own out animation.
+    expect(channels.getState("test").active?.outReason).toBe("auto");
+  });
+
+  it("a manual clear is not marked as an auto-out", () => {
+    channels.take("test", TEMPLATE_PLAIN.id, {});
+    channels.clear("test");
+    expect(channels.getState("test").active?.phase).toBe("out");
+    expect(channels.getState("test").active?.outReason).toBeUndefined();
   });
 
   it("does NOT auto-clear templates without autoOutMs", async () => {

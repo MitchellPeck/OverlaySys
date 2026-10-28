@@ -5,6 +5,8 @@ export interface PlayerMount {
   playIn(): Promise<void>;
   playOut(): Promise<void>;
   playOutTimeline(): Promise<void>;
+  /** Auto-out: the template's own OUT only, or the default fade when it has none. */
+  playAutoOut(): Promise<void>;
   update(data: Record<string, string>): void;
   destroy(): void;
 }
@@ -66,11 +68,10 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
     }
   }
 
-  function retire(m: M): Promise<void> {
+  function retire(m: M, auto = false): Promise<void> {
     const existing = retiring.get(m);
     if (existing) return existing;
-    const p = m
-      .playOut()
+    const p = (auto ? m.playAutoOut() : m.playOut())
       .catch(() => {})
       .then(() => {
         retiring.delete(m);
@@ -80,10 +81,10 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
     return p;
   }
 
-  function retireCurrent(): Promise<void> {
+  function retireCurrent(auto = false): Promise<void> {
     const prev = current;
     current = null;
-    return prev ? retire(prev.mount) : Promise.resolve();
+    return prev ? retire(prev.mount, auto) : Promise.resolve();
   }
 
   async function apply(state: ChannelState): Promise<void> {
@@ -98,10 +99,11 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
 
     if (takenAt === lastTakenAt) {
       if (phase === "out") {
-        // Clear: cancels a take still loading and plays the mount out.
+        // Clear: cancels a take still loading and plays the mount out. An
+        // auto-out plays the template's own OUT instead of the fade.
         gen++;
         loading = false;
-        await retireCurrent();
+        await retireCurrent(state.active.outReason === "auto");
         return;
       }
       latestData = data;

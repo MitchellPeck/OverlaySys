@@ -66,10 +66,11 @@ export function ChannelPreview({ config, state }: Props) {
     if (!stageRef.current) return;
     const active = state?.active;
 
-    function triggerOut(m: MountedTemplate): Promise<void> {
+    function triggerOut(m: MountedTemplate, auto = false): Promise<void> {
       if (outStartedRef.current.has(m)) return Promise.resolve();
       outStartedRef.current.add(m);
-      return m.playOut();
+      // Auto-out plays the template's own OUT (see mount.playAutoOut).
+      return auto ? m.playAutoOut() : m.playOut();
     }
 
     if (!active) {
@@ -142,7 +143,7 @@ export function ChannelPreview({ config, state }: Props) {
       const m = mountedRef.current;
       mountedRef.current = null;
       lastTemplateIdRef.current = null;
-      triggerOut(m).catch(() => {}).finally(() => m.destroy());
+      triggerOut(m, active.outReason === "auto").catch(() => {}).finally(() => m.destroy());
       return;
     }
 

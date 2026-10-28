@@ -32,6 +32,12 @@ export const ActiveGraphicSchema = z.object({
   takenAt: z.number(), // epoch ms
   subTakeContext: SubTakeContextSchema.optional(),
   scriptureContext: ScriptureContextSchema.optional(),
+  /**
+   * Set with phase "out" when the template's auto-out timer cleared it: the
+   * renderer then plays only the template's own OUT (falling back to the
+   * default fade when it has none). A manual clear leaves it unset.
+   */
+  outReason: z.literal("auto").optional(),
 });
 export type ActiveGraphic = z.infer<typeof ActiveGraphicSchema>;
 
