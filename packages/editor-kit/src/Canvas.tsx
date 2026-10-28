@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { commitRect } from "./geometryCommit";
 import type { Draft } from "immer";
 import type { Template, Layer } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
@@ -388,13 +389,13 @@ export function Canvas(props: Props) {
       const out = dragMove(start, d.primaryId, dx, dy, d.others, d.box, threshold);
       setSnapGuides(out.guides);
       changed = d.items.some((it) => !sameRect(out.rects[it.id]!, start[it.id]!));
-      recipes = d.items.map((it) => place(it, out.rects[it.id]!, false));
+      recipes = d.items.map((it) => place(it, commitRect(out.rects[it.id]!), false));
     } else {
       const it = d.item;
       const out = dragResize(visual(it), d.handle, dx, dy, d.others, d.box, threshold, MIN_LAYER_SIZE);
       setSnapGuides(out.guides);
       changed = !sameRect(out.rect, visual(it));
-      recipes = [place(it, out.rect, true)];
+      recipes = [place(it, commitRect(out.rect, { minSize: MIN_LAYER_SIZE }), true)];
     }
     // History is pushed lazily: a click that never moves leaves no undo step.
     if (!d.pushed) {

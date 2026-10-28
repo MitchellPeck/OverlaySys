@@ -6,6 +6,7 @@ import { FontInput } from "./FontInput";
 import { ImageInput } from "./ImageInput";
 import { VideoInput } from "./VideoInput";
 import { GradientStops } from "./GradientStops";
+import { NumberInput } from "@overlaysys/ui";
 import { useEditCoalescer } from "./editCoalescer";
 
 type CommitFn = (recipe: (d: Draft<Template>) => void) => void;
@@ -96,10 +97,10 @@ export function PropertyInspector({ template, selectedId, onCommit: commitStep, 
         <NumberRow label="Y" value={layer.transform.y} onChange={(v) => patchTransform({ y: v })} />
         <NumberRow label="Width" value={layer.transform.w ?? 0} onChange={(v) => patchTransform({ w: v })} />
         <NumberRow label="Height" value={layer.transform.h ?? 0} onChange={(v) => patchTransform({ h: v })} />
-        <NumberRow label="Rotation°" value={layer.transform.rotation} onChange={(v) => patchTransform({ rotation: v })} />
-        <NumberRow label="Opacity" value={layer.transform.opacity} step={0.05} onChange={(v) => patchTransform({ opacity: clamp01(v) })} />
-        <NumberRow label="Scale X" value={layer.transform.scaleX} step={0.05} onChange={(v) => patchTransform({ scaleX: v })} />
-        <NumberRow label="Scale Y" value={layer.transform.scaleY} step={0.05} onChange={(v) => patchTransform({ scaleY: v })} />
+        <NumberRow label="Rotation°" precision={2} value={layer.transform.rotation} onChange={(v) => patchTransform({ rotation: v })} />
+        <NumberRow label="Opacity" value={layer.transform.opacity} step={0.01} precision={2} min={0} max={1} onChange={(v) => patchTransform({ opacity: clamp01(v) })} />
+        <NumberRow label="Scale X" value={layer.transform.scaleX} step={0.01} precision={2} onChange={(v) => patchTransform({ scaleX: v })} />
+        <NumberRow label="Scale Y" value={layer.transform.scaleY} step={0.01} precision={2} onChange={(v) => patchTransform({ scaleY: v })} />
       </Section>
 
       {layer.type === "text" && (
@@ -285,7 +286,8 @@ export function PropertyInspector({ template, selectedId, onCommit: commitStep, 
               <NumberRow
                 label="Inner ratio"
                 value={layer.starInnerRatio}
-                step={0.05}
+                step={0.01}
+                precision={2}
                 onChange={(v) =>
                   patchLayer({ starInnerRatio: Math.max(0.05, Math.min(0.95, v)) } as Partial<Layer>)
                 }
@@ -333,6 +335,7 @@ export function PropertyInspector({ template, selectedId, onCommit: commitStep, 
             <>
               <NumberRow
                 label="Angle°"
+                precision={2}
                 value={layer.fill.angle}
                 onChange={(v) =>
                   patchLayer({
@@ -451,62 +454,51 @@ export function PropertyInspector({ template, selectedId, onCommit: commitStep, 
             </label>
           </Row>
           <Row label="Speed">
-            <input
-              type="number"
+            <NumberInput
+              aria-label="Speed"
               min={0.25}
               max={4}
-              step={0.05}
+              step={0.01}
+              precision={2}
               value={layer.playbackRate}
-              onChange={(e) =>
-                patchLayer({ playbackRate: Number(e.target.value) || 1 } as Partial<Layer>)
-              }
-              style={inputStyle}
+              onCommit={(v) => patchLayer({ playbackRate: v || 1 } as Partial<Layer>)}
             />
           </Row>
           <Row label="Trim (s)">
             <div style={{ display: "flex", gap: 4 }}>
-              <input
-                type="number"
+              <NumberInput
+                aria-label="Trim start (s)"
                 min={0}
-                step={0.05}
-                placeholder="start"
+                step={0.01}
+                precision={2}
                 value={layer.trimStart}
-                onChange={(e) =>
-                  patchLayer({ trimStart: Math.max(0, Number(e.target.value) || 0) } as Partial<Layer>)
-                }
-                style={inputStyle}
+                onCommit={(v) => patchLayer({ trimStart: Math.max(0, v) } as Partial<Layer>)}
               />
-              <input
-                type="number"
+              <NumberInput
+                aria-label="Trim end (s, 0 = full)"
                 min={0}
-                step={0.05}
-                placeholder="end (0 = full)"
+                step={0.01}
+                precision={2}
                 value={layer.trimEnd}
-                onChange={(e) =>
-                  patchLayer({ trimEnd: Math.max(0, Number(e.target.value) || 0) } as Partial<Layer>)
-                }
-                style={inputStyle}
+                onCommit={(v) => patchLayer({ trimEnd: Math.max(0, v) } as Partial<Layer>)}
               />
             </div>
           </Row>
           <Row label="Crop">
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
               {(["left", "top", "right", "bottom"] as const).map((side) => (
-                <input
+                <NumberInput
                   key={side}
-                  type="number"
+                  size="sm"
+                  aria-label={`Crop ${side} (0..1)`}
                   min={0}
                   max={1}
                   step={0.01}
-                  title={`${side} (0..1)`}
+                  precision={2}
                   value={layer.crop[side]}
-                  onChange={(e) => {
-                    const v = Math.max(0, Math.min(1, Number(e.target.value) || 0));
-                    patchLayer({
-                      crop: { ...layer.crop, [side]: v },
-                    } as Partial<Layer>);
-                  }}
-                  style={inputStyle}
+                  onCommit={(v) =>
+                    patchLayer({ crop: { ...layer.crop, [side]: Math.max(0, Math.min(1, v)) } } as Partial<Layer>)
+                  }
                 />
               ))}
             </div>
@@ -606,13 +598,13 @@ function CornerRadiusEditor({
         <>
           <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: "var(--text-dim, #9099a8)" }}>TL / TR</span>
-            <input type="number" value={v.tl} step={1} onChange={(e) => patch({ tl: Math.max(0, parseFloat(e.target.value) || 0) })} style={smallInput} />
-            <input type="number" value={v.tr} step={1} onChange={(e) => patch({ tr: Math.max(0, parseFloat(e.target.value) || 0) })} style={smallInput} />
+            <NumberInput int min={0} size="sm" aria-label="Top-left radius" value={v.tl} onCommit={(n) => patch({ tl: n })} />
+            <NumberInput int min={0} size="sm" aria-label="Top-right radius" value={v.tr} onCommit={(n) => patch({ tr: n })} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: "var(--text-dim, #9099a8)" }}>BL / BR</span>
-            <input type="number" value={v.bl} step={1} onChange={(e) => patch({ bl: Math.max(0, parseFloat(e.target.value) || 0) })} style={smallInput} />
-            <input type="number" value={v.br} step={1} onChange={(e) => patch({ br: Math.max(0, parseFloat(e.target.value) || 0) })} style={smallInput} />
+            <NumberInput int min={0} size="sm" aria-label="Bottom-left radius" value={v.bl} onCommit={(n) => patch({ bl: n })} />
+            <NumberInput int min={0} size="sm" aria-label="Bottom-right radius" value={v.br} onCommit={(n) => patch({ br: n })} />
           </div>
         </>
       )}
@@ -850,24 +842,31 @@ function NumberRow({
   value,
   onChange,
   step = 1,
+  precision,
+  min,
+  max,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   step?: number;
+  precision?: number;
+  min?: number;
+  max?: number;
 }) {
+  // Whole numbers unless the caller asks for decimals (non-integer step or precision).
+  const int = precision === undefined && Number.isInteger(step);
   return (
     <Row label={label}>
-      <input
-        type="number"
+      <NumberInput
+        aria-label={label}
         value={Number.isFinite(value) ? value : 0}
         step={step}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
-        }}
-        onKeyDown={blurOnEnter}
-        style={inputStyle}
+        int={int}
+        precision={precision}
+        min={min}
+        max={max}
+        onCommit={onChange}
       />
     </Row>
   );
