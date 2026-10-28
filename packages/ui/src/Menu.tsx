@@ -12,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip } from "./Tooltip";
-import { isEnabled, nextMenuIndex, placeMenu, type MenuItem } from "./menuModel";
+import { isEnabled, menuAnchorForEvent, nextMenuIndex, placeMenu, type MenuItem } from "./menuModel";
 import { colors, fontFamily, fontSize, radius, shadow } from "./tokens";
 
 export type { MenuItem } from "./menuModel";
@@ -33,11 +33,6 @@ function anchorRect(anchor: Anchor) {
     return { x: r.left, y: r.top, w: r.width, h: r.height };
   }
   return { x: (anchor as { x: number }).x, y: (anchor as { y: number }).y };
-}
-
-/** True for the ContextMenu key or Shift+F10 — open the menu at the focused element's rect. */
-export function isContextMenuKey(e: { key: string; shiftKey: boolean }): boolean {
-  return e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
 }
 
 /**
@@ -72,7 +67,10 @@ export function Menu({ items, anchor, onClose }: MenuProps) {
   }, [anchor, items]);
 
   useEffect(() => {
-    if (pos && active >= 0) rowRefs.current[active]?.focus();
+    if (!pos) return;
+    // With nothing enabled, focus the menu itself so Esc still reaches it.
+    if (active >= 0) rowRefs.current[active]?.focus();
+    else ref.current?.focus();
   }, [pos, active]);
 
   useEffect(() => {
@@ -101,19 +99,17 @@ export function Menu({ items, anchor, onClose }: MenuProps) {
   };
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      close();
-    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
-      e.preventDefault();
-      setActive(nextMenuIndex(items, active, e.key as "ArrowDown" | "ArrowUp" | "Home" | "End"));
-    } else if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
+    const handled =
+      ["Escape", "Tab", "ArrowDown", "ArrowUp", "Home", "End", "Enter", " "].includes(e.key);
+    if (!handled) return;
+    // Portal events bubble through the React tree to a host Modal / app hotkeys.
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === "Escape" || e.key === "Tab") close();
+    else if (e.key === "Enter" || e.key === " ") {
       if (active >= 0) select(items[active]!);
+    } else {
+      setActive(nextMenuIndex(items, active, e.key as "ArrowDown" | "ArrowUp" | "Home" | "End"));
     }
   };
 
@@ -123,6 +119,7 @@ export function Menu({ items, anchor, onClose }: MenuProps) {
     <div
       ref={ref}
       role="menu"
+      tabIndex={-1}
       onKeyDown={onKeyDown}
       onContextMenu={(e) => e.preventDefault()}
       style={{
@@ -131,6 +128,7 @@ export function Menu({ items, anchor, onClose }: MenuProps) {
         top: pos?.y ?? 0,
         visibility: pos ? "visible" : "hidden",
         zIndex: 1100,
+        outline: "none",
         minWidth: 180,
         maxWidth: 320,
         padding: 4,
@@ -223,10 +221,9 @@ export function useContextMenu(): {
       return;
     }
     e.preventDefault();
-    // Keyboard-generated contextmenu events report clientX/Y of 0 — anchor to the element.
     const el = e.currentTarget as HTMLElement | null;
-    const isKeyboard = e.type === "contextmenu" && e.clientX === 0 && e.clientY === 0 && el;
-    setState({ items, anchor: isKeyboard ? el : { x: e.clientX, y: e.clientY } });
+    const useEl = menuAnchorForEvent(e) === "element" && el;
+    setState({ items, anchor: useEl ? el : { x: e.clientX, y: e.clientY } });
   }, []);
 
   return {

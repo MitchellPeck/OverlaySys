@@ -58,3 +58,20 @@ export function placeMenu(
   y = Math.max(margin, Math.min(y, viewport.h - margin - size.h));
   return { x, y };
 }
+
+/** True for the ContextMenu key or Shift+F10 — open the menu at the focused element's rect. */
+export function isContextMenuKey(e: { key: string; shiftKey: boolean }): boolean {
+  return e.key === "ContextMenu" || (e.shiftKey && e.key === "F10");
+}
+
+/** Keyboard-originated mouse events (Enter/Space on a button, ContextMenu key) have detail 0 or no position. */
+export function menuAnchorForEvent(e: {
+  type: string;
+  detail?: number;
+  clientX: number;
+  clientY: number;
+}): "point" | "element" {
+  if (e.clientX === 0 && e.clientY === 0) return "element";
+  if (e.type === "click" && e.detail === 0) return "element";
+  return "point";
+}

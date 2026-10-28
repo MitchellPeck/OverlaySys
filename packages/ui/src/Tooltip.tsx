@@ -117,7 +117,7 @@ export function Tooltip({ content, children, side = "top" }: Props) {
                 left: Math.max(8, Math.min(anchor.x, window.innerWidth - 8)),
                 top: side === "top" ? anchor.top - GAP : anchor.bottom + GAP,
                 transform: side === "top" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
-                zIndex: 1000,
+                zIndex: 1200, // above Menu (1100)
                 pointerEvents: "none",
                 maxWidth: 280,
                 padding: "4px 8px",
