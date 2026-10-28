@@ -248,6 +248,9 @@ the new data:
   synced show (make the show schema pass unknown keys through, or version it);
 - PCO item→deck mappings shared through sync (call: a small synced
   settings/mappings entity) rather than only a local file;
+- hotcard `hotkey` (added by the F-key blocker fix) must round-trip through
+  cloud sync; today the cloud hotcard row has no place for it, so a cloud pull
+  could drop it;
 - a missing cloud table is skipped quietly (as stage layouts do today).
 
 ## Relation to the fix plan (call)
