@@ -6,13 +6,14 @@ import {
   ShowSchema,
   SongSchema,
   type ChannelState,
+  type Deck,
   type Show,
   type Song,
   type StageTimerInstance,
   type Template,
   decodeTimerValue,
 } from "@overlaysys/core";
-import { buildStageFeed, lyricSlideAt, nextLyricCursor, rowTitle } from "./stageFeed";
+import { buildStageFeed, firstContentOf, lyricSlideAt, nextLyricCursor, rowTitle } from "./stageFeed";
 
 // CCLI usage logging writes to the data dir; keep tests off disk.
 vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
@@ -417,5 +418,80 @@ describe("buildStageFeed", () => {
       notes: { notes: { id: "n", title: "Empty", body: "" }, points: [] },
     });
     expect(f.notes).toMatchObject({ points: [], pointIdx: 0 });
+  });
+});
+
+describe("slides rows", () => {
+  const deck = {
+    id: "d1",
+    name: "Gloria",
+    tags: [],
+    defaultTemplateId: "lt",
+    licensing: { kind: "liturgy" },
+    slides: [
+      { id: "s1", label: "Response 1", data: { name: "Line A" } },
+      { id: "s2", data: { name: "Line B" } },
+    ],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  } as unknown as Deck;
+  const decks = new Map([[deck.id, deck]]);
+  const slidesShow: Show = ShowSchema.parse({
+    id: "show-1",
+    name: "Sunday",
+    projectId: "p",
+    songs: [],
+    rows: [
+      { kind: "slides", id: "r", deckId: "d1" },
+      { kind: "slides", id: "r2", deckId: "d1", slideIds: ["s2"] },
+    ],
+  });
+  const summary = {
+    rowId: "r",
+    title: "Gloria",
+    slideIdx: 0,
+    slideCount: 2,
+    label: "Response 1",
+    lines: ["Line A"],
+    nextLines: ["Line B"],
+    blanked: false,
+    atEnd: false,
+  };
+  const stateWith = (slidesSession: ChannelState["slidesSession"]): ChannelState => ({
+    channel: "program",
+    active: null,
+    liveRow: { showId: "show-1", rowId: "r" },
+    slidesSession,
+  });
+  const feedOf = (followed: ChannelState) => base(followed, { show: slidesShow, decks });
+
+  it("current/next come from the live slides session as lyric slides with the label as reference", () => {
+    const feed = feedOf(stateWith(summary));
+    expect(feed.current).toEqual({ kind: "lyric", lines: ["Line A"], reference: "Response 1" });
+    expect(feed.next).toEqual({ kind: "lyric", lines: ["Line B"], reference: "Gloria" });
+  });
+  it("uses nextLabel for the next slide and the title when there is no label", () => {
+    const feed = feedOf(stateWith({ ...summary, label: undefined, nextLabel: "Response 2" }));
+    expect(feed.current.reference).toBe("Gloria");
+    expect(feed.next.reference).toBe("Response 2");
+  });
+  it("blanked shows none as current", () => {
+    expect(feedOf(stateWith({ ...summary, blanked: true })).current).toEqual(NONE_SLIDE);
+  });
+  it("on the last slide next falls back to the next row's first content", () => {
+    const feed = feedOf(stateWith({ ...summary, slideIdx: 1, lines: ["Line B"], nextLines: undefined, atEnd: true }));
+    expect(feed.next).toEqual({ kind: "lyric", lines: ["Line B"], reference: "Gloria" });
+  });
+  it("rowTitle and firstContentOf use the deck name and its first resolved slide", () => {
+    expect(rowTitle(slidesShow.rows[0]!, songs, templates, decks)).toBe("Gloria");
+    expect(rowTitle({ ...slidesShow.rows[0]!, deckId: "gone" } as never, songs, templates, decks)).toBe("Missing deck");
+    expect(firstContentOf(slidesShow.rows[0]!, slidesShow, songs, templates, decks)).toEqual({
+      kind: "lyric",
+      lines: ["Line A"],
+      reference: "Gloria",
+    });
+    expect(firstContentOf(slidesShow.rows[1]!, slidesShow, songs, templates, decks)).toMatchObject({ lines: ["Line B"] });
+    expect(
+      firstContentOf({ ...slidesShow.rows[0]!, deckId: "gone" } as never, slidesShow, songs, templates, decks),
+    ).toEqual(NONE_SLIDE);
   });
 });

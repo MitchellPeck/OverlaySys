@@ -5,9 +5,12 @@
 import {
   NONE_SLIDE,
   decodeTimerValue,
+  slideTextLines,
+  slidesRowView,
   resolveArrangement,
   stageTimerValue,
   type ChannelState,
+  type Deck,
   type RundownRow,
   type Show,
   type SlideView,
@@ -40,6 +43,8 @@ export interface StageFeedInputs {
   notes: { notes: SermonNotes; points: NotesPoint[] } | null;
   /** PCO Live service view; null (or omitted) while sync is off. */
   service?: StageServiceView | null;
+  /** Global slide decks by id (deck registry snapshot). */
+  decks?: Map<string, Deck>;
 }
 
 type Cursor = { sectionIdx: number; slideIdx: number };
@@ -76,7 +81,19 @@ function textFieldLines(template: Template | undefined, data: Record<string, str
     .filter((v) => v !== "");
 }
 
-export function rowTitle(row: RundownRow, songs: Map<string, Song>, templates: Map<string, Template>): string {
+// [P3.10] undefined while the registry isn't supplied; null once it is and the deck is gone.
+function deckFor(row: Extract<RundownRow, { kind: "slides" }>, decks?: Map<string, Deck>): Deck | null | undefined {
+  if (!row.deckId) return null;
+  return decks ? decks.get(row.deckId) ?? null : undefined;
+}
+// [/P3.10]
+
+export function rowTitle(
+  row: RundownRow,
+  songs: Map<string, Song>,
+  templates: Map<string, Template>,
+  decks?: Map<string, Deck>,
+): string {
   switch (row.kind) {
     case "graphic": {
       const tpl = templates.get(row.templateId);
@@ -90,14 +107,18 @@ export function rowTitle(row: RundownRow, songs: Map<string, Song>, templates: M
       return row.reference;
     case "video":
       return row.label ?? "Video";
-    // [P3.8] placeholder; Task 10 replaces this
     case "slides":
-      return "Slides";
+      return slidesRowView(row, deckFor(row, decks)).title;
   }
 }
 
-function rowView(row: RundownRow, songs: Map<string, Song>, templates: Map<string, Template>): StageRowView {
-  return { title: rowTitle(row, songs, templates), cue: row.notes?.trim() ?? "" };
+function rowView(
+  row: RundownRow,
+  songs: Map<string, Song>,
+  templates: Map<string, Template>,
+  decks?: Map<string, Deck>,
+): StageRowView {
+  return { title: rowTitle(row, songs, templates, decks), cue: row.notes?.trim() ?? "" };
 }
 
 function scriptureView(row: Extract<RundownRow, { kind: "scripture" }>, slideIdx: number): SlideView {
@@ -111,6 +132,7 @@ export function firstContentOf(
   show: Show,
   songs: Map<string, Song>,
   templates: Map<string, Template>,
+  decks?: Map<string, Deck>,
 ): SlideView {
   if (!row) return NONE_SLIDE;
   switch (row.kind) {
@@ -130,9 +152,16 @@ export function firstContentOf(
     }
     case "video":
       return { kind: "graphic", lines: [row.label ?? "Video"], reference: "Video" };
-    // [P3.8] placeholder; Task 10 replaces this
-    case "slides":
-      return NONE_SLIDE;
+    case "slides": {
+      const view = slidesRowView(row, deckFor(row, decks));
+      const first = view.slides[0];
+      if (!first) return NONE_SLIDE;
+      return {
+        kind: "lyric",
+        lines: slideTextLines(first.data, templates.get(first.templateId)),
+        reference: view.title,
+      };
+    }
   }
 }
 
@@ -148,6 +177,11 @@ function currentOf(s: ChannelState, songs: Map<string, Song>, templates: Map<str
       lines: s.scriptureSession.text.split("\n"),
       reference: s.scriptureSession.slideReference,
     };
+  }
+  if (s.slidesSession) {
+    const ss = s.slidesSession;
+    if (ss.blanked) return NONE_SLIDE;
+    return { kind: "lyric", lines: ss.lines, reference: ss.label ?? ss.title };
   }
   if (s.active && s.active.phase !== "out") {
     const tpl = templates.get(s.active.templateId);
@@ -230,6 +264,9 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     } else if (followed.scriptureSession && row?.kind === "scripture" && row.id === followed.scriptureSession.rowId) {
       const n = followed.scriptureSession.slideIdx + 1;
       if (n < row.slides.length) next = scriptureView(row, n);
+    } else if (followed.slidesSession) {
+      const ss = followed.slidesSession;
+      if (ss.nextLines) next = { kind: "lyric", lines: ss.nextLines, reference: ss.nextLabel ?? ss.title };
     } else if (
       show &&
       row &&
@@ -237,10 +274,10 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
         (row.kind === "scripture" && followed.queuedScripture?.rowId === row.id))
     ) {
       // An intro is on air with its row armed: next is the row's own first slide.
-      next = firstContentOf(row, show, songs, templates);
+      next = firstContentOf(row, show, songs, templates, i.decks);
     }
     if (next.kind === "none" && show && row) {
-      next = firstContentOf(nextRowObj, show, songs, templates);
+      next = firstContentOf(nextRowObj, show, songs, templates, i.decks);
     }
   }
 
@@ -258,8 +295,8 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
     layout: i.layout,
     current,
     next,
-    row: row ? rowView(row, songs, templates) : null,
-    nextRow: nextRowObj ? rowView(nextRowObj, songs, templates) : null,
+    row: row ? rowView(row, songs, templates, i.decks) : null,
+    nextRow: nextRowObj ? rowView(nextRowObj, songs, templates, i.decks) : null,
     timers: timersOf(i.stageTimers, i.allStates, templates, followed?.channel ?? null, i.now),
     video: videoOf(followed),
     notes: notesView,
