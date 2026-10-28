@@ -1,14 +1,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { chooseAction } from "@overlaysys/ui";
+import { afterChoice, guardActions, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
 import { sentinelPopAction, shouldConfirmLinkNavigation, shouldDisarmSentinel } from "@/lib/stageDesigner";
 
-export const DEFAULT_UNSAVED_PROMPT = "You have unsaved changes. Leave anyway?";
+export const DEFAULT_UNSAVED_PROMPT = "You have unsaved changes.";
 const SENTINEL_FLAG = "unsavedGuard";
 
 export type UnsavedGuardOptions = {
-  /** Confirm prompt text. */
+  /** Dialog body text. */
   message?: string;
+  /**
+   * Saves the draft; resolves true when saved. Adds a "Save and leave" button
+   * to the dialog, and a failed save (false) keeps the user on the page.
+   */
+  onSave?: () => Promise<boolean>;
   /**
    * Live dirty read for the event handlers. The `dirty` argument comes from a
    * render and can lag a store update by one; pass the store's getter when
@@ -57,6 +65,49 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
   getDirtyRef.current = opts.getDirty ?? (() => dirtyRef.current);
   const messageRef = useRef(message);
   messageRef.current = message;
+  const onSaveRef = useRef(opts.onSave);
+  onSaveRef.current = opts.onSave;
+  const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  // True while the dialog is open (a second Back/click must not stack another)
+  // and, once the user chose to leave, until the page unmounts.
+  const askingRef = useRef(false);
+  const leavingRef = useRef(false);
+  const armedHrefRef = useRef<string | null>(null);
+
+  /** Ask; resolves true when the user chose to leave (and saved, if asked). */
+  const askRef = useRef<(origin: GuardOrigin) => Promise<{ navigate: boolean; historySteps: number }>>(
+    async () => ({ navigate: false, historySteps: 0 }),
+  );
+  askRef.current = async (origin) => {
+    const canSave = !!onSaveRef.current;
+    askingRef.current = true;
+    try {
+      const choice = (await chooseAction({
+        title: "Leave without saving?",
+        message: messageRef.current,
+        actions: guardActions(canSave),
+        cancelId: "stay",
+      })) as GuardChoice;
+      let saved: boolean | null = null;
+      if (choice === "save" && onSaveRef.current) {
+        // The save turns the draft clean, which would pop our sentinel on its
+        // own; disarm first so only the navigation below moves history.
+        const armed = armedHrefRef.current;
+        armedHrefRef.current = null;
+        try {
+          saved = await onSaveRef.current();
+        } catch {
+          saved = false;
+        }
+        if (!saved) armedHrefRef.current = armed;
+      }
+      return afterChoice(choice, saved, origin);
+    } finally {
+      askingRef.current = false;
+    }
+  };
 
   useEffect(() => {
     if (!dirty) return;
@@ -79,9 +130,18 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
         target: a.getAttribute("target"),
         download: a.hasAttribute("download"),
       });
-      if (!ask || window.confirm(messageRef.current)) return;
+      if (!ask || leavingRef.current) return;
+      // Always cancel the click; navigate ourselves if the user chooses to leave.
       e.preventDefault();
       e.stopPropagation();
+      if (askingRef.current) return;
+      const href = a.getAttribute("href") ?? "";
+      void askRef.current("link").then((r) => {
+        if (!r.navigate) return;
+        leavingRef.current = true;
+        armedHrefRef.current = null;
+        routerRef.current.push(href);
+      });
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     document.addEventListener("click", onClick, true);
@@ -99,9 +159,9 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
   // sentinel is popped again, and a new resetKey (e.g. Duplicate routing in
   // place) starts unarmed, so a stale sentinel can never act for another
   // document.
-  const armedHrefRef = useRef<string | null>(null);
   useEffect(() => {
     armedHrefRef.current = null;
+    leavingRef.current = false;
   }, [resetKey]);
   useEffect(() => {
     if (dirty) {
@@ -120,17 +180,30 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
   }, [dirty, resetKey, canArm]);
   useEffect(() => {
     const onPopState = () => {
+      if (leavingRef.current) return;
+      // Re-push the sentinel straight away (confirm: () => false) so the page
+      // stays put while the dialog is open; leaving then steps back past both.
       const action = sentinelPopAction({
         armedHref: armedHrefRef.current,
         currentHref: window.location.href,
         onSentinel: onSentinelEntry(),
         dirty: getDirtyRef.current(),
-        confirm: () => window.confirm(messageRef.current),
+        confirm: () => false,
       });
       if (action === "none") return;
-      armedHrefRef.current = null;
-      if (action === "back") window.history.back();
-      else armedHrefRef.current = pushSentinel();
+      if (action === "back") {
+        armedHrefRef.current = null;
+        window.history.back();
+        return;
+      }
+      armedHrefRef.current = pushSentinel();
+      if (askingRef.current) return;
+      void askRef.current("pop").then((r) => {
+        if (!r.navigate) return;
+        leavingRef.current = true;
+        armedHrefRef.current = null;
+        window.history.go(r.historySteps);
+      });
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
