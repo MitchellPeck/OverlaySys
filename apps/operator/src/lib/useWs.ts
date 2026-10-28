@@ -1,14 +1,58 @@
 "use client";
 
-import { WsClient, defaultServerUrl } from "./wsClient";
+import { useSyncExternalStore } from "react";
+import { WsClient, defaultServerUrl, type WsStatus } from "./wsClient";
 import { useStore } from "./store";
 import { isCloudMode } from "./mode";
-import type { ClientMessage } from "@overlaysys/ws-protocol";
+import type { ClientMessage, OutputsState } from "@overlaysys/ws-protocol";
 
 const CHANNELS_TO_WATCH = ["program", "preview"] as const;
 
 let singleton: WsClient | null = null;
 let bootstrapped = false;
+
+// ── Output presence (outputs_state) ─────────────────────────────────────
+// Kept here rather than in the zustand store: it is one server message with
+// one reader (the channel dots), and null means "unknown" (disconnected or
+// a server too old to send it), which callers must not show as "offline".
+let outputsState: OutputsState | null = null;
+const outputsListeners = new Set<() => void>();
+function setOutputsState(next: OutputsState | null): void {
+  outputsState = next;
+  for (const l of outputsListeners) l();
+}
+function subscribeOutputs(l: () => void): () => void {
+  outputsListeners.add(l);
+  return () => {
+    outputsListeners.delete(l);
+  };
+}
+
+/** Connected renderer windows per channel; null while unknown. */
+export function useOutputs(): OutputsState | null {
+  return useSyncExternalStore(subscribeOutputs, () => outputsState, () => null);
+}
+
+function subscribeStatus(l: () => void): () => void {
+  if (isCloudMode()) return () => {};
+  return getClient().onStatus(() => l());
+}
+
+/** Live WS status ("connecting" | "open" | "closed"); "closed" in cloud mode. */
+export function useWsStatus(): WsStatus {
+  return useSyncExternalStore(
+    subscribeStatus,
+    () => (isCloudMode() ? "closed" : getClient().getStatus()),
+    () => "connecting",
+  );
+}
+
+/** Drop the socket and dial the server again now (skips any backoff wait). */
+export function reconnectNow(): void {
+  if (typeof window === "undefined" || isCloudMode()) return;
+  bootstrap();
+  getClient().reconnectNow();
+}
 
 export function getClient(): WsClient {
   if (!singleton) {
@@ -38,7 +82,10 @@ function bootstrap(): void {
   bootstrapped = true;
   const client = getClient();
 
-  client.onStatus((s) => useStore.getState().setConn(s));
+  client.onStatus((s) => {
+    useStore.getState().setConn(s);
+    if (s !== "open") setOutputsState(null);
+  });
 
   client.on((msg) => {
     const store = useStore.getState();
@@ -71,6 +118,9 @@ function bootstrap(): void {
         break;
       case "pco_live_state":
         store.setPcoLive(msg);
+        break;
+      case "outputs_state":
+        setOutputsState(msg.outputs);
         break;
       case "media_playback":
         store.applyMediaPlayback(msg.channel, msg.takenAt, msg.playback);

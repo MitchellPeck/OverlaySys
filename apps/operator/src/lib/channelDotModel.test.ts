@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { ChannelConfig, ChannelState } from "@overlaysys/core";
-import { channelDotModel } from "./channelDotModel";
+import { channelDotModel, rendererBaseFor, rendererHref } from "./channelDotModel";
 
 const cfg = (id: string, extra: Partial<ChannelConfig> = {}) =>
   ({ id, name: id, renderMode: "normal", ...extra }) as ChannelConfig;
@@ -49,5 +49,37 @@ describe("channelDotModel", () => {
   it("a mirror reflects its source's state but never offers Clear", () => {
     const m = channelDotModel(cfg("key", { mirrorOf: "program" }), { program: on("program") });
     expect(m).toMatchObject({ sourceId: "program", busy: true, canClear: false, tone: "good" });
+  });
+});
+
+describe("output presence", () => {
+  const presence = (count: number) => ({ count, lastSeen: 1, labels: ["OBS"] });
+  it("is unknown until outputs_state arrives", () => {
+    expect(channelDotModel(cfg("program"), {})).toMatchObject({ presence: "unknown", outputCount: null });
+  });
+  it("connected / idle / missing", () => {
+    expect(channelDotModel(cfg("program"), {}, { program: presence(1) }).presence).toBe("connected");
+    expect(channelDotModel(cfg("program"), {}, {}).presence).toBe("idle");
+    expect(channelDotModel(cfg("program"), { program: on("program") }, {}).presence).toBe("missing");
+  });
+  it("a mirror counts its own windows, not its source's", () => {
+    const m = channelDotModel(cfg("key", { mirrorOf: "program" }), { program: on("program") }, { program: presence(1) });
+    expect(m).toMatchObject({ outputCount: 0, presence: "missing" });
+  });
+});
+
+describe("rendererBaseFor", () => {
+  it("same origin when the server serves the operator", () => {
+    expect(rendererBaseFor({ protocol: "http:", hostname: "10.0.0.5", host: "10.0.0.5:4123", pathname: "/operator/live/" })).toBe(
+      "http://10.0.0.5:4123/renderer",
+    );
+  });
+  it("dev: Vite renderer on :3001 of the operator's host", () => {
+    expect(rendererBaseFor({ protocol: "http:", hostname: "studio.local", host: "studio.local:3000", pathname: "/" })).toBe(
+      "http://studio.local:3001",
+    );
+  });
+  it("builds the channel link", () => {
+    expect(rendererHref("http://h:4000/renderer/", "alpha prog")).toBe("http://h:4000/renderer/?channel=alpha%20prog");
   });
 });

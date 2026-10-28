@@ -39,6 +39,8 @@ import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 import * as pcoLiveSync from "./pco/pcoLiveSync";
 import { isLocalAddress, remoteAddressOf, securityContext } from "./security";
+import * as outputs from "./outputs";
+import { SERVER_VERSION } from "./version";
 
 /**
  * Requests that don't need to wait their turn behind this socket's earlier
@@ -184,6 +186,27 @@ sttInstaller.subscribeInstall((progress) => {
   })();
 });
 
+outputs.subscribeOutputs(() => broadcast(outputsStateMessage()));
+
+export function outputsStateMessage(): ServerMessage {
+  return { type: "outputs_state", outputs: outputs.outputsSnapshot() };
+}
+
+// One renderer per channel reports media playback: with two windows on the
+// same channel (OBS + a browser preview) both reported, and their slightly
+// different clocks made the operator's transport jitter. The first socket to
+// report owns the channel until it closes.
+const liveConnections = new Set<string>();
+const mediaReporters = new Map<string, string>();
+
+/** Should a media_status from `connId` for `channel` be applied? */
+export function claimMediaReporter(channel: string, connId: string): boolean {
+  const owner = mediaReporters.get(channel);
+  if (owner && owner !== connId && liveConnections.has(owner)) return false;
+  mediaReporters.set(channel, connId);
+  return true;
+}
+
 stageFeedHub.subscribePreviews(() =>
   broadcast({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() }),
 );
@@ -208,7 +231,9 @@ export function handleConnection(
   }
   const offBroadcast = registerSender(send);
 
-  send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now() });
+  liveConnections.add(connId);
+  send({ type: "hello", protocolVersion: PROTOCOL_VERSION, serverTime: Date.now(), serverVersion: SERVER_VERSION });
+  send(outputsStateMessage());
   // Snapshot so a reconnecting designer learns which preview it (or another socket) holds.
   send({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() });
   void stageState
@@ -234,6 +259,7 @@ export function handleConnection(
       send({ type: "error", code: "bad_message", message: String(err) });
       return;
     }
+    outputs.touchOutput(connId);
     if (UNORDERED_TYPES.has(parsed.type)) {
       void handleMessage(parsed);
       return;
@@ -257,6 +283,11 @@ export function handleConnection(
     try {
       switch (parsed.type) {
         case "subscribe": {
+          // A renderer window on its own channel is an output of it; a
+          // mirror's subscription to its source is not.
+          if (parsed.role === "renderer" && !parsed.mirrorFor) {
+            outputs.addOutput(connId, parsed.channel, parsed.label ?? "renderer");
+          }
           if (subscriptions.has(parsed.channel)) {
             // Already live on this socket — don't double-subscribe, but
             // do answer with the current state. A renderer that re-sends
@@ -281,8 +312,9 @@ export function handleConnection(
           });
           // Renderers are the source of playback reports and never read the
           // 4 Hz ticks; only operator-role subscribers get them.
+          // Mirrors do read them: their video follows the primary's clock.
           const unsubPlayback =
-            parsed.role === "renderer"
+            parsed.role === "renderer" && !parsed.mirrorFor
               ? () => {}
               : channels.subscribeMediaPlayback(parsed.channel, (e) => {
                   send({ type: "media_playback", ...e });
@@ -339,6 +371,7 @@ export function handleConnection(
           break;
         }
         case "media_status": {
+          if (!claimMediaReporter(parsed.channel, connId)) break;
           channels.mediaStatus(parsed.channel, parsed.takenAt, {
             status: parsed.status,
             currentTime: parsed.currentTime,
@@ -1128,6 +1161,9 @@ export function handleConnection(
 
   ws.on("close", () => {
     closed = true;
+    liveConnections.delete(connId);
+    for (const [ch, owner] of mediaReporters) if (owner === connId) mediaReporters.delete(ch);
+    outputs.removeConnection(connId);
     stageFeedHub.clearPreviewsByOwner(connId);
     if (registeredAudioSourceId) {
       sttListener.disconnect(registeredAudioSourceId);

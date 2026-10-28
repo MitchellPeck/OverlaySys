@@ -31,6 +31,20 @@ import {
 
 export const PROTOCOL_VERSION = 3;
 
+/** True when a peer's protocol major differs from ours (log a warning). */
+export function protocolMismatch(peerVersion: number | undefined): boolean {
+  return typeof peerVersion === "number" && peerVersion !== PROTOCOL_VERSION;
+}
+
+export const OutputPresenceSchema = z.object({
+  count: z.number().int().nonnegative(),
+  /** Most recent sign of life from any of the channel's outputs (ms epoch). */
+  lastSeen: z.number(),
+  labels: z.array(z.string()),
+});
+export type OutputPresence = z.infer<typeof OutputPresenceSchema>;
+export type OutputsState = Record<string, OutputPresence>;
+
 const DataPayload = z.record(z.string(), z.string());
 
 // ───── Client → Server ─────────────────────────────────────────────────────
@@ -40,6 +54,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("subscribe"),
     channel: z.string(),
     role: z.enum(["operator", "renderer"]).default("renderer"),
+    /** Renderer windows: shown in `outputs_state` (e.g. "OBS", "Desktop window"). */
+    label: z.string().max(80).optional(),
+    /**
+     * Set by a mirror window (fill/key alpha) subscribing to its SOURCE
+     * channel: the subscription doesn't count as an output of that source,
+     * and it receives `media_playback` so its video can follow the primary.
+     */
+    mirrorFor: z.string().optional(),
   }),
   z.object({
     type: z.literal("take"),
@@ -332,8 +354,20 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("hello"),
+    /** Major protocol version; clients warn when it differs from theirs. */
     protocolVersion: z.number(),
     serverTime: z.number(),
+    /** Server package version (absent on older servers). */
+    serverVersion: z.string().optional(),
+  }),
+  /**
+   * Connected renderer windows per channel. Sent on connect and whenever a
+   * renderer subscribes or disconnects. A channel with no entry has no
+   * output connected.
+   */
+  z.object({
+    type: z.literal("outputs_state"),
+    outputs: z.record(z.string(), OutputPresenceSchema),
   }),
   z.object({
     type: z.literal("state"),

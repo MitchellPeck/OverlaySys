@@ -6,7 +6,7 @@ import { WsClient, defaultServerUrl } from "./wsClient";
 import { createTemplateLoader } from "./templateLoader";
 import { createChannelPlayer, type ChannelPlayer } from "./channelPlayer";
 import { DEFAULT_STAGE_SIZE, readSizeOverride, resolveStageSize, type StageSize } from "./stageSize";
-import { createMirrorSubscription } from "./mirrorSubscription";
+import { createMirrorSubscription, outputLabel } from "./mirrorSubscription";
 import { MediaLayer } from "./MediaLayer";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
@@ -47,7 +47,7 @@ export function Renderer({ channel, debug = false }: Props) {
   // sequencing (reconnects, late config, changed mirrorOf) lives in
   // mirrorSubscription.ts where it is unit-tested — see that file for the
   // reconnect bug that used to black out the alpha output.
-  const subscriptionRef = useRef(createMirrorSubscription(channel));
+  const subscriptionRef = useRef(createMirrorSubscription(channel, outputLabel(location.search, navigator.userAgent)));
   const clientRef = useRef<WsClient | null>(null);
   const sendRef = useRef((msg: ClientMessage) => clientRef.current?.send(msg));
 

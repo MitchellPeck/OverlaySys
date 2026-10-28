@@ -6,9 +6,9 @@ import type { ChannelConfig } from "@overlaysys/core";
 import { Button, StatusDot, colors } from "@overlaysys/ui";
 import { ExternalLink, RotateCw, Settings2, X } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
+import { useOutputs, useWs } from "@/lib/useWs";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { channelDotModel } from "@/lib/channelDotModel";
+import { channelDotModel, rendererBaseFor, rendererHref, type OutputPresenceTone } from "@/lib/channelDotModel";
 import { useChannelWindowPrefs } from "@/lib/useChannelWindowPrefs";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
 import { AnchoredPopover } from "./AnchoredPopover";
@@ -38,21 +38,30 @@ export function ChannelDots() {
 function ChannelDot({ config }: { config: ChannelConfig }) {
   const { send } = useWs();
   const channelStates = useStore((s) => s.channelStates);
-  const model = channelDotModel(config, channelStates);
+  const outputs = useOutputs();
+  const model = channelDotModel(config, channelStates, outputs);
+  const presenceTitle = presenceText(model.presence, model.outputCount, outputs?.[config.id]?.labels ?? []);
   const { hasPrefs, fallbackWarning, refresh } = useChannelWindowPrefs(config);
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const [menu, setMenu] = useState<"closed" | "menu" | "settings">("closed");
-  const href = `http://localhost:3001/?channel=${encodeURIComponent(config.id)}`;
+  // Built at click time from where this page was loaded, not localhost:3001 —
+  // packaged builds serve the renderer from the server's own port.
+  const href = () => rendererHref(rendererBaseFor(window.location), config.id);
+  const titles = [
+    fallbackWarning ? `Configured for ${fallbackWarning.configuredLabel}; using ${fallbackWarning.actualLabel}` : null,
+    presenceTitle,
+  ].filter(Boolean);
 
   return (
-    <span ref={anchorRef}>
+    <span ref={anchorRef} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
       <StatusDot
         tone={model.tone}
         label={config.name}
-        title={fallbackWarning ? `Configured for ${fallbackWarning.configuredLabel}; using ${fallbackWarning.actualLabel}` : undefined}
+        title={titles.length ? titles.join(" · ") : undefined}
         onClick={() => setMenu((m) => (m === "closed" ? "menu" : "closed"))}
         style={fallbackWarning ? { color: colors.warn } : undefined}
       />
+      <PresenceMark presence={model.presence} title={presenceTitle} />
       {menu === "menu" && (
         <AnchoredPopover anchorEl={anchorRef.current} onClose={() => setMenu("closed")} width={220}>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -64,7 +73,7 @@ function ChannelDot({ config }: { config: ChannelConfig }) {
               label="Open renderer"
               onClick={() => {
                 if (isElectron()) getDesktopApi()?.openChannelWindow(config.id);
-                else window.open(href, "_blank", "noreferrer");
+                else window.open(href(), "_blank", "noreferrer");
                 setMenu("closed");
               }}
             />
@@ -104,6 +113,42 @@ function ChannelDot({ config }: { config: ChannelConfig }) {
         />
       )}
     </span>
+  );
+}
+
+function presenceText(presence: OutputPresenceTone, count: number | null, labels: string[]): string | null {
+  switch (presence) {
+    case "unknown":
+      return null;
+    case "connected":
+      return `${count} output${count === 1 ? "" : "s"} connected${labels.length ? ` (${labels.join(", ")})` : ""}`;
+    case "idle":
+      return "No output connected";
+    case "missing":
+      return "On air, but no output is connected";
+  }
+}
+
+/** Hollow ring = no renderer window; red = content on air with no renderer. */
+function PresenceMark({ presence, title }: { presence: OutputPresenceTone; title: string | null }) {
+  if (presence === "unknown" || presence === "connected") return null;
+  const missing = presence === "missing";
+  return (
+    <span
+      role="img"
+      aria-label={title ?? undefined}
+      title={title ?? undefined}
+      style={{
+        display: "inline-block",
+        width: 8,
+        height: 8,
+        borderRadius: "50%",
+        boxSizing: "border-box",
+        border: `1.5px solid ${missing ? colors.danger : colors.textMuted}`,
+        background: missing ? colors.danger : "transparent",
+        flexShrink: 0,
+      }}
+    />
   );
 }
 

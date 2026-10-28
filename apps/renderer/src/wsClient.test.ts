@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveServerUrl } from "./wsClient";
+import { heartbeatAction, reconnectDelay, resolveServerUrl } from "./wsClient";
 
 const base = { search: "", protocol: "http:", host: "localhost:3001", hostname: "localhost", pathname: "/" };
 
@@ -26,5 +26,17 @@ describe("resolveServerUrl", () => {
   });
   it("dev server falls back to hostname:4000", () => {
     expect(resolveServerUrl(base)).toBe("ws://localhost:4000/ws");
+  });
+});
+
+describe("heartbeat + backoff", () => {
+  it("first reconnect is fast, then backs off to 10 s", () => {
+    expect(reconnectDelay(0)).toBe(250);
+    expect(reconnectDelay(1)).toBe(500);
+    expect(reconnectDelay(50)).toBe(10_000);
+  });
+  it("gives up on a socket silent for over 10 s", () => {
+    expect(heartbeatAction(10_000, 5_000)).toBe("ping");
+    expect(heartbeatAction(20_001, 10_000)).toBe("reconnect");
   });
 });

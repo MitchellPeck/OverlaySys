@@ -4,6 +4,7 @@ import staticPlugin from "@fastify/static";
 import path from "node:path";
 import { WebSocketServer } from "ws";
 import { handleConnection } from "./ws";
+import { startHeartbeat, trackSocket } from "./heartbeat";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -323,8 +324,12 @@ const wss = new WebSocketServer({
   },
 });
 wss.on("connection", (ws, req) => {
+  trackSocket(ws);
   handleConnection(ws, req, app.log);
 });
+// Ping every socket every 10 s; two missed pongs and it's terminated, so a
+// renderer PC that lost power stops counting as a connected output.
+startHeartbeat(() => wss.clients);
 
 app.log.info(`OverlaySys server listening on ${HOST}:${actualPort}`);
 if (tokenEnabled()) app.log.info("  LAN token required for connections from other machines");

@@ -132,6 +132,58 @@ describe("ws subscribe", () => {
   });
 });
 
+describe("ws output presence", () => {
+  function lastOutputs(sock: FakeSocket) {
+    const all = sock.sent.filter((m) => m.type === "outputs_state");
+    const last = all[all.length - 1];
+    return last?.type === "outputs_state" ? last.outputs : undefined;
+  }
+
+  it("broadcasts outputs_state when a renderer subscribes and when it leaves", async () => {
+    const ch = `t-${Date.now()}-out`;
+    const operator = connect();
+    expect(lastOutputs(operator)).toBeDefined();
+    const renderer = connect();
+    await renderer.client({ type: "subscribe", channel: ch, role: "renderer", label: "OBS" });
+    expect(lastOutputs(operator)?.[ch]).toMatchObject({ count: 1, labels: ["OBS"] });
+    renderer.emit("close");
+    expect(lastOutputs(operator)?.[ch]).toBeUndefined();
+  });
+
+  it("operator subscriptions and a mirror's source subscription aren't outputs", async () => {
+    const ch = `t-${Date.now()}-out2`;
+    const operator = connect();
+    await operator.client({ type: "subscribe", channel: ch, role: "operator" });
+    const alpha = connect();
+    await alpha.client({ type: "subscribe", channel: ch, role: "renderer", mirrorFor: `${ch}-alpha` });
+    expect(lastOutputs(operator)?.[ch]).toBeUndefined();
+    alpha.emit("close");
+  });
+
+  it("only the first renderer on a channel reports media status", async () => {
+    const ch = `t-${Date.now()}-media`;
+    channels.mediaTake(ch, { rowId: "r", assetUrl: "/assets/x.mp4", volume: 1, endAction: "hold" });
+    const takenAt = channels.getState(ch).media!.takenAt;
+    const a = connect();
+    const b = connect();
+    const report = (currentTime: number) => ({
+      type: "media_status",
+      channel: ch,
+      takenAt,
+      status: "playing",
+      currentTime,
+      duration: 10,
+    });
+    await a.client(report(1));
+    await b.client(report(5));
+    expect(channels.getState(ch).media!.playback.currentTime).toBe(1);
+    a.emit("close");
+    await b.client(report(6));
+    expect(channels.getState(ch).media!.playback.currentTime).toBe(6);
+    b.emit("close");
+  });
+});
+
 describe("ws song takes set liveRow", () => {
   const song = SongSchema.parse({
     id: "song-lr",
