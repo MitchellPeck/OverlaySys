@@ -14,6 +14,7 @@ import {
 } from "@overlaysys/core";
 import { Button, Panel, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { findLikelySongDuplicate, setAllConflicts, type LikelyDuplicate } from "./bundleDuplicates";
 import { defaultServerUrl } from "@/lib/wsClient";
 import { isCloudMode } from "@/lib/mode";
 import {
@@ -44,6 +45,8 @@ interface ItemRow {
   label: string;
   conflict: boolean;
   decision: Decision;
+  /** Songs only: an existing song under another id that this probably duplicates. */
+  likelyDuplicate?: LikelyDuplicate;
 }
 
 interface PreviewState {
@@ -106,13 +109,18 @@ export function ImportPreview() {
   ): PreviewState {
     const ex = existingIds();
     const rows: ItemRow[] = [
-      ...songs.map<ItemRow>((s) => ({
-        kind: "song",
-        id: s.id,
-        label: s.title || s.id,
-        conflict: ex.songs.has(s.id),
-        decision: ex.songs.has(s.id) ? "skip" : "save",
-      })),
+      ...songs.map<ItemRow>((s) => {
+        const conflict = ex.songs.has(s.id);
+        const dup = conflict ? null : findLikelySongDuplicate(s, songMetas);
+        return {
+          kind: "song",
+          id: s.id,
+          label: s.title || s.id,
+          conflict,
+          decision: conflict ? "skip" : "save",
+          ...(dup ? { likelyDuplicate: dup } : {}),
+        };
+      }),
       ...templates.map<ItemRow>((t) => ({
         kind: "template",
         id: t.id,
@@ -185,6 +193,10 @@ export function ImportPreview() {
     } else if (detected.kind === "hotcard") {
       setPreview(buildPreview([], [], [], [detected.hotcard], []));
     }
+  }
+
+  function setAllDecisions(decision: Decision) {
+    setPreview((p) => (p ? { ...p, rows: setAllConflicts(p.rows, decision) } : p));
   }
 
   function setDecision(idx: number, decision: Decision) {
@@ -295,6 +307,8 @@ export function ImportPreview() {
   }
 
   const saveCount = preview?.rows.filter((r) => r.decision === "save").length ?? 0;
+  const conflictCount = preview?.rows.filter((r) => r.conflict).length ?? 0;
+  const duplicateCount = preview?.rows.filter((r) => r.likelyDuplicate).length ?? 0;
   const skipCount = preview?.rows.filter((r) => r.decision === "skip").length ?? 0;
 
   return (
@@ -329,6 +343,26 @@ export function ImportPreview() {
 
       {preview && !result && (
         <>
+          {(conflictCount > 0 || duplicateCount > 0) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 12 }}>
+              {conflictCount > 0 && (
+                <>
+                  <span style={{ color: colors.textDim }}>
+                    {conflictCount} item{conflictCount === 1 ? "" : "s"} already exist{conflictCount === 1 ? "s" : ""}:
+                  </span>
+                  <Button size="sm" onClick={() => setAllDecisions("save")}>Replace all</Button>
+                  <Button size="sm" onClick={() => setAllDecisions("skip")}>Skip all</Button>
+                </>
+              )}
+              {duplicateCount > 0 && (
+                <span style={{ color: colors.warn }}>
+                  <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {duplicateCount} song
+                  {duplicateCount === 1 ? " looks" : "s look"} like {duplicateCount === 1 ? "a song" : "songs"} you
+                  already have
+                </span>
+              )}
+            </div>
+          )}
           <div
             style={{
               maxHeight: 320,
@@ -368,6 +402,12 @@ export function ImportPreview() {
                   </span>
                   <span style={{ fontWeight: 600 }}>{row.label}</span>
                   <code style={{ fontSize: 10, color: colors.textDim }}>{row.id}</code>
+                  {row.likelyDuplicate && (
+                    <span style={{ color: colors.warn, fontSize: 11 }}>
+                      possible duplicate of <strong>{row.likelyDuplicate.title || row.likelyDuplicate.id}</strong>
+                      {row.likelyDuplicate.reason === "ccli" ? " (same CCLI #)" : " (same title)"}
+                    </span>
+                  )}
                   <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                     {row.conflict ? (
                       <>
@@ -380,6 +420,27 @@ export function ImportPreview() {
                             onChange={() => setDecision(idx, "save")}
                           />{" "}
                           Replace
+                        </label>
+                        <label style={{ fontSize: 11 }}>
+                          <input
+                            type="radio"
+                            name={`decision-${idx}`}
+                            checked={row.decision === "skip"}
+                            onChange={() => setDecision(idx, "skip")}
+                          />{" "}
+                          Skip
+                        </label>
+                      </>
+                    ) : row.likelyDuplicate ? (
+                      <>
+                        <label style={{ fontSize: 11 }}>
+                          <input
+                            type="radio"
+                            name={`decision-${idx}`}
+                            checked={row.decision === "save"}
+                            onChange={() => setDecision(idx, "save")}
+                          />{" "}
+                          Import anyway
                         </label>
                         <label style={{ fontSize: 11 }}>
                           <input
