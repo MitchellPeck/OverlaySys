@@ -99,7 +99,7 @@ export async function duplicateStageLayout(id: string): Promise<StageLayout | nu
 }
 
 /** Stored live layout, then built-in, then Speaker. Never throws on a bad id. */
-export async function resolveStageLayout(id: string | undefined): Promise<StageLayout> {
+export async function loadStageLayout(id: string | undefined): Promise<StageLayout> {
   if (!id) return SPEAKER_LAYOUT;
   return (await getStageLayout(id)) ?? SPEAKER_LAYOUT;
 }

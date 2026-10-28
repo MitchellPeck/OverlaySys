@@ -4,7 +4,7 @@
 // channel's kind takes effect on the next invalidation without resubscribing.
 
 import {
-  DEFAULT_STAGE_FOLLOWS,
+  type ChannelConfig,
   type ChannelState,
   type Song,
   type StageLayout,
@@ -18,6 +18,7 @@ import * as songs from "./songs";
 import { deckRegistrySnapshot } from "./decks";
 import * as stageState from "./stageState";
 import * as stageLayouts from "./stageLayouts";
+import { decideLayout, resolveFollowed } from "./stageLayoutOverride"; // [P2b.33]
 import * as templates from "./templates";
 import * as timers from "./timers";
 import { buildStageFeed } from "./stageFeed";
@@ -35,16 +36,7 @@ const pending = new Map<string, ReturnType<typeof setTimeout>>();
 export async function computeFeed(channel: string, now = Date.now()): Promise<StageFeed | null> {
   const cfg = await channelConfigs.getChannelConfig(channel);
   if (!cfg || cfg.kind !== "stage") return null;
-  let followsId = cfg.follows ?? DEFAULT_STAGE_FOLLOWS;
-  let followedCfg = await channelConfigs.getChannelConfig(followsId);
-  // A mirror channel has no state of its own — follow its source (one hop).
-  if (followedCfg?.kind !== "stage" && followedCfg?.mirrorOf) {
-    followsId = followedCfg.mirrorOf;
-    followedCfg = await channelConfigs.getChannelConfig(followsId);
-  }
-  // A channel with no config can still carry state (ad-hoc ids); a stage
-  // channel (including this one) has nothing worth following.
-  const followed = followedCfg?.kind === "stage" ? null : channels.getState(followsId);
+  const { followed } = await resolveFollowed(cfg); // [P2b.33]
   // Timers come only from channels that can be on air: preview cues and
   // stage channels' own state don't count.
   const allStates: ChannelState[] = [];
@@ -58,6 +50,10 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
   const show = followed?.liveRow ? await shows.getShow(followed.liveRow.showId) : null;
   const rowIdx = show && followed?.liveRow ? show.rows.findIndex((r) => r.id === followed.liveRow!.rowId) : -1;
   const nearRows = show && rowIdx >= 0 ? show.rows.slice(rowIdx, rowIdx + 2) : [];
+
+  // [P2b.33] stage layout: manual > item > type rule > default
+  const { layoutId } = decideLayout(cfg, followed, show);
+  // [/P2b.33]
 
   const songIds = new Set<string>();
   if (followed?.songSession) songIds.add(followed.songSession.songId);
@@ -84,7 +80,7 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
   const notes = await stageState.activeNotes(stage);
 
   return buildStageFeed({
-    layout: previews.get(channel)?.layout ?? (await stageLayouts.resolveStageLayout(cfg.layoutId)),
+    layout: previews.get(channel)?.layout ?? (await pickLayout(cfg, layoutId)), // [P2b.33]
     followed,
     allStates,
     show,
@@ -98,6 +94,28 @@ export async function computeFeed(channel: string, now = Date.now()): Promise<St
     service: pcoLiveSync.getServiceView(),
   });
 }
+
+// [P2b.33] An unknown or deleted layout id falls back to the screen's default
+// layout (then Speaker), logging once per id.
+const warnedLayouts = new Set<string>();
+async function pickLayout(cfg: ChannelConfig, id: string | undefined): Promise<StageLayout> {
+  if (id && !(await stageLayouts.getStageLayout(id))) {
+    if (!warnedLayouts.has(id)) {
+      warnedLayouts.add(id);
+      console.warn(`[stageFeedHub] stage layout "${id}" not found; using the default layout`);
+    }
+    return stageLayouts.loadStageLayout(cfg.layoutId === id ? undefined : cfg.layoutId);
+  }
+  return stageLayouts.loadStageLayout(id);
+}
+
+const statusListeners = new Set<() => void>();
+/** Fires whenever a feed may have changed (so layout status may have too). */
+export function subscribeLayoutStatus(listener: () => void): () => void {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+}
+// [/P2b.33]
 
 // Runs fire-and-forget, so it must never reject: a storage error is logged and
 // one throwing `send` doesn't stop the remaining targets.
@@ -134,6 +152,7 @@ export function subscribeStage(channel: string, send: Send): () => void {
 }
 
 export function invalidateAll(): void {
+  for (const l of statusListeners) l(); // [P2b.33]
   for (const channel of subs.keys()) {
     if (pending.has(channel)) continue;
     pending.set(

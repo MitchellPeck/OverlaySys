@@ -1,0 +1,96 @@
+// Per-screen stage layout selection state (in memory: a restart returns every
+// screen to automatic) and the shared decision used by the feed hub and the
+// layout status broadcast. [P2b.33]
+
+import {
+  DEFAULT_STAGE_FOLLOWS,
+  resolveStageLayout,
+  type ChannelConfig,
+  type ChannelState,
+  type Show,
+  type StageLayoutReason,
+  type StageLayoutStatus,
+} from "@overlaysys/core";
+import * as channels from "./channels";
+import * as channelConfigs from "./channelConfigs";
+import * as shows from "./shows";
+
+const manual = new Map<string, string>();
+// Last followed liveRow id seen per stage channel (null = nothing live).
+const lastRow = new Map<string, string | null>();
+
+export function setManualStageLayout(channel: string, layoutId: string | null): void {
+  if (layoutId) manual.set(channel, layoutId);
+  else manual.delete(channel);
+}
+
+export function getManualStageLayout(channel: string): string | null {
+  return manual.get(channel) ?? null;
+}
+
+/**
+ * Clears the channel's manual override when the followed output's live row id
+ * changed since the last call. Slide/section changes within a row don't count.
+ * Returns whether it cleared.
+ */
+export function noteFollowedRow(channel: string, liveRowId: string | null): boolean {
+  const had = lastRow.has(channel);
+  const prev = lastRow.get(channel) ?? null;
+  lastRow.set(channel, liveRowId);
+  if (!had || prev === liveRowId) return false;
+  if (!manual.has(channel)) return false;
+  manual.delete(channel);
+  return true;
+}
+
+/** Test helper. */
+export function resetStageLayoutOverrides(): void {
+  manual.clear();
+  lastRow.clear();
+}
+
+/** The channel a stage screen follows (one mirror hop), and its state. */
+export async function resolveFollowed(
+  cfg: ChannelConfig,
+): Promise<{ followsId: string; followed: ChannelState | null }> {
+  let followsId = cfg.follows ?? DEFAULT_STAGE_FOLLOWS;
+  let followedCfg = await channelConfigs.getChannelConfig(followsId);
+  if (followedCfg?.kind !== "stage" && followedCfg?.mirrorOf) {
+    followsId = followedCfg.mirrorOf;
+    followedCfg = await channelConfigs.getChannelConfig(followsId);
+  }
+  const followed = followedCfg?.kind === "stage" ? null : channels.getState(followsId);
+  return { followsId, followed };
+}
+
+/** manual > item override > type rule > default, for one stage screen. */
+export function decideLayout(
+  cfg: ChannelConfig,
+  followed: ChannelState | null,
+  show: Show | null,
+): { layoutId: string | undefined; reason: StageLayoutReason } {
+  noteFollowedRow(cfg.id, followed?.liveRow?.rowId ?? null);
+  const row =
+    show && followed?.liveRow ? show.rows.find((r) => r.id === followed.liveRow!.rowId) : undefined;
+  const rowOverride = (row as { stageLayouts?: Record<string, string> } | undefined)?.stageLayouts?.[cfg.id];
+  return resolveStageLayout({
+    manual: getManualStageLayout(cfg.id),
+    rowOverride,
+    rules: cfg.layoutRules,
+    default: cfg.layoutId,
+    liveRowKind: row?.kind ?? null,
+  });
+}
+
+export async function stageLayoutStatuses(): Promise<StageLayoutStatus[]> {
+  const configs = await channelConfigs.listChannelConfigs();
+  const out: StageLayoutStatus[] = [];
+  for (const cfg of configs) {
+    if (cfg.kind !== "stage") continue;
+    const { followed } = await resolveFollowed(cfg);
+    const show = followed?.liveRow ? await shows.getShow(followed.liveRow.showId) : null;
+    const d = decideLayout(cfg, followed, show);
+    out.push({ channel: cfg.id, layoutId: d.layoutId, reason: d.reason, manual: getManualStageLayout(cfg.id) });
+  }
+  return out;
+}

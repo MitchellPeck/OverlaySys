@@ -292,7 +292,7 @@ export const STAGE_WIDGET_LABELS: Record<StageWidgetKind, string> = {
 
 /**
  * The built-in with this id, else the default Speaker layout. Built-ins only:
- * the server's stageLayouts.resolveStageLayout layers stored layouts on top.
+ * the server's stageLayouts.loadStageLayout layers stored layouts on top.
  */
 export function resolveBuiltInStageLayout(id: string | undefined): StageLayout {
   return BUILT_IN_STAGE_LAYOUTS.find((l) => l.id === id) ?? SPEAKER_LAYOUT;

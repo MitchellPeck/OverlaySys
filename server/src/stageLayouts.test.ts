@@ -90,7 +90,7 @@ describe("stage layouts registry", () => {
     await storage.saveStageLayout({ ...SPEAKER_LAYOUT, name: "Shadow", builtIn: undefined });
     await stageLayouts.reloadStageLayouts();
     expect((await stageLayouts.getStageLayout("speaker"))!.name).toBe("Speaker");
-    expect((await stageLayouts.resolveStageLayout("speaker")).name).toBe("Speaker");
+    expect((await stageLayouts.loadStageLayout("speaker")).name).toBe("Speaker");
   });
 
   it("delete tombstones; built-ins can't be deleted", async () => {
@@ -114,12 +114,12 @@ describe("stage layouts registry", () => {
 
   it("resolve: stored → built-in → Speaker (deleted / unknown / undefined)", async () => {
     await stageLayouts.saveStageLayout(mine());
-    expect((await stageLayouts.resolveStageLayout("stage-layout-aaaa1111")).name).toBe("Mine");
-    expect((await stageLayouts.resolveStageLayout(lastBuiltIn.id)).id).toBe(lastBuiltIn.id);
+    expect((await stageLayouts.loadStageLayout("stage-layout-aaaa1111")).name).toBe("Mine");
+    expect((await stageLayouts.loadStageLayout(lastBuiltIn.id)).id).toBe(lastBuiltIn.id);
     await stageLayouts.deleteStageLayout("stage-layout-aaaa1111");
-    expect((await stageLayouts.resolveStageLayout("stage-layout-aaaa1111")).id).toBe("speaker");
-    expect((await stageLayouts.resolveStageLayout("unknown")).id).toBe("speaker");
-    expect((await stageLayouts.resolveStageLayout(undefined)).id).toBe("speaker");
+    expect((await stageLayouts.loadStageLayout("stage-layout-aaaa1111")).id).toBe("speaker");
+    expect((await stageLayouts.loadStageLayout("unknown")).id).toBe("speaker");
+    expect((await stageLayouts.loadStageLayout(undefined)).id).toBe("speaker");
   });
 
   it("concurrent first calls load the store once", async () => {
@@ -127,7 +127,7 @@ describe("stage layouts registry", () => {
     const fresh = await import("./stageLayouts");
     const freshStorage = await import("./storage");
     const spy = vi.spyOn(freshStorage, "loadAllStageLayouts");
-    await Promise.all([fresh.listStageLayoutMetas(), fresh.getStageLayout("speaker"), fresh.resolveStageLayout("x")]);
+    await Promise.all([fresh.listStageLayoutMetas(), fresh.getStageLayout("speaker"), fresh.loadStageLayout("x")]);
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();
   });

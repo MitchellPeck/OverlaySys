@@ -11,6 +11,7 @@ import * as templates from "./templates";
 import * as stageState from "./stageState";
 import * as hub from "./stageFeedHub";
 import * as stageLayouts from "./stageLayouts";
+import * as override from "./stageLayoutOverride";
 
 const configs = new Map<string, ChannelConfig>();
 
@@ -226,4 +227,62 @@ describe("stageFeedHub", () => {
     vi.spyOn(stageState, "activeNotes").mockResolvedValue(null);
     expect((await hub.computeFeed("pastor"))?.message).toEqual({ text: "Hi", sentAt: 1 });
   });
+
+  // [P2b.33]
+  describe("dynamic stage layout", () => {
+    const show = (stageLayouts?: Record<string, string>) =>
+      ShowSchema.parse({
+        id: "sh",
+        name: "Sunday",
+        projectId: "p",
+        songs: [],
+        rows: [
+          { kind: "song", id: "r-song", songId: "sg", lyricTemplateId: "lt", ...(stageLayouts ? { stageLayouts } : {}) },
+          { kind: "song", id: "r-song2", songId: "sg", lyricTemplateId: "lt" },
+        ],
+      });
+    const takeRow = (rowId: string) =>
+      channels.take("program", "lt", { name: "x" }, undefined, undefined, { showId: "sh", rowId });
+    beforeEach(() => {
+      override.resetStageLayoutOverrides();
+      cfg({ id: "program", name: "Program" });
+      cfg({ id: "stage1", name: "S1", kind: "stage", layoutId: "speaker", layoutRules: { song: "lyrics" } });
+    });
+    afterEach(() => channels.setActiveNull("program"));
+
+    it("applies the type rule while a song row is live and the default with nothing live", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show());
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+      takeRow("r-song");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("lyrics");
+    });
+
+    it("a row override wins over the rule", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show({ stage1: "scripture" }));
+      takeRow("r-song");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("scripture");
+    });
+
+    it("a manual switch wins, survives the same row, and clears on a new row", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show({ stage1: "scripture" }));
+      takeRow("r-song");
+      await hub.computeFeed("stage1");
+      override.setManualStageLayout("stage1", "speaker");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+      takeRow("r-song"); // same row again (e.g. a slide advance)
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+      takeRow("r-song2");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("lyrics");
+      expect(override.getManualStageLayout("stage1")).toBeNull();
+    });
+
+    it("an unknown layout id falls back to the default and logs once", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      override.setManualStageLayout("stage1", "gone-layout");
+      expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+      await hub.computeFeed("stage1");
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("gone-layout"))).toHaveLength(1);
+    });
+  });
+  // [/P2b.33]
 });

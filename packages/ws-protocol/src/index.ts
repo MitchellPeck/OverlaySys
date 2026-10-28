@@ -394,6 +394,13 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("undo_convert_song"), conversionId: z.string() }),
   // [/P3.4]
+  // [P2b.33] stage layout
+  z.object({
+    type: z.literal("set_stage_layout"),
+    channel: z.string(),
+    layoutId: z.string().nullable(),
+  }),
+  // [/P2b.33]
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -655,6 +662,19 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     skippedShows: z.number(),
   }),
   // [/P3.4]
+  // [P2b.33] stage layout
+  z.object({
+    type: z.literal("stage_layout_status"),
+    screens: z.array(
+      z.object({
+        channel: z.string(),
+        layoutId: z.string().optional(),
+        reason: z.enum(["manual", "item", "default", "rule:song", "rule:scripture", "rule:slides", "rule:graphic", "rule:video"]),
+        manual: z.string().nullable(),
+      }),
+    ),
+  }),
+  // [/P2b.33]
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type PcoLiveStateMessage = Extract<ServerMessage, { type: "pco_live_state" }>;

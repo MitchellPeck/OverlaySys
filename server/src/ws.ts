@@ -34,6 +34,7 @@ import { scheduleSync } from "./cloudSync";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
+import { setManualStageLayout, stageLayoutStatuses } from "./stageLayoutOverride"; // [P2b.33]
 import * as stageState from "./stageState";
 import { stageFollowedChannels } from "./stageFollowed";
 import * as stageLayouts from "./stageLayouts";
@@ -212,6 +213,29 @@ stageFeedHub.subscribePreviews(() =>
   broadcast({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() }),
 );
 
+// [P2b.33] stage layout status: broadcast whenever any screen's layout/reason changes.
+let lastLayoutStatus = "";
+let layoutStatusTimer: ReturnType<typeof setTimeout> | null = null;
+async function broadcastLayoutStatusIfChanged(): Promise<void> {
+  try {
+    const screens = await stageLayoutStatuses();
+    const key = JSON.stringify(screens);
+    if (key === lastLayoutStatus) return;
+    lastLayoutStatus = key;
+    broadcast({ type: "stage_layout_status", screens });
+  } catch (err) {
+    console.warn("[ws] stage layout status failed", err);
+  }
+}
+stageFeedHub.subscribeLayoutStatus(() => {
+  if (layoutStatusTimer) return;
+  layoutStatusTimer = setTimeout(() => {
+    layoutStatusTimer = null;
+    void broadcastLayoutStatusIfChanged();
+  }, 60);
+});
+// [/P2b.33]
+
 export interface ConnectionHandle {
   /** Resolves once every message received so far has been handled. */
   drain(): Promise<void>;
@@ -255,6 +279,9 @@ export function handleConnection(
   send(outputsStateMessage());
   // Snapshot so a reconnecting designer learns which preview it (or another socket) holds.
   send({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() });
+  // [P2b.33]
+  void stageLayoutStatuses().then((screens) => send({ type: "stage_layout_status", screens }), () => {});
+  // [/P2b.33]
   void stageState
     .stageStateMessage()
     .then(send, () => {})
@@ -935,6 +962,18 @@ export function handleConnection(
           await handleSlidesMessage(parsed, send);
           break;
         // [/P3.4]
+        // [P2b.33] stage layout
+        case "set_stage_layout": {
+          const cfg = await channelConfigs.getChannelConfig(parsed.channel);
+          if (cfg?.kind !== "stage") {
+            send({ type: "error", code: "not_stage_channel", message: parsed.channel });
+            break;
+          }
+          setManualStageLayout(parsed.channel, parsed.layoutId);
+          stageFeedHub.invalidateAll(); // refreshes the feed and the status broadcast
+          break;
+        }
+        // [/P2b.33]
         case "list_channels": {
           const list = await channelConfigs.listChannelConfigs();
           send({ type: "channel_list", configs: list });
