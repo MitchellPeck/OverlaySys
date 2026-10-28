@@ -49,14 +49,15 @@ describe("sectionAvailable", () => {
       { id: "v1", kind: "verse" }, { id: "v2", kind: "verse" }, { id: "c1", kind: "chorus" },
     ],
   } as unknown as Pick<Song, "sections">;
-  it("is false when the arrangement has no chorus", () => {
-    expect(sectionAvailable(song, ["v1", "v2"], "chorus", 1)).toBe(false);
+  it("is false when the song has no section of that kind", () => {
+    expect(sectionAvailable(song, ["v1", "v2"], "bridge", 1)).toBe(false);
   });
-  it("counts the ordinal among that kind", () => {
-    expect(sectionAvailable(song, ["v1", "c1", "v2"], "verse", 2)).toBe(true);
-    expect(sectionAvailable(song, ["v1", "c1", "v2"], "verse", 3)).toBe(false);
+  it("is true for a chorus the arrangement skips (the server appends it)", () => {
+    expect(sectionAvailable(song, ["v1", "v2"], "chorus", 1)).toBe(true);
   });
-  it("ignores arrangement ids with no section", () => {
-    expect(sectionAvailable(song, ["gone", "c1"], "verse", 1)).toBe(false);
+  it("counts the ordinal among the song's sections of that kind", () => {
+    expect(sectionAvailable(song, ["v2", "c1"], "verse", 1)).toBe(true);
+    expect(sectionAvailable(song, ["v2", "c1"], "verse", 2)).toBe(true);
+    expect(sectionAvailable(song, ["v2", "c1"], "verse", 3)).toBe(false);
   });
 });

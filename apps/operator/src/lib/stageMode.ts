@@ -4,7 +4,8 @@ export type StageMode =
   | { kind: "song-live"; channel: "program" | "preview"; session: SongSessionSummary; selection: StageMode }
   | { kind: "quick-take" }
   | { kind: "song"; row: SongRow }
-  | { kind: "scripture"; row: ScriptureRow; live?: boolean }
+  | { kind: "scripture-live"; selection: StageMode }
+  | { kind: "scripture"; row: ScriptureRow }
   | { kind: "graphic"; row: GraphicRow }
   | { kind: "video"; row: VideoRow }
   | { kind: "slides"; row: SlidesRow } // [P3.8]
@@ -34,6 +35,7 @@ export function stageModeFor(input: StageInput): StageMode {
     // The Quick take toggle is hidden in song mode, so the selection ignores it.
     if (session) return { kind: "song-live", channel, session, selection: selectionModeFor({ ...input, quickTake: false }) };
   }
+  if (input.scriptureLive) return { kind: "scripture-live", selection: selectionModeFor(input) };
   return selectionModeFor(input);
 }
 
@@ -47,7 +49,7 @@ function selectionModeFor(input: StageInput): StageMode {
       case "song":
         return { kind: "song", row };
       case "scripture":
-        return input.scriptureLive ? { kind: "scripture", row, live: true } : { kind: "scripture", row };
+        return { kind: "scripture", row };
       case "graphic":
         return { kind: "graphic", row };
       case "video":
@@ -70,9 +72,8 @@ export function shortcutHint(mode: StageMode): string {
       return "Space next · Shift+Space previous · C/B/T chorus/bridge/tag · 1–9, 0 verse · . blank · Esc Esc end song";
     case "quick-take":
       return "Keys act on the rundown selection · use the buttons above for Quick take";
-    case "scripture":
-      if (mode.live) return "Space next · Shift+Space previous · Enter cue selection · ⌘Enter take PVW · Esc Esc clear program";
-      return shortcutHint({ kind: "empty" });
+    case "scripture-live":
+      return "Space next · Shift+Space previous · Enter cue selection · ⌘Enter take PVW · Esc Esc clear program";
     default: {
       const space = mode.kind === "video" ? "Space take / play-pause" : "Space take";
       return `↑/↓ select · Enter cue · ${space} · ⌘Enter take PVW · Esc Esc clear program`;

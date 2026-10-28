@@ -102,9 +102,22 @@ describe("pvwTakeMessages", () => {
   });
   it("moves a cued scripture slide to program and ends the preview session", () => {
     const scriptureSession = { rowId: "row5", reference: "John 3", slideIdx: 2, slideCount: 4, slideReference: "John 3:3", text: "t" };
-    expect(pvwTakeMessages(pvw({ scriptureSession }), "show1")).toEqual([
+    expect(pvwTakeMessages(pvw({ scriptureSession, liveRow: { showId: "show1", rowId: "row5" } }), "show1")).toEqual([
       { type: "scripture_take_slide", showId: "show1", rowId: "row5", slideIdx: 2, channel: "program" },
       { type: "scripture_end", channel: "preview" },
+    ]);
+  });
+  it("takes a cued scripture slide under the show it was cued from", () => {
+    const scriptureSession = { rowId: "row5", reference: "John 3", slideIdx: 1, slideCount: 4, slideReference: "John 3:3", text: "t" };
+    expect(pvwTakeMessages(pvw({ scriptureSession, liveRow: { showId: "showA", rowId: "row5" } }), "showB")).toEqual([
+      { type: "scripture_take_slide", showId: "showA", rowId: "row5", slideIdx: 1, channel: "program" },
+      { type: "scripture_end", channel: "preview" },
+    ]);
+  });
+  it("swaps a scripture session whose liveRow doesn't match", () => {
+    const scriptureSession = { rowId: "row5", reference: "John 3", slideIdx: 1, slideCount: 4, slideReference: "John 3:3", text: "t" };
+    expect(pvwTakeMessages(pvw({ scriptureSession, liveRow: { showId: "showA", rowId: "other" } }), "showB")).toEqual([
+      { type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" },
     ]);
   });
   it("swaps a plain graphic", () => {

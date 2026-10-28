@@ -107,10 +107,11 @@ export function pvwTakeMessages(pvw: ChannelState | undefined, showId: string | 
   if (pvw.songSession && lr && showId && lr.showId === showId) {
     return [{ type: "song_take_pvw_to_pgm", showId, songRowId: lr.rowId, fromChannel: "preview", toChannel: "program" }];
   }
-  if (pvw.scriptureSession && showId) {
+  // Take the slide under the show it was cued from, never the current page's.
+  if (pvw.scriptureSession && lr && lr.rowId === pvw.scriptureSession.rowId) {
     const s = pvw.scriptureSession;
     return [
-      { type: "scripture_take_slide", showId, rowId: s.rowId, slideIdx: s.slideIdx, channel: "program" },
+      { type: "scripture_take_slide", showId: lr.showId, rowId: s.rowId, slideIdx: s.slideIdx, channel: "program" },
       { type: "scripture_end", channel: "preview" },
     ];
   }

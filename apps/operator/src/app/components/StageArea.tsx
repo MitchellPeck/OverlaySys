@@ -487,6 +487,7 @@ function headingFor(mode: StageMode): string {
       return "Quick take";
     case "song":
       return "Song";
+    case "scripture-live":
     case "scripture":
       return "Scripture";
     case "graphic":

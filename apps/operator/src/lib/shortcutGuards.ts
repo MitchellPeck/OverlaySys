@@ -104,7 +104,7 @@ export function blankMessage(mode: KeyMode): ClientMessage | null {
 
 /** Esc is a panic key: the first press arms, a second within `windowMs` acts. */
 export function escPress(now: number, lastEscAt: number | null, windowMs = 600): "arm" | "act" {
-  return lastEscAt !== null && now - lastEscAt <= windowMs ? "act" : "arm";
+  return lastEscAt !== null && now >= lastEscAt && now - lastEscAt <= windowMs ? "act" : "arm";
 }
 
 /** The F1–F12 key pressed (Shift allowed); null for anything else or a ⌘/Ctrl/Alt chord. */

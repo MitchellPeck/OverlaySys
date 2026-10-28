@@ -192,6 +192,7 @@ describe("escPress", () => {
     expect(escPress(1000, null)).toBe("arm");
     expect(escPress(1500, 1000)).toBe("act");
     expect(escPress(1700, 1000)).toBe("arm");
+    expect(escPress(900, 1000)).toBe("arm");
   });
 });
 

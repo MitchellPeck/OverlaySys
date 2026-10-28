@@ -110,8 +110,10 @@ describe("shortcutHint", () => {
     );
   });
 
-  it("describes scripture keys while a scripture session is live", () => {
-    expect(shortcutHint({ kind: "scripture", row: show.rows[2] as never, live: true })).toBe(
+  it("describes scripture keys while live, whatever row is selected", () => {
+    const m = stageModeFor({ show, selectedRowId: show.rows[0]!.id, selectedHotcardId: null, songSessions: {}, quickTake: false, scriptureLive: true });
+    expect(m.kind).toBe("scripture-live");
+    expect(shortcutHint(m)).toBe(
       "Space next · Shift+Space previous · Enter cue selection · ⌘Enter take PVW · Esc Esc clear program",
     );
   });

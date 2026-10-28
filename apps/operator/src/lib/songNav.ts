@@ -42,20 +42,18 @@ export function slideDeltaTo(
 }
 
 /**
- * Whether the arrangement holds the `ordinal`-th (1-based) section of `kind`
- * that exists in the song; the C/B/T and 1-9 keys use it to skip dead jumps.
+ * Whether the `ordinal`-th (1-based) section of `kind` exists in the song.
+ * Mirrors the server's jumpByKindOrdinal, which picks from song.sections and
+ * appends the section to the arrangement when it is absent, so a key is live
+ * even when the arrangement skips that section.
  */
 export function sectionAvailable(
   song: Pick<Song, "sections">,
-  arrangement: string[],
+  _arrangement: string[],
   kind: SectionKind,
   ordinal: number,
 ): boolean {
-  let n = 0;
-  for (const id of arrangement) {
-    if (song.sections.find((s) => s.id === id)?.kind === kind && ++n >= ordinal) return true;
-  }
-  return false;
+  return song.sections.filter((s) => s.kind === kind).length >= ordinal;
 }
 
 /** The next `count` slides after the cursor, in arrangement order. */
