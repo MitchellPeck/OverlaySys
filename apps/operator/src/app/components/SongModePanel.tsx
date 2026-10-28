@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import type { SongSessionSummary } from "@overlaysys/core";
 import { Music } from "lucide-react";
-import { Button, Switch, colors, radius } from "@overlaysys/ui";
+import { Button, Switch, colors, radius, useConfirm } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { useDialog } from "@/lib/dialog";
 import { sttDebugEnabled } from "@/lib/songNav";
 import { songEscapeMessages } from "@/lib/shortcutGuards";
+
+/** Mouse clicks must not leave focus on a control: Space is the global advance key and would re-activate it. */
+const keepFocus = (e: React.MouseEvent) => e.preventDefault();
 
 interface Props {
   channel: string;
@@ -25,7 +27,7 @@ export function SongLiveBar({ channel, session }: Props) {
   const song = useStore((s) => s.songCache[session.songId]);
   const sttMatch = useStore((s) => s.sttMatches[channel]);
   const sttOnline = useStore((s) => s.sttListeners.some((l) => l.online));
-  const { confirm, dialog } = useDialog();
+  const confirm = useConfirm();
   // Matcher internals (strategy, coverage, latency) are for tuning, not for
   // running a service: set localStorage "overlaysys:sttDebug" = "1" to see them.
   const [sttDebug, setSttDebug] = useState(false);
@@ -40,7 +42,7 @@ export function SongLiveBar({ channel, session }: Props) {
       title: "End song?",
       message: `"${song?.title ?? "This song"}" will be cleared from ${channel}.`,
       confirmLabel: "End song",
-      destructive: true,
+      danger: true,
     });
     if (!ok) return;
     // Same as the second Esc press: on program it also clears program video.
@@ -82,16 +84,17 @@ export function SongLiveBar({ channel, session }: Props) {
       <Button
         size="sm"
         variant="secondary"
+        onMouseDown={keepFocus}
         aria-pressed={session.blanked}
         onClick={() => send({ type: "song_blank", channel })}
-        style={session.blanked ? { background: colors.warn, borderColor: colors.warn, color: "#1b1b1d" } : undefined}
+        style={session.blanked ? { background: colors.warn, borderColor: colors.warn, color: colors.bg } : undefined}
       >
         {session.blanked ? "Unblank" : "Blank"}
       </Button>
-      <Button size="sm" variant="danger" onClick={endSong}>
+      <Button size="sm" variant="danger" onMouseDown={keepFocus} onClick={endSong}>
         End song (Esc Esc)
       </Button>
-      <span title="When on, high-confidence STT matches advance the slide on their own" style={{ flexShrink: 0 }}>
+      <span title="When on, high-confidence STT matches advance the slide on their own" style={{ flexShrink: 0 }} onMouseDown={keepFocus}>
         <Switch
           checked={session.trustMode}
           onChange={(on) => send({ type: "song_set_trust", channel, trustMode: on })}
@@ -105,7 +108,6 @@ export function SongLiveBar({ channel, session }: Props) {
           {sttOnline ? "STT listening, nothing heard yet" : "STT off"}
         </span>
       )}
-      {dialog}
     </div>
   );
 }

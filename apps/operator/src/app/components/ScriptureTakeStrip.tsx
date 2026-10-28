@@ -6,7 +6,9 @@ import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useScriptureSettings } from "@/lib/scriptureSettings";
-import { useDialog } from "@/lib/dialog";
+
+/** Keep focus off clicked buttons so Space stays the global advance key. */
+const keep = (e: React.MouseEvent) => e.preventDefault();
 
 interface Props {
   show: Show;
@@ -22,7 +24,6 @@ interface Props {
  */
 export function ScriptureTakeStrip({ show, row, channel }: Props) {
   const { send } = useWs();
-  const { confirm, dialog } = useDialog();
   const settings = useScriptureSettings();
   const ch = useStore((s) => s.channelStates[channel]);
   const session = ch?.scriptureSession?.rowId === row.id ? ch.scriptureSession : null;
@@ -37,21 +38,12 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
     else send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, channel });
   }
 
-  async function end() {
-    const ok = await confirm({
-      title: "End scripture?",
-      message: `"${session?.reference ?? "This passage"}" will be cleared from ${channel}.`,
-      confirmLabel: "End scripture",
-      destructive: true,
-    });
-    if (ok) send({ type: "scripture_end", channel });
-  }
-
   return (
     <div role="toolbar" aria-label="Scripture controls" style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
       {showIntro && (
         <Button
           size="md"
+          onMouseDown={keep}
           variant={variant}
           aria-pressed={queued}
           disabled={disconnected}
@@ -63,6 +55,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
       )}
       <Button
         size="md"
+        onMouseDown={keep}
         variant={variant}
         disabled={disconnected || !session || session.slideIdx <= 0}
         onClick={() => send({ type: "scripture_advance", channel, delta: -1 })}
@@ -71,16 +64,16 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
       </Button>
       <Button
         size="md"
+        onMouseDown={keep}
         variant={variant}
         disabled={disconnected || (!!session && session.slideIdx >= session.slideCount - 1)}
         onClick={next}
       >
         Next
       </Button>
-      <Button size="md" variant="danger" disabled={disconnected || !session} onClick={end}>
+      <Button size="md" variant="danger" onMouseDown={keep} disabled={disconnected || !session} onClick={() => send({ type: "scripture_end", channel })}>
         End scripture
       </Button>
-      {dialog}
     </div>
   );
 }

@@ -272,6 +272,7 @@ function SegmentButton({
     <Button
       size="md"
       variant={onAir ? "onair" : isHighlight ? "primary" : "secondary"}
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       disabled={disabled}
       title={disabled ? "Disconnected from server" : undefined}
