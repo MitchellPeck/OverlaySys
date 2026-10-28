@@ -47,14 +47,27 @@ export function emitSections(raw: RawSection[]): {
   defaultArrangement: string[];
 } {
   const kindCounts = new Map<SectionKind, number>();
-  const sections: Section[] = raw.map((rs) => {
+  const sections: Section[] = [];
+  const defaultArrangement: string[] = [];
+  const byHeader = new Map<string, string>();
+  for (const rs of raw) {
+    const key = rs.header.trim().toLowerCase();
+    const earlier = byHeader.get(key);
+    // A repeated header with no body means "sing that section again":
+    // reference the earlier section instead of creating an empty one.
+    if (rs.blocks.length === 0 && earlier !== undefined) {
+      defaultArrangement.push(earlier);
+      continue;
+    }
     const kind = inferKind(rs.header);
     const sid = generateSectionId(kind, kindCounts);
     const slides: Slide[] =
       rs.blocks.length === 0
         ? [{ id: `${sid}s1`, lines: [""] }]
         : rs.blocks.map((lines, i) => ({ id: `${sid}s${i + 1}`, lines }));
-    return { id: sid, kind, label: rs.header, slides };
-  });
-  return { sections, defaultArrangement: sections.map((s) => s.id) };
+    sections.push({ id: sid, kind, label: rs.header, slides });
+    defaultArrangement.push(sid);
+    if (!byHeader.has(key)) byHeader.set(key, sid);
+  }
+  return { sections, defaultArrangement };
 }

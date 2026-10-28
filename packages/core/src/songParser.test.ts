@@ -82,4 +82,30 @@ b`);
   it("rejects input with no section headers", () => {
     expect(() => parseSongFromText("x", "X", "just some lines\nno header")).toThrow();
   });
+
+  it("reuses the earlier section for a repeated empty header (SONGS-1)", () => {
+    const song = parseSongFromText("x", "X", `[Verse 1]
+Verse line one
+[Chorus]
+Chorus line one
+[Verse 2]
+Verse line two
+[Chorus]
+[Bridge]
+Bridge line one
+[Chorus]
+[Verse 1]`);
+    expect(song.sections.map((s) => s.id)).toEqual(["v1", "c1", "v2", "b1"]);
+    expect(song.defaultArrangement).toEqual(["v1", "c1", "v2", "c1", "b1", "c1", "v1"]);
+  });
+
+  it("keeps an empty header with no earlier match as an empty section", () => {
+    const song = parseSongFromText("x", "X", "[Chorus]\n[Verse 1]\na");
+    expect(song.sections.map((s) => s.id)).toEqual(["c1", "v1"]);
+  });
+
+  it("makes a repeated header with a different body a new section", () => {
+    const song = parseSongFromText("x", "X", "[Chorus]\na\n[Chorus]\nb");
+    expect(song.sections.map((s) => s.id)).toEqual(["c1", "c2"]);
+  });
 });
