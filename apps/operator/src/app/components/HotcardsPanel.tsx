@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { HotcardMeta } from "@overlaysys/core";
+import { hotkeyConflicts, type HotcardMeta } from "@overlaysys/core";
 import { Button, Kbd, PanelHeader, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { hotcardAirState, type AirState } from "@/lib/rowAirState";
@@ -31,6 +31,9 @@ export function HotcardsPanel() {
   const [view, setView] = useState<View>("grid");
   // On-air only where the store already knows it: a live graphic with this
   // hotcard's template and data.
+  // Cards sharing an F-key with another card in this project get a "!":
+  // only one of them fires.
+  const conflicted = new Set(Object.values(hotkeyConflicts(hotcards, currentProjectId)).flat());
   const air: Record<string, AirState> = {};
   for (const h of hotcards) air[h.id] = hotcardAirState(hotcardCache[h.id], channelStates);
   const disconnected = conn !== "open";
@@ -113,6 +116,7 @@ export function HotcardsPanel() {
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
             air={air}
+            conflicted={conflicted}
             disconnected={disconnected}
           />
         ) : (
@@ -124,6 +128,7 @@ export function HotcardsPanel() {
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
             air={air}
+            conflicted={conflicted}
             disconnected={disconnected}
           />
         )}
@@ -167,6 +172,7 @@ function GridView({
   onCue,
   onTake,
   air,
+  conflicted,
   disconnected,
 }: {
   hotcards: HotcardMeta[];
@@ -176,6 +182,7 @@ function GridView({
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
   air: Record<string, AirState>;
+  conflicted: Set<string>;
   disconnected: boolean;
 }) {
   return (
@@ -233,7 +240,7 @@ function GridView({
               <div style={{ fontWeight: 600, fontSize: 13, color: colors.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {h.name}
               </div>
-              {fkey && <Kbd title={`${fkey} take · Shift+${fkey} cue`}>{fkey}</Kbd>}
+              {fkey && <HotkeyBadge hotkey={fkey} conflicted={conflicted.has(h.id)} />}
             </div>
             <div
               style={{
@@ -287,6 +294,7 @@ function ListView({
   onCue,
   onTake,
   air,
+  conflicted,
   disconnected,
 }: {
   hotcards: HotcardMeta[];
@@ -296,6 +304,7 @@ function ListView({
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
   air: Record<string, AirState>;
+  conflicted: Set<string>;
   disconnected: boolean;
 }) {
   return (
@@ -329,7 +338,7 @@ function ListView({
               <td style={td()}>
                 <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "baseline" }}>
                   {h.name}
-                  {fkey && <Kbd title={`${fkey} take · Shift+${fkey} cue`}>{fkey}</Kbd>}
+                  {fkey && <HotkeyBadge hotkey={fkey} conflicted={conflicted.has(h.id)} />}
                 </div>
                 <div
                   style={{
@@ -376,6 +385,24 @@ function ListView({
         })}
       </tbody>
     </table>
+  );
+}
+
+function HotkeyBadge({ hotkey, conflicted }: { hotkey: string; conflicted: boolean }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 2, flexShrink: 0 }}>
+      <Kbd title={`${hotkey} take · Shift+${hotkey} cue`}>{hotkey}</Kbd>
+      {conflicted && (
+        <span
+          role="img"
+          aria-label={`${hotkey} conflict`}
+          title={`Another card in this project also uses ${hotkey}; only one fires. Fix it in Manage.`}
+          style={{ color: colors.warn, fontWeight: 700, fontSize: 12 }}
+        >
+          !
+        </span>
+      )}
+    </span>
   );
 }
 

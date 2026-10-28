@@ -1,6 +1,5 @@
-import { hotcardForKey, hotcardRoute, HotkeySchema, type ChannelState, type Hotcard, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
+import { hotcardForKey, hotcardRoute, HotkeySchema, type Hotcard, type HotcardMeta, type Hotkey, type SongSessionSummary } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
-import { clearChannelMessages } from "./onAir";
 
 /** The parts of a KeyboardEvent the guards read; lets tests use plain objects. */
 export type KeyLike = Pick<
@@ -75,11 +74,23 @@ export function hotcardForEvent<T extends HotcardMeta>(e: KeyLike, hotcards: rea
 }
 
 /**
- * What Esc sends in graphic mode: clear everything on program, video
- * included. Song mode's Esc (end song) is handled before this.
+ * What Esc sends in graphic mode: clear everything on program. The
+ * media_clear goes out even if the operator's state shows no video (it may
+ * not have heard yet); the server ignores it on a channel without media.
  */
-export function escapeMessages(store: { channelStates: Record<string, ChannelState | undefined> }): ClientMessage[] {
-  return clearChannelMessages(store.channelStates["program"], "program");
+export function escapeMessages(): ClientMessage[] {
+  return [
+    { type: "clear", channel: "program" },
+    { type: "media_clear", channel: "program" },
+  ];
+}
+
+/** What Esc sends in song mode: end the program song and clear program video. */
+export function songEscapeMessages(): ClientMessage[] {
+  return [
+    { type: "song_end", channel: "program" },
+    { type: "media_clear", channel: "program" },
+  ];
 }
 
 // Shared with the Companion module, so it lives in core.

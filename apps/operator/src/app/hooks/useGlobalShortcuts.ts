@@ -14,6 +14,7 @@ import {
   hotkeyForEvent,
   isIgnoredRepeat,
   shouldIgnoreGlobalKey,
+  songEscapeMessages,
   songKeyChannel,
   type TargetLike,
 } from "@/lib/shortcutGuards";
@@ -41,7 +42,7 @@ import {
  *   1..9            jump to verse 1..9
  *   0               jump to verse 10
  *   .               toggle blank
- *   Esc             end song
+ *   Esc             end song (and clear program video)
  *
  * Ignored: keys while typing in a text field, keys while a dialog is open or
  * already handled (a modal's Esc), ⌘/Ctrl/Alt chords other than ⌘Enter, and
@@ -135,7 +136,7 @@ export function useGlobalShortcuts(): void {
         }
       } else if (e.code === "Escape") {
         e.preventDefault();
-        for (const m of escapeMessages(store)) send(m);
+        for (const m of escapeMessages()) send(m);
       }
     }
 
@@ -160,7 +161,8 @@ function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): b
   }
   if (e.code === "Escape") {
     e.preventDefault();
-    send({ type: "song_end", channel });
+    // Panic key: end the song and clear any program video with it.
+    for (const m of songEscapeMessages()) send(m);
     return true;
   }
   if (e.key === "." || e.code === "Period") {

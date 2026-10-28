@@ -275,6 +275,18 @@ function MonitorVideo({ media, heardAt, matte }: { media: ChannelMedia; heardAt:
     return () => clearInterval(id);
   }, [sync]);
 
+  // Release the decoder and stop the download when the video leaves the
+  // monitor; React removing the element alone can keep it buffering.
+  useEffect(() => {
+    const v = ref.current;
+    return () => {
+      if (!v) return;
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    };
+  }, []);
+
   return (
     <video
       ref={ref}

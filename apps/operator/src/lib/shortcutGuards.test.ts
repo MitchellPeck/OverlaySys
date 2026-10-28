@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelState, HotcardMeta, SongSessionSummary } from "@overlaysys/core";
+import type { HotcardMeta, SongSessionSummary } from "@overlaysys/core";
 import {
   escapeMessages,
   hasCommandModifier,
@@ -10,6 +10,7 @@ import {
   isIgnoredRepeat,
   isTextEntryTarget,
   shouldIgnoreGlobalKey,
+  songEscapeMessages,
   songKeyChannel,
   type KeyLike,
 } from "./shortcutGuards";
@@ -130,24 +131,21 @@ describe("hotcardForEvent (F-keys come from each card's hotkey)", () => {
   });
 });
 
-describe("escapeMessages", () => {
-  const media = { rowId: "v1", assetUrl: "/assets/v.mp4", paused: false } as NonNullable<ChannelState["media"]>;
-
-  it("clears program graphics", () => {
-    expect(escapeMessages({ channelStates: {} })).toEqual([{ type: "clear", channel: "program" }]);
-  });
-
-  it("also clears a video on program (the panic key empties air)", () => {
-    const channelStates = { program: { channel: "program", active: null, media } as ChannelState };
-    expect(escapeMessages({ channelStates })).toEqual([
+describe("escapeMessages / songEscapeMessages (the panic key empties program)", () => {
+  it("graphic mode clears program graphics and always its video, never preview", () => {
+    // Always sent, even if the operator's state hasn't heard about the video
+    // yet; the server ignores media_clear on a channel without media.
+    expect(escapeMessages()).toEqual([
       { type: "clear", channel: "program" },
       { type: "media_clear", channel: "program" },
     ]);
   });
 
-  it("leaves a video on preview alone", () => {
-    const channelStates = { preview: { channel: "preview", active: null, media } as ChannelState };
-    expect(escapeMessages({ channelStates })).toEqual([{ type: "clear", channel: "program" }]);
+  it("song mode ends the song and also clears program video", () => {
+    expect(songEscapeMessages()).toEqual([
+      { type: "song_end", channel: "program" },
+      { type: "media_clear", channel: "program" },
+    ]);
   });
 });
 
