@@ -211,11 +211,29 @@ stageFeedHub.subscribePreviews(() =>
   broadcast({ type: "stage_layout_previews", previews: stageFeedHub.listPreviews() }),
 );
 
+export interface ConnectionHandle {
+  /** Resolves once every message received so far has been handled. */
+  drain(): Promise<void>;
+}
+
+/** Every channel a panic clear should reach: configured (non-mirror) and any with live state. */
+export async function clearAllChannels(cutVideo: boolean): Promise<string[]> {
+  const configs = await channelConfigs.listChannelConfigs();
+  const mirrors = new Set(configs.filter((c) => c.mirrorOf).map((c) => c.id));
+  const ids = new Set<string>(configs.filter((c) => !c.mirrorOf).map((c) => c.id));
+  for (const st of channels.allStates()) if (!mirrors.has(st.channel)) ids.add(st.channel);
+  for (const id of ids) {
+    channels.clear(id);
+    if (cutVideo) channels.mediaClear(id, { cut: true });
+  }
+  return [...ids];
+}
+
 export function handleConnection(
   ws: WebSocket,
   req: IncomingMessage,
   log: FastifyBaseLogger,
-): void {
+): ConnectionHandle {
   // No socket = an in-process connection (tests); otherwise loopback or one
   // of this machine's own addresses.
   const peer = remoteAddressOf(req);
@@ -335,6 +353,11 @@ export function handleConnection(
         }
         case "clear": {
           channels.clear(parsed.channel);
+          break;
+        }
+        case "clear_all_channels": {
+          await clearAllChannels(parsed.cutVideo);
+          send({ type: "ack", op: "clear_all_channels" });
           break;
         }
         case "update": {
@@ -650,14 +673,17 @@ export function handleConnection(
         case "stage_message_clear":
           await stageState.dispatchStage({ type: "messageClear" });
           break;
-        case "timer_create":
-          timers.createTimer({
+        case "timer_create": {
+          const id = timers.createTimer({
             label: parsed.label,
             mode: parsed.mode,
             durationMs: parsed.durationMs,
             overtime: parsed.overtime,
           });
+          if (parsed.start) timers.dispatchTimers({ type: "start", id });
+          send({ type: "ack", op: "timer_create", id });
           break;
+        }
         case "timer_start":
           timers.dispatchTimers({ type: "start", id: parsed.id });
           break;
@@ -1179,4 +1205,6 @@ export function handleConnection(
   ws.on("error", (err) => {
     log.error({ err }, "ws error");
   });
+
+  return { drain: () => chain };
 }

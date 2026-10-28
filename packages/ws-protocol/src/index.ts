@@ -74,6 +74,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("clear"),
     channel: z.string(),
   }),
+  /**
+   * Panic: clear graphics on every channel (mirrors excluded — they follow
+   * their source) and, unless `cutVideo` is false, hard-cut every video.
+   */
+  z.object({
+    type: z.literal("clear_all_channels"),
+    cutVideo: z.boolean().default(true),
+  }),
   z.object({
     type: z.literal("update"),
     channel: z.string(),
@@ -333,6 +341,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     mode: z.enum(["countdown", "countup"]),
     durationMs: z.number().finite().min(0).max(MAX_TIMER_DURATION_MS).optional(),
     overtime: z.boolean().default(true),
+    /** Start it right away (the id is server-generated, so a caller can't start it after). */
+    start: z.boolean().optional(),
   }),
   z.object({
     type: z.enum(["timer_start", "timer_pause", "timer_resume", "timer_reset", "timer_delete"]),

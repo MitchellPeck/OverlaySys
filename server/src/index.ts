@@ -6,6 +6,7 @@ import { WebSocketServer } from "ws";
 import { handleConnection } from "./ws";
 import { startHeartbeat, trackSocket } from "./heartbeat";
 import { restoreLiveState, startLiveStatePersistence } from "./liveState";
+import { registerHttpApi } from "./httpApi";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -76,9 +77,6 @@ await app.register(cors, {
   origin: (origin, cb) => cb(null, originAllowed(origin, securityContext())),
 });
 
-/** Peer-is-this-machine flag per request, set by the gate below. */
-const localRequests = new WeakSet<object>();
-
 // Routes that hand the server machine-level credentials. Only the desktop
 // host (same machine) ever calls them.
 const LOOPBACK_ONLY_PREFIXES = ["/api/cloud/tokens", "/api/pco/tokens"];
@@ -97,7 +95,6 @@ app.addHook("onRequest", async (req, reply) => {
     }
     return;
   }
-  if (result.local) localRequests.add(req.raw);
   if (LOOPBACK_ONLY_PREFIXES.some((p) => path.startsWith(p)) && !result.local) {
     return reply.code(403).send({ error: "only allowed from this machine" });
   }
@@ -161,7 +158,8 @@ app.log.info(
 // bound (below) so the listener daemon can be pointed at the real WS URL.
 const sttConfig = await loadSttConfig();
 
-app.get("/health", async () => ({ ok: true, time: Date.now() }));
+// Detailed /health and the versioned /api/v1 control API (httpApi.ts).
+await registerHttpApi(app);
 
 // LAN info for "open on another device" links. boundPort is set once the
 // listener is up (listenWithFallback may pick a port other than 4000).
