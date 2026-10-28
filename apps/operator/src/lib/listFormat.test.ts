@@ -30,6 +30,12 @@ describe("formatRelative", () => {
     expect(formatRelative("2026-10-24T12:00:00", now)).toBe("4 days ago");
     expect(formatRelative("2026-10-10T12:00:00", now)).toBe("Sat 10 Oct");
   });
+  it("uses calendar days for yesterday", () => {
+    const early = new Date(2026, 9, 28, 1, 0);
+    expect(formatRelative("2026-10-26T23:00:00", early)).toBe("2 days ago");
+    const morning = new Date(2026, 9, 28, 9, 0);
+    expect(formatRelative("2026-10-27T10:00:00", morning)).toBe("yesterday");
+  });
   it("is empty for missing or invalid input", () => {
     expect(formatRelative(undefined, now)).toBe("");
     expect(formatRelative("nope", now)).toBe("");

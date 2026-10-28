@@ -25,17 +25,26 @@ export function formatDuration(sec: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
+function calendarDaysBetween(a: Date, b: Date): number {
+  const da = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const db = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((da - db) / 86_400_000);
+}
+
+/**
+ * Relative time for list rows. Under an hour: "just now" / "N min ago".
+ * Otherwise by local calendar day: same day "N h ago", previous day "yesterday",
+ * 2-6 days "N days ago", older falls back to the service-date format.
+ */
 export function formatRelative(iso: string | undefined, now: Date): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const diffMs = now.getTime() - d.getTime();
-  const min = Math.floor(diffMs / 60_000);
+  const min = Math.floor((now.getTime() - d.getTime()) / 60_000);
   if (min < 1) return "just now";
   if (min < 60) return `${min} min ago`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.floor(hours / 24);
+  const days = calendarDaysBetween(now, d);
+  if (days <= 0) return `${Math.floor(min / 60)} h ago`;
   if (days === 1) return "yesterday";
   if (days < 7) return `${days} days ago`;
   return dayLabel(d, now);

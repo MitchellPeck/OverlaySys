@@ -12,6 +12,10 @@ describe("exportFileName", () => {
   it("falls back to the id for blank names", () => {
     expect(exportFileName("show", { id: "show-1", name: "  " })).toBe("show-1.overlaysys-show.json");
   });
+  it("falls back to the id slug for non-Latin template names", () => {
+    expect(exportFileName("template", { id: "Tpl-1", name: "Шаблон" })).toBe("tpl-1.overlaysys-template.json");
+    expect(exportFileName("template", { id: "tpl-2", name: "テンプレート" })).toBe("tpl-2.overlaysys-template.json");
+  });
   it("strips illegal characters", () => {
     expect(exportFileName("hotcard", { id: "h", name: 'A/B\\C:D*E?F"G<H>I|J' })).toBe("ABCDEFGHIJ.overlaysys-hotcard.json");
   });
