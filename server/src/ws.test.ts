@@ -312,6 +312,8 @@ describe("ws stage layouts", () => {
   });
 
   it("a slow preview on is superseded by a newer on from the same socket", async () => {
+    // Messages from one socket are handled in order, so the newer "on" only
+    // starts once the slow one has finished — and it wins.
     const other = StageLayoutSchema.parse({ id: "stage-layout-wsws0002", name: "WS2", widgets: [] });
     const releases: (() => void)[] = [];
     vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
@@ -321,11 +323,32 @@ describe("ws stage layouts", () => {
     const sock = connect();
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout });
     await sock.client({ type: "stage_layout_preview", channel: "stage-ws-race2", layout: other });
-    releases[1]?.();
-    await new Promise((r) => setTimeout(r, 0));
+    expect(releases).toHaveLength(1);
     releases[0]?.();
     await new Promise((r) => setTimeout(r, 0));
+    expect(releases).toHaveLength(2);
+    releases[1]?.();
+    await new Promise((r) => setTimeout(r, 0));
     expect(stageFeedHub.listPreviews()).toEqual([{ channel: "stage-ws-race2", layoutId: other.id }]);
+    sock.emit("close");
+  });
+
+  it("handles one socket's messages in arrival order", async () => {
+    // A slow first handler must not let a later message overtake it.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    vi.spyOn(channelConfigs, "getChannelConfig").mockImplementation(async (id) => {
+      await gate;
+      return stageCh(id);
+    });
+    const ch = `t-${Date.now()}-order`;
+    const sock = connect();
+    await sock.client({ type: "stage_layout_preview", channel: "stage-ws-order", layout });
+    await sock.client({ type: "take", channel: ch, templateId: "after", data: {} });
+    expect(channels.getState(ch).active).toBeNull();
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(channels.getState(ch).active?.templateId).toBe("after");
     sock.emit("close");
   });
 

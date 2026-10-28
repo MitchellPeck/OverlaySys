@@ -7,6 +7,7 @@ import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
   encode,
+  type ClientMessage,
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
 import {
@@ -38,6 +39,19 @@ import * as stageLayouts from "./stageLayouts";
 import * as timers from "./timers";
 import * as pcoLiveSync from "./pco/pcoLiveSync";
 import { isLocalAddress, remoteAddressOf, securityContext } from "./security";
+
+/**
+ * Requests that don't need to wait their turn behind this socket's earlier
+ * messages: heartbeats, and slow lookups whose answers don't depend on order
+ * (a PCO poll or a capture-device probe must not hold up a take).
+ */
+const UNORDERED_TYPES = new Set<string>([
+  "ping",
+  "pco_live_start",
+  "stt_check_presence",
+  "stt_list_models",
+  "stt_enumerate_capture_devices",
+]);
 
 /**
  * Operations that install software, write files from a URL, or set the
@@ -194,15 +208,29 @@ export function handleConnection(
       send(pcoLiveSync.liveSyncStateMessage());
     });
 
-  ws.on("message", async (raw) => {
-    let parsed;
+  // Messages from one socket are handled strictly in arrival order: each
+  // handler (most await disk) runs after the previous one settles. Without
+  // this, a quick Stream Deck "song take" + "next slide" could apply the
+  // advance before the take had loaded its show. Only slow, order-free
+  // requests (and ping, so a busy socket still answers heartbeats) bypass
+  // the queue.
+  let chain: Promise<void> = Promise.resolve();
+  ws.on("message", (raw) => {
+    let parsed: ClientMessage;
     try {
       parsed = ClientMessageSchema.parse(JSON.parse(raw.toString()));
     } catch (err) {
       send({ type: "error", code: "bad_message", message: String(err) });
       return;
     }
+    if (UNORDERED_TYPES.has(parsed.type)) {
+      void handleMessage(parsed);
+      return;
+    }
+    chain = chain.then(() => handleMessage(parsed));
+  });
 
+  async function handleMessage(parsed: ClientMessage): Promise<void> {
     if (
       !isLocalPeer &&
       (LOCAL_ONLY_TYPES.has(parsed.type) || (parsed.type === "stt_spawner_start" && parsed.config))
@@ -1080,7 +1108,7 @@ export function handleConnection(
       log.error({ err, type: parsed.type }, "ws handler error");
       send({ type: "error", code: "handler_error", message: String(err) });
     }
-  });
+  }
 
   ws.on("close", () => {
     closed = true;
