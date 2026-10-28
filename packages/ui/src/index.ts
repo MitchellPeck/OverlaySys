@@ -24,3 +24,5 @@ export { NumberInput } from "./NumberInput";
 export { SegmentedControl } from "./SegmentedControl";
 export { Switch, Checkbox } from "./Switch";
 export { FileDrop } from "./FileDrop";
+export { Menu, useContextMenu, isContextMenuKey } from "./Menu";
+export { type MenuItem } from "./menuModel";
