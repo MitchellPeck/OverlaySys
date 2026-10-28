@@ -1,5 +1,6 @@
 "use client";
 
+import { spaceAction } from "./designerKeys";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -305,6 +306,7 @@ function DesignPageInner() {
   }
 
   // ---- Keyboard ----
+  const spacePannedRef = useRef(false);
   const keyActionsRef = useRef({ save, play, pause, deleteSelection, duplicateSelection, moveZ });
   keyActionsRef.current = { save, play, pause, deleteSelection, duplicateSelection, moveZ };
   useEffect(() => {
@@ -335,9 +337,9 @@ function DesignPageInner() {
       } else if (meta) {
         return;
       } else if (e.code === "Space") {
+        // Arm only; play/pause toggles on keyup unless the canvas was panned.
         e.preventDefault();
-        if (st.playing) a.pause();
-        else a.play();
+        if (spaceAction({ phase: "down", repeat: e.repeat, panned: false, typing: false }) === "arm") spacePannedRef.current = false;
       } else if (e.code === "Home") {
         e.preventDefault();
         if (st.playing) a.pause();
@@ -398,12 +400,23 @@ function DesignPageInner() {
     }
     const copy = (e: ClipboardEvent) => onCopy(e, false);
     const cut = (e: ClipboardEvent) => onCopy(e, true);
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code !== "Space") return;
+      const typing = isEditableTarget(e.target) || isEditableTarget(document.activeElement);
+      if (spaceAction({ phase: "up", repeat: false, panned: spacePannedRef.current, typing }) !== "toggle-play") return;
+      e.preventDefault();
+      const a = keyActionsRef.current;
+      if (useEditor.getState().playing) a.pause();
+      else a.play();
+    }
     window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
     window.addEventListener("copy", copy);
     window.addEventListener("cut", cut);
     window.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("copy", copy);
       window.removeEventListener("cut", cut);
       window.removeEventListener("paste", onPaste);
@@ -581,6 +594,8 @@ function DesignPageInner() {
             onLive={applyLive}
             onPushHistory={pushHistory}
             onCancelDrag={cancelDrag}
+            spacePannedRef={spacePannedRef}
+            onPasteboardClick={() => selectLayers([])}
           />
         </div>
 

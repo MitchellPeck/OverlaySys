@@ -3,6 +3,7 @@ import type { Draft } from "immer";
 import type { Template, Layer } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
 import { fitScale, findLayer } from "./utils";
+import { escAction } from "./groupSelection";
 import {
   isDoubleClick,
   pickGroupSelection,
@@ -47,6 +48,10 @@ type Props = {
   onPushHistory: () => void;
   /** The browser cancelled a drag after onPushHistory: drop that snapshot and restore it. */
   onCancelDrag?: () => void;
+  /** Set to true on the first pointer move while Space is held (so the page can skip its tap-to-play). */
+  spacePannedRef?: React.MutableRefObject<boolean>;
+  /** A pointerdown on the pasteboard (outside the artboard) with no pan. */
+  onPasteboardClick?: () => void;
 };
 
 type Point = { x: number; y: number };
@@ -160,9 +165,10 @@ export function Canvas(props: Props) {
     };
   }, []);
 
-  // Escape exits one level of group entry. Selection stays put — that
-  // matches the "step out" intuition without surprising the user by
-  // also clearing what they had selected. Alt toggles snapping mid-drag.
+  // Escape exits one level of group entry, then clears the selection
+  // (see escAction). Alt toggles snapping mid-drag.
+  const escStateRef = useRef({ inGroup: false, hasSelection: false });
+  escStateRef.current = { inGroup: enteredGroupId !== null, hasSelection: selectedIds.length > 0 };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Alt") {
@@ -171,8 +177,13 @@ export function Canvas(props: Props) {
       }
       if (e.type !== "keydown" || e.key !== "Escape") return;
       if (isEditable()) return;
-      setEnteredGroupId(null);
-      lastClickRef.current = { time: 0, groupId: null };
+      const act = escAction(escStateRef.current);
+      if (act === "exit-group") {
+        setEnteredGroupId(null);
+        lastClickRef.current = { time: 0, groupId: null };
+      } else if (act === "clear-selection") {
+        selectIds([], false);
+      }
     }
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
@@ -476,6 +487,7 @@ export function Canvas(props: Props) {
   function applyPan(e: React.PointerEvent) {
     const p = panDragRef.current;
     if (!p) return;
+    if (spaceHeld && props.spacePannedRef) props.spacePannedRef.current = true;
     setPan({
       x: p.startPan.x + (e.clientX - p.startX),
       y: p.startPan.y + (e.clientY - p.startY),
@@ -617,7 +629,9 @@ export function Canvas(props: Props) {
     if (shouldPan(e)) {
       e.preventDefault();
       beginPan(hostRef.current!, e);
+      return;
     }
+    if (e.button === 0 && !wrapperRef.current?.contains(e.target as Node)) props.onPasteboardClick?.();
   }
   function onHostPointerMove(e: React.PointerEvent) {
     if (panDragRef.current) applyPan(e);

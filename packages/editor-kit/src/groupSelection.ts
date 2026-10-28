@@ -77,3 +77,10 @@ export function isDoubleClick(
   if (now - last.time >= thresholdMs) return false;
   return chain.some((c) => c.id === last.groupId);
 }
+
+/** Esc steps out of a group first, then clears the selection. */
+export function escAction(i: { inGroup: boolean; hasSelection: boolean }): "exit-group" | "clear-selection" | "none" {
+  if (i.inGroup) return "exit-group";
+  if (i.hasSelection) return "clear-selection";
+  return "none";
+}
