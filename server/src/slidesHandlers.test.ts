@@ -15,6 +15,7 @@ vi.mock("./cloudSync", () => ({ scheduleSync: () => scheduleSync() }));
 
 import * as decks from "./decks";
 import * as shows from "./shows";
+import * as stageFeedHub from "./stageFeedHub";
 import { handleSlidesMessage } from "./slidesHandlers";
 
 let tmpDir: string;
@@ -45,9 +46,11 @@ beforeEach(async () => {
   sent = [];
   broadcasts.length = 0;
   scheduleSync.mockClear();
+  vi.spyOn(stageFeedHub, "invalidateAll").mockImplementation(() => {});
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   if (prevData === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
   else process.env["OVERLAYSYS_DATA_DIR"] = prevData;
   if (prevFix === undefined) delete process.env["OVERLAYSYS_FIXTURES_DIR"];
@@ -95,11 +98,17 @@ describe("slides handlers", () => {
     await handleSlidesMessage({ type: "delete_deck", deckId: "d1" }, send);
     expect(broadcasts).toHaveLength(1);
     expect(broadcasts[0]).toMatchObject({ type: "deck_list", decks: [] });
+    expect(stageFeedHub.invalidateAll).toHaveBeenCalled();
+    expect(scheduleSync).toHaveBeenCalled();
+    vi.mocked(stageFeedHub.invalidateAll).mockClear();
+    scheduleSync.mockClear();
     broadcasts.length = 0;
     await handleSlidesMessage({ type: "restore_deck", deckId: "d1" }, send);
     expect(broadcasts.map((m) => m.type)).toEqual(["deck", "deck_list"]);
     const list = broadcasts[1];
     expect(list?.type === "deck_list" && list.decks.map((d) => d.id)).toEqual(["d1"]);
+    expect(stageFeedHub.invalidateAll).toHaveBeenCalled();
+    expect(scheduleSync).toHaveBeenCalled();
   });
 
   it("duplicate_deck creates a copy and broadcasts", async () => {
@@ -108,6 +117,19 @@ describe("slides handlers", () => {
     await handleSlidesMessage({ type: "duplicate_deck", deckId: "d1" }, send);
     const list = broadcasts.find((m) => m.type === "deck_list");
     expect(list?.type === "deck_list" && list.decks).toHaveLength(2);
+    expect(stageFeedHub.invalidateAll).toHaveBeenCalled();
+    expect(scheduleSync).toHaveBeenCalled();
+  });
+
+  it("delete_deck on a missing id sends not_found, not ack", async () => {
+    await handleSlidesMessage({ type: "delete_deck", deckId: "nope" }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_found", message: "nope" }]);
+    expect(scheduleSync).not.toHaveBeenCalled();
+  });
+
+  it("unimplemented slides messages reply not_implemented", async () => {
+    await handleSlidesMessage({ type: "slides_blank", channel: "program" }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_implemented", message: "slides_blank" }]);
   });
 
   it("list_decks replies only to the sender", async () => {

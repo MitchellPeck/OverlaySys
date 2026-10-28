@@ -13,6 +13,7 @@ import {
   StageStateSchema,
   SongSchema,
   DeckSchema,
+  DeckMetaSchema,
   DeckLicensingSchema,
   HotcardSchema,
   HotkeySchema,
@@ -634,18 +635,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   // [P3.4] decks and convert
   z.object({
     type: z.literal("deck_list"),
-    decks: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-        tags: z.array(z.string()),
-        slideCount: z.number(),
-        licensing: z.enum(["ccli", "public-domain", "own"]),
-        usedBy: z.number(),
-        createdAt: z.string(),
-        updatedAt: z.string().optional(),
-      }),
-    ),
+    decks: z.array(DeckMetaSchema),
   }),
   z.object({ type: z.literal("deck"), deck: DeckSchema }),
   z.object({

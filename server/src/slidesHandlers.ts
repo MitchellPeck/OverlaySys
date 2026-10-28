@@ -60,12 +60,14 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
     }
     case "delete_deck": {
       const ok = await decks.deleteDeck(msg.deckId);
-      send({ type: "ack", op: "delete_deck", id: msg.deckId });
-      if (ok) {
-        await broadcastList();
-        stageFeedHub.invalidateAll();
-        scheduleSync();
+      if (!ok) {
+        send({ type: "error", code: "not_found", message: msg.deckId });
+        return;
       }
+      send({ type: "ack", op: "delete_deck", id: msg.deckId });
+      await broadcastList();
+      stageFeedHub.invalidateAll();
+      scheduleSync();
       return;
     }
     case "restore_deck": {
@@ -94,8 +96,16 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       scheduleSync();
       return;
     }
-    // slides_* (P3.9) and convert (P3.12) are filled in by later tasks.
-    default:
+    // [P3.4] placeholder: replaced by P3.9 (slides_*) and P3.12 (convert)
+    case "slides_take":
+    case "slides_advance":
+    case "slides_goto":
+    case "slides_blank":
+    case "slides_end":
+    case "convert_song_to_deck":
+    case "undo_convert_song":
+      send({ type: "error", code: "not_implemented", message: msg.type });
       return;
+    // [/P3.4]
   }
 }

@@ -33,16 +33,17 @@ export const DeckSchema = z
   .passthrough();
 export type Deck = z.infer<typeof DeckSchema>;
 
-export type DeckMeta = {
-  id: string;
-  name: string;
-  tags: string[];
-  slideCount: number;
-  licensing: DeckLicensing["kind"];
-  usedBy: number;
-  createdAt: string;
-  updatedAt?: string;
-};
+export const DeckMetaSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  tags: z.array(z.string()),
+  slideCount: z.number(),
+  licensing: z.enum(["ccli", "public-domain", "own"]),
+  usedBy: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string().optional(),
+});
+export type DeckMeta = z.infer<typeof DeckMetaSchema>;
 
 export interface SlidesRowFields {
   kind: "slides";
