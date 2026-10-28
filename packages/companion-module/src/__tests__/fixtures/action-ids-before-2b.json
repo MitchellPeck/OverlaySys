@@ -1,0 +1,315 @@
+{
+  "actions": {
+    "take_template": [
+      "channel",
+      "templateId",
+      "data"
+    ],
+    "clear": [
+      "channel"
+    ],
+    "clear_all": [
+      "channel"
+    ],
+    "video_stop": [
+      "channel"
+    ],
+    "video_play_pause": [
+      "channel"
+    ],
+    "video_restart": [
+      "channel"
+    ],
+    "cue_template": [
+      "channel",
+      "templateId",
+      "data"
+    ],
+    "take_pvw_to_pgm": [
+      "fromChannel",
+      "toChannel"
+    ],
+    "fire_hotcard": [
+      "hotcardId",
+      "channel"
+    ],
+    "load_show": [
+      "showId"
+    ],
+    "clear_loaded_show": [],
+    "select_next_show": [],
+    "take_row": [
+      "rowId",
+      "channel"
+    ],
+    "take_row_by_index": [
+      "rowIndex",
+      "channel"
+    ],
+    "take_row_pvw_pgm": [
+      "rowId",
+      "fromChannel",
+      "toChannel"
+    ],
+    "take_row_pvw_pgm_by_index": [
+      "rowIndex",
+      "fromChannel",
+      "toChannel"
+    ],
+    "take_row_at_cursor": [
+      "channel"
+    ],
+    "scripture_take_intro": [
+      "showId",
+      "rowId",
+      "channel"
+    ],
+    "scripture_take_intro_by_index": [
+      "rowIndex",
+      "channel"
+    ],
+    "scripture_take_intro_at_cursor": [
+      "channel"
+    ],
+    "scripture_take_slide": [
+      "showId",
+      "rowId",
+      "slide",
+      "channel"
+    ],
+    "scripture_take_slide_by_index": [
+      "rowIndex",
+      "slide",
+      "channel"
+    ],
+    "scripture_take_slide_at_cursor": [
+      "slide",
+      "channel"
+    ],
+    "scripture_advance": [
+      "channel",
+      "delta"
+    ],
+    "scripture_goto": [
+      "channel",
+      "slide"
+    ],
+    "scripture_end": [
+      "channel"
+    ],
+    "take_row_song_aware": [
+      "target",
+      "rowIndex",
+      "rowId",
+      "sub",
+      "pvwPgm",
+      "channel",
+      "fromChannel",
+      "toChannel"
+    ],
+    "cursor_advance": [
+      "delta"
+    ],
+    "cursor_prev": [],
+    "panic": [
+      "keepVideo"
+    ],
+    "create_countdown": [
+      "label",
+      "minutes",
+      "seconds",
+      "overtime",
+      "start"
+    ],
+    "cursor_set": [
+      "rowId"
+    ],
+    "cursor_set_by_index": [
+      "rowIndex"
+    ],
+    "song_take_row": [
+      "showId",
+      "songRowId",
+      "channel"
+    ],
+    "song_take_row_by_index": [
+      "rowIndex",
+      "channel"
+    ],
+    "song_take_row_pvw_pgm": [
+      "showId",
+      "songRowId",
+      "fromChannel",
+      "toChannel"
+    ],
+    "song_take_row_pvw_pgm_by_index": [
+      "rowIndex",
+      "fromChannel",
+      "toChannel"
+    ],
+    "song_take_sub": [
+      "showId",
+      "songRowId",
+      "sub",
+      "channel"
+    ],
+    "song_take_sub_by_index": [
+      "rowIndex",
+      "sub",
+      "channel"
+    ],
+    "song_advance": [
+      "channel",
+      "delta"
+    ],
+    "song_jump_section": [
+      "channel",
+      "sectionId"
+    ],
+    "song_jump_kind": [
+      "channel",
+      "kind",
+      "ordinal"
+    ],
+    "song_blank": [
+      "channel"
+    ],
+    "song_end": [
+      "channel"
+    ],
+    "song_set_trust": [
+      "channel",
+      "trustMode"
+    ],
+    "stt_start": [],
+    "stt_stop": [],
+    "notes_next_point": [],
+    "notes_prev_point": [],
+    "notes_goto_point": [
+      "index"
+    ],
+    "notes_scroll_down": [
+      "amount"
+    ],
+    "notes_scroll_up": [
+      "amount"
+    ],
+    "notes_top": [],
+    "notes_select": [
+      "notesId"
+    ],
+    "stage_message_send": [
+      "text"
+    ],
+    "stage_message_clear": [],
+    "stage_timer_start": [
+      "timer"
+    ],
+    "stage_timer_pause": [
+      "timer"
+    ],
+    "stage_timer_resume": [
+      "timer"
+    ],
+    "stage_timer_reset": [
+      "timer"
+    ],
+    "stage_timer_adjust": [
+      "timer",
+      "amount"
+    ]
+  },
+  "feedbacks": {
+    "video_remaining_below": [
+      "channel",
+      "seconds"
+    ],
+    "video_errored": [
+      "channel"
+    ],
+    "output_offline": [
+      "channel"
+    ],
+    "stt_silent": [
+      "seconds"
+    ],
+    "notes_active": [],
+    "notes_at_first": [],
+    "notes_at_last": [],
+    "stage_message_showing": [],
+    "item_timer_warning": [],
+    "item_timer_overtime": [],
+    "pco_live_active": [],
+    "channel_is_live": [
+      "channel"
+    ],
+    "channel_is_blank": [
+      "channel"
+    ],
+    "video_on_air": [
+      "channel"
+    ],
+    "video_paused": [
+      "channel"
+    ],
+    "hotcard_on_air": [
+      "hotcardId",
+      "channel"
+    ],
+    "song_active": [
+      "channel"
+    ],
+    "song_queued": [
+      "channel"
+    ],
+    "song_trust_on": [
+      "channel"
+    ],
+    "song_section_is": [
+      "channel",
+      "kind_ordinal"
+    ],
+    "song_sub_take_on_channel": [
+      "channel",
+      "rowId",
+      "sub"
+    ],
+    "song_sub_take_on_channel_by_index": [
+      "channel",
+      "rowIndex",
+      "sub"
+    ],
+    "scripture_active": [
+      "channel"
+    ],
+    "scripture_queued": [
+      "channel"
+    ],
+    "scripture_slide_is": [
+      "channel",
+      "slide"
+    ],
+    "stt_running": [],
+    "connection_lost": [],
+    "show_loaded": [],
+    "row_is_cursor": [
+      "rowId"
+    ],
+    "row_is_active": [
+      "rowId"
+    ],
+    "row_at_index_is_cursor": [
+      "rowIndex"
+    ],
+    "row_at_index_is_active": [
+      "rowIndex"
+    ],
+    "cursor_row_kind_is": [
+      "kind"
+    ],
+    "row_at_index_kind_is": [
+      "rowIndex",
+      "kind"
+    ]
+  }
+}

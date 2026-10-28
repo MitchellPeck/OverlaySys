@@ -36,3 +36,22 @@ export function songTitleForChannel(
   const meta = state.songs.find((s) => s.id === ch.songSession!.songId);
   return meta?.title ?? "";
 }
+
+export const DEFAULT_CHANNEL_CHOICE = {
+  id: "",
+  label: "Default (row / song channel)",
+};
+
+/** Dropdown choices for the rows of the loaded show, labelled readably. */
+export function rowChoices(
+  state: CompanionState,
+): { id: string; label: string }[] {
+  const show = state.loadedShowId
+    ? state.showCache.get(state.loadedShowId)
+    : undefined;
+  if (!show) return [];
+  return show.rows.map((r, i) => ({
+    id: r.id,
+    label: `${i + 1}. ${rowDisplayLabel(state, r)}`,
+  }));
+}

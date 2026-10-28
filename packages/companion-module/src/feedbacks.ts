@@ -6,6 +6,7 @@ import type {
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
 import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
+import { rowChoices } from "./labels";
 import { sttSilentSec, videoInfo } from "./live";
 import { CURRENT_ITEM_TIMER_ID, timerMs, timerPhase } from "@overlaysys/core";
 
@@ -622,15 +623,7 @@ function hotcardDropdownF(state: CompanionState): CompanionInputFieldDropdown {
 }
 
 function rowDropdownF(state: CompanionState): CompanionInputFieldDropdown {
-  const show = state.loadedShowId
-    ? state.showCache.get(state.loadedShowId)
-    : undefined;
-  const choices = show
-    ? show.rows.map((r, i) => ({
-        id: r.id,
-        label: `${i + 1}. ${r.kind === "song" ? "♪ " : ""}${r.id}`,
-      }))
-    : [];
+  const choices = rowChoices(state);
   return {
     id: "rowId",
     type: "dropdown",

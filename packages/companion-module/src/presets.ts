@@ -370,10 +370,8 @@ export function presetDefinitions(): CompanionPresetDefinitions {
     ],
   };
 
-  // Rundown row buttons (rows 1..8). The user picks the specific row after
-  // dragging the preset onto a button — `rowId` is left empty here because
-  // Companion presets cannot reference dynamic row IDs at preset-creation
-  // time.
+  // Rundown row buttons (rows 1..8). Each takes the Nth row of the loaded
+  // show by index, on the row's own channel (blank channel = row/song default).
   for (let n = 1; n <= 8; n++) {
     presets[`rundown_row_${n}`] = {
       type: "button",
@@ -389,14 +387,25 @@ export function presetDefinitions(): CompanionPresetDefinitions {
         {
           down: [
             {
-              actionId: "take_row",
-              options: { rowId: "", channel: "program" },
+              actionId: "take_row_by_index",
+              options: { rowIndex: n, channel: "" },
             },
           ],
           up: [],
         },
       ],
-      feedbacks: [],
+      feedbacks: [
+        {
+          feedbackId: "row_at_index_is_active",
+          options: { rowIndex: n },
+          style: { bgcolor: 0xcc0000 },
+        },
+        {
+          feedbackId: "row_at_index_is_cursor",
+          options: { rowIndex: n },
+          style: { bgcolor: 0x00aa00 },
+        },
+      ],
     };
   }
 

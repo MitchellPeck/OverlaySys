@@ -10,6 +10,7 @@ import type {
 } from "@companion-module/base";
 import type { LocalEvent } from "./state";
 import type { CompanionState } from "./types";
+import { DEFAULT_CHANNEL_CHOICE, rowChoices } from "./labels";
 
 export type ActionId =
   | "take_template"
@@ -713,6 +714,22 @@ function channelDropdown(
   };
 }
 
+/** Channel dropdown whose first choice is "use the row / song default". */
+function optionalChannelDropdown(
+  state: CompanionState,
+  id = "channel",
+  label = "Channel (optional)",
+): CompanionInputFieldDropdown {
+  const base = channelDropdown(state, id, label);
+  return { ...base, default: "", choices: [DEFAULT_CHANNEL_CHOICE, ...base.choices] };
+}
+
+function withDefaultChoice(
+  d: CompanionInputFieldDropdown,
+): CompanionInputFieldDropdown {
+  return { ...d, choices: [DEFAULT_CHANNEL_CHOICE, ...d.choices] };
+}
+
 function showDropdown(
   state: CompanionState,
   id = "showId",
@@ -759,15 +776,7 @@ function rowDropdown(
   state: CompanionState,
   id = "rowId",
 ): CompanionInputFieldDropdown {
-  const show = state.loadedShowId
-    ? state.showCache.get(state.loadedShowId)
-    : undefined;
-  const choices = show
-    ? show.rows.map((r, i) => ({
-        id: r.id,
-        label: `${i + 1}. ${r.kind === "song" ? "♪ " : ""}${r.id}`,
-      }))
-    : [];
+  const choices = rowChoices(state);
   return {
     id,
     type: "dropdown",
@@ -782,6 +791,8 @@ const dataInput: CompanionInputFieldTextInput = {
   type: "textinput",
   label: "Data (key=value lines)",
   default: "",
+  multiline: true,
+  tooltip: "One key=value per line. Keys are the template's field keys.",
 };
 
 const deltaInput: CompanionInputFieldNumber = {
@@ -1016,12 +1027,12 @@ export function actionDefinitions(
     },
     take_row: {
       name: "Take row from loaded show (by row ID)",
-      options: [rowDropdown(state), channelDropdown(state)],
+      options: [rowDropdown(state), withDefaultChoice(channelDropdown(state))],
       callback: wrap("take_row"),
     },
     take_row_by_index: {
       name: "Take row from loaded show (by index)",
-      options: [rowIndexInput, channelDropdown(state)],
+      options: [rowIndexInput, withDefaultChoice(channelDropdown(state))],
       callback: wrap("take_row_by_index"),
     },
     take_row_pvw_pgm: {
@@ -1049,32 +1060,32 @@ export function actionDefinitions(
     },
     scripture_take_intro: {
       name: "Scripture: take intro (queues the scripture) by row ID",
-      options: [showDropdown(state), rowDropdown(state), { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [showDropdown(state), rowDropdown(state), optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro"),
     },
     scripture_take_intro_by_index: {
       name: "Scripture: take intro from loaded show (by index)",
-      options: [rowIndexInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [rowIndexInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro_by_index"),
     },
     scripture_take_intro_at_cursor: {
       name: "Scripture: take intro of the cursor row",
-      options: [{ ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro_at_cursor"),
     },
     scripture_take_slide: {
       name: "Scripture: take slide N by row ID",
-      options: [showDropdown(state), rowDropdown(state), slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [showDropdown(state), rowDropdown(state), slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide"),
     },
     scripture_take_slide_by_index: {
       name: "Scripture: take slide N from loaded show (by index)",
-      options: [rowIndexInput, slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [rowIndexInput, slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide_by_index"),
     },
     scripture_take_slide_at_cursor: {
       name: "Scripture: take slide N of the cursor row",
-      options: [slideInput, { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" }],
+      options: [slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide_at_cursor"),
     },
     scripture_advance: {
@@ -1116,8 +1127,7 @@ export function actionDefinitions(
           default: false,
         },
         {
-          ...channelDropdown(state, "channel", "Channel (optional; blank = row/song default)"),
-          default: "",
+          ...optionalChannelDropdown(state, "channel", "Channel (optional; blank = row/song default)"),
           isVisibleExpression: "!$(options:pvwPgm)",
         },
         {
@@ -1214,7 +1224,7 @@ export function actionDefinitions(
         { ...rowDropdown(state), id: "songRowId" },
         subTakeInput,
         // Optional channel override; empty = use the cascade-resolved channel.
-        { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" },
+        optionalChannelDropdown(state),
       ],
       callback: wrap("song_take_sub"),
     },
@@ -1223,7 +1233,7 @@ export function actionDefinitions(
       options: [
         rowIndexInput,
         subTakeInput,
-        { ...channelDropdown(state, "channel", "Channel (optional)"), default: "" },
+        optionalChannelDropdown(state),
       ],
       callback: wrap("song_take_sub_by_index"),
     },
