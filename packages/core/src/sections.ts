@@ -103,9 +103,20 @@ export function moveRow(show: Show, rowId: string, toSectionId: string | null, t
 }
 
 export function insertRow(show: Show, row: RundownRow, toSectionId: string | null, toIndex: number): Show {
+  if (show.rows.some((r) => r.id === row.id)) return show;
   if (toSectionId !== null && !hasSection(show, toSectionId)) return show;
   const groups = groupRowsBySection(show).map((g) => ({ ...g, rows: [...g.rows] }));
   return place(show, row, toSectionId, toIndex, groups);
+}
+
+function randomHex8(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID().replace(/-/g, "").slice(0, 8);
+  if (c && typeof c.getRandomValues === "function") {
+    const b = c.getRandomValues(new Uint8Array(4));
+    return Array.from(b, (x: number) => x.toString(16).padStart(2, "0")).join("");
+  }
+  return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 }
 
 export function addSection(
@@ -115,8 +126,12 @@ export function addSection(
   id?: string,
 ): { show: Show; section: ShowSection } {
   const trimmed = name.trim();
+  if (id !== undefined) {
+    const dup = uniqueSections(show).find((x) => x.id === id);
+    if (dup) return { show, section: dup };
+  }
   const section: ShowSection = {
-    id: id ?? `sec-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`,
+    id: id ?? `sec-${randomHex8()}`,
     name: trimmed || `Section ${uniqueSections(show).length + 1}`,
   };
   const groups = groupRowsBySection(show);

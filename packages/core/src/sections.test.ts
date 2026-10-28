@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { RundownRow, Show } from "./show";
 import {
   addSection,
@@ -164,6 +164,43 @@ describe("section CRUD", () => {
     expect(rowIds(s)).toEqual(["r1", "r4", "r2", "r3", "r5"]);
     const s0 = make();
     expect(moveSection(s0, "zz", 0)).toBe(s0);
+  });
+});
+
+describe("edge cases", () => {
+  it("insertRow with an unknown section returns the same show", () => {
+    const s = make();
+    expect(insertRow(s, g("n1"), "nope", 0)).toBe(s);
+  });
+  it("insertRow with an existing row id returns the same show", () => {
+    const s = make();
+    expect(insertRow(s, g("r2"), "A", 0)).toBe(s);
+  });
+  it("addSection with an existing id returns the show unchanged", () => {
+    const s = make();
+    const r = addSection(s, "Dup", undefined, "A");
+    expect(r.show).toBe(s);
+    expect(r.section.id).toBe("A");
+  });
+  it("addSection falls back when crypto.randomUUID is unavailable", () => {
+    vi.stubGlobal("crypto", {});
+    try {
+      expect(addSection(make(), "N").section.id).toMatch(/^sec-[0-9a-f]{8}$/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    vi.stubGlobal("crypto", { getRandomValues: (a: Uint8Array) => a.fill(171) });
+    try {
+      expect(addSection(make(), "N").section.id).toBe("sec-abababab");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("deleteSection keep-rows on an empty section just removes it", () => {
+    const s = deepFreeze({ ...make(), rows: [g("r1")] }) as Show;
+    const d = deleteSection(s, "B", "keep-rows");
+    expect(d.sections!.map((x) => x.id)).toEqual(["A"]);
+    expect(rowIds(d)).toEqual(["r1"]);
   });
 });
 
