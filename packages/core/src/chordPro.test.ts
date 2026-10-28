@@ -18,4 +18,21 @@ describe("chordPro", () => {
     expect(looksLikeChordPro("{soc}\nx\n{eoc}")).toBe(true);
     expect(looksLikeChordPro("[Verse 1]\nx")).toBe(false);
   });
+  it("recall re-uses the most recent chorus even when labels match", () => {
+    const r = parseChordPro("{soc}\nChorus body alpha\n{eoc}\n{sov}\nVerse body\n{eov}\n{soc}\nChorus body beta\n{eoc}\n{chorus}");
+    expect(r.sections.map((s) => s.id)).toEqual(["c1", "v1", "c2"]);
+    expect(r.defaultArrangement).toEqual(["c1", "v1", "c2", "c2"]);
+  });
+  it("chorus recall before any chorus is ignored", () => {
+    const r = parseChordPro("{chorus}\n{sov}\nVerse body\n{eov}");
+    expect(r.defaultArrangement).toEqual(["v1"]);
+  });
+  it("explicit verse labels advance the counter", () => {
+    const r = parseChordPro("{sov: Verse 2}\nbody a\n{eov}\n{sov}\nbody b\n{eov}");
+    expect(r.sections.map((s) => s.label)).toEqual(["Verse 2", "Verse 3"]);
+  });
+  it("lyrics outside any block use the next free verse number", () => {
+    const r = parseChordPro("{sov}\nbody a\n{eov}\nloose line\n");
+    expect(r.sections.map((s) => s.label)).toEqual(["Verse 1", "Verse 2"]);
+  });
 });

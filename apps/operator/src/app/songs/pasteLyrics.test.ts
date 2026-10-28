@@ -25,6 +25,13 @@ describe("parsePastedLyrics", () => {
     expect(r.error).toMatch(/lyrics/i);
   });
 
+  it("imports headerless text as one Verse 1 section", () => {
+    const r = parsePastedLyrics(song, "Line one\nLine two\n\nLine three", false);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.patch.sections.map((x) => x.label)).toEqual(["Verse 1"]);
+  });
+
   it("only takes SongSelect metadata when asked", () => {
     const text = "Amazing Grace\n\nVerse 1\nAmazing grace how sweet\n\nCCLI Song # 22025\nJohn Newton\n© Public Domain";
     const without = parsePastedLyrics(song, text, false);

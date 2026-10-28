@@ -33,11 +33,13 @@ const HEADER_WORD_RE =
 export function parseChordPro(text: string): ChordProResult {
   const meta: ChordProResult["meta"] = {};
   const raw: RawSection[] = [];
+  // Order of arrangement entries: a raw index, or a recall of a raw index.
+  const order: number[] = [];
   let current: RawSection | null = null;
   let skipping = false;
   let buffer: string[] = [];
   let verseN = 0;
-  let lastChorus: string | null = null;
+  let lastChorusIdx: number | null = null;
 
   const flushSlide = () => {
     if (current && buffer.length) current.blocks.push(buffer);
@@ -47,7 +49,10 @@ export function parseChordPro(text: string): ChordProResult {
     flushSlide();
     current = { header, blocks: [] };
     raw.push(current);
-    if (inferKind(header) === "chorus") lastChorus = header;
+    order.push(raw.length - 1);
+    if (inferKind(header) === "chorus") lastChorusIdx = raw.length - 1;
+    const vm = /^verse\s+(\d+)$/i.exec(header.trim());
+    if (vm) verseN = Math.max(verseN, Number(vm[1]));
   };
   const close = () => {
     flushSlide();
@@ -79,9 +84,9 @@ export function parseChordPro(text: string): ChordProResult {
         close();
         skipping = false;
       } else if (name === "chorus") {
-        // Recall: an empty repeated header references the earlier chorus.
+        // Recall: re-use the most recent chorus.
         close();
-        if (lastChorus !== null) raw.push({ header: lastChorus, blocks: [] });
+        if (lastChorusIdx !== null) order.push(lastChorusIdx);
       } else if (name === "c" || name === "comment") {
         if (HEADER_WORD_RE.test(arg)) {
           skipping = false;
@@ -96,11 +101,14 @@ export function parseChordPro(text: string): ChordProResult {
       flushSlide();
       continue;
     }
-    if (!current) open("Verse 1"); // lyrics outside any block
+    if (!current) open(`Verse ${verseN + 1}`); // lyrics outside any block
     buffer.push(clean);
   }
   flushSlide();
 
-  const { sections, defaultArrangement } = emitSections(raw);
+  const emitted = emitSections(raw);
+  // emitSections yields one arrangement entry per raw section, in order.
+  const defaultArrangement = order.map((i) => emitted.defaultArrangement[i]!);
+  const sections = emitted.sections;
   return { meta, sections, defaultArrangement };
 }
