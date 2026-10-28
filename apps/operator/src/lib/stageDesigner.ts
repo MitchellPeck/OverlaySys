@@ -16,24 +16,38 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
-/** Same layout apart from key order and `updatedAt` (the server re-parses and stamps on save). */
-export function stageLayoutsEqual(a: StageLayout, b: StageLayout): boolean {
+/** Same entity apart from key order and `updatedAt` (the server re-parses and stamps on save). */
+export function entitiesEqualIgnoringStamp<T extends { updatedAt?: string }>(a: T, b: T): boolean {
   return deepEqual({ ...a, updatedAt: undefined }, { ...b, updatedAt: undefined });
 }
 
+/** Same layout apart from key order and `updatedAt` (the server re-parses and stamps on save). */
+export function stageLayoutsEqual(a: StageLayout, b: StageLayout): boolean {
+  return entitiesEqualIgnoringStamp(a, b);
+}
+
 /**
- * Whether an incoming `stage_layout` for the open id should replace the draft
- * (which resets undo history and selection). Never while dirty; never for the
- * echo of our own just-acked save; never when it only differs in key order.
+ * Whether an incoming copy of the open entity (a server broadcast) should
+ * replace the draft, which resets undo history and selection. Never while
+ * dirty; never for the echo of our own just-acked save; never when it only
+ * differs in key order or `updatedAt`.
  */
-export function shouldAdoptIncomingLayout(
-  state: { draft: StageLayout | null; dirty: boolean; awaitingEchoId: string | null },
-  incoming: StageLayout,
+export function shouldAdoptIncoming<T extends { id: string; updatedAt?: string }>(
+  state: { draft: T | null; dirty: boolean; awaitingEchoId: string | null },
+  incoming: T,
 ): boolean {
   if (state.dirty) return false;
   if (state.awaitingEchoId === incoming.id) return false;
   if (!state.draft || state.draft.id !== incoming.id) return true;
-  return !stageLayoutsEqual(state.draft, incoming);
+  return !entitiesEqualIgnoringStamp(state.draft, incoming);
+}
+
+/** `shouldAdoptIncoming` for stage layouts. */
+export function shouldAdoptIncomingLayout(
+  state: { draft: StageLayout | null; dirty: boolean; awaitingEchoId: string | null },
+  incoming: StageLayout,
+): boolean {
+  return shouldAdoptIncoming(state, incoming);
 }
 
 /** Canvas size presets for the stage layout designer; anything else is "custom". */
@@ -50,7 +64,16 @@ export function sizePresetKey(size: { w: number; h: number }): string {
   return p ? `${p.w}x${p.h}` : "custom";
 }
 
-export type StageEditorShortcut = "undo" | "redo" | "save" | "delete" | "duplicate";
+export type StageEditorShortcut =
+  | "undo"
+  | "redo"
+  | "save"
+  | "delete"
+  | "duplicate"
+  | "forward"
+  | "backward"
+  | "front"
+  | "back";
 
 type KeyLike = { code: string; key: string; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean };
 
@@ -62,6 +85,9 @@ export function stageEditorShortcut(e: KeyLike): StageEditorShortcut | null {
     if (e.code === "KeyZ") return e.shiftKey ? "redo" : "undo";
     if (e.code === "KeyS" && !e.shiftKey) return "save";
     if (e.code === "KeyD" && !e.shiftKey) return "duplicate";
+    // ⌘] / ⌘[ step the z-order; with Shift, all the way to front / back.
+    if (e.code === "BracketRight") return e.shiftKey ? "front" : "forward";
+    if (e.code === "BracketLeft") return e.shiftKey ? "back" : "backward";
     return null;
   }
   if (e.code === "Delete" || e.code === "Backspace" || e.key === "Delete" || e.key === "Backspace") return "delete";
@@ -153,9 +179,9 @@ export function centeredRectAt(p: { x: number; y: number }, w: number, h: number
  * was in flight), which a clean→dirty watch misses. Adopting a server copy
  * (setDraft, clean) is not an edit.
  */
-export function isLocalDraftEdit(
-  prev: { draft: StageLayout | null; dirty: boolean },
-  next: { draft: StageLayout | null; dirty: boolean },
+export function isLocalDraftEdit<T>(
+  prev: { draft: T | null; dirty: boolean },
+  next: { draft: T | null; dirty: boolean },
 ): boolean {
   return next.draft !== prev.draft && next.draft !== null && next.dirty;
 }

@@ -39,6 +39,14 @@ describe("stageEditorShortcut", () => {
     expect(key({ code: "Backspace", key: "Backspace", metaKey: true })).toBeNull();
   });
 
+  it("maps Cmd/Ctrl+] / [ to z-order steps, with Shift to front / back", () => {
+    expect(key({ code: "BracketRight", metaKey: true })).toBe("forward");
+    expect(key({ code: "BracketLeft", ctrlKey: true })).toBe("backward");
+    expect(key({ code: "BracketRight", metaKey: true, shiftKey: true })).toBe("front");
+    expect(key({ code: "BracketLeft", metaKey: true, shiftKey: true })).toBe("back");
+    expect(key({ code: "BracketLeft" })).toBeNull();
+  });
+
   it("ignores plain letters, arrows and Alt chords", () => {
     expect(key({ code: "KeyZ" })).toBeNull();
     expect(key({ code: "KeyS", metaKey: true, altKey: true })).toBeNull();

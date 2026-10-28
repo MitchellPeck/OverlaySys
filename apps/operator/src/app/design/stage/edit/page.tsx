@@ -31,6 +31,7 @@ import {
   alignWidgets,
   distributeWidgets,
   duplicateWidgets,
+  moveWidgetZ,
   nudgeWidgets,
   patchWidget,
   removeWidgets,
@@ -323,9 +324,23 @@ function StageLayoutEditor() {
     select(created);
   }
 
+  /** Step every selected widget in z-order (array order, last on top). */
+  function moveSelectionZ(to: "up" | "down" | "top" | "bottom") {
+    const st = useStageEditor.getState();
+    if (readOnly || !st.draft || st.selectedIds.length === 0) return;
+    const index = new Map(st.draft.widgets.map((w, i) => [w.id, i]));
+    // Lead with the widget nearest the destination so they don't leapfrog.
+    const ids = [...st.selectedIds].sort((a, b) =>
+      to === "up" || to === "top" ? index.get(b)! - index.get(a)! : index.get(a)! - index.get(b)!,
+    );
+    commit((d) => {
+      for (const id of ids) moveWidgetZ(id, to)(d);
+    });
+  }
+
   // ---- Keyboard ----
-  const keyActions = useRef({ save, undo, redo, deleteSelection, duplicateSelection, readOnly });
-  keyActions.current = { save, undo, redo, deleteSelection, duplicateSelection, readOnly };
+  const keyActions = useRef({ save, undo, redo, deleteSelection, duplicateSelection, moveSelectionZ, readOnly });
+  keyActions.current = { save, undo, redo, deleteSelection, duplicateSelection, moveSelectionZ, readOnly };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const action = stageEditorShortcut(e);
@@ -345,6 +360,10 @@ function StageLayoutEditor() {
       else if (action === "redo") a.redo();
       else if (action === "delete") a.deleteSelection();
       else if (action === "duplicate") a.duplicateSelection();
+      else if (action === "forward") a.moveSelectionZ("up");
+      else if (action === "backward") a.moveSelectionZ("down");
+      else if (action === "front") a.moveSelectionZ("top");
+      else if (action === "back") a.moveSelectionZ("bottom");
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
