@@ -1,8 +1,9 @@
 "use client";
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { MoreHorizontal, Plus } from "lucide-react";
 import { Button, colors, IconButton, radius, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
+import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
 import { sectionChipTextColor } from "./sectionColors";
 
 export type SlideCard = {
@@ -16,6 +17,30 @@ export type SlideCard = {
 
 const firstLine = (data: Record<string, string>) =>
   (Object.values(data).find((v) => v.trim()) ?? "").split("\n")[0] ?? "";
+
+/** Fills its 16:9 cell; templates of another aspect are letterboxed, never clipped. */
+function FitThumb({ templateId, data }: { templateId: string; data: Record<string, string> }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const { template } = useTemplateBody(templateId);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const read = () => setDims({ w: el.clientWidth, h: el.clientHeight });
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const size = template?.size ?? { w: 16, h: 9 };
+  const width = dims ? Math.max(1, Math.floor(Math.min(dims.w, (dims.h * size.w) / size.h))) : 0;
+  return (
+    <div ref={box} style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {width > 0 && <TemplateThumbnail templateId={templateId} data={data} width={width} />}
+    </div>
+  );
+}
 
 export function SlideThumbGrid(p: {
   slides: SlideCard[];
@@ -56,7 +81,6 @@ export function SlideThumbGrid(p: {
             overflow: "hidden",
             background: "#000",
             aspectRatio: "16 / 9",
-            cursor: "pointer",
             outline: overIdx === i ? `2px dashed ${colors.accent}` : undefined,
           };
           return (
@@ -109,39 +133,35 @@ export function SlideThumbGrid(p: {
                   </span>
                 )}
               </div>
-              <div
-                role="button"
-                tabIndex={0}
-                aria-pressed={selected}
-                aria-label={s.caption ?? `Slide ${i + 1}`}
-                onClick={() => p.onSelect(s.id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    p.onSelect(s.id);
-                  }
-                }}
-                style={frame}
-              >
-                {s.templateId ? (
-                  <TemplateThumbnail templateId={s.templateId} data={s.data} width={minW} />
-                ) : (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "#111",
-                      color: "#ddd",
-                      fontSize: 12,
-                      padding: 8,
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {firstLine(s.data)}
-                  </div>
-                )}
+              <div style={frame}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={s.caption ?? `Slide ${i + 1}`}
+                  onClick={() => p.onSelect(s.id)}
+                  style={{ position: "absolute", inset: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer", display: "block" }}
+                >
+                  {s.templateId ? (
+                    <FitThumb templateId={s.templateId} data={s.data} />
+                  ) : (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: "#111",
+                        color: "#ddd",
+                        fontSize: 12,
+                        padding: 8,
+                        textAlign: "left",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {firstLine(s.data)}
+                    </div>
+                  )}
+                </button>
                 {s.badge && (
                   <span
                     style={{
@@ -153,13 +173,14 @@ export function SlideThumbGrid(p: {
                       borderRadius: radius.sm,
                       background: "rgba(0,0,0,.7)",
                       color: "#fff",
+                      pointerEvents: "none",
                     }}
                   >
                     {s.badge}
                   </span>
                 )}
                 {showMore && (
-                  <div style={{ position: "absolute", right: 4, top: 4 }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ position: "absolute", right: 4, top: 4 }}>
                     <IconButton aria-label={`Slide ${i + 1} actions`} onClick={(e) => ctx.open(e.currentTarget, items)}>
                       <MoreHorizontal size={14} />
                     </IconButton>

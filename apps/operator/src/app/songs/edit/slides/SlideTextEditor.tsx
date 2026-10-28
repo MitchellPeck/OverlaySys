@@ -16,9 +16,9 @@ function AutoTextarea(p: {
   describedBy?: string;
   autoFocus?: boolean;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const el = ref.current;
+    const el = wrap.current?.querySelector("textarea");
     if (!el) return;
     el.style.height = "auto";
     const min = 2 * LINE_PX + 14;
@@ -26,31 +26,24 @@ function AutoTextarea(p: {
     el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
   }, [p.value]);
   return (
-    <textarea
-      ref={ref}
-      value={p.value}
-      onChange={(e) => p.onChange(e.target.value)}
-      aria-label={p.label}
-      aria-describedby={p.describedBy}
-      aria-invalid={p.invalid || undefined}
-      autoFocus={p.autoFocus}
-      rows={2}
-      style={{
-        width: "100%",
-        boxSizing: "border-box",
-        padding: "6px 8px",
-        background: colors.surface2,
-        border: `1px solid ${p.invalid ? colors.warn : colors.border}`,
-        borderRadius: 6,
-        color: colors.text,
-        outline: "none",
-        fontFamily: fontFamily.sans,
-        fontSize: 14,
-        lineHeight: 1.4,
-        resize: "none",
-        overflowY: "auto",
-      }}
-    />
+    <div ref={wrap}>
+      <Textarea
+        value={p.value}
+        onChange={(e) => p.onChange(e.target.value)}
+        invalid={p.invalid}
+        aria-label={p.label}
+        aria-describedby={p.describedBy}
+        autoFocus={p.autoFocus}
+        rows={2}
+        style={{
+          fontFamily: fontFamily.sans,
+          fontSize: 14,
+          resize: "none",
+          overflowY: "auto",
+          ...(p.invalid ? { borderColor: colors.warn } : null),
+        }}
+      />
+    </div>
   );
 }
 
