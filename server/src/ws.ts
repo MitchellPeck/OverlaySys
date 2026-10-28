@@ -34,7 +34,7 @@ import { scheduleSync } from "./cloudSync";
 import * as storage from "./storage";
 import { registerSender, broadcast } from "./broadcast";
 import * as stageFeedHub from "./stageFeedHub";
-import { setManualStageLayout, stageLayoutStatuses } from "./stageLayoutOverride"; // [P2b.33]
+import { armManualStageLayout, handleLiveRowTake, stageLayoutStatuses } from "./stageLayoutOverride"; // [P2b.33]
 import * as stageState from "./stageState";
 import { stageFollowedChannels } from "./stageFollowed";
 import * as stageLayouts from "./stageLayouts";
@@ -110,6 +110,11 @@ channels.onAnyChange(() => stageFeedHub.invalidateAll());
 // actually go to air do.
 channels.onLiveRow((channel, source) => {
   if (channel === "preview") return;
+  // [P2b.33] a take of a new row ends manual stage layouts following this channel
+  void handleLiveRowTake(channel, source).then((cleared) => {
+    if (cleared.length) stageFeedHub.invalidateAll();
+  }, () => {});
+  // [/P2b.33]
   // Loading a different show ends PCO Live sync for the old one.
   const syncShowId = pcoLiveSync.getLiveSyncShowId();
   if (syncShowId !== null && source.showId !== syncShowId) pcoLiveSync.stopLiveSync();
@@ -969,7 +974,7 @@ export function handleConnection(
             send({ type: "error", code: "not_stage_channel", message: parsed.channel });
             break;
           }
-          setManualStageLayout(parsed.channel, parsed.layoutId);
+          await armManualStageLayout(cfg, parsed.layoutId);
           stageFeedHub.invalidateAll(); // refreshes the feed and the status broadcast
           break;
         }

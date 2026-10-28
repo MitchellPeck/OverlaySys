@@ -43,6 +43,40 @@ export function noteFollowedRow(channel: string, liveRowId: string | null): bool
   return true;
 }
 
+export const rowKey = (r: { showId: string; rowId: string } | null | undefined): string | null =>
+  r ? `${r.showId}/${r.rowId}` : null;
+
+/** Sets a manual layout and records the row currently followed, so the next take clears it. */
+export async function armManualStageLayout(cfg: ChannelConfig, layoutId: string | null): Promise<void> {
+  const { followed } = await resolveFollowed(cfg);
+  noteFollowedRow(cfg.id, rowKey(followed?.liveRow));
+  setManualStageLayout(cfg.id, layoutId);
+}
+
+let liveRowQueue: Promise<unknown> = Promise.resolve();
+/**
+ * Call when `channel` takes a row (channels.onLiveRow). Clears manual overrides of
+ * the stage screens following it; resolves to the screens that cleared. Calls are
+ * serialised so rapid takes are seen in order.
+ */
+export function handleLiveRowTake(
+  channel: string,
+  source: { showId: string; rowId: string },
+): Promise<string[]> {
+  const run = async (): Promise<string[]> => {
+    const cleared: string[] = [];
+    for (const cfg of await channelConfigs.listChannelConfigs()) {
+      if (cfg.kind !== "stage") continue;
+      const { followsId } = await resolveFollowed(cfg);
+      if (followsId === channel && noteFollowedRow(cfg.id, rowKey(source))) cleared.push(cfg.id);
+    }
+    return cleared;
+  };
+  const p = liveRowQueue.then(run, run);
+  liveRowQueue = p.catch(() => {});
+  return p;
+}
+
 /** Test helper. */
 export function resetStageLayoutOverrides(): void {
   manual.clear();
@@ -69,7 +103,6 @@ export function decideLayout(
   followed: ChannelState | null,
   show: Show | null,
 ): { layoutId: string | undefined; reason: StageLayoutReason } {
-  noteFollowedRow(cfg.id, followed?.liveRow?.rowId ?? null);
   const row =
     show && followed?.liveRow ? show.rows.find((r) => r.id === followed.liveRow!.rowId) : undefined;
   const rowOverride = (row as { stageLayouts?: Record<string, string> } | undefined)?.stageLayouts?.[cfg.id];

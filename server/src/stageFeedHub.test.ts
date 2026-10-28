@@ -241,14 +241,24 @@ describe("stageFeedHub", () => {
           { kind: "song", id: "r-song2", songId: "sg", lyricTemplateId: "lt" },
         ],
       });
+    let pending: Promise<unknown> = Promise.resolve();
+    let off: () => void;
     const takeRow = (rowId: string) =>
       channels.take("program", "lt", { name: "x" }, undefined, undefined, { showId: "sh", rowId });
+    const settle = () => pending;
     beforeEach(() => {
       override.resetStageLayoutOverrides();
+      vi.spyOn(channelConfigs, "listChannelConfigs").mockImplementation(async () => [...configs.values()]);
+      off = channels.onLiveRow((c, src) => {
+        pending = override.handleLiveRowTake(c, src);
+      });
       cfg({ id: "program", name: "Program" });
       cfg({ id: "stage1", name: "S1", kind: "stage", layoutId: "speaker", layoutRules: { song: "lyrics" } });
     });
-    afterEach(() => channels.setActiveNull("program"));
+    afterEach(() => {
+      off();
+      channels.setActiveNull("program");
+    });
 
     it("applies the type rule while a song row is live and the default with nothing live", async () => {
       vi.mocked(shows.getShow).mockResolvedValue(show());
@@ -266,14 +276,45 @@ describe("stageFeedHub", () => {
     it("a manual switch wins, survives the same row, and clears on a new row", async () => {
       vi.mocked(shows.getShow).mockResolvedValue(show({ stage1: "scripture" }));
       takeRow("r-song");
-      await hub.computeFeed("stage1");
-      override.setManualStageLayout("stage1", "speaker");
+      await override.armManualStageLayout(configs.get("stage1")!, "speaker");
       expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
       takeRow("r-song"); // same row again (e.g. a slide advance)
       expect((await hub.computeFeed("stage1"))!.layout.id).toBe("speaker");
+      await settle();
+      expect(override.getManualStageLayout("stage1")).toBe("speaker");
       takeRow("r-song2");
+      await settle();
       expect((await hub.computeFeed("stage1"))!.layout.id).toBe("lyrics");
       expect(override.getManualStageLayout("stage1")).toBeNull();
+    });
+
+    it("a manual switch with no prior pass is cleared by the first take", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show());
+      await override.armManualStageLayout(configs.get("stage1")!, "scripture");
+      takeRow("r-song");
+      await settle();
+      expect(override.getManualStageLayout("stage1")).toBeNull();
+    });
+
+    it("A -> B -> A in quick succession clears it", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show());
+      takeRow("r-song");
+      await settle();
+      await override.armManualStageLayout(configs.get("stage1")!, "scripture");
+      takeRow("r-song2");
+      takeRow("r-song");
+      await settle();
+      expect(override.getManualStageLayout("stage1")).toBeNull();
+    });
+
+    it("a slide advance (no row source) does not clear it", async () => {
+      vi.mocked(shows.getShow).mockResolvedValue(show());
+      takeRow("r-song");
+      await settle();
+      await override.armManualStageLayout(configs.get("stage1")!, "scripture");
+      channels.take("program", "lt", { name: "y" });
+      await settle();
+      expect(override.getManualStageLayout("stage1")).toBe("scripture");
     });
 
     it("an unknown layout id falls back to the default and logs once", async () => {
