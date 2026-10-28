@@ -5,6 +5,7 @@ import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine
 import { WsClient, defaultServerUrl } from "./wsClient";
 import { createTemplateLoader } from "./templateLoader";
 import { createChannelPlayer, type ChannelPlayer } from "./channelPlayer";
+import { DEFAULT_STAGE_SIZE, readSizeOverride, resolveStageSize, type StageSize } from "./stageSize";
 import { createMirrorSubscription } from "./mirrorSubscription";
 import { MediaLayer } from "./MediaLayer";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
@@ -16,8 +17,6 @@ type Props = {
 
 type Status = "connecting" | "open" | "closed";
 
-const STAGE_W = 1920;
-const STAGE_H = 1080;
 
 // Session-boundary stage fade duration. Applied on top of (not in place
 // of) the template's own IN/OUT animations — for sessions, that's the
@@ -63,6 +62,9 @@ export function Renderer({ channel, debug = false }: Props) {
   const isStageRef = useRef(isStage);
   isStageRef.current = isStage;
   const [scale, setScale] = useState(1);
+  // Output resolution: `?size=WxH`, else the size of the template on air.
+  const sizeOverrideRef = useRef<StageSize | null>(readSizeOverride(location.search));
+  const [stageSize, setStageSize] = useState<StageSize>(sizeOverrideRef.current ?? DEFAULT_STAGE_SIZE);
   // Session-level fade. opacity drives the stage; transitionMs=0 disables
   // the CSS transition so we can snap back to 1 cleanly after a fade-out
   // without re-triggering a slow ramp on the next non-song take.
@@ -77,17 +79,17 @@ export function Renderer({ channel, debug = false }: Props) {
   // own IN animation.
   const pendingSessionStartRef = useRef(false);
 
-  // Fit-scale the 1920x1080 stage to the viewport.
+  // Fit-scale the stage to the viewport.
   useLayoutEffect(() => {
     function update() {
-      const sw = window.innerWidth / STAGE_W;
-      const sh = window.innerHeight / STAGE_H;
+      const sw = window.innerWidth / stageSize.w;
+      const sh = window.innerHeight / stageSize.h;
       setScale(Math.min(sw, sh));
     }
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
+  }, [stageSize]);
 
   // Defensive cleanup: clear any inline `background` left on <html>/<body>
   // by an earlier version of the renderer that mutated those elements
@@ -143,6 +145,7 @@ export function Renderer({ channel, debug = false }: Props) {
         return true;
       },
       afterFreshMount: (tpl, m, sessionStart) => {
+        setStageSize((prev) => resolveStageSize(sizeOverrideRef.current, tpl.size, prev));
         // Blink overlay fires in parallel with playIn so the IN animation
         // continues underneath.
         if (tpl.blinkOnTake?.enabled) m.playBlink(tpl.blinkOnTake).catch(() => {});
@@ -302,6 +305,7 @@ export function Renderer({ channel, debug = false }: Props) {
           isMirror={subscriptionRef.current.source !== channel}
           matte={matte}
           scale={scale}
+          stageSize={stageSize}
           send={sendRef.current}
         />
       )}
@@ -311,8 +315,8 @@ export function Renderer({ channel, debug = false }: Props) {
           position: "absolute",
           left: "50%",
           top: "50%",
-          width: STAGE_W,
-          height: STAGE_H,
+          width: stageSize.w,
+          height: stageSize.h,
           transform: `translate(-50%, -50%) scale(${scale})`,
           transformOrigin: "50% 50%",
           // Matte: brightness(0) drives every pixel's color to black, then

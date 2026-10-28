@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChannelMedia, MediaStatus, MediaTransition } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { defaultServerUrl } from "./wsClient";
+import type { StageSize } from "./stageSize";
 import {
   initialMountPlan,
   pendingSeek,
@@ -21,8 +22,6 @@ import {
   type TransitionDirection,
 } from "./mediaTransition";
 
-const STAGE_W = 1920;
-const STAGE_H = 1080;
 const TICK_MS = 250;
 const RAMP_STEP_MS = 16;
 
@@ -34,6 +33,8 @@ type Props = {
   isMirror: boolean;
   matte: boolean;
   scale: number;
+  /** Output resolution (same box as the template stage). */
+  stageSize: StageSize;
   send: (msg: ClientMessage) => void;
   /** The last media_clear asked for a hard cut (skip the Out transition). */
   clearCut: boolean;
@@ -77,7 +78,7 @@ type VideoProps = Omit<Props, "media" | "clearCut"> & {
   onGone: (takenAt: number) => void;
 };
 
-function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onGone }: VideoProps) {
+function MediaVideo({ media, channel, isMirror, matte, scale, stageSize, send, leaving, onGone }: VideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animRef = useRef<HTMLDivElement | null>(null);
   const appliedRef = useRef<AppliedSeek>(initialMountPlan(media).applied);
@@ -358,8 +359,8 @@ function MediaVideo({ media, channel, isMirror, matte, scale, send, leaving, onG
         position: "absolute",
         left: "50%",
         top: "50%",
-        width: STAGE_W,
-        height: STAGE_H,
+        width: stageSize.w,
+        height: stageSize.h,
         transform: `translate(-50%, -50%) scale(${scale})`,
         transformOrigin: "50% 50%",
         // Same silhouette trick as the template stage: the video area keys solid white.
