@@ -3,6 +3,8 @@
 import { useEffect, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { CommandPalette } from "./CommandPalette";
+import { ConnectionBanner } from "./ConnectionBanner";
+import { DesktopEventToasts } from "./DesktopEventToasts";
 import { ShellChromeProvider } from "./ShellChromeContext";
 import { SubNav } from "./SubNav";
 import { TopBar } from "./TopBar";
@@ -32,13 +34,15 @@ function ShellFrame({ children }: { children: ReactNode }) {
   }, [area, pathname]);
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateRows: "auto minmax(0,1fr)", overflow: "hidden" }}>
+    <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateRows: "auto auto minmax(0,1fr)", overflow: "hidden" }}>
       <TopBar />
+      <ConnectionBanner />
       <div style={{ display: "flex", minHeight: 0 }}>
         {area !== "live" && <SubNav area={area} />}
-        <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>{children}</div>
+        <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>{children}</main>
       </div>
       <CommandPalette />
+      <DesktopEventToasts />
     </div>
   );
 }

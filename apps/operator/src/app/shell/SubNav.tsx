@@ -4,29 +4,33 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { colors, fontWeight } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
-import { AccountMenu } from "@/app/components/AccountMenu";
-import { destinationsFor, type AreaId } from "./areas";
+import { AREAS, destinationsFor, type AreaId } from "./areas";
 
 function isActive(pathname: string, route: string): boolean {
   if (route === "/") return pathname === "/";
   return pathname === route || pathname.startsWith(route + "/");
 }
 
-/** Left sub-nav for Library and Settings. Live has none. */
+/**
+ * Left sub-nav for Library and Settings. Live has none. Collapses to icons
+ * below 1366px (see .shell-subnav in globals.css). The account menu lives in
+ * the top bar so it's reachable from every area.
+ */
 export function SubNav({ area }: { area: AreaId }) {
   const pathname = usePathname() ?? "/";
   const items = destinationsFor(area, isCloudMode());
   return (
-    <aside
+    <nav
+      aria-label={AREAS[area].label}
+      className="shell-subnav"
       style={{
-        width: 168,
         flexShrink: 0,
         background: colors.surface,
         borderRight: `1px solid ${colors.border}`,
         display: "flex",
         flexDirection: "column",
-        padding: "12px 8px",
         gap: 2,
+        overflowY: "auto",
       }}
     >
       {items.map((d) => {
@@ -36,6 +40,9 @@ export function SubNav({ area }: { area: AreaId }) {
           <Link
             key={d.route}
             href={d.route}
+            aria-current={on ? "page" : undefined}
+            title={d.label}
+            aria-label={d.label}
             style={{
               display: "flex",
               alignItems: "center",
@@ -46,21 +53,14 @@ export function SubNav({ area }: { area: AreaId }) {
               fontWeight: fontWeight.medium,
               color: on ? colors.text : colors.textDim,
               background: on ? colors.brandSubtle : "transparent",
+              whiteSpace: "nowrap",
             }}
           >
-            <Icon size={16} aria-hidden />
-            {d.label}
+            <Icon size={16} aria-hidden style={{ flexShrink: 0 }} />
+            <span className="shell-subnav-label">{d.label}</span>
           </Link>
         );
       })}
-      {area === "settings" && (
-        <>
-          <div style={{ flex: 1 }} />
-          <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 8 }}>
-            <AccountMenu />
-          </div>
-        </>
-      )}
-    </aside>
+    </nav>
   );
 }

@@ -20,7 +20,7 @@ describe("areas model", () => {
   });
 
   it("maps settings routes, including ones without a /settings prefix", () => {
-    for (const p of ["/settings/channels", "/settings/stt", "/settings/scripture", "/settings/stage", "/data", "/projects", "/account"]) {
+    for (const p of ["/settings/channels", "/settings/stt", "/settings/scripture", "/settings/stage", "/settings/integrations", "/settings/connection", "/data", "/projects", "/account"]) {
       expect(routeToArea(p), p).toBe("settings");
     }
   });
@@ -38,7 +38,8 @@ describe("areas model", () => {
     expect(areasFor(false)).toEqual(["live", "library", "settings"]);
     expect(destinationsFor("settings", true).map((d) => d.route)).toEqual(["/data", "/projects", "/account"]);
     expect(destinationsFor("settings", false).map((d) => d.route)).toEqual([
-      "/settings/channels", "/settings/stt", "/settings/scripture", "/settings/stage", "/data", "/projects", "/account",
+      "/settings/channels", "/settings/stt", "/settings/scripture", "/settings/stage",
+      "/settings/integrations", "/settings/connection", "/data", "/projects", "/account",
     ]);
   });
 

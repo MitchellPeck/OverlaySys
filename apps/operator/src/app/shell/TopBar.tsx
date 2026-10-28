@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { AreaTabs, colors } from "@overlaysys/ui";
+import { AreaTabs, colors, fontSize, fontWeight } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
+import { AccountMenu } from "@/app/components/AccountMenu";
 import { useShellChrome } from "./ShellChromeContext";
 import { StatusBar } from "./StatusBar";
+import { FirstRunChecklist } from "./FirstRunChecklist";
 import { AREAS, areasFor, defaultRouteFor, lastRouteKey, routeToArea, type AreaId } from "./areas";
 
 /**
@@ -29,31 +32,48 @@ export function TopBar() {
   const chrome = useShellChrome();
   return (
     <header
+      className="shell-topbar"
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 12,
         height: 40,
         padding: "0 12px",
         borderBottom: `1px solid ${colors.border}`,
         background: colors.surface,
+        minWidth: 0,
       }}
     >
       <AreaTabs
-        items={areasFor(cloud).map((id) => ({ id, label: AREAS[id].label, tone: id === "live" ? "onair" : "brand" }))}
+        // Links (with the area's default route) so they're real navigation;
+        // a plain click returns to the last route visited in that area.
+        items={areasFor(cloud).map((id) => ({
+          id,
+          label: AREAS[id].label,
+          tone: id === "live" ? "onair" : "brand",
+          href: defaultRouteFor(id, cloud),
+        }))}
+        linkComponent={Link}
         active={area}
         onSelect={(id) => {
           if (id !== area) enterArea(router, id, cloud);
         }}
       />
-      {chrome.title !== undefined && <h1 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{chrome.title}</h1>}
+      {chrome.title !== undefined && (
+        <h1 className="shell-title" style={{ margin: 0, fontSize: fontSize.base, fontWeight: fontWeight.semibold }}>
+          {chrome.title}
+        </h1>
+      )}
       {chrome.context && (
-        <div style={{ color: colors.textDim, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>{chrome.context}</div>
+        <div className="shell-context" style={{ color: colors.textDim, fontSize: fontSize.md, display: "flex", alignItems: "center", gap: 8 }}>
+          {chrome.context}
+        </div>
       )}
       <ProjectSwitcher />
-      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="shell-topbar-right" style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
         {chrome.actions}
+        <FirstRunChecklist />
         <StatusBar />
+        <AccountMenu />
       </div>
     </header>
   );

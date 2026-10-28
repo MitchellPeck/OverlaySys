@@ -26,6 +26,42 @@ export interface ElectronCloudTokens {
   storedAt: number;
 }
 
+/**
+ * What the desktop host did on the operator's behalf. Mirrors DesktopEvent in
+ * apps/desktop/src/supervisor.ts — keep in sync.
+ */
+export type DesktopEvent =
+  | { kind: "server-restarting"; attempt: number; delayMs: number; reason: string }
+  | { kind: "server-restarted"; port: number }
+  | { kind: "server-failed"; reason: string }
+  | { kind: "window-reloaded"; target: string; reason: string }
+  | { kind: "window-reload-gave-up"; target: string; reason: string }
+  | { kind: "output-hidden"; channelId: string; reason: string };
+
+/** Mirrors DiagnosticsInfo in apps/desktop/src/diagnostics.ts. */
+export interface DesktopDiagnostics {
+  appVersion: string;
+  electron: string;
+  node: string;
+  chrome: string;
+  platform: string;
+  arch: string;
+  isDev: boolean;
+  serverPort: number;
+  bindHost: string;
+  lanAddresses: string[];
+  displays: {
+    id: number;
+    label: string;
+    bounds: { x: number; y: number; width: number; height: number };
+    scaleFactor: number;
+    internal: boolean;
+    primary: boolean;
+  }[];
+  openOutputs: string[];
+  logPath: string;
+}
+
 interface OverlaysysApi {
   openChannelWindow(channelId: string, opts?: ChannelWindowOptions): Promise<{ reused: boolean }>;
   closeChannelWindow(channelId: string): Promise<void>;
@@ -107,6 +143,16 @@ interface OverlaysysApi {
   pcoSignOut?(): Promise<void>;
   onPcoSignedIn?(fn: () => void): () => void;
   onPcoSignedOut?(fn: () => void): () => void;
+
+  /**
+   * Diagnostics + help (Help menu, Settings → Connection, Account version
+   * line). Optional — older desktop builds don't expose them.
+   */
+  getDiagnostics?(): Promise<DesktopDiagnostics>;
+  copyDiagnostics?(): Promise<string>;
+  revealLogs?(): Promise<void>;
+  /** Server respawns, window auto-reloads, outputs closed on display loss. */
+  onDesktopEvent?(fn: (event: DesktopEvent) => void): () => void;
 }
 
 declare global {

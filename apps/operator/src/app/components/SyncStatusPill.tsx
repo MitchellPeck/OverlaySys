@@ -1,99 +1,65 @@
 "use client";
 
-import { Pill, StatusDot, type PillTone } from "@overlaysys/ui";
+import { useState } from "react";
+import { Button, colors } from "@overlaysys/ui";
 import { useSyncStatus } from "@/lib/useSyncStatus";
+import { httpBase } from "@/lib/pcoClient";
+import { syncView } from "@/app/shell/shellStatus";
+import { copyText } from "@/app/shell/clipboard";
+import { StatusPopoverButton } from "@/app/shell/StatusPopoverButton";
 
 /**
- * Header pill summarizing the desktop server's last cloud-sync pass.
- * Renders nothing in cloud build mode (no embedded server) or when the
- * server hasn't received tokens yet — the pill is only meaningful for
- * Electron operators paired to apps-portal.
- *
- * States:
- *   - running:      dim, "syncing…"
- *   - last had errors: bad, "sync error"
- *   - last succeeded: good, "synced Xm ago"
- *   - paired, no pass yet: dim, "sync pending"
- *   - NOT paired but the server reported an error (e.g. missing Supabase
- *     env): bad, "sync unavailable" — the one state that must never hide.
+ * Top-bar status for the desktop server's cloud sync. Renders nothing in the
+ * cloud build (no embedded server) or when signed out and healthy. Click for
+ * details (per-record errors, overwrites), "Sync now" and "Copy error" —
+ * errors used to live only in a hover tooltip.
  */
 export function SyncStatusPill() {
   const status = useSyncStatus();
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   if (!status) return null;
+  const view = syncView(status, Date.now());
+  if (!view) return null;
 
-  const { running, lastRanAt, lastError, lastResult } = status;
-  let tone: PillTone = "dim";
-  let label: string;
-  let title: string | undefined;
-
-  if (!status.paired) {
-    // Not paired: either the user hasn't signed in (nothing to show) or the
-    // server refused the tokens — a misconfigured build used to vanish
-    // here silently, which is how "sync never ran" went unnoticed.
-    if (!lastError) return null;
-    tone = "bad";
-    label = "sync unavailable";
-    title = lastError;
-  } else if (running) {
-    tone = "warn";
-    label = "syncing…";
-  } else if (lastError) {
-    tone = "bad";
-    label = "sync error";
-    title = lastError;
-  } else if (lastResult && lastResult.errors.length > 0) {
-    tone = "bad";
-    label = `sync ${lastResult.errors.length} err`;
-    title = lastResult.errors
-      .slice(0, 5)
-      .map((e) => `[${e.kind}:${e.id}] ${e.message}`)
-      .join("\n");
-  } else if (lastRanAt) {
-    const overwriteCount = lastResult?.overwrites.length ?? 0;
-    if (overwriteCount > 0) {
-      // Cloud version was newer for at least one local record — surface
-      // it as a soft warn so the operator knows their local copy of
-      // those entities was replaced. Distinct from `errors` (which mean
-      // the sync pass itself failed for some records).
-      tone = "warn";
-      label = `synced · ${overwriteCount} overwrite${overwriteCount === 1 ? "" : "s"}`;
-      title = lastResult?.overwrites
-        .slice(0, 5)
-        .map(
-          (o) =>
-            `[${o.kind}:${o.id}] local ${o.localUpdatedAt} → remote ${o.remoteUpdatedAt}`,
-        )
-        .join("\n");
-    } else {
-      tone = "good";
-      label = `synced ${formatRelative(lastRanAt)}`;
-      if (lastResult) {
-        title = `pulled ${lastResult.pulled}, pushed ${lastResult.pushed} on last pass`;
-      }
+  async function syncNow() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await fetch(`${httpBase()}/api/cloud/sync`, { method: "POST" });
+      setNote(res.ok ? "Sync started — status updates within 10s." : `Sync request failed (${res.status}).`);
+    } catch (e) {
+      setNote(`Sync request failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
     }
-  } else {
-    tone = "dim";
-    label = "sync pending";
   }
 
-  if (tone === "warn" || tone === "bad") {
-    return (
-      <Pill tone={tone} title={title}>
-        {label}
-      </Pill>
-    );
-  }
-  return <StatusDot tone={tone} label={label} title={title} />;
-}
-
-/**
- * Compact "Xs/m/h ago" formatter. The pill polls every 10s so resolution
- * below 60s gets a "just now" treatment.
- */
-function formatRelative(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return new Date(iso).toLocaleDateString();
+  return (
+    <StatusPopoverButton tone={view.tone} label={view.label} ariaLabel={`Cloud ${view.label} — details`} width={320}>
+      {() => (
+        <>
+          <div style={{ fontWeight: 600 }}>Cloud sync</div>
+          {view.details.map((d, i) => (
+            <div key={i} style={{ color: i === 0 ? colors.textDim : colors.text, wordBreak: "break-word" }}>
+              {d}
+            </div>
+          ))}
+          {note && <div style={{ color: colors.textDim }}>{note}</div>}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {status.paired && (
+              <Button size="sm" disabled={busy || status.running} onClick={() => void syncNow()}>
+                {busy ? "Starting…" : "Sync now"}
+              </Button>
+            )}
+            {view.error && (
+              <Button size="sm" onClick={() => void copyText(view.error!).then((ok) => setNote(ok ? "Error copied." : "Couldn't copy."))}>
+                Copy error
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </StatusPopoverButton>
+  );
 }

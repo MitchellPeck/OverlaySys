@@ -52,21 +52,24 @@ export function AccountMenu() {
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent | KeyboardEvent): void => {
-      if (e instanceof KeyboardEvent && e.key === "Escape") {
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== "Escape") return;
+        // Now that the menu sits in the top bar on Live too, an Escape that
+        // closes it must not also reach the console's "clear program".
+        e.stopPropagation();
+        e.preventDefault();
         setOpen(false);
         return;
       }
-      if (e instanceof MouseEvent && containerRef.current) {
-        if (!containerRef.current.contains(e.target as Node)) {
-          setOpen(false);
-        }
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
       }
     };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onDown);
+    window.addEventListener("keydown", onDown, true);
     return () => {
       window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keydown", onDown, true);
     };
   }, [open]);
 
@@ -150,11 +153,17 @@ export function AccountMenu() {
   return (
     <div ref={containerRef} style={{ position: "relative" }}>
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
-        style={pillStyle}
+        style={{ ...pillStyle, whiteSpace: "nowrap" }}
         title={orgId ? `Signed in (org: ${orgId})` : "Signed in"}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-label={`Account: ${label}`}
       >
-        <Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {truncate(label, 24)} <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
+        <Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} />{" "}
+        <span className="shell-status-label">{truncate(label, 24)}</span>{" "}
+        <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
       </button>
       {open && (
         <div
