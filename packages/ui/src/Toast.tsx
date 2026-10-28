@@ -37,11 +37,11 @@ function dismiss(id: string) {
   notify();
 }
 
-const TONE: Record<ToastTone, { icon: ReactNode; color: string }> = {
-  info: { icon: <Info size={14} />, color: colors.textDim },
-  ok: { icon: <CircleCheck size={14} />, color: colors.text },
-  warn: { icon: <TriangleAlert size={14} />, color: colors.warn },
-  error: { icon: <CircleAlert size={14} />, color: colors.dangerText },
+const TONE: Record<ToastTone, { Icon: typeof Info; color: string }> = {
+  info: { Icon: Info, color: colors.textDim },
+  ok: { Icon: CircleCheck, color: colors.text },
+  warn: { Icon: TriangleAlert, color: colors.warn },
+  error: { Icon: CircleAlert, color: colors.dangerText },
 };
 
 /** Bottom-centre toast stack (at most 3). Errors are announced assertively. */
@@ -102,7 +102,7 @@ export function ToastHost() {
             }}
           >
             <span aria-hidden style={{ display: "inline-flex", color: tone.color, flexShrink: 0 }}>
-              {tone.icon}
+              <tone.Icon size={14} />
             </span>
             <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{t.message}</span>
             {t.action && (
