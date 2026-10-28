@@ -9,6 +9,10 @@ import { restoreLiveState, startLiveStatePersistence } from "./liveState";
 import { registerHttpApi } from "./httpApi";
 import { listTemplateMetas, reloadTemplates } from "./templates";
 import { listShowMetas, reloadShows } from "./shows";
+// [P3.3]
+import { reloadDecks } from "./decks";
+import { reloadItemMappings } from "./pco/itemMappings";
+// [/P3.3]
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
 import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
@@ -135,6 +139,10 @@ if (STATIC_RENDERER_DIR) {
 // Boot: seed fixtures and load registries before accepting connections.
 await reloadTemplates();
 await reloadShows();
+// [P3.3] deck + PCO item-mapping registries
+await reloadDecks();
+await reloadItemMappings();
+// [/P3.3]
 await reloadChannelConfigs();
 await reloadSongs();
 await reloadProjects();
