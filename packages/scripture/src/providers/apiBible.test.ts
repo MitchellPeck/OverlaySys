@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ApiBibleProvider, NIV_TRANSLATION, apiBibleGet, findNivBible, parseApiBibleText, passageId, type FetchLike,
+  ApiBibleProvider, NIV_TRANSLATION, apiBibleGet, apiBibleTranslationId, apiBibleTranslationMeta, findNivBible,
+  listApiBibles, parseApiBibleText, passageId, type FetchLike,
 } from "./apiBible";
 import { ScriptureProviderError } from "../types";
 import { parseReference } from "../reference";
@@ -153,5 +154,53 @@ describe("apiBibleGet hardening", () => {
   it("findNivBible survives an unexpected body shape", async () => {
     const f: FetchLike = async () => ({ status: 200, ok: true, json: async () => null });
     await expect(findNivBible("k", f)).resolves.toBeNull();
+  });
+});
+
+describe("multiple API.Bible translations", () => {
+  it("listApiBibles maps and sorts the key's Bibles", async () => {
+    const f: FetchLike = async () => ({
+      status: 200,
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "S", abbreviationLocal: "RVR1960", name: "Reina-Valera 1960", language: { id: "spa", name: "Spanish" } },
+          { id: "E", abbreviation: "ESV", name: "English Standard Version", language: { id: "eng" } },
+          { abbreviation: "no-id" },
+        ],
+      }),
+    });
+    expect(await listApiBibles("k", f)).toEqual([
+      { bibleId: "E", abbreviation: "ESV", name: "English Standard Version", language: "eng" },
+      { bibleId: "S", abbreviation: "RVR1960", name: "Reina-Valera 1960", language: "spa", languageName: "Spanish" },
+    ]);
+  });
+
+  it("apiBibleTranslationId avoids ids already taken", () => {
+    expect(apiBibleTranslationId("esv", new Set(["KJV"]))).toBe("ESV");
+    expect(apiBibleTranslationId("KJV", new Set(["KJV"]))).toBe("KJV-API");
+    expect(apiBibleTranslationId("KJV", new Set(["KJV", "KJV-API"]))).toBe("KJV-API2");
+  });
+
+  it("a multi-Bible provider routes each translation to its Bible and rejects others", async () => {
+    const urls: string[] = [];
+    const f: FetchLike = async (url) => {
+      urls.push(url);
+      return { status: 200, ok: true, json: async () => ({ data: { content: "[16] text" } }) };
+    };
+    const esv = apiBibleTranslationMeta({ bibleId: "E", abbreviation: "ESV", name: "ESV", language: "eng" }, "ESV");
+    const p = new ApiBibleProvider({
+      apiKey: "k",
+      fetch: f,
+      bibles: [
+        { bibleId: "N", translation: NIV_TRANSLATION },
+        { bibleId: "E", translation: esv },
+      ],
+    });
+    expect(p.translations.map((t) => t.id)).toEqual(["NIV", "ESV"]);
+    const out = await p.fetchPassage(parseReference("John 3:16"), "ESV");
+    expect(out.source?.bibleId).toBe("E");
+    expect(urls[0]).toContain("/bibles/E/passages/");
+    await expect(p.fetchPassage(parseReference("John 3:16"), "MSG")).rejects.toMatchObject({ code: "out_of_range" });
   });
 });

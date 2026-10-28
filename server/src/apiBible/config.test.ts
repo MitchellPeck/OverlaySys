@@ -24,6 +24,17 @@ const fake: FetchLike = async (url, init) => {
     const data = mode === "no_niv" ? [] : [{ id: "B", abbreviation: "NIV11", abbreviationLocal: "NIV" }];
     return { status: 200, ok: true, json: async () => ({ data }) };
   }
+  if (url.endsWith("/bibles")) {
+    const data = [
+      ...(mode === "no_niv" ? [] : [{ id: "B", abbreviation: "NIV11", abbreviationLocal: "NIV", name: "NIV", language: { id: "eng" } }]),
+      { id: "E", abbreviationLocal: "ESV", name: "English Standard Version", language: { id: "eng" } },
+      { id: "K", abbreviationLocal: "KJV", name: "King James (API)", language: { id: "eng" } },
+    ];
+    return { status: 200, ok: true, json: async () => ({ data }) };
+  }
+  if (url.includes("/bibles/E/passages/JHN.3.16-JHN.3.16")) {
+    return { status: 200, ok: true, json: async () => ({ data: { content: "[16] ESV text", copyright: "ESV ©" } }) };
+  }
   if (url.includes("/passages/JHN.3.16-JHN.3.16")) {
     return { status: 200, ok: true, json: async () => ({ data: { content: "[16] For God so loved the world", copyright: "©" }, meta: { fumsToken: "tok" } }) };
   }
@@ -174,6 +185,66 @@ describe("API.Bible config", () => {
     const t = await a.inject({ method: "GET", url: "/api/scripture/translations" });
     expect(t.statusCode).toBe(200);
     expect(t.json().translations.map((x: { id: string }) => x.id)).toEqual(["KJV", "WEB"]);
+    await a.close();
+  });
+});
+
+describe("API.Bible translation picker", () => {
+  const ids = (body: { translations: { id: string }[] }) => body.translations.map((x) => x.id);
+
+  it("lists the key's Bibles and registers the picked ones (NIV stays NIV, KJV collision is suffixed)", async () => {
+    const a = await app();
+    await a.inject({ method: "PUT", url: "/api/scripture/api-bible", payload: { apiKey: KEY } });
+    const list = await a.inject({ method: "GET", url: "/api/scripture/api-bible/bibles" });
+    expect(list.json().bibles.map((b: { bibleId: string }) => b.bibleId).sort()).toEqual(["B", "E", "K"]);
+
+    const put = await a.inject({
+      method: "PUT",
+      url: "/api/scripture/api-bible/translations",
+      payload: { bibleIds: ["B", "E", "K", "nope"] },
+    });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toMatchObject({ state: "ok", selection: "custom", unknown: ["nope"] });
+    const t = await a.inject({ method: "GET", url: "/api/scripture/translations" });
+    expect(ids(t.json())).toEqual(["KJV", "WEB", "NIV", "ESV", "KJV-API"]);
+
+    const res = await a.inject({ method: "GET", url: "/api/scripture/passage?ref=John%203:16&translation=ESV" });
+    expect(res.json().source).toMatchObject({ bibleId: "E" });
+    // The key is still never written back out.
+    expect((await a.inject({ method: "GET", url: "/api/scripture/api-bible" })).body).not.toContain(KEY);
+    await a.close();
+  });
+
+  it("the selection survives a restart, and unpicking NIV removes it", async () => {
+    const a = await app();
+    await a.inject({ method: "PUT", url: "/api/scripture/api-bible", payload: { apiKey: KEY } });
+    await a.inject({ method: "PUT", url: "/api/scripture/api-bible/translations", payload: { bibleIds: ["E"] } });
+    await initScripture();
+    await initApiBible();
+    expect(getScriptureRegistry().providerFor("NIV")).toBeNull();
+    expect(getScriptureRegistry().providerFor("ESV")).not.toBeNull();
+    await a.close();
+  });
+
+  it("a key with no NIV is kept so other translations can be picked", async () => {
+    mode = "no_niv";
+    const a = await app();
+    const res = await a.inject({ method: "PUT", url: "/api/scripture/api-bible", payload: { apiKey: KEY } });
+    expect(res.json().state).toBe("no_niv");
+    const put = await a.inject({ method: "PUT", url: "/api/scripture/api-bible/translations", payload: { bibleIds: ["E"] } });
+    expect(put.json()).toMatchObject({ state: "ok" });
+    expect(getScriptureRegistry().providerFor("ESV")).not.toBeNull();
+    await a.close();
+  });
+
+  it("the default translation goes first and is validated", async () => {
+    const a = await app();
+    const bad = await a.inject({ method: "PUT", url: "/api/scripture/default-translation", payload: { defaultTranslation: "NOPE" } });
+    expect(bad.statusCode).toBe(400);
+    await a.inject({ method: "PUT", url: "/api/scripture/default-translation", payload: { defaultTranslation: "WEB" } });
+    const t = (await a.inject({ method: "GET", url: "/api/scripture/translations" })).json();
+    expect(t.defaultTranslation).toBe("WEB");
+    expect(ids(t)[0]).toBe("WEB");
     await a.close();
   });
 });

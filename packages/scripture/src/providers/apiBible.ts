@@ -104,6 +104,68 @@ export async function apiBibleGet(
   }
 }
 
+/** A Bible the API.Bible key can read, as listed by `GET /bibles`. */
+export interface ApiBibleSummary {
+  bibleId: string;
+  /** API.Bible's local abbreviation ("NIV", "ESV", "RVR1960"). */
+  abbreviation: string;
+  name: string;
+  /** ISO 639-3 language id from API.Bible ("eng", "spa"). */
+  language: string;
+  languageName?: string;
+}
+
+/** Every Bible the key licenses, sorted by language then name. */
+export async function listApiBibles(apiKey: string, fetchImpl?: FetchLike): Promise<ApiBibleSummary[]> {
+  const body = (await apiBibleGet(apiKey, "/bibles", fetchImpl)) as {
+    data?: {
+      id?: string;
+      abbreviation?: string;
+      abbreviationLocal?: string;
+      name?: string;
+      nameLocal?: string;
+      language?: { id?: string; name?: string };
+    }[];
+  } | null;
+  const list = Array.isArray(body?.data) ? body.data : [];
+  return list
+    .filter((b) => typeof b.id === "string" && b.id)
+    .map((b) => ({
+      bibleId: b.id!,
+      abbreviation: (b.abbreviationLocal || b.abbreviation || b.id!).trim(),
+      name: (b.name || b.nameLocal || b.abbreviationLocal || b.id!).trim(),
+      language: b.language?.id ?? "",
+      ...(b.language?.name ? { languageName: b.language.name } : {}),
+    }))
+    .sort((a, b) => a.language.localeCompare(b.language) || a.name.localeCompare(b.name));
+}
+
+/**
+ * Translation id for an API.Bible Bible. NIV keeps its historic id "NIV" so
+ * saved rows keep resolving; anything else uses its abbreviation unless that
+ * collides with an id already taken (e.g. a bundled KJV), then a suffixed one.
+ */
+export function apiBibleTranslationId(abbreviation: string, taken: ReadonlySet<string>): string {
+  const base = abbreviation.trim().toUpperCase().replace(/\s+/g, "-") || "BIBLE";
+  if (!taken.has(base)) return base;
+  let id = `${base}-API`;
+  for (let n = 2; taken.has(id); n++) id = `${base}-API${n}`;
+  return id;
+}
+
+/** TranslationMeta for a licensed (non-NIV) API.Bible Bible. */
+export function apiBibleTranslationMeta(b: ApiBibleSummary, id: string): TranslationMeta {
+  return {
+    id,
+    name: b.name,
+    abbreviation: b.abbreviation,
+    language: b.language,
+    // Real attribution arrives with each passage (data.copyright).
+    copyright: `${b.name} (via API.Bible)`,
+    isPublicDomain: false,
+  };
+}
+
 export async function findNivBible(apiKey: string, fetchImpl?: FetchLike): Promise<{ bibleId: string } | null> {
   const body = (await apiBibleGet(apiKey, "/bibles?abbreviation=NIV", fetchImpl)) as {
     data?: { id: string; abbreviation?: string; abbreviationLocal?: string }[];
@@ -114,25 +176,45 @@ export async function findNivBible(apiKey: string, fetchImpl?: FetchLike): Promi
   return hit ? { bibleId: hit.id } : null;
 }
 
+export interface ApiBibleEntry {
+  bibleId: string;
+  translation: TranslationMeta;
+}
+
+type ApiBibleProviderOpts = {
+  apiKey: string;
+  fetch?: FetchLike;
+  baseUrl?: string;
+} & (
+  | { bibleId: string; translation: TranslationMeta }
+  | { bibles: readonly ApiBibleEntry[] }
+);
+
+/**
+ * Serves one or more API.Bible translations through one key. The
+ * single-Bible form ({ bibleId, translation }) is the original NIV-only
+ * shape and still answers any translation id with that Bible.
+ */
 export class ApiBibleProvider implements ScriptureProvider {
   readonly translations: readonly TranslationMeta[];
+  private readonly bibles: readonly ApiBibleEntry[];
+  private readonly single: boolean;
 
-  constructor(
-    private readonly opts: {
-      apiKey: string;
-      bibleId: string;
-      translation: TranslationMeta;
-      fetch?: FetchLike;
-      baseUrl?: string;
-    },
-  ) {
-    this.translations = [opts.translation];
+  constructor(private readonly opts: ApiBibleProviderOpts) {
+    this.single = "bibleId" in opts;
+    this.bibles = "bibleId" in opts ? [{ bibleId: opts.bibleId, translation: opts.translation }] : [...opts.bibles];
+    this.translations = this.bibles.map((b) => b.translation);
   }
 
-  async fetchPassage(references: ParsedReference[], _translationId: string): Promise<ScripturePassage> {
+  async fetchPassage(references: ParsedReference[], translationId: string): Promise<ScripturePassage> {
+    const entry = this.single ? this.bibles[0] : this.bibles.find((b) => b.translation.id === translationId);
+    if (!entry) {
+      throw new ScriptureProviderError("out_of_range", `${translationId} isn't enabled for this API.Bible key`);
+    }
+    const bibleId = entry.bibleId;
     const verses: ScriptureVerse[] = [];
     const usageTokens: string[] = [];
-    let attribution = this.opts.translation.copyright;
+    let attribution = entry.translation.copyright;
 
     for (const ref of references) {
       for (const r of ref.ranges) {
@@ -144,7 +226,7 @@ export class ApiBibleProvider implements ScriptureProvider {
         }
         const body = (await apiBibleGet(
           this.opts.apiKey,
-          `/bibles/${this.opts.bibleId}/passages/${passageId(ref.book, r)}?${PASSAGE_QUERY}`,
+          `/bibles/${bibleId}/passages/${passageId(ref.book, r)}?${PASSAGE_QUERY}`,
           this.opts.fetch,
           this.opts.baseUrl,
         )) as { data?: { content?: string; copyright?: string }; meta?: { fumsToken?: string } };
@@ -154,6 +236,6 @@ export class ApiBibleProvider implements ScriptureProvider {
       }
     }
 
-    return { verses, attribution, source: { provider: "api.bible", bibleId: this.opts.bibleId, usageTokens } };
+    return { verses, attribution, source: { provider: "api.bible", bibleId, usageTokens } };
   }
 }

@@ -12,7 +12,13 @@ import {
 } from "@overlaysys/scripture";
 import { reportViews } from "./apiBible/fums";
 import { ensureApiBible } from "./apiBible/config";
-import { loadScriptureSettings, saveScriptureSettings } from "./scriptureSettings";
+import {
+  loadDefaultTranslation,
+  loadScriptureSettings,
+  saveDefaultTranslation,
+  saveScriptureSettings,
+  withDefaultFirst,
+} from "./scriptureSettings";
 
 let registry: ProviderRegistry | null = null;
 
@@ -47,7 +53,24 @@ export async function registerScriptureRoutes(app: FastifyInstance): Promise<voi
 
   app.get("/api/scripture/translations", async () => {
     await ensureApiBible();
-    return { translations: getScriptureRegistry().listTranslations() };
+    const stored = await loadDefaultTranslation();
+    const list = getScriptureRegistry().listTranslations();
+    // A default that's no longer available (key removed, translation
+    // unpicked) is reported as null so the UI can say so.
+    const defaultTranslation = stored && list.some((t) => t.id === stored) ? stored : null;
+    return { translations: withDefaultFirst(list, defaultTranslation), defaultTranslation, storedDefault: stored };
+  });
+
+  app.put<{ Body: { defaultTranslation?: unknown } }>("/api/scripture/default-translation", async (req, reply) => {
+    const raw = req.body?.defaultTranslation;
+    if (raw !== null && typeof raw !== "string") {
+      return reply.code(400).send({ message: "defaultTranslation must be a string or null" });
+    }
+    const id = raw ? raw : null;
+    if (id && !getScriptureRegistry().providerFor(id)) {
+      return reply.code(400).send({ message: `Unknown translation ${id}` });
+    }
+    return { defaultTranslation: await saveDefaultTranslation(id) };
   });
 
   app.get<{ Querystring: { ref?: string; translation?: string } }>(

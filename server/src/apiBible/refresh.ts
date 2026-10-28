@@ -19,7 +19,11 @@ export const STALE_MS = 14 * DAY_MS;
 export interface RefreshDeps {
   now: Date;
   staleMs: number;
-  fetchPassage(reference: string): Promise<{ verses: ScriptureVerse[]; source: ScripturePassageSource }>;
+  /** `translation` is the row's translation id ("NIV", or another picked API.Bible translation). */
+  fetchPassage(
+    reference: string,
+    translation: string,
+  ): Promise<{ verses: ScriptureVerse[]; source: ScripturePassageSource }>;
 }
 
 function isStale(row: ScriptureRow, deps: RefreshDeps): boolean {
@@ -31,7 +35,7 @@ function isStale(row: ScriptureRow, deps: RefreshDeps): boolean {
 async function refreshRow(row: ScriptureRow, deps: RefreshDeps): Promise<ScriptureRow | null> {
   let fresh: Awaited<ReturnType<RefreshDeps["fetchPassage"]>>;
   try {
-    fresh = await deps.fetchPassage(row.reference);
+    fresh = await deps.fetchPassage(row.reference, row.translation);
   } catch {
     return null;
   }
@@ -57,7 +61,7 @@ async function refreshRow(row: ScriptureRow, deps: RefreshDeps): Promise<Scriptu
     used.add(id);
     return { id, verses: s.verses };
   });
-  console.info(`[api-bible] scripture row ${row.id}: NIV text changed on refresh`);
+  console.info(`[api-bible] scripture row ${row.id}: ${row.translation} text changed on refresh`);
   return { ...row, slides, source };
 }
 
@@ -143,8 +147,10 @@ export async function runApiBibleRefresh(now: Date = new Date()): Promise<number
     const deps: RefreshDeps = {
       now,
       staleMs: STALE_MS,
-      fetchPassage: async (reference) => {
-        const p = await provider.fetchPassage(parseReference(reference), "NIV");
+      // A row whose translation is no longer enabled throws here and is
+      // left unchanged (refreshRow swallows the error).
+      fetchPassage: async (reference, translation) => {
+        const p = await provider.fetchPassage(parseReference(reference), translation);
         return { verses: p.verses, source: p.source! };
       },
     };
