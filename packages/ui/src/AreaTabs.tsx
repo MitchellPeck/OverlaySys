@@ -1,20 +1,48 @@
+import type { ComponentType, CSSProperties, MouseEvent, ReactNode } from "react";
 import { colors, fontSize, fontWeight, radius } from "./tokens";
 
-export type AreaTabItem<T extends string> = { id: T; label: string; tone: "onair" | "brand" };
+export type AreaTabItem<T extends string> = {
+  id: T;
+  label: string;
+  tone: "onair" | "brand";
+  /** Route for this area. When set the item renders as a link (middle-click / open-in-new-window work). */
+  href?: string;
+};
 
-/** Segmented Live · Library · Settings control in the shell top bar. */
+type LinkLike = ComponentType<{
+  href: string;
+  onClick?: (e: MouseEvent<HTMLAnchorElement>) => void;
+  style?: CSSProperties;
+  "aria-current"?: "page" | undefined;
+  children?: ReactNode;
+}>;
+
+const DefaultLink: LinkLike = (p) => <a {...p} />;
+
+/**
+ * Live · Library · Settings switcher in the shell top bar. These are route
+ * changes, so they're navigation links with aria-current — not ARIA tabs
+ * (tabs imply panels in this page and arrow-key roving focus).
+ */
 export function AreaTabs<T extends string>({
   items,
   active,
   onSelect,
+  linkComponent,
+  ariaLabel = "Areas",
 }: {
   items: AreaTabItem<T>[];
   active: T | null;
+  /** Plain click handler. For linked items the default navigation is prevented first. */
   onSelect: (id: T) => void;
+  /** Link implementation for `href` items (e.g. next/link so basePath applies). Defaults to <a>. */
+  linkComponent?: LinkLike;
+  ariaLabel?: string;
 }) {
+  const LinkEl: LinkLike = linkComponent ?? DefaultLink;
   return (
-    <div
-      role="tablist"
+    <nav
+      aria-label={ariaLabel}
       style={{
         display: "flex",
         gap: 2,
@@ -22,32 +50,54 @@ export function AreaTabs<T extends string>({
         background: colors.surface2,
         border: `1px solid ${colors.borderStrong}`,
         borderRadius: radius.md,
+        flexShrink: 0,
       }}
     >
       {items.map((it) => {
         const on = it.id === active;
+        const style: CSSProperties = {
+          display: "inline-block",
+          padding: "4px 12px",
+          border: "none",
+          borderRadius: radius.sm,
+          cursor: "pointer",
+          textDecoration: "none",
+          fontSize: fontSize.xs,
+          fontWeight: fontWeight.semibold,
+          // *Fill tokens keep white text at AA (white on --onair is 3.6:1).
+          background: on ? (it.tone === "onair" ? colors.onairFill : colors.brandFill) : "transparent",
+          color: on ? "#fff" : colors.textDim,
+        };
+        if (it.href !== undefined) {
+          return (
+            <LinkEl
+              key={it.id}
+              href={it.href}
+              aria-current={on ? "page" : undefined}
+              style={style}
+              onClick={(e) => {
+                // Let modified clicks (new window/tab) through untouched.
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                e.preventDefault();
+                onSelect(it.id);
+              }}
+            >
+              {it.label}
+            </LinkEl>
+          );
+        }
         return (
           <button
             key={it.id}
             type="button"
-            role="tab"
-            aria-selected={on}
+            aria-current={on ? "page" : undefined}
             onClick={() => onSelect(it.id)}
-            style={{
-              padding: "4px 12px",
-              border: "none",
-              borderRadius: radius.sm,
-              cursor: "pointer",
-              fontSize: fontSize.xs,
-              fontWeight: fontWeight.semibold,
-              background: on ? (it.tone === "onair" ? colors.onair : colors.brand) : "transparent",
-              color: on ? "#fff" : colors.textDim,
-            }}
+            style={style}
           >
             {it.label}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

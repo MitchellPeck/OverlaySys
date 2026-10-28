@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import { colors, fontSize, fontWeight, radius, shadow, space } from "./tokens";
+import { nextTrapFocus, shouldConfirmOnEnter } from "./modalKeys";
 
 type Size = "sm" | "md" | "lg";
 
@@ -18,8 +26,18 @@ type Props = {
   onCancel?: () => void;
   /** Click backdrop to close. Default true. */
   closeOnBackdrop?: boolean;
-  /** Capture-phase keydown listener (matches dialog.tsx legacy behavior). */
+  /**
+   * Legacy (dialog.tsx). Keys are now always handled on the dialog itself and
+   * stopped there, and a window capture-phase fallback covers focus outside
+   * the dialog, so this no longer changes behaviour. Kept for API stability.
+   */
   captureKeys?: boolean;
+  /** Accessible name when there is no visible `title`. */
+  ariaLabel?: string;
+  /** "center" (default) or "top" (command-palette style, 12vh from the top). */
+  placement?: "center" | "top";
+  /** Stacking order of the backdrop. Default 1000. */
+  zIndex?: number;
   children: ReactNode;
   bodyStyle?: CSSProperties;
   containerStyle?: CSSProperties;
@@ -31,11 +49,19 @@ const SIZE_WIDTHS: Record<Size, { min: number; max: number }> = {
   lg: { min: 640, max: 960 },
 };
 
+// Open modals, innermost last. Only the topmost one answers keys that arrive
+// while focus is outside every dialog.
+const openStack: symbol[] = [];
+
 /**
- * Generic modal shell. Owns: backdrop, focus restore on close, Esc + optional
- * Enter handlers, body-scroll lock. Replaces the inline DialogShell in
- * apps/operator/src/lib/dialog.tsx and the per-modal wrappers in
- * apps/operator/src/app/songs/{ImportFromFileModal,PasteLyricsModal}.tsx.
+ * Generic modal shell. Owns: backdrop, initial focus, Tab focus trap, focus
+ * restore on close, Esc + optional Enter handlers, body-scroll lock.
+ *
+ * Keys the modal handles (Esc, Enter with onConfirm, Tab) are stopped on the
+ * dialog element, so they never reach window-level shortcuts — Esc closing a
+ * dialog must not also clear program. Focus is moved into the dialog on open
+ * so that path is the normal one; a window capture-phase listener covers the
+ * rare case where focus is still outside (e.g. on <body>).
  */
 export function Modal({
   open,
@@ -46,53 +72,119 @@ export function Modal({
   onConfirm,
   onCancel,
   closeOnBackdrop = true,
-  captureKeys = false,
+  captureKeys: _captureKeys = false,
+  ariaLabel,
+  placement = "center",
+  zIndex = 1000,
   children,
   bodyStyle,
   containerStyle,
 }: Props) {
   const lastFocused = useRef<Element | null>(null);
+  const wasOpen = useRef(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
+  const tokenRef = useRef<symbol>(Symbol("modal"));
+
+  // Record the element to restore focus to during render: children with
+  // autoFocus move focus during commit, before any effect could read it.
+  if (open && !wasOpen.current && typeof document !== "undefined") {
+    lastFocused.current = document.activeElement;
+  }
+  wasOpen.current = open;
+
+  // Latest handlers, read by the long-lived window listener.
+  const handlers = useRef({ onClose, onCancel, onConfirm });
+  handlers.current = { onClose, onCancel, onConfirm };
 
   useEffect(() => {
     if (!open) return;
-    lastFocused.current = document.activeElement;
+    const token = tokenRef.current;
+    openStack.push(token);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
+    // Initial focus: keep an autoFocus'd child; otherwise the first text
+    // field, otherwise the dialog itself (never a destructive button).
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.contains(document.activeElement)) {
+      const field = dialog.querySelector<HTMLElement>(
+        "[data-autofocus], input:not([type=hidden]):not([disabled]), textarea:not([disabled]), select:not([disabled])",
+      );
+      (field ?? dialog).focus();
+    }
+
     return () => {
+      const i = openStack.lastIndexOf(token);
+      if (i >= 0) openStack.splice(i, 1);
       document.body.style.overflow = prevOverflow;
       const prev = lastFocused.current;
-      if (prev instanceof HTMLElement) {
+      if (prev instanceof HTMLElement && prev.isConnected) {
         prev.focus();
       }
     };
   }, [open]);
 
+  // Fallback for keys pressed while focus fell back to <body> (e.g. after a
+  // click on a non-closing backdrop). Anything focused inside the dialog — or
+  // inside a portal it owns, like a popover — is handled on the dialog or by
+  // that portal, so it is left alone here.
   useEffect(() => {
     if (!open) return;
+    const token = tokenRef.current;
     function onKey(e: KeyboardEvent) {
+      if (openStack[openStack.length - 1] !== token) return;
+      if (e.target !== document.body && e.target !== document.documentElement) return;
+      const dialog = dialogRef.current;
       if (e.key === "Escape") {
         e.preventDefault();
-        (onCancel ?? onClose)?.();
-      } else if (e.key === "Enter" && onConfirm) {
-        // Don't fire on Enter inside a textarea or contentEditable; users
-        // expect those to insert a newline.
-        const ae = document.activeElement as HTMLElement | null;
-        if (ae) {
-          const tag = ae.tagName;
-          if (tag === "TEXTAREA" || ae.isContentEditable) return;
-          if (tag === "BUTTON") return;
-        }
+        e.stopPropagation();
+        const h = handlers.current;
+        (h.onCancel ?? h.onClose)?.();
+      } else if (e.key === "Enter" && handlers.current.onConfirm) {
         e.preventDefault();
-        onConfirm();
+        e.stopPropagation();
+        handlers.current.onConfirm();
+      } else if (e.key === "Tab" && dialog) {
+        // Pull focus back inside.
+        e.preventDefault();
+        e.stopPropagation();
+        dialog.focus();
       }
     }
-    window.addEventListener("keydown", onKey, captureKeys);
-    return () => window.removeEventListener("keydown", onKey, captureKeys);
-  }, [open, onCancel, onClose, onConfirm, captureKeys]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open]);
 
   if (!open) return null;
 
   const widths = SIZE_WIDTHS[size];
+
+  function onDialogKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      (onCancel ?? onClose)?.();
+    } else if (e.key === "Enter" && onConfirm) {
+      const target = e.target as HTMLElement;
+      if (!shouldConfirmOnEnter(target.tagName, target.isContentEditable)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onConfirm();
+    } else if (e.key === "Tab" && dialogRef.current) {
+      const focusables = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]',
+        ),
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+      const next = nextTrapFocus(focusables.length, focusables.indexOf(document.activeElement as HTMLElement), e.shiftKey);
+      if (next !== null) {
+        e.preventDefault();
+        if (next >= 0) focusables[next]?.focus();
+      }
+      e.stopPropagation();
+    }
+  }
 
   // Renders IN PLACE — deliberately not through createPortal. A consumer
   // (apps/operator/src/app/pco/page.tsx's SongDraftModal) detects a nested
@@ -109,15 +201,21 @@ export function Modal({
         inset: 0,
         background: "rgba(0, 0, 0, 0.6)",
         display: "flex",
-        alignItems: "center",
+        alignItems: placement === "top" ? "flex-start" : "center",
         justifyContent: "center",
-        zIndex: 1000,
+        paddingTop: placement === "top" ? "12vh" : undefined,
+        zIndex,
       }}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title !== undefined ? titleId : undefined}
+        aria-label={title === undefined ? ariaLabel : undefined}
+        tabIndex={-1}
         style={{
           background: colors.panel,
           border: `1px solid ${colors.border}`,
@@ -128,11 +226,13 @@ export function Modal({
           display: "flex",
           flexDirection: "column",
           boxShadow: shadow.modal,
+          outline: "none",
           ...containerStyle,
         }}
       >
         {title !== undefined && (
           <div
+            id={titleId}
             style={{
               padding: `${space[3]}px ${space[4]}px ${space[2]}px`,
               fontSize: fontSize.base,

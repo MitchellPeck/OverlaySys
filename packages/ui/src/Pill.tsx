@@ -17,10 +17,11 @@ const TONE: Record<PillTone, string> = {
   good: colors.ok,
   warn: colors.warn,
   bad: colors.danger,
-  accent: colors.brand,
+  // Brand as text uses brandText (#6366f1 is under 4:1 on the surfaces).
+  accent: colors.brandText,
   live: colors.onair,
   ready: colors.ok,
-  cued: colors.brand,
+  cued: colors.brandText,
   off: colors.textDim,
 };
 
@@ -33,7 +34,7 @@ export function Pill({ tone = "neutral", uppercase = false, style, children, ...
   const filled = tone === "live";
   const fill =
     tone === "live"
-      ? colors.onair
+      ? colors.onairFill
       : tone === "ready"
       ? colors.okSubtle
       : tone === "cued"
