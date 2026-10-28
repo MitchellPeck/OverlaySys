@@ -60,6 +60,7 @@ function configuredDraft(overrides: Partial<Song> = {}): Song {
 }
 
 const ITEMS: PcoPlanItem[] = [
+  { id: "item-H", title: "Service", sequence: 0, itemType: "header" },
   {
     id: "item-A",
     title: "Amazing Grace",
@@ -746,6 +747,18 @@ describe("importPlan — header sections", () => {
     const show = (await shows.getShow(r.showId!))!;
     expect(show.sections?.map((s) => s.id)).toEqual(["pco-h4"]);
     expect(r.counts.sections).toBe(1);
+  });
+
+  it("re-import keeps sectionless operator rows in place (carry-forward)", async () => {
+    const first = await importPlan(client, { ...req(["i3", "i5"]), target: { mode: "new", name: "S" } }, NOW);
+    const show = (await shows.getShow(first.showId!))!;
+    const [r3, r5] = show.rows;
+    const man = (id: string) => ({ ...r3!, id, sectionId: undefined, sourceRef: undefined });
+    await shows.saveShow({ ...show, rows: [man("manual-top"), r3!, man("manual-mid"), r5!, man("manual-end")] });
+    await importPlan(client, { ...req(["i3", "i5"]), target: { mode: "existing", showId: first.showId } }, NOW);
+    const after = (await shows.getShow(first.showId!))!;
+    expect(after.rows.map((x) => x.sourceRef?.itemId ?? x.id)).toEqual(["manual-top", "i3", "manual-mid", "i5", "manual-end"]);
+    expect(after.rows.map((x) => x.sectionId)).toEqual([undefined, "pco-h2", "pco-h2", "pco-h4", "pco-h4"]);
   });
 
   it("keeps rows in display order after import", async () => {
