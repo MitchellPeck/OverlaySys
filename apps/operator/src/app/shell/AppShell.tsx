@@ -36,7 +36,11 @@ function ShellFrame({ children }: { children: ReactNode }) {
   return (
     <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateRows: "auto auto minmax(0,1fr)", overflow: "hidden" }}>
       <TopBar />
-      <ConnectionBanner />
+      {/* Always a grid child: ConnectionBanner renders null while connected,
+          which would otherwise shift the content into this auto row. */}
+      <div>
+        <ConnectionBanner />
+      </div>
       <div style={{ display: "flex", minHeight: 0 }}>
         {area !== "live" && <SubNav area={area} />}
         <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>{children}</main>

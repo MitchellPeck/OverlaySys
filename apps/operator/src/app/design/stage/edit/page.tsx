@@ -389,7 +389,8 @@ function StageLayoutEditor() {
   const presetKey = sizePresetKey(draft.size);
 
   return (
-    <div style={{ height: "100%", display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)", overflow: "hidden" }}>
+    // PageChrome renders into the shell (returns null): toolbar, then the editor.
+    <div style={{ height: "100%", display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden" }}>
       <PageChrome
         title={draft.name}
         context={
