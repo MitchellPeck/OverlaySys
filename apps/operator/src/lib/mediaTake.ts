@@ -41,6 +41,31 @@ export function posterPathFor(assetUrl: string): string | null {
   return m ? `/api/assets/poster/${m[1]}` : null;
 }
 
+/**
+ * Where a key on the seek slider moves playback: ←/↓ back and →/↑ forward
+ * 5 s (Shift: 15 s), Home to the start, End to 1 s before the end. Null for
+ * other keys or unknown duration.
+ */
+export function seekTargetForKey(key: string, shift: boolean, elapsed: number, duration: number): number | null {
+  if (!(duration > 0)) return null;
+  const step = shift ? 15 : 5;
+  const clamp = (t: number) => Math.min(Math.max(0, duration - 1), Math.max(0, t));
+  switch (key) {
+    case "ArrowLeft":
+    case "ArrowDown":
+      return clamp(elapsed - step);
+    case "ArrowRight":
+    case "ArrowUp":
+      return clamp(elapsed + step);
+    case "Home":
+      return 0;
+    case "End":
+      return clamp(duration - 1);
+    default:
+      return null;
+  }
+}
+
 export function formatClock(sec: number): string {
   const s = Math.max(0, Math.floor(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
