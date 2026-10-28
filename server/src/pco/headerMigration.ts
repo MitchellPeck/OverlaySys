@@ -4,7 +4,12 @@ import writeAtomic from "write-file-atomic";
 import type { Show } from "@overlaysys/core";
 import { dataRoot } from "../storage";
 import { applyHeaderMigration, getShow, listShowMetas } from "../shows";
-import { PcoAuthError, createPcoClient, type PcoClient } from "./pcoClient";
+import * as channels from "../channels";
+import { broadcast } from "../broadcast";
+import * as stageState from "../stageState";
+import * as stageFeedHub from "../stageFeedHub";
+import { scheduleSync } from "../cloudSync";
+import { PcoAuthError, PcoHttpError, createPcoClient, type PcoClient } from "./pcoClient";
 import { getPcoAuthorization, isPcoConnected } from "./pcoTokens";
 
 export type PlanHeaderEntry =
@@ -64,15 +69,43 @@ async function liveShows(): Promise<Show[]> {
   return out;
 }
 
+/** Same follow-through as the ws `save_show` path, so open clients see the migrated shows. */
+async function broadcastMigrated(saved: Show[]): Promise<void> {
+  for (const show of saved) broadcast({ type: "show", show });
+  broadcast({ type: "show_list", shows: await listShowMetas() });
+  await stageState.reconcileActiveNotes();
+  stageFeedHub.invalidateAll();
+  broadcast(await stageState.stageStateMessage());
+  scheduleSync();
+}
+
+/** A row that is on air (or in preview) on any channel right now. */
+function rowIsLive(showId: string, rowId: string): boolean {
+  return channels
+    .allStates()
+    .some((s) => s.active !== null && s.liveRow?.showId === showId && s.liveRow.rowId === rowId);
+}
+
 export interface HeaderMigrationDeps {
+  isRowLive?: (showId: string, rowId: string) => boolean;
+  onChanged?: (saved: Show[]) => Promise<void> | void;
   getClient?: () => PcoClient | null;
   now?: () => string;
   pollMs?: number;
 }
 
+// Credential that PCO rejected: don't retry with it, wait for a new one.
+let rejectedAuthorization: string | null = null;
+
+/** Test hook: forget the rejected credential. */
+export function resetHeaderMigrationState(): void {
+  rejectedAuthorization = null;
+}
+
 const defaultClient = (): PcoClient | null => {
   const authorization = getPcoAuthorization();
-  return isPcoConnected() && authorization ? createPcoClient(authorization) : null;
+  if (!isPcoConnected() || !authorization || authorization === rejectedAuthorization) return null;
+  return createPcoClient(authorization);
 };
 
 let timer: NodeJS.Timeout | undefined;
@@ -93,8 +126,17 @@ export async function startHeaderMigration(deps: HeaderMigrationDeps = {}): Prom
   const pollMs = deps.pollMs ?? 60000;
   stopHeaderMigration();
 
+  let skipped = false;
+  const apply = (c: PlanHeaderCache): Promise<string[]> =>
+    applyHeaderMigration(cachedHeaders(c), {
+      isRowLive: deps.isRowLive ?? rowIsLive,
+      onChanged: deps.onChanged ?? broadcastMigrated,
+      onSkipped: () => {
+        skipped = true;
+      },
+    });
   const cache = await readHeaderCache();
-  await applyHeaderMigration(cachedHeaders(cache));
+  await apply(cache);
 
   let pending = pendingPlanKeys(await liveShows(), cache);
   if (pending.length > 0) {
@@ -110,20 +152,27 @@ export async function startHeaderMigration(deps: HeaderMigrationDeps = {}): Prom
           cache.plans[key] = { fetchedAt: now(), headers };
           fetched = true;
         } catch (err) {
-          if (err instanceof PcoAuthError) break;
-          cache.plans[key] = { fetchedAt: now(), unavailable: true };
-          fetched = true;
+          if (err instanceof PcoAuthError) {
+            if (!deps.getClient) rejectedAuthorization = getPcoAuthorization();
+            break;
+          }
+          if (err instanceof PcoHttpError && (err.status === 404 || err.status === 410)) {
+            cache.plans[key] = { fetchedAt: now(), unavailable: true };
+            fetched = true;
+            continue;
+          }
+          break; // timeout, network, 5xx, 429: leave pending, retry on the next poll
         }
       }
       if (fetched) {
         await writeHeaderCache(cache);
-        await applyHeaderMigration(cachedHeaders(cache));
+        await apply(cache);
       }
       pending = pendingPlanKeys(await liveShows(), cache);
     }
   }
 
-  if (pending.length > 0) {
+  if (pending.length > 0 || skipped) {
     timer = setTimeout(() => {
       timer = undefined;
       void startHeaderMigration(deps).catch(() => undefined);

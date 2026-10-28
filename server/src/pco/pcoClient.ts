@@ -23,6 +23,17 @@ export class PcoAuthError extends Error {
   }
 }
 
+/** A non-401 HTTP failure from Planning Center; `status` lets callers tell "gone" (404/410) from transient. */
+export class PcoHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PcoHttpError";
+  }
+}
+
 export interface PcoClient {
   listServiceTypes(): Promise<PcoServiceType[]>;
   listPlans(serviceTypeId: string): Promise<PcoPlan[]>;
@@ -139,7 +150,7 @@ export function createPcoClient(
       }
       if (res.status === 401) throw new PcoAuthError();
       if (!res.ok) {
-        throw new Error(`Planning Center request failed (${res.status}): ${url}`);
+        throw new PcoHttpError(res.status, `Planning Center request failed (${res.status}): ${url}`);
       }
       // eslint-disable-next-line no-await-in-loop
       const doc = (await res.json()) as JsonApiDoc;

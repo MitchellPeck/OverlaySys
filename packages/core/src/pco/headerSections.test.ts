@@ -78,9 +78,19 @@ describe("migrateHeaderRows", () => {
     show.sections = [{ id: "mine", name: "Mine" }];
     const r = migrateHeaderRows(show, H).show;
     expect(r.rows.find((x) => x.id === "c")?.sectionId).toBe("mine");
-    expect(r.rows.find((x) => x.id === "d")?.sectionId).toBe("pco-11");
+    expect(r.rows.find((x) => x.id === "d")?.sectionId).toBe("mine");
   });
   it("falls back to the row data, then 'Section', for a blank title", () => {
     expect(migrateHeaderRows(migShow(), new Map([["11", " "]])).show.sections).toEqual([{ id: "pco-11", name: "Tb" }]);
+  });
+  it("a sectionless row inherits the nearest preceding row's section, header or not", () => {
+    const show = migShow();
+    // [a, H(11), c in "mine", d]
+    (show.rows[2] as { sectionId?: string }).sectionId = "mine";
+    show.sections = [{ id: "mine", name: "Mine" }];
+    const r = migrateHeaderRows(show, H).show;
+    expect(r.rows.find((x) => x.id === "d")?.sectionId).toBe("mine");
+    // no row landed in the header's section, so it is not created
+    expect(r.sections).toEqual([{ id: "mine", name: "Mine" }]);
   });
 });

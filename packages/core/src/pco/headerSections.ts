@@ -91,20 +91,36 @@ export function migrateHeaderRows(
     row.kind === "graphic" && row.sourceRef?.provider === "pco" && headers.has(row.sourceRef.itemId);
   if (!show.rows.some(isHeader)) return { show, changed: false };
 
+  // Same carry rule as the importer: a sectionless row inherits the section of
+  // the nearest preceding row (header or sectioned row); rows before any
+  // section stay sectionless. A header's section exists only if a row lands in it.
   const sections: ShowSection[] = [...(show.sections ?? [])];
+  const pendingSections = new Map<string, ShowSection>();
   const rows: RundownRow[] = [];
-  let open: string | undefined;
+  let carried: string | undefined;
   for (const row of show.rows) {
     if (isHeader(row) && row.kind === "graphic" && row.sourceRef) {
       const itemId = row.sourceRef.itemId;
       const id = pcoSectionId(itemId);
       const fallback = Object.values(row.data).find((v) => v.trim() !== "")?.trim();
       const name = headers.get(itemId)?.trim() || fallback || "Section";
-      if (!sections.some((s) => s.id === id)) sections.push({ id, name });
-      open = id;
+      if (!sections.some((s) => s.id === id)) pendingSections.set(id, { id, name });
+      carried = id;
       continue;
     }
-    rows.push(open !== undefined && row.sectionId === undefined ? ({ ...row, sectionId: open } as RundownRow) : row);
+    if (row.sectionId !== undefined) {
+      carried = row.sectionId;
+      rows.push(row);
+      continue;
+    }
+    if (carried !== undefined) {
+      const add = pendingSections.get(carried);
+      if (add) {
+        sections.push(add);
+        pendingSections.delete(carried);
+      }
+      rows.push({ ...row, sectionId: carried } as RundownRow);
+    } else rows.push(row);
   }
   return { show: orderRowsBySection({ ...show, sections, rows }), changed: true };
 }
