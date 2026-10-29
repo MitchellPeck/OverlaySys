@@ -184,6 +184,9 @@ export async function registerPcoRoutes(
       }
       // A confidence monitor may be showing the imported show or songs.
       if (result.showId || result.writtenSongIds.length > 0) stageFeedHub.invalidateAll();
+      // Imported rows, songs and item mappings reach the cloud now, not on the
+      // next unrelated write. No-op when not paired; debounced.
+      scheduleSync();
       return result;
     } catch (err) {
       return pcoErrorReply(reply, err);

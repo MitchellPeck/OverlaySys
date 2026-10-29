@@ -12,6 +12,16 @@ import { listItemMappings, reloadItemMappings, upsertItemMapping } from "./itemM
 const scheduleSync = vi.fn();
 vi.mock("../cloudSync", () => ({ scheduleSync: () => scheduleSync() }));
 // [/P3.11]
+// [I5] lets a test stub the import itself; everything else stays real.
+const importOverride = vi.hoisted(() => ({ fn: null as null | ((...a: unknown[]) => Promise<unknown>) }));
+vi.mock("./importPlan", async (orig) => {
+  const real = await orig<typeof import("./importPlan")>();
+  return {
+    ...real,
+    importPlan: (...a: Parameters<typeof real.importPlan>) =>
+      importOverride.fn ? importOverride.fn(...a) : real.importPlan(...a),
+  };
+});
 import { registerPcoRoutes } from "./routes";
 import { clearPcoAuthorization, getPcoAuthorization, isPcoConnected, setPcoAuthorization } from "./pcoTokens";
 
@@ -191,3 +201,34 @@ describe("slides suggestions and item mappings [P3.11]", () => {
   });
 });
 // [/P3.11]
+
+describe("[I5] POST /api/pco/import schedules a sync", () => {
+  afterEach(() => {
+    importOverride.fn = null;
+  });
+  it("calls scheduleSync after a successful import", async () => {
+    importOverride.fn = async () => ({
+      ok: true,
+      counts: { rows: 0, songsCreated: 0, songsLinked: 0, songsUpdated: 0, sections: 0, headerRowsConverted: 0 },
+      warnings: [],
+      writtenSongIds: [],
+    });
+    scheduleSync.mockClear();
+    const app = await build(fetchReturning(200));
+    setPcoAuthorization("Basic placeholder");
+    const res = await app.inject({ method: "POST", url: "/api/pco/import", payload: { planId: "p1" } });
+    expect(res.statusCode).toBe(200);
+    expect(scheduleSync).toHaveBeenCalledTimes(1);
+  });
+  it("does not schedule a sync when the import fails", async () => {
+    importOverride.fn = async () => {
+      throw new Error("boom");
+    };
+    scheduleSync.mockClear();
+    const app = await build(fetchReturning(200));
+    setPcoAuthorization("Basic placeholder");
+    const res = await app.inject({ method: "POST", url: "/api/pco/import", payload: { planId: "p1" } });
+    expect(res.statusCode).toBe(502);
+    expect(scheduleSync).not.toHaveBeenCalled();
+  });
+});
