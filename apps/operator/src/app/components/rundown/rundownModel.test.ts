@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Show } from "@overlaysys/core";
 import type { AirState } from "../../../lib/rowAirState";
 import {
+  doubleClickAction,
   dropHalf,
   headerLine,
   liveRowState,
@@ -115,6 +116,18 @@ describe("nudgeTarget", () => {
   it("is null at the very top", () => {
     expect(nudgeTarget(show, "1", -1)).toBe(null);
   });
+});
+
+describe("doubleClickAction (D4)", () => {
+  const base = { takes: false, air: null as AirState, canTake: true, canCue: true };
+  it("cues by default, never takes", () => expect(doubleClickAction(base)).toBe("cue"));
+  it("takes only with the setting on", () => expect(doubleClickAction({ ...base, takes: true })).toBe("take"));
+  it("a row with no Cue (video) does nothing by default", () =>
+    expect(doubleClickAction({ ...base, canCue: false })).toBeNull());
+  it("never re-takes a row already on program (a song would restart)", () =>
+    expect(doubleClickAction({ ...base, takes: true, air: "program" })).toBeNull());
+  it("a row that can't be taken does nothing", () =>
+    expect(doubleClickAction({ ...base, takes: true, canTake: false })).toBeNull());
 });
 
 describe("slidesTakeable", () => {

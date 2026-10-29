@@ -15,7 +15,8 @@ import { slidesRowViewFor } from "@/lib/slidesRowView";
 import { rowFireMessages } from "@/lib/liveKeys";
 import { requestedDecks } from "@/lib/deckRequests";
 import { RundownList } from "./rundown/RundownList";
-import { slidesTakeable, takeableNextRowId } from "./rundown/rundownModel";
+import { doubleClickAction, slidesTakeable, takeableNextRowId } from "./rundown/rundownModel";
+import { useLivePrefs } from "../hooks/useLivePrefs";
 import { useWarnRowIds } from "./live/overflowStore";
 
 type Row = NonNullable<ReturnType<typeof useStore.getState>["show"]>["rows"][number];
@@ -39,6 +40,7 @@ export function Rundown() {
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
   const warnRowIds = useWarnRowIds();
+  const { doubleClickTakes } = useLivePrefs();
 
   useEffect(() => {
     if (!show || conn !== "open") return;
@@ -106,7 +108,7 @@ export function Rundown() {
       return !!row && row.kind !== "video" && canTake(id);
     };
     const next = takeableNextRowId(rows, air, selectedRowId, canTake);
-    return { byId, air, edited, canCue, next };
+    return { byId, air, edited, canTake, canCue, next };
   }, [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions, caches, selectedRowId]);
 
   if (!show || !model) {
@@ -136,26 +138,18 @@ export function Rundown() {
     for (const m of msgs) send(m);
   };
 
-  // Double-click keeps today's behaviour (take); Task 16 makes it a setting (D4).
+  // D4: double-click cues (to preview); with "Double-click takes to program"
+  // on, it takes that exact row (never a re-take of the row on program).
   const onDoubleClick = (rowId: string) => {
-    const row = model.byId.get(rowId);
-    if (!row) return;
-    if (!connected) {
-      setSelectedRow(rowId);
-      return;
-    }
-    if (row.kind === "song") {
-      setSelectedRow(row.id);
-      send({
-        type: "song_take_pvw_to_pgm",
-        showId: show.id,
-        songRowId: row.id,
-        fromChannel: "preview",
-        toChannel: songTakeChannel(row, show, caches),
-      });
-      return;
-    }
-    fire(rowId, "take");
+    setSelectedRow(rowId);
+    if (!connected) return;
+    const action = doubleClickAction({
+      takes: doubleClickTakes,
+      air: model.air[rowId] ?? null,
+      canTake: model.canTake(rowId),
+      canCue: model.canCue(rowId),
+    });
+    if (action) fire(rowId, action);
   };
 
   const list = (

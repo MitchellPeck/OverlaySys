@@ -35,6 +35,22 @@ export function slidesTakeable(view: Pick<SlidesRowView, "missingDeck" | "slides
   return !!view && !view.missingDeck && view.slides.length > 0;
 }
 
+/**
+ * What double-clicking a Live row does (D4): Cue by default (Cue never
+ * reaches program); Take only with the "Double-click takes to program"
+ * setting on. Never a re-take of a row already on program (a song would
+ * restart from the top), and nothing for a row that can't be cued / taken.
+ */
+export function doubleClickAction(p: {
+  takes: boolean;
+  air: AirState;
+  canTake: boolean;
+  canCue: boolean;
+}): "take" | "cue" | null {
+  if (p.takes) return p.canTake && p.air !== "program" ? "take" : null;
+  return p.canCue ? "cue" : null;
+}
+
 export type LiveRowState = {
   chip: "onair" | "cued" | null;
   otherShow: boolean;
