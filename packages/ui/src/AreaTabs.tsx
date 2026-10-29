@@ -7,6 +7,8 @@ export type AreaTabItem<T extends string> = {
   tone: "onair" | "brand";
   /** Route for this area. When set the item renders as a link (middle-click / open-in-new-window work). */
   href?: string;
+  /** Small on-air dot after the label (e.g. Live while program has content). */
+  dot?: boolean;
 };
 
 type LinkLike = ComponentType<{
@@ -55,6 +57,19 @@ export function AreaTabs<T extends string>({
     >
       {items.map((it) => {
         const on = it.id === active;
+        const label = (
+          <>
+            {it.label}
+            {it.dot && (
+              <span
+                data-testid={`area-dot-${it.id}`}
+                aria-label="on air"
+                role="img"
+                style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: colors.onair, marginLeft: 6, verticalAlign: "middle", boxShadow: on ? "0 0 0 1px #fff" : "none" }}
+              />
+            )}
+          </>
+        );
         const style: CSSProperties = {
           display: "inline-block",
           padding: "4px 12px",
@@ -82,7 +97,7 @@ export function AreaTabs<T extends string>({
                 onSelect(it.id);
               }}
             >
-              {it.label}
+              {label}
             </LinkEl>
           );
         }
@@ -94,7 +109,7 @@ export function AreaTabs<T extends string>({
             onClick={() => onSelect(it.id)}
             style={style}
           >
-            {it.label}
+            {label}
           </button>
         );
       })}

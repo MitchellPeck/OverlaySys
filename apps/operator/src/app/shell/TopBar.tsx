@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AreaTabs, Button, Kbd, colors, fontSize, fontWeight } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
+import { useStore } from "@/lib/store";
+import { channelHasContent } from "@/lib/onAir";
 import { ProjectSwitcher } from "@/app/components/ProjectSwitcher";
 import { AccountMenu } from "@/app/components/AccountMenu";
 import { useShellChrome } from "./ShellChromeContext";
@@ -30,6 +32,7 @@ export function TopBar() {
   const cloud = isCloudMode();
   const area = routeToArea(pathname);
   const chrome = useShellChrome();
+  const pgmHasContent = useStore((s) => channelHasContent(s.channelStates["program"]));
   return (
     <header
       className="shell-topbar"
@@ -41,6 +44,9 @@ export function TopBar() {
         borderBottom: `1px solid ${colors.border}`,
         background: colors.surface,
         minWidth: 0,
+        // The shell grid's auto column grows to its widest row; never let
+        // wide page content stretch the bar past the viewport.
+        maxWidth: "100vw",
       }}
     >
       <AreaTabs
@@ -49,7 +55,9 @@ export function TopBar() {
         items={areasFor(cloud).map((id) => ({
           id,
           label: AREAS[id].label,
-          tone: id === "live" ? "onair" : "brand",
+          tone: "brand",
+          // The red dot means something is on program; the tab itself stays accent.
+          dot: id === "live" && pgmHasContent,
           href: defaultRouteFor(id, cloud),
         }))}
         linkComponent={Link}

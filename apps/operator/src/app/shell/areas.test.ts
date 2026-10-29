@@ -76,7 +76,7 @@ describe("areas model", () => {
   it("lists areas in tab order", () => {
     expect(AREA_ORDER).toEqual(["live", "library", "settings"]);
     expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Slides", "Designs", "Hotcards", "Planning Center"]);
-    expect(AREAS.live.destinations[0].label).toBe("Live");
+    expect(AREAS.live.destinations[0]?.label).toBe("Live");
   });
 
   it("shows the project switcher except on editors and per-install settings", () => {
