@@ -13,3 +13,11 @@ describe("deck schema", () => {
     expect(DeckLicensingSchema.safeParse({ kind: "other" }).success).toBe(false);
   });
 });
+
+describe("[M8] DeckLicensingSchema passthrough", () => {
+  it("keeps extra keys, still rejects unknown kinds", () => {
+    expect(DeckLicensingSchema.parse({ kind: "ccli", ccliNumber: "1", future: true })).toEqual({ kind: "ccli", ccliNumber: "1", future: true });
+    expect(DeckLicensingSchema.safeParse({ kind: "other" }).success).toBe(false);
+  });
+});
+

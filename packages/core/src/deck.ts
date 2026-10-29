@@ -1,11 +1,17 @@
 import { z } from "zod";
 
-export const DeckLicensingSchema = z.discriminatedUnion("kind", [
+const DeckLicensingStrict = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ccli"), ccliNumber: z.string().optional() }),
   z.object({ kind: z.literal("public-domain") }),
   z.object({ kind: z.literal("own") }),
 ]);
-export type DeckLicensing = z.infer<typeof DeckLicensingSchema>;
+export type DeckLicensing = z.infer<typeof DeckLicensingStrict>;
+// Passthrough per variant (contracts §4): extra keys survive a re-save; unknown kinds still fail.
+export const DeckLicensingSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ccli"), ccliNumber: z.string().optional() }).passthrough(),
+  z.object({ kind: z.literal("public-domain") }).passthrough(),
+  z.object({ kind: z.literal("own") }).passthrough(),
+]) as unknown as z.ZodType<DeckLicensing, z.ZodTypeDef, unknown>;
 
 export const DeckSlideSchema = z
   .object({

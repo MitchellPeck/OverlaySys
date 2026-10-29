@@ -510,3 +510,28 @@ describe("ShowSchema sections and pass-through", () => {
     expect(show.rows.map((r) => r.kind)).toEqual(["graphic", "video"]);
   });
 });
+
+describe("[M8] nested schemas keep unknown keys", () => {
+  it("scripture slide/verse, row sourceRef and api source pass extra keys through", () => {
+    const row = ScriptureRowSchema.parse({
+      kind: "scripture",
+      id: "r",
+      reference: "Book 1:1",
+      translation: "t",
+      templateId: "tpl",
+      slides: [{ id: "s1", future: 1, verses: [{ book: "Book", chapter: 1, verse: 1, text: "Line A", vfuture: 2 }] }],
+      sourceRef: { provider: "pco", serviceTypeId: "st", planId: "p", itemId: "i", rfuture: 3 },
+      source: { provider: "api.bible", bibleId: "b", fetchedAt: "x", sfuture: 4 },
+    }) as unknown as Record<string, any>;
+    expect(row.slides[0].future).toBe(1);
+    expect(row.slides[0].verses[0].vfuture).toBe(2);
+    expect(row.sourceRef.rfuture).toBe(3);
+    expect(row.source.sfuture).toBe(4);
+    expect(row.source.usageTokens).toEqual([]);
+  });
+  it("sermon notes pass extra keys through", () => {
+    const show = ShowSchema.parse({ id: "s", name: "S", rows: [], sermonNotes: [{ id: "n", title: "T", body: "", nfuture: 5 }] });
+    expect((show.sermonNotes![0] as unknown as Record<string, unknown>).nfuture).toBe(5);
+  });
+});
+

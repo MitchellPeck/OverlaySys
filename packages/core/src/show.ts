@@ -12,7 +12,7 @@ import type { SlidesRowFields } from "./deck";
  * match and update the row in place instead of appending a duplicate. Optional
  * everywhere — rows created by hand simply omit it.
  */
-export const RowSourceRefSchema = z.object({
+const RowSourceRefObject = z.object({
   provider: z.literal("pco"),
   serviceTypeId: z.string(),
   planId: z.string(),
@@ -20,7 +20,9 @@ export const RowSourceRefSchema = z.object({
   /** Arrangement a PCO import last set on a song row, so re-import can tell an operator edit from its own. */
   pcoArrangement: z.array(z.string()).optional(),
 });
-export type RowSourceRef = z.infer<typeof RowSourceRefSchema>;
+export type RowSourceRef = z.infer<typeof RowSourceRefObject>;
+// Passthrough (contracts §4): a newer build's extra keys survive a re-save; the type stays strict.
+export const RowSourceRefSchema = RowSourceRefObject.passthrough() as unknown as z.ZodType<RowSourceRef, z.ZodTypeDef, unknown>;
 
 const GraphicRowObject = z.object({
   kind: z.literal("graphic"),
@@ -119,7 +121,7 @@ const ShowSongObject = z.object({
 export type ShowSong = z.infer<typeof ShowSongObject>;
 export const ShowSongSchema = ShowSongObject.passthrough();
 
-export const ScriptureSlideSchema = z.object({
+const ScriptureSlideObject = z.object({
   id: z.string(),
   /**
    * Verses on this slide, in display order. Stored as structured data
@@ -128,16 +130,26 @@ export const ScriptureSlideSchema = z.object({
    */
   verses: z
     .array(
-      z.object({
-        book: z.string(),
-        chapter: z.number().int().positive(),
-        verse: z.number().int().positive(),
-        text: z.string(),
-      }),
+      z
+        .object({
+          book: z.string(),
+          chapter: z.number().int().positive(),
+          verse: z.number().int().positive(),
+          text: z.string(),
+        })
+        .passthrough() as unknown as z.ZodType<ScriptureVerse, z.ZodTypeDef, unknown>,
     )
     .min(1),
 });
-export type ScriptureSlide = z.infer<typeof ScriptureSlideSchema>;
+type ScriptureVerse = { book: string; chapter: number; verse: number; text: string };
+export type ScriptureSlide = z.infer<typeof ScriptureSlideObject>;
+export const ScriptureSlideSchema = ScriptureSlideObject.passthrough() as unknown as z.ZodType<
+  ScriptureSlide,
+  z.ZodTypeDef,
+  unknown
+>;
+
+type ScriptureSource = { provider: "api.bible"; bibleId: string; fetchedAt: string; usageTokens: string[] };
 
 const ScriptureRowObject = z.object({
   kind: z.literal("scripture"),
@@ -176,14 +188,16 @@ const ScriptureRowObject = z.object({
    * Set for rows fetched from a licensed API (NIV via API.Bible). The server
    * refreshes such rows' text every 14 days and reports usage with the tokens.
    */
-  source: z
-    .object({
-      provider: z.literal("api.bible"),
-      bibleId: z.string(),
-      fetchedAt: z.string(),
-      usageTokens: z.array(z.string()).default([]),
-    })
-    .optional(),
+  source: (
+    z
+      .object({
+        provider: z.literal("api.bible"),
+        bibleId: z.string(),
+        fetchedAt: z.string(),
+        usageTokens: z.array(z.string()).default([]),
+      })
+      .passthrough() as unknown as z.ZodType<ScriptureSource, z.ZodTypeDef, unknown>
+  ).optional(),
   /** Intro template override; falls back to ScriptureSettings.introTemplateId. */
   introTemplateId: z.string().optional(),
   /** templateFieldKey -> scripture field key (reference, book, translation, translationName, attribution). */

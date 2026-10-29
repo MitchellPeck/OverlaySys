@@ -1,14 +1,16 @@
 import { z } from "zod";
 
 /** Long-form speaker notes attached to a show; split into points for the confidence monitor. */
-export const SermonNotesSchema = z.object({
+const SermonNotesObject = z.object({
   id: z.string(),
   title: z.string(),
   /** Markdown. Headings (any level) start points; without headings, blank-line blocks do. */
   body: z.string(),
   updatedAt: z.string().optional(),
 });
-export type SermonNotes = z.infer<typeof SermonNotesSchema>;
+export type SermonNotes = z.infer<typeof SermonNotesObject>;
+// Passthrough (contracts §4): unknown keys from a newer build survive a re-save.
+export const SermonNotesSchema = SermonNotesObject.passthrough() as unknown as z.ZodType<SermonNotes, z.ZodTypeDef, unknown>;
 
 export type NotesPoint = { heading: string; markdown: string };
 
