@@ -91,6 +91,20 @@ describe("deckMenuItems", () => {
   });
 });
 
+describe("deckMenuItems offline", () => {
+  it("disables Duplicate, Rename and Delete with the reason; Open stays enabled", () => {
+    const noop = () => {};
+    const items = deckMenuItems(a, { open: noop, duplicate: noop, rename: noop, delete: noop }, "Reconnect to edit decks");
+    const real = items.filter((i): i is Extract<typeof i, { id: string }> => "id" in i);
+    expect(Object.fromEntries(real.map((i) => [i.id, i.disabled]))).toEqual({
+      open: undefined,
+      duplicate: "Reconnect to edit decks",
+      rename: "Reconnect to edit decks",
+      delete: "Reconnect to edit decks",
+    });
+  });
+});
+
 describe("deckDeleteConfirm", () => {
   it("asks only when the deck is used", () => {
     expect(deckDeleteConfirm(a)).toBeNull();

@@ -112,6 +112,9 @@ type StoreState = {
   /** Bumped on reconnect so useDeck re-asks for decks whose get_deck was lost. */
   deckEpoch: number;
   // [/P3.13]
+  // [P3.14] true once the first deck list has arrived
+  decksLoaded: boolean;
+  // [/P3.14]
   songs: SongMeta[];
   // [P1.13] true once the first song list has arrived
   songsLoaded: boolean;
@@ -251,6 +254,7 @@ export const useStore = create<StoreState>((set) => ({
   deckNotFound: {},
   deckEpoch: 0,
   // [/P3.13]
+  decksLoaded: false, // [P3.14]
   songs: [],
   songsLoaded: false, // [P1.13]
   showsLoaded: false, // [P1.12]
@@ -401,7 +405,7 @@ export const useStore = create<StoreState>((set) => ({
     }),
   setSongs: (songs) => set({ songs, songsLoaded: true }), // [P1.13]
   // [P3.13]
-  setDecks: (decks) => set({ decks }),
+  setDecks: (decks) => set({ decks, decksLoaded: true }), // [P3.14] decksLoaded
   upsertDeck: (d) =>
     set((s) => {
       const { [d.id]: _gone, ...deckNotFound } = s.deckNotFound;

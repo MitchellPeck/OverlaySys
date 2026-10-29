@@ -7,7 +7,6 @@ import { Button, Dialog, Input, Select, Tooltip, colors, fontSize, radius } from
 import { useStore } from "../../lib/store";
 import { getClient } from "../../lib/useWs";
 import { templatesFor } from "../../lib/templateRoles";
-import { TemplateThumbnail } from "../../lib/thumbnails/TemplateThumbnail";
 import { LicensingField } from "./LicensingField";
 import { buildNewDeck, defaultDeckTemplateId, newDeckBlocker } from "./libraryConfig";
 
@@ -126,14 +125,12 @@ export function NewDeckDialog({
           <label htmlFor="new-deck-design" style={{ fontSize: fontSize.sm, color: colors.textDim }}>
             Design
           </label>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <Select
+          <Select
               id="new-deck-design"
               size="md"
               value={chosen}
               disabled={!templatesLoaded && templates.length === 0}
               onChange={(e) => setTemplateId(e.target.value)}
-              style={{ flex: 1, minWidth: 0 }}
             >
               {templates.length === 0 ? <option value={chosen}>Default lyric design</option> : null}
               {groups.suggested.length > 0 ? (
@@ -155,17 +152,6 @@ export function NewDeckDialog({
                 </optgroup>
               ) : null}
             </Select>
-            <div
-              style={{
-                flexShrink: 0,
-                borderRadius: radius.sm,
-                overflow: "hidden",
-                border: `1px solid ${colors.border}`,
-              }}
-            >
-              <TemplateThumbnail templateId={chosen} data={{}} width={112} />
-            </div>
-          </div>
           <div style={{ fontSize: fontSize.xs, color: colors.textMuted }}>
             Each slide can use a different design later.
           </div>

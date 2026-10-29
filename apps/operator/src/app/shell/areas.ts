@@ -88,9 +88,12 @@ export function defaultRouteFor(id: AreaId, cloud: boolean): string {
   return destinationsFor(id, cloud)[0]?.route ?? "/shows";
 }
 
-/** Routes where the project switcher is hidden: editors and per-install settings. */
+/** Routes where the project switcher is hidden: editors, per-install settings and global libraries (Slides). */
 const NO_SWITCHER = [
   "/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit",
+  // [P3.14] decks are global
+  "/slides",
+  // [/P3.14]
   "/settings/channels", "/settings/stt", "/settings/connection", "/account",
 ];
 

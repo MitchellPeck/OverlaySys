@@ -6,7 +6,7 @@ import { useStore } from "./store";
 const deck = { id: "d1", name: "Deck A", tags: [], defaultTemplateId: "t", licensing: { kind: "own" }, slides: [], createdAt: "x" } as Deck;
 
 beforeEach(() => {
-  useStore.setState({ decks: [], deckCache: {}, deckNotFound: {}, deckEpoch: 0 });
+  useStore.setState({ decks: [], deckCache: {}, deckNotFound: {}, deckEpoch: 0, decksLoaded: false });
   requestedDecks.clear();
 });
 
@@ -46,3 +46,13 @@ describe("deck lookup state", () => {
     expect(useStore.getState().deckEpoch).toBe(1);
   });
 });
+
+// [P3.14]
+describe("decksLoaded", () => {
+  it("is false until the first deck list arrives, even an empty one", () => {
+    expect(useStore.getState().decksLoaded).toBe(false);
+    useStore.getState().setDecks([]);
+    expect(useStore.getState().decksLoaded).toBe(true);
+  });
+});
+// [/P3.14]

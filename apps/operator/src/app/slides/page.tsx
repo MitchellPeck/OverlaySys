@@ -9,6 +9,7 @@ import { getClient } from "../../lib/useWs";
 import { useConnection } from "../../lib/useConnection";
 import { ackErrorText, requestOne, sendAndAwaitAck } from "../../lib/awaitAck";
 import { plural } from "../../lib/listFormat";
+import { listLoadState } from "../../lib/listLoadState";
 import { PageBody } from "../components/PageShell";
 import { PageChrome } from "../shell/PageChrome";
 import { NewDeckDialog } from "./NewDeckDialog";
@@ -40,20 +41,16 @@ export default function SlidesLibraryPage() {
   const toast = useToast();
   const confirm = useConfirm();
   const prompt = usePrompt();
-  const { connected } = useConnection();
+  const { connected, conn } = useConnection();
   const decks = useStore((s) => s.decks);
-  const [listed, setListed] = useState(false);
+  const decksLoaded = useStore((s) => s.decksLoaded);
   const [newOpen, setNewOpen] = useState(false);
+  // Decks live on the local server only (no cloud path), so no cloud flag here.
+  const load = listLoadState({ conn, loaded: decksLoaded });
 
-  // Ask for the list on (re)connect; the first deck_list ends the loading state.
+  // Ask for a fresh list on (re)connect; the store's decksLoaded ends the loading state.
   useEffect(() => {
-    if (!connected) return;
-    const client = getClient();
-    const off = client.on((m) => {
-      if (m.type === "deck_list") setListed(true);
-    });
-    client.send({ type: "list_decks" });
-    return off;
+    if (connected) getClient().send({ type: "list_decks" });
   }, [connected]);
 
   const filters = useMemo(() => deckFilters(decks), [decks]);
@@ -140,7 +137,7 @@ export default function SlidesLibraryPage() {
         sorts={deckSorts}
         defaultSort={DEFAULT_DECK_SORT}
         filters={filters}
-        menuItems={(d) => deckMenuItems(d, actions)}
+        menuItems={(d) => deckMenuItems(d, actions, offline ? "Reconnect to edit decks" : undefined)}
         onOpen={actions.open}
         primaryAction={{
           label: "New deck",
@@ -153,9 +150,9 @@ export default function SlidesLibraryPage() {
           body: "Decks are reusable slides for liturgy, responses, anthems and announcements.",
           action: offline ? undefined : { label: "New deck", onClick: () => setNewOpen(true) },
         }}
-        loading={connected && !listed && decks.length === 0}
+        loading={load.loading && decks.length === 0}
         // Offline with nothing loaded: say so. With decks already loaded, keep showing them.
-        error={offline && decks.length === 0 ? offlineCopy("decks").title : null}
+        error={load.error && decks.length === 0 ? offlineCopy("decks").title : null}
       />
       <NewDeckDialog open={newOpen} onClose={() => setNewOpen(false)} onCreate={createDeck} />
     </PageBody>

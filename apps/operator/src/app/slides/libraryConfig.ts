@@ -56,13 +56,15 @@ export type DeckActions = {
   delete(d: DeckMeta): void;
 };
 
-export function deckMenuItems(meta: DeckMeta, actions: DeckActions): MenuItem[] {
+/** `offlineReason` disables the actions that need the server (shown as the tooltip). */
+export function deckMenuItems(meta: DeckMeta, actions: DeckActions, offlineReason?: string): MenuItem[] {
+  const off = offlineReason ? { disabled: offlineReason } : {};
   return [
     { id: "open", label: "Open", onSelect: () => actions.open(meta) },
-    { id: "duplicate", label: "Duplicate", onSelect: () => actions.duplicate(meta) },
-    { id: "rename", label: "Rename…", onSelect: () => actions.rename(meta) },
+    { id: "duplicate", label: "Duplicate", ...off, onSelect: () => actions.duplicate(meta) },
+    { id: "rename", label: "Rename…", ...off, onSelect: () => actions.rename(meta) },
     { separator: true },
-    { id: "delete", label: "Delete…", danger: true, onSelect: () => actions.delete(meta) },
+    { id: "delete", label: "Delete…", danger: true, ...off, onSelect: () => actions.delete(meta) },
   ];
 }
 
