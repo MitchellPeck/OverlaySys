@@ -9,7 +9,7 @@ import type { RowLike } from "./rowLike";
 import { sectionShortLabel, type RowViewCtx } from "./rowView";
 import { slideDeltaTo } from "./songNav";
 import { songCueChannel, songRowChannel } from "./songChannel";
-import { slidesAirState, slidesRowViewFor, slidesThumbMessages, slidesThumbState } from "./slidesRowView";
+import { slidesLiveChannel, slidesRowViewFor, slidesThumbMessages, slidesThumbState } from "./slidesRowView";
 
 export type ThumbCtx = RowViewCtx & {
   channelStates: Record<string, ChannelState>;
@@ -17,7 +17,17 @@ export type ThumbCtx = RowViewCtx & {
 };
 
 export type ThumbRender =
-  | { kind: "template"; templateId: string; data: Record<string, string> }
+  | {
+      kind: "template";
+      templateId: string;
+      data: Record<string, string>;
+      /**
+       * Slides: the card applies slideAirData with the design it loads, so a
+       * thumbnail never shows the design's sample text, even before the
+       * design reaches the store's template cache (final-review M6).
+       */
+      airData?: true;
+    }
   | { kind: "poster"; src: string | null }
   | { kind: "placeholder"; text: string };
 
@@ -227,7 +237,12 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
           key: s.key,
           label: s.label ?? `Slide ${i + 1}`,
           group: null,
-          render: { kind: "template" as const, templateId: s.templateId, data: slideAirData(s.data, ctx.templateCache[s.templateId]) },
+          render: {
+            kind: "template" as const,
+            templateId: s.templateId,
+            data: slideAirData(s.data, ctx.templateCache[s.templateId]),
+            airData: true as const,
+          },
           state: slidesThumbState(row, i, ctx.channelStates),
           blanked: false,
         }));
@@ -302,8 +317,9 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
         return { messages: [], toast: "Videos play straight to their output: use Take" };
       }
       case "slides": {
-        const live = slidesAirState(row, ctx.channelStates) === "program";
-        const msgs = slidesThumbMessages(ctx.show.id, row, index, live ? "program-live" : "preview");
+        // Live on any output (program or the row's routed one): jump that session.
+        const live = slidesLiveChannel(row, ctx.channelStates);
+        const msgs = slidesThumbMessages(ctx.show.id, row, index, live ? "program-live" : "preview", live ?? undefined);
         return msgs ? { messages: msgs } : { messages: [], toast: "Slides decks aren't available yet" };
       }
       default:

@@ -4,13 +4,13 @@ import type { ChannelState, Section, Show, Song, SongSessionSummary } from "@ove
 const slidesMock = vi.fn();
 vi.mock("./slidesRowView", () => ({
   slidesRowViewFor: (...a: unknown[]) => slidesMock(...a),
-  slidesAirState: (row: { id: string }, st: Record<string, ChannelState>) =>
-    st.program?.slidesSession?.rowId === row.id ? "program" : st.preview?.slidesSession?.rowId === row.id ? "preview" : null,
+  slidesLiveChannel: (row: { id: string }, st: Record<string, ChannelState>) =>
+    Object.keys(st).find((ch) => ch !== "preview" && st[ch]?.slidesSession?.rowId === row.id) ?? null,
   slidesThumbState: (row: { id: string }, pos: number, st: Record<string, ChannelState>) =>
     st.program?.slidesSession?.rowId === row.id && st.program.slidesSession.slideIdx === pos ? "live" : null,
-  slidesThumbMessages: (showId: string, row: { id: string }, pos: number, target: string) =>
+  slidesThumbMessages: (showId: string, row: { id: string }, pos: number, target: string, ch = "program") =>
     target === "program-live"
-      ? [{ type: "slides_goto", channel: "program", slideIdx: pos }]
+      ? [{ type: "slides_goto", channel: ch, slideIdx: pos }]
       : [{ type: "slides_take", showId, rowId: row.id, slideIdx: pos, channel: "preview" }],
 }));
 
@@ -133,7 +133,16 @@ describe("thumbsFor", () => {
     };
     const row = { kind: "slides", id: "s1", deckId: "d" };
     const t = thumbsFor(row as never, mkCtx({ templateCache: { LT: lt } as never }));
-    expect(t[0]!.render).toEqual({ kind: "template", templateId: "LT", data: { header: "", subtitle: "Line D" } });
+    expect(t[0]!.render).toEqual({ kind: "template", templateId: "LT", data: { header: "", subtitle: "Line D" }, airData: true });
+    slidesMock.mockReset();
+  });
+
+  it("slides thumbs before the design is cached still ask the card to blank sample text (airData)", () => {
+    slidesMock.mockReturnValue({
+      slides: [{ key: "k1", slideId: "a", position: 0, templateId: "LT", data: { subtitle: "Line D" } }],
+    });
+    const t = thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, mkCtx());
+    expect(t[0]!.render).toMatchObject({ kind: "template", airData: true });
     slidesMock.mockReset();
   });
 });
@@ -315,5 +324,11 @@ describe("thumbActivate", () => {
     expect(thumbActivate(row as never, 2, mkCtx()).messages).toEqual([
       { type: "slides_take", showId: "show1", rowId: "s1", slideIdx: 2, channel: "preview" },
     ]);
+  });
+
+  it("slides live on a routed output: a click jumps that session, never a second one on preview", () => {
+    const row = { kind: "slides", id: "s1", deckId: "d", channelHint: "lyrics" };
+    const live = mkCtx({ channelStates: { lyrics: { slidesSession: { rowId: "s1", slideIdx: 0 } } as unknown as ChannelState } });
+    expect(thumbActivate(row as never, 2, live).messages).toEqual([{ type: "slides_goto", channel: "lyrics", slideIdx: 2 }]);
   });
 });

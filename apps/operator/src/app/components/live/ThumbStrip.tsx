@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { slideAirData } from "@overlaysys/core";
 import { colors, radius, useToast } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
@@ -199,7 +200,15 @@ function CardBody({
   const r = spec.render;
   if (r.kind === "template") {
     return (
-      <TemplateCard rowId={row.id} templateId={r.templateId} data={r.data} width={width} height={height} measure={measure} />
+      <TemplateCard
+        rowId={row.id}
+        templateId={r.templateId}
+        data={r.data}
+        airData={!!r.airData}
+        width={width}
+        height={height}
+        measure={measure}
+      />
     );
   }
   if (r.kind === "poster") {
@@ -241,7 +250,8 @@ function Placeholder({ text, width, height }: { text: string; width: number; hei
 function TemplateCard({
   rowId,
   templateId,
-  data,
+  data: rawData,
+  airData,
   width,
   height,
   measure,
@@ -249,11 +259,14 @@ function TemplateCard({
   rowId: string;
   templateId: string;
   data: Record<string, string>;
+  /** Slides: blank unsupplied text fields with the loaded design, as program does. */
+  airData: boolean;
   width: number;
   height: number;
   measure: boolean;
 }) {
   const { template } = useTemplateBody(templateId);
+  const data = airData ? slideAirData(rawData, template) : rawData;
   const hostRef = useRef<HTMLDivElement>(null);
   const setRowWarnings = useOverflowStore((s) => s.setRowWarnings);
   const size = template?.size ?? { w: 16, h: 9 };
@@ -296,7 +309,8 @@ function TemplateCard({
       ref={hostRef}
       style={{ width, height, display: "flex", alignItems: "center", justifyContent: "center", background: colors.bg }}
     >
-      <TemplateThumbnail templateId={templateId} data={data} width={fit} />
+      {/* Slides wait for the design so the card never mounts its sample text. */}
+      {airData && !template ? null : <TemplateThumbnail templateId={templateId} data={data} width={fit} />}
     </div>
   );
 }
