@@ -68,6 +68,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Scripture: go to slide N (starts a queued scripture) | `scripture_goto` | Channel, Slide (1-based) |
 | Scripture: end (cancels a queued scripture) | `scripture_end` | Channel |
 | Slides: next / previous slide | `slides_advance` | Channel, Delta |
+| Slides: go to slide N | `slides_goto` | Channel, Slide (1-based) |
 | Slides: blank | `slides_blank` | Channel |
 | Slides: end | `slides_end` | Channel |
 | Rundown: take row (song-aware: songs take a part, other rows take normally) | `take_row_song_aware` | Row, Row index (1-based; survives show changes), Row, Song part (used only when the row is a song), Take via PVW → PGM, Channel (optional; blank = row/song default), From, To |

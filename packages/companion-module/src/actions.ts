@@ -78,6 +78,7 @@ export type ActionId =
   | "cursor_prev"
   // [P3.21]
   | "slides_advance"
+  | "slides_goto"
   | "slides_blank"
   | "slides_end";
   // [/P3.21]
@@ -503,6 +504,9 @@ export function dispatchAction(
     // [P3.21]
     case "slides_advance":
       messages.push({ type: "slides_advance", channel: str("channel"), delta: num("delta", 1) < 0 ? -1 : 1 });
+      break;
+    case "slides_goto":
+      messages.push({ type: "slides_goto", channel: str("channel"), slideIdx: slideIdx() });
       break;
     case "slides_blank":
       messages.push({ type: "slides_blank", channel: str("channel") });
@@ -1193,6 +1197,11 @@ export function actionDefinitions(
       name: "Slides: next / previous slide",
       options: [channelDropdown(state), deltaInput],
       callback: wrap("slides_advance"),
+    },
+    slides_goto: {
+      name: "Slides: go to slide N",
+      options: [channelDropdown(state), slideInput],
+      callback: wrap("slides_goto"),
     },
     slides_blank: {
       name: "Slides: blank",

@@ -34,6 +34,20 @@ describe("slides actions", () => {
     expect(f.messages).toEqual([{ type: "slides_advance", channel: "program", delta: 1 }]);
   });
 
+  it("slides_goto sends the 1-based slide as a 0-based index", () => {
+    expect(dispatchAction(initialState(), "slides_goto", { channel: "program", slide: 3 }).messages).toEqual([
+      { type: "slides_goto", channel: "program", slideIdx: 2 },
+    ]);
+    expect(dispatchAction(initialState(), "slides_goto", { channel: "program", slide: 0 }).messages).toEqual([
+      { type: "slides_goto", channel: "program", slideIdx: 0 },
+    ]);
+  });
+
+  it("slides_goto is offered as an action", () => {
+    const defs = actionDefinitions(initialState(), () => {});
+    expect(defs.slides_goto?.name).toBe("Slides: go to slide N");
+  });
+
   it("slides_blank and slides_end send their messages", () => {
     expect(dispatchAction(initialState(), "slides_blank", { channel: "program" }).messages).toEqual([
       { type: "slides_blank", channel: "program" },
