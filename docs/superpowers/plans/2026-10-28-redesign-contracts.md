@@ -248,8 +248,10 @@ The show editor's `+ Add item` menu shows "Slides" (disabled with reason "Needs 
 ```ts
 type PaletteCommand = { id: string; label: string; group: "On air"; keywords: string[];
   confirm: { title: string; message: string; confirmLabel: string }; messages(): ClientMessage[] };
-function liveCommands(s: { channelStates; hotcards: HotcardMeta[]; hotcardCache: Record<string, Hotcard>; currentProjectId: string; show: Show | null }): PaletteCommand[];
+type LiveCommandState = { channelStates; hotcards: HotcardMeta[]; hotcardCache: Record<string, Hotcard>; currentProjectId: string; show: Show | null };
+function liveCommands(s: LiveCommandState | (() => LiveCommandState)): PaletteCommand[];
 ```
+[P2a.16 fix1] Pass a getter (`useStore.getState`): the list is built from one read, but each `messages()` reads the state again at send time (after the confirm), so a confirmed command never sends a stale snapshot. A plain object is accepted for tests.
 Ids: `take-pvw` "Take preview to program", `clear-program` "Clear program", `clear-preview` "Clear preview", `clear-all` "Clear all outputs", `hotcard-cue:<id>` "Cue hotcard <name>" (→ preview), `hotcard-take:<id>` "Take hotcard <name>" (→ `hotcardRoute(hint, "take")`); current project only; every one has a `confirm` (D17c). The command palette (P2b.24) maps them into `PaletteEntry` extras with `toPaletteEntry(cmd, send)`, runs `confirm` before sending, and adds none in cloud mode. The palette defines no on-air verbs of its own.
 
 ## 11. List metadata — owner P1.8

@@ -14,10 +14,11 @@ export type PaletteCommand = {
   group: "On air";
   keywords: string[];
   confirm: { title: string; message: string; confirmLabel: string };
+  /** Built from the state read when called (after the confirm), never from the listing snapshot. */
   messages(): ClientMessage[];
 };
 
-type LiveCommandState = {
+export type LiveCommandState = {
   channelStates: Record<string, ChannelState>;
   hotcards: HotcardMeta[];
   hotcardCache: Record<string, Hotcard>;
@@ -29,9 +30,16 @@ type LiveCommandState = {
  * The palette's On air commands: Take PVW, the three clears, and Cue / Take
  * for each hotcard of the current project. A hotcard whose body isn't loaded
  * yet is left out: it has no data to send.
+ *
+ * Pass a getter (e.g. `useStore.getState`): the list comes from one read, but
+ * each `messages()` reads the state again, so a command confirmed seconds
+ * later sends what is on the outputs then (another console may have changed
+ * preview, started a video, or edited the hotcard meanwhile). A plain object
+ * is accepted for tests and is read as-is.
  */
-export function liveCommands(s: LiveCommandState): PaletteCommand[] {
-  const { channelStates } = s;
+export function liveCommands(source: LiveCommandState | (() => LiveCommandState)): PaletteCommand[] {
+  const get = typeof source === "function" ? source : () => source;
+  const s = get();
   const cmds: PaletteCommand[] = [
     {
       id: "take-pvw",
@@ -39,7 +47,10 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
       group: "On air",
       keywords: ["take", "pvw", "preview", "program", "go"],
       confirm: { title: "Take preview to program?", message: "What's on preview goes to program.", confirmLabel: "Take" },
-      messages: () => pvwTakeMessages(channelStates.preview, s.show?.id ?? null),
+      messages: () => {
+        const now = get();
+        return pvwTakeMessages(now.channelStates.preview, now.show?.id ?? null);
+      },
     },
     {
       id: "clear-program",
@@ -47,7 +58,7 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
       group: "On air",
       keywords: ["clear", "pgm", "program", "off air"],
       confirm: { title: "Clear program?", message: "Everything on program, including video, is cleared.", confirmLabel: "Clear program" },
-      messages: () => clearChannelMessages(channelStates.program, "program"),
+      messages: () => clearChannelMessages(get().channelStates.program, "program"),
     },
     {
       id: "clear-preview",
@@ -55,7 +66,7 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
       group: "On air",
       keywords: ["clear", "pvw", "preview"],
       confirm: { title: "Clear preview?", message: "Everything on preview is cleared.", confirmLabel: "Clear preview" },
-      messages: () => clearChannelMessages(channelStates.preview, "preview"),
+      messages: () => clearChannelMessages(get().channelStates.preview, "preview"),
     },
     {
       id: "clear-all",
@@ -64,15 +75,20 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
       keywords: ["clear", "all", "outputs", "panic"],
       confirm: { title: "Clear all outputs?", message: "Everything on every output is cleared.", confirmLabel: "Clear all" },
       messages: () =>
-        Object.entries(channelStates)
+        Object.entries(get().channelStates)
           .filter(([, st]) => channelHasContent(st))
           .flatMap(([ch, st]) => clearChannelMessages(st, ch)),
     },
   ];
+  /** The card's current body, if it is still a card of the current project. */
+  const freshCard = (id: string): Hotcard | null => {
+    const now = get();
+    const card = now.hotcardCache[id];
+    return card && card.projectId === now.currentProjectId ? card : null;
+  };
   for (const meta of s.hotcards) {
     if (meta.projectId !== s.currentProjectId) continue;
-    const card = s.hotcardCache[meta.id];
-    if (!card) continue;
+    if (!s.hotcardCache[meta.id]) continue;
     const keywords = ["hotcard", meta.name.toLowerCase(), ...(meta.hotkey ? [meta.hotkey.toLowerCase()] : [])];
     cmds.push(
       {
@@ -81,7 +97,10 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
         group: "On air",
         keywords: ["cue", ...keywords],
         confirm: { title: `Cue ${meta.name}?`, message: `${meta.name} goes to preview.`, confirmLabel: "Cue" },
-        messages: () => [hotcardFireMessage(card, "cue")],
+        messages: () => {
+          const card = freshCard(meta.id);
+          return card ? [hotcardFireMessage(card, "cue")] : [];
+        },
       },
       {
         id: `hotcard-take:${meta.id}`,
@@ -89,7 +108,10 @@ export function liveCommands(s: LiveCommandState): PaletteCommand[] {
         group: "On air",
         keywords: ["take", ...keywords],
         confirm: { title: `Take ${meta.name}?`, message: `${meta.name} goes on air.`, confirmLabel: "Take" },
-        messages: () => [hotcardFireMessage(card, "take")],
+        messages: () => {
+          const card = freshCard(meta.id);
+          return card ? [hotcardFireMessage(card, "take")] : [];
+        },
       },
     );
   }

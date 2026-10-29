@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Hotcard, HotcardMeta, Show } from "@overlaysys/core";
-import { liveCommands } from "./liveCommands";
+import { liveCommands, type LiveCommandState } from "./liveCommands";
 
 const welcome: Hotcard = { id: "h1", name: "Welcome", projectId: "p1", templateId: "l3", data: { title: "Line one" }, channelHint: "program" };
 const other: Hotcard = { id: "h2", name: "Elsewhere", projectId: "p2", templateId: "l3", data: {} };
@@ -98,5 +98,44 @@ describe("liveCommands", () => {
       { type: "clear", channel: "program" },
       { type: "clear", channel: "lower-thirds" },
     ]);
+  });
+});
+
+describe("liveCommands reads fresh state at send time", () => {
+  // The palette lists commands, then holds a confirm open; meanwhile another
+  // console changes the outputs. messages() must reflect the state then.
+  const graphic = { templateId: "l3", data: {}, phase: "on", takenAt: 1 } as const;
+  const setup = () => {
+    let cur: LiveCommandState = { ...stateWithSongOnPvw };
+    const cmds = liveCommands(() => cur);
+    const set = (next: typeof cur) => (cur = next);
+    return { cmds, set, get: () => cur };
+  };
+  const find = (cmds: ReturnType<typeof liveCommands>, id: string) => cmds.find((c) => c.id === id)!;
+
+  it("take-pvw: preview changed from a song to a graphic after listing", () => {
+    const { cmds, set, get } = setup();
+    set({ ...get(), channelStates: { preview: { channel: "preview", active: graphic } } as Record<string, ChannelState> });
+    expect(find(cmds, "take-pvw").messages()).toEqual([{ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" }]);
+  });
+
+  it("clear-program: a video started on program after listing is cleared too", () => {
+    const { cmds, set, get } = setup();
+    set({ ...get(), channelStates: { program: { channel: "program", active: null, media: { rowId: "v" } } } as unknown as Record<string, ChannelState> });
+    expect(find(cmds, "clear-program").messages()).toContainEqual({ type: "media_clear", channel: "program" });
+  });
+
+  it("clear-all: a channel that gained content after listing is cleared", () => {
+    const { cmds, set, get } = setup();
+    set({ ...get(), channelStates: { "lower-thirds": { channel: "lower-thirds", active: graphic } } as Record<string, ChannelState> });
+    expect(find(cmds, "clear-all").messages()).toEqual([{ type: "clear", channel: "lower-thirds" }]);
+  });
+
+  it("hotcard: sends the card body as edited meanwhile; nothing once it's gone", () => {
+    const { cmds, set, get } = setup();
+    set({ ...get(), hotcardCache: { ...get().hotcardCache, h1: { ...welcome, data: { title: "Edited line" } } } });
+    expect(find(cmds, "hotcard-take:h1").messages()[0]).toMatchObject({ data: { title: "Edited line" } });
+    set({ ...get(), hotcardCache: {} });
+    expect(find(cmds, "hotcard-cue:h1").messages()).toEqual([]);
   });
 });
