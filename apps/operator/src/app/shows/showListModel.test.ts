@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShowMeta } from "@/lib/store";
-import { matchesWhen, showSorts } from "./showListModel";
+import { matchesWhen, showListStatus, showSorts } from "./showListModel";
 
 const m = (id: string, name: string, scheduledFor?: string, updatedAt?: string): ShowMeta => ({
   id, name, projectId: "p", rowCount: 0, scheduledFor, updatedAt,
@@ -38,5 +38,19 @@ describe("matchesWhen", () => {
     expect(matchesWhen(m("a", "x", "2026-10-27"), "past", now)).toBe(true);
     expect(matchesWhen(m("a", "x"), "none", now)).toBe(true);
     expect(matchesWhen(m("a", "x"), "upcoming", now)).toBe(false);
+  });
+});
+
+describe("showListStatus", () => {
+  it("connecting and open-before-first-list are loading, never error", () => {
+    expect(showListStatus({ cloud: false, conn: "connecting", listed: false })).toEqual({ loading: true, error: null });
+    expect(showListStatus({ cloud: false, conn: "open", listed: false })).toEqual({ loading: true, error: null });
+  });
+  it("open with a list is ready; closed is the only error", () => {
+    expect(showListStatus({ cloud: false, conn: "open", listed: true })).toEqual({ loading: false, error: null });
+    expect(showListStatus({ cloud: false, conn: "closed", listed: false }).error).toBe("Not connected to the server");
+  });
+  it("cloud ignores the socket", () => {
+    expect(showListStatus({ cloud: true, conn: "closed", listed: true })).toEqual({ loading: false, error: null });
   });
 });

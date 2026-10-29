@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Download, FolderInput, Trash2, Files } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
@@ -11,7 +11,7 @@ import { useStore, type ShowMeta } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { exportFileName } from "@/lib/exportName";
 import { formatDuration, formatRelative, formatServiceDate, plural } from "@/lib/listFormat";
-import { matchesWhen, metaDate, showFilterWhenOptions, showSorts } from "./showListModel";
+import { matchesWhen, metaDate, showFilterWhenOptions, showListStatus, showSorts } from "./showListModel";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -34,6 +34,10 @@ export default function ShowsIndexPage() {
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
+  const initialMetas = useRef(allShowMetas);
+  const [cloudListed, setCloudListed] = useState(false);
+  const listed = cloud ? cloudListed : allShowMetas !== initialMetas.current || initialMetas.current.length > 0;
+  const status = showListStatus({ cloud, conn, listed });
   const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
@@ -53,9 +57,9 @@ export default function ShowsIndexPage() {
     if (cloud) {
       // Cloud mode: pull project + show metadata from Supabase. Projects
       // come along because the move-to-project selector needs them.
-      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()]).catch(
-        (err) => console.warn("[shows] cloud list failed", err),
-      );
+      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()])
+        .catch((err) => console.warn("[shows] cloud list failed", err))
+        .finally(() => setCloudListed(true));
     } else if (conn === "open") {
       send({ type: "list_shows" });
     }
@@ -287,8 +291,8 @@ export default function ShowsIndexPage() {
         body: "A show is the rundown for one service. Create one here, or import a plan from Planning Center.",
         action: { label: "New show", onClick: () => void newShow() },
       }}
-      loading={!cloud && conn === "connecting"}
-      error={disabled && conn === "closed" ? "Not connected to the server" : null}
+      loading={status.loading}
+      error={status.error}
     />
   );
 }

@@ -44,3 +44,13 @@ export const showFilterWhenOptions = [
   { value: "past", label: "Past" },
   { value: "none", label: "No date" },
 ];
+
+/** Loading until connected AND the first list has arrived; error only when the socket is actually closed. */
+export function showListStatus(i: { cloud: boolean; conn: "connecting" | "open" | "closed"; listed: boolean }): {
+  loading: boolean;
+  error: string | null;
+} {
+  if (i.cloud) return { loading: !i.listed, error: null };
+  if (i.conn === "closed") return { loading: false, error: "Not connected to the server" };
+  return { loading: i.conn === "connecting" || !i.listed, error: null };
+}
