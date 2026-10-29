@@ -101,13 +101,13 @@ export function useGlobalShortcuts(): void {
       const selVideoOnAir = selRow?.kind === "video" && !!onAirMediaFor(selRow, store.channelStates);
       if (e.code === "Space" && !hasCommandModifier(e) && spaceAction(mode, selVideoOnAir) === "advance") {
         e.preventDefault();
-        const m = advanceMessage(mode, e.shiftKey ? -1 : 1);
+        const m = advanceMessage(mode, e.shiftKey ? -1 : 1, store.channelStates);
         if (m) send(m);
         return;
       }
       if (mode === "slides" && e.key.toLowerCase() === "b" && !hasCommandModifier(e)) {
         e.preventDefault();
-        const m = blankMessage("slides");
+        const m = blankMessage("slides", store.channelStates);
         if (m) send(m);
         return;
       }

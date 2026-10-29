@@ -223,4 +223,11 @@ describe("advanceMessage / blankMessage", () => {
     expect(blankMessage("scripture")).toBeNull();
     expect(blankMessage("slides")).toEqual({ type: "slides_blank", channel: "program" });
   });
+  it("slides on a non-program output: keys mode is slides and Space / B drive that output", () => {
+    const ss = { rowId: "r", title: "D", slideIdx: 0, slideCount: 2, lines: [], blanked: false, atEnd: false };
+    const channelStates = { lyrics: { channel: "lyrics", active: null, slidesSession: ss } } as never;
+    expect(keyMode({ songSessions: {}, channelStates })).toBe("slides");
+    expect(advanceMessage("slides", -1, channelStates)).toEqual({ type: "slides_advance", channel: "lyrics", delta: -1 });
+    expect(blankMessage("slides", channelStates)).toEqual({ type: "slides_blank", channel: "lyrics" });
+  });
 });

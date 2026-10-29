@@ -77,26 +77,33 @@ export function keyMode(store: {
 }
 
 /** Space / Shift+Space in the given mode; null in rundown mode (Space takes there). */
-export function advanceMessage(mode: KeyMode, delta: 1 | -1): ClientMessage | null {
+export function advanceMessage(
+  mode: KeyMode,
+  delta: 1 | -1,
+  channelStates: Record<string, ChannelState | undefined> = {},
+): ClientMessage | null {
   switch (mode) {
     case "song":
       return { type: "song_advance", channel: "program", delta };
     case "scripture":
       return { type: "scripture_advance", channel: "program", delta };
     case "slides":
-      return slidesAdvanceMessage(delta);
+      return slidesAdvanceMessage(delta, slidesKeyChannel(channelStates) ?? "program");
     case "rundown":
       return null;
   }
 }
 
 /** The blank key: "." blanks a song; B blanks slides. Null elsewhere. */
-export function blankMessage(mode: KeyMode): ClientMessage | null {
+export function blankMessage(
+  mode: KeyMode,
+  channelStates: Record<string, ChannelState | undefined> = {},
+): ClientMessage | null {
   switch (mode) {
     case "song":
       return { type: "song_blank", channel: "program" };
     case "slides":
-      return slidesBlankMessage();
+      return slidesBlankMessage(slidesKeyChannel(channelStates) ?? "program");
     default:
       return null;
   }

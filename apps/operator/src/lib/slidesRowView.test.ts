@@ -91,3 +91,41 @@ describe("slides adapter", () => {
     expect(a.slidesBlankMessage()).toEqual({ type: "slides_blank", channel: "program" });
   });
 });
+
+describe("slides row routed to a non-program output (final-review I1)", () => {
+  const routed = { kind: "slides", id: "r1", deckId: "d1", channelHint: "lyrics" } as RowLike;
+  const onLyrics = { lyrics: st({ slidesSession: session("r1", { slideIdx: 1 }) }) };
+
+  it("lights ON AIR on the output it was taken to", () => {
+    expect(a.slidesLiveChannel(routed, onLyrics)).toBe("lyrics");
+    expect(a.slidesAirState(routed, onLyrics)).toBe("program");
+    // Program wins when the row is somehow on both.
+    const both = { ...onLyrics, program: st({ slidesSession: session("r1") }) };
+    expect(a.slidesLiveChannel(routed, both)).toBe("program");
+    // Preview never counts as on air.
+    expect(a.slidesLiveChannel(routed, { preview: st({ slidesSession: session("r1") }) })).toBeNull();
+    // Another row's session on that output doesn't light this one.
+    expect(a.slidesAirState(routed, { lyrics: st({ slidesSession: session("r2") }) })).toBeNull();
+  });
+
+  it("thumbs read live from that output; a click jumps there instead of starting a second session", () => {
+    expect(a.slidesThumbState(routed, 1, onLyrics)).toBe("live");
+    expect(a.slidesThumbState(routed, 0, onLyrics)).toBeNull();
+    expect(a.slidesThumbMessages("s", routed, 2, "program-live", "lyrics")).toEqual([
+      { type: "slides_goto", channel: "lyrics", slideIdx: 2 },
+    ]);
+  });
+
+  it("keys drive the session on that output (Space, Shift+Space, B)", () => {
+    expect(a.slidesKeyChannel(onLyrics)).toBe("lyrics");
+    expect(a.slidesKeyChannel({ ...onLyrics, program: st({ slidesSession: session("r9") }) })).toBe("program");
+    expect(a.slidesKeyChannel({ preview: st({ slidesSession: session("r1") }) })).toBeNull();
+    expect(a.slidesAdvanceMessage(1, "lyrics")).toEqual({ type: "slides_advance", channel: "lyrics", delta: 1 });
+    expect(a.slidesBlankMessage("lyrics")).toEqual({ type: "slides_blank", channel: "lyrics" });
+  });
+
+  it("End of deck shows for a session on that output", () => {
+    const view = a.slidesRowViewFor(routed, deck())!;
+    expect(a.slidesStripNotice(routed, view, { lyrics: st({ slidesSession: session("r1", { atEnd: true }) }) })).toBe(SLIDES_END_OF_DECK);
+  });
+});

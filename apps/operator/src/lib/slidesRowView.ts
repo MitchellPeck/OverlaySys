@@ -34,8 +34,24 @@ export function slidesRowViewFor(row: RowLike, deck: Deck | null | undefined): S
   return slidesRowView(row as SlidesRowFields, d);
 }
 
+/**
+ * The output this slides row is on air on: program first, then the row's
+ * own routed output (channelHint), then any other non-preview output whose
+ * session is this row's. Preview never counts. Null when not on air.
+ */
+export function slidesLiveChannel(row: RowLike, channelStates: Record<string, ChannelState | undefined>): string | null {
+  const hint = (row as { channelHint?: string }).channelHint;
+  const order = ["program", ...(hint && hint !== "program" ? [hint] : []), ...Object.keys(channelStates)];
+  for (const ch of order) {
+    if (ch === "preview") continue;
+    if (channelStates[ch]?.slidesSession?.rowId === row.id) return ch;
+  }
+  return null;
+}
+
+/** ON AIR on any non-preview output reads "program" (as songs routed elsewhere do); else cued on preview. */
 export function slidesAirState(row: RowLike, channelStates: Record<string, ChannelState>): AirState {
-  if (channelStates.program?.slidesSession?.rowId === row.id) return "program";
+  if (slidesLiveChannel(row, channelStates)) return "program";
   if (channelStates.preview?.slidesSession?.rowId === row.id) return "preview";
   return null;
 }
@@ -45,20 +61,23 @@ export function slidesThumbState(
   position: number,
   channelStates: Record<string, ChannelState>,
 ): "live" | "cued" | null {
-  const p = channelStates.program?.slidesSession;
-  if (p?.rowId === row.id && p.slideIdx === position) return "live";
+  const ch = slidesLiveChannel(row, channelStates);
+  const p = ch ? channelStates[ch]?.slidesSession : undefined;
+  if (p && p.slideIdx === position) return "live";
   const v = channelStates.preview?.slidesSession;
   if (v?.rowId === row.id && v.slideIdx === position) return "cued";
   return null;
 }
 
+/** A thumbnail click: jump the live session on its own output, else cue that slide on preview. */
 export function slidesThumbMessages(
   showId: string,
   row: RowLike,
   position: number,
   target: "preview" | "program-live",
+  liveChannel = "program",
 ): ClientMessage[] | null {
-  if (target === "program-live") return [{ type: "slides_goto", channel: "program", slideIdx: position }];
+  if (target === "program-live") return [{ type: "slides_goto", channel: liveChannel, slideIdx: position }];
   return [{ type: "slides_take", showId, rowId: row.id, slideIdx: position, channel: "preview" }];
 }
 
@@ -72,7 +91,7 @@ export function slidesStripNotice(
   view: SlidesRowView,
   channelStates: Record<string, ChannelState>,
 ): string | null {
-  const atEnd = [channelStates.program, channelStates.preview].some(
+  const atEnd = Object.values(channelStates).some(
     (c) => c?.slidesSession?.rowId === row.id && c.slidesSession.atEnd,
   );
   if (atEnd) return SLIDES_END_OF_DECK;
@@ -83,17 +102,26 @@ export function slidesStripNotice(
   return null;
 }
 
-export function slidesKeyChannel(channelStates: Record<string, ChannelState>): "program" | null {
-  return channelStates.program?.slidesSession ? "program" : null;
+/**
+ * The output Space / Shift+Space / B drive in slides key mode: a program
+ * slides session, else one on another non-preview output (a row routed
+ * there). Preview never drives keys.
+ */
+export function slidesKeyChannel(channelStates: Record<string, ChannelState | undefined>): string | null {
+  if (channelStates.program?.slidesSession) return "program";
+  for (const [ch, st] of Object.entries(channelStates)) {
+    if (ch !== "preview" && st?.slidesSession) return ch;
+  }
+  return null;
 }
 
-export function slidesAdvanceMessage(delta: 1 | -1): ClientMessage | null {
-  return { type: "slides_advance", channel: "program", delta };
+export function slidesAdvanceMessage(delta: 1 | -1, channel = "program"): ClientMessage | null {
+  return { type: "slides_advance", channel, delta };
 }
 
 /** B while keyMode is "slides". */
-export function slidesBlankMessage(): ClientMessage | null {
-  return { type: "slides_blank", channel: "program" };
+export function slidesBlankMessage(channel = "program"): ClientMessage | null {
+  return { type: "slides_blank", channel };
 }
 
 /**
