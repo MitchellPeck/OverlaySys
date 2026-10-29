@@ -31,7 +31,7 @@ const nextConfig = {
   ...(devProxyEnabled(process.env)
     ? { async rewrites() { return assetRewrites(process.env); } }
     : {}),
-  // Keep the dev "N" badge off the media transport.
-  devIndicators: { position: "top-right" },
+  // Keep the dev "N" badge off the top bar (Server pill, Save) and the media transport.
+  devIndicators: { position: "bottom-left" },
 };
 export default nextConfig;
