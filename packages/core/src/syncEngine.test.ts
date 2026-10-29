@@ -553,6 +553,23 @@ describe("syncEngine.sync — [I4] lossy show pulls from older clients", () => {
     expect(result.warnings[0]!.message).toMatch(/section membership/);
   });
 
+  it("applies a sections-aware edit that deleted the last section but kept its rows", async () => {
+    await local.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2", "s1")], "2026-05-01T00:00:00Z", { sections: [{ id: "s1", name: "Worship" }] }));
+    await remote.saveShow(ORG, show([gfx("r1"), gfx("r2")], "2026-05-02T00:00:00Z", { sections: [] }));
+    const result = await sync(local, remote, ORG);
+    expect(result.warnings).toEqual([]);
+    expect(result.pulled).toBe(1);
+    expect((await local.getShow(ORG, "sh"))!.rows.every((r) => !r.sectionId)).toBe(true);
+  });
+
+  it("keeps local when the cloud copy still lists the section its rows lost", async () => {
+    await local.saveShow(ORG, show([gfx("r1", "s1")], "2026-05-01T00:00:00Z", { sections: [{ id: "s1", name: "Worship" }] }));
+    await remote.saveShow(ORG, show([gfx("r1")], "2026-05-02T00:00:00Z", { sections: [{ id: "s1", name: "Worship" }] }));
+    const result = await sync(local, remote, ORG);
+    expect(result.warnings[0]!.message).toMatch(/section membership/);
+    expect((await local.getShow(ORG, "sh"))!.rows[0]!.sectionId).toBe("s1");
+  });
+
   it("still applies ordinary newer edits, tombstones, and a remote that keeps some sections", async () => {
     await local.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2", "s1")], "2026-05-01T00:00:00Z"));
     await remote.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2")], "2026-05-02T00:00:00Z"));

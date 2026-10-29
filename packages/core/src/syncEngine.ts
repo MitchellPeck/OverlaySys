@@ -127,7 +127,13 @@ export function showPullLossReason(local: Show, remote: Show): string | null {
   for (const r of local.rows) if (r.sectionId) localSectioned.set(r.id, r.sectionId);
   if (localSectioned.size > 0 && !remote.rows.some((r) => r.sectionId)) {
     const shared = remote.rows.filter((r) => localSectioned.has(r.id)).length;
-    if (shared > 0) {
+    // A sections-aware writer that deleted those sections is a real edit; only
+    // block when the cloud copy has no `sections` at all (an older client) or
+    // still lists the sections its rows lost.
+    const remoteSectionIds = remote.sections ? new Set(remote.sections.map((s) => s.id)) : null;
+    const lostButListed =
+      remoteSectionIds !== null && [...localSectioned.values()].some((id) => remoteSectionIds.has(id));
+    if (shared > 0 && (remoteSectionIds === null || lostButListed)) {
       return `cloud copy dropped section membership from ${shared} row(s); kept local (written by an older client?)`;
     }
   }
