@@ -29,10 +29,11 @@ storage.buckets
 └─ overlaysys-assets             ← OverlaySys's binary store
 ```
 
-This means: no separate Supabase project to provision, no separate
-`auth.users` to sync, no `sb_slug`/`sb_super` for the OverlaySys app row.
-The SSO flow short-circuits — apps-portal mints a session against its own
-Supabase and redirects with the tokens.
+This means: no separate Supabase project to provision and no separate
+`auth.users` to sync. The OverlaySys app row in apps-portal still names a
+Supabase project (`sb_slug`) and has that project's service-role secret set,
+but both point at **apps-portal's own project**. apps-portal mints the session
+there and redirects with the tokens (see step 2).
 
 ## One-time setup
 
@@ -68,26 +69,57 @@ pnpm --filter @overlaysys/supabase gen:types
 
 ### 2. Register OverlaySys in apps-portal
 
-In apps-portal's Supabase, insert an `apps` row with **null `sb_slug` and
-`sb_super`** — that's how the open route knows OverlaySys uses the
-registry's own Supabase:
+apps-portal's open route (`app/api/apps/[id]/open/route.ts`, policy in
+`lib/access/open-policy.ts`) only puts session tokens in the redirect when
+**all** of these hold:
+
+- the app row's `sb_slug` is set. It is used as a Supabase project ref: the
+  route builds `https://<sb_slug>.supabase.co` and mints the session there.
+  For OverlaySys this must be **apps-portal's own project ref**, because the
+  `overlaysys` schema, RLS and `auth.users` all live in that project. A token
+  minted by any other project fails `setSession` on the desktop server
+  (e.g. "invalid JWT" / an ES256 signature error) and RLS on the web operator.
+- the app's **service-role secret** (`sb_super`) is set. It is stored in
+  apps-portal's Vault, not in a column: set it on the app's admin page in
+  apps-portal (Edit app → "Supabase Service Role Key"; the "Supabase Project
+  Slug" field there is `sb_slug`). It must be the
+  service-role key of the same project as `sb_slug`. Without it the route
+  redirects with no tokens and the operator stays signed out.
+- the destination is `https://` (the `live_url` / `preview_url`), or a loopback
+  `http://127.0.0.1:<port>/…` / `http://localhost:<port>/…` URL. The desktop
+  sign-in's loopback `return=` URL is always allowed. Any other loopback
+  destination (e.g. a `preview_url` of `http://localhost:3000`) only gets
+  tokens for apps-portal superusers testing locally; everyone else is
+  redirected there without tokens.
+
+Insert the row in apps-portal's Supabase (placeholders only; never commit real
+values):
 
 ```sql
 insert into public.apps (
   org_id, name, slug, description, visibility,
-  preview_url, live_url, sb_slug, sb_super
+  preview_url, live_url, sb_slug
 ) values (
   '<target-org-uuid>',
   'OverlaySys',
   'overlaysys',
   'Broadcast graphics for live events',
   'internal',
-  'http://localhost:3000',           -- dev
-  'https://overlaysys.mitchellpeck.com',
-  null,
-  null
+  'http://localhost:3000',               -- dev; tokens only for superusers
+  'https://overlaysys.mitchellpeck.com', -- must be https
+  '<apps-portal-project-ref>'            -- the ref in apps-portal's Supabase URL
 );
 ```
+
+Then set the service-role secret for that row from the apps-portal admin UI
+(it calls `portal_set_app_secret`, which writes to Vault). The admin page shows
+whether it is set without revealing it.
+
+Checklist when sign-in yields no tokens or sync reports `setSession failed`:
+
+1. `sb_slug` equals the project ref in `NEXT_PUBLIC_SUPABASE_URL` (step 3).
+2. The service-role secret is set and belongs to that same project.
+3. `live_url` is https.
 
 ### 3. Wire env vars
 
@@ -118,14 +150,17 @@ SUPABASE_SERVICE_ROLE_KEY=<apps-portal-service-role-key>
 
 This one is server-only.
 
-## What apps-portal needed to change
+## What apps-portal does
 
-`app/api/apps/[id]/open/route.ts`: previously refused to redirect when an
-app had no `sb_slug`/`sb_super`. Now, when both are null, the route mints
-the session against apps-portal's own service Supabase. Same hash format
-out, including the new `registry_org_id` field every integrated app
-receives. Generic — any future "registry-DB" app benefits without code
-changes.
+`app/api/apps/[id]/open/route.ts` checks the user's access to the app, reads
+the app's service-role secret from Vault when `sb_slug` is set, and asks
+`shouldMintTokens` (`lib/access/open-policy.ts`) whether tokens may go in the
+redirect (rules in step 2). It then creates the user in the `sb_slug` project
+if needed, mints a magic-link session there, and redirects with the tokens in
+the hash, plus `registry_org_id` (the app row's `org_id`) and, for desktop
+sign-in, the `state` it was given. Tokens are never minted against the portal's
+own project by default: an app without `sb_slug` and a secret is opened without
+tokens.
 
 ## How the hash flow works end-to-end
 
@@ -134,7 +169,7 @@ User clicks "Open OverlaySys" on apps.mitchellpeck.com
   ↓
 apps-portal /api/apps/[id]/open
   • verifies the user belongs to app.org_id (via public.orgs.members)
-  • app row has null sb_slug → uses getServiceSupabase() (registry's own)
+  • app row's sb_slug = apps-portal's own ref, service-role secret set in Vault
   • generateLink + verifyOtp → access_token + refresh_token (registry's JWT)
   • redirects to overlaysys.mitchellpeck.com#access_token=...&registry_org_id=...
   ↓
@@ -188,7 +223,8 @@ keeps its local WS-backed editor, the embedded server starts syncing, and
    random port, then opens the system browser at
    `https://apps.mitchellpeck.com/api/apps/<id>/open?target=live&return=http://127.0.0.1:<port>/callback&state=<random>`.
 3. apps-portal authenticates the user (existing cookie session), mints a
-   session against the registry Supabase, and redirects to the loopback
+   session against the project named by the app row's `sb_slug` (apps-portal's
+   own), and redirects to the loopback
    with tokens in the hash.
 4. The loopback's `/callback` serves an HTML page that POSTs the hash to
    `/save`. Main verifies `state`, encrypts tokens with `safeStorage`,
