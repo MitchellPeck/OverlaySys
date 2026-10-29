@@ -44,7 +44,13 @@ vi.mock("./pco/itemMappings", async (importOriginal) => {
 
 import * as channels from "./channels";
 import * as decks from "./decks";
-import { ConvertRollbackError, SongNotFoundError, convertSongToDeck, undoConversion } from "./decksConvert";
+import {
+  ConvertRollbackError,
+  SongNotFoundError,
+  UndoInProgressError,
+  convertSongToDeck,
+  undoConversion,
+} from "./decksConvert";
 import * as itemMappings from "./pco/itemMappings";
 import * as shows from "./shows";
 import * as songSession from "./songSession";
@@ -330,5 +336,76 @@ describe("undoConversion", () => {
 
   it("undo with an unknown id returns null", async () => {
     expect(await undoConversion("nope")).toBeNull();
+  });
+});
+
+describe("convert concurrency", () => {
+  /** Runs `edit` when convert makes its first write (the deck), i.e. after planning. */
+  function editDuringConvert(edit: () => Promise<void>): void {
+    const real = decks.saveDeck;
+    vi.spyOn(decks, "saveDeck").mockImplementationOnce(async (d) => {
+      await edit();
+      return real(d);
+    });
+  }
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a show saved by another client between plan and write keeps that edit", async () => {
+    editDuringConvert(async () => {
+      const next = (await shows.getShow("next"))!;
+      await shows.saveShow({ ...next, name: "next edited elsewhere" });
+    });
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    const s = (await shows.getShow("next"))!;
+    expect(s.name).toBe("next edited elsewhere");
+    expect(s.rows[0]).toMatchObject({ kind: "slides", deckId: res.deck.id });
+
+    // Undo puts back the edited copy, not the plan-time one.
+    await undoConversion(res.conversionId);
+    const back = (await shows.getShow("next"))!;
+    expect(back.name).toBe("next edited elsewhere");
+    expect(back.rows[0]).toMatchObject({ kind: "song" });
+  });
+
+  it("a show that no longer uses the song by write time is left alone", async () => {
+    editDuringConvert(async () => {
+      const next = (await shows.getShow("next"))!;
+      await shows.saveShow({ ...next, rows: [], songs: [] });
+    });
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    expect(res.changedShowIds).toEqual(["undated"]);
+    expect((await shows.getShow("next"))!.rows).toEqual([]);
+  });
+
+  it("a song edited between plan and write keeps that edit, and undo brings it back", async () => {
+    editDuringConvert(async () => {
+      await songs.saveSong({ ...(await songs.getSong(song.id))!, author: "Edited Elsewhere" });
+    });
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    const dead = (await songs.listDeletedSongs()).find((s) => s.id === song.id)!;
+    expect(dead.author).toBe("Edited Elsewhere");
+    await undoConversion(res.conversionId);
+    expect((await songs.getSong(song.id))!.author).toBe("Edited Elsewhere");
+  });
+
+  it("undo leaves a song that was restored and edited after the conversion", async () => {
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    await sleep(5);
+    await songs.restoreSong(song.id);
+    await songs.saveSong({ ...(await songs.getSong(song.id))!, author: "Later Edit" });
+    await undoConversion(res.conversionId);
+    const s = (await songs.getSong(song.id))!;
+    expect(s.author).toBe("Later Edit");
+    expect(s.customFields["converted_to_deck"]).toBe(res.deck.id);
+  });
+
+  it("a second undo while the first is running is refused", async () => {
+    const res = await convertSongToDeck(song.id, { titleSlide: false, today: TODAY });
+    const [a, b] = await Promise.allSettled([undoConversion(res.conversionId), undoConversion(res.conversionId)]);
+    expect(a.status).toBe("fulfilled");
+    expect(b.status === "rejected" && b.reason).toBeInstanceOf(UndoInProgressError);
+    await expectUnconverted();
   });
 });

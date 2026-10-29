@@ -47,6 +47,9 @@ describe("slides server messages", () => {
     { type: "deck", deck },
     { type: "song_converted", conversionId: "c", deckId: "d", deckName: "D", rows: 1, shows: 1, warnings: [] },
     { type: "song_convert_undone", conversionId: "c", songId: "s", restoredShows: 1, skippedShows: 0 },
+    // [P3.12]
+    { type: "song_convert_failed", conversionId: "c", songId: "s", message: "m" },
+    // [/P3.12]
   ])("decodes %j", (m) => {
     expect(ServerMessageSchema.safeParse(m).success).toBe(true);
   });

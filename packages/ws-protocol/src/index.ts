@@ -662,6 +662,14 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     skippedShows: z.number(),
   }),
   // [/P3.4]
+  // [P3.12] a convert failed and its rollback failed too: Undo with this id finishes the cleanup
+  z.object({
+    type: z.literal("song_convert_failed"),
+    conversionId: z.string(),
+    songId: z.string(),
+    message: z.string(),
+  }),
+  // [/P3.12]
   // [P2b.33] stage layout
   z.object({
     type: z.literal("stage_layout_status"),

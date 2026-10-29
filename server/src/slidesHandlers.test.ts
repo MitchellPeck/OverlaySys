@@ -385,5 +385,71 @@ describe("convert handlers", () => {
       { type: "song_convert_undone", conversionId, songId: "song-y", restoredShows: 1, skippedShows: 0 },
     ]);
   });
+
+  it("a failed rollback sends song_convert_failed with the id, re-sends the show, and undo by id finishes", async () => {
+    const songs = await import("./songs");
+    const itemMappings = await import("./pco/itemMappings");
+    await songs.reloadSongs();
+    await itemMappings.reloadItemMappings();
+    // Placeholder lyrics only.
+    await songs.saveSong({
+      id: "song-z",
+      title: "Placeholder Z",
+      sections: [{ id: "v", kind: "verse", label: "Verse", slides: [{ id: "a", lines: ["Line A"] }] }],
+      defaultArrangement: ["v"],
+      customFields: {},
+    });
+    await shows.saveShow({
+      id: "sh3",
+      name: "Undated show",
+      projectId: "default",
+      rows: [{ kind: "song", id: "r1", songId: "song-z", lyricTemplateId: "t" }],
+      songs: [{ songId: "song-z" }],
+    });
+
+    // Convert fails at the show write; the rollback then fails deleting the deck.
+    const s1 = vi.spyOn(shows, "saveShow").mockRejectedValueOnce(new Error("disk full"));
+    const s2 = vi.spyOn(decks, "deleteDeck").mockRejectedValueOnce(new Error("disk full again"));
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-z", titleSlide: false }, send);
+    s1.mockRestore();
+    s2.mockRestore();
+    expect(sent[0]).toMatchObject({ type: "error", code: "handler_error" });
+    const failed = sent[1];
+    expect(failed).toMatchObject({ type: "song_convert_failed", songId: "song-z" });
+    expect(broadcasts.some((m) => m.type === "show" && m.show.id === "sh3")).toBe(true);
+
+    sent = [];
+    const conversionId = failed?.type === "song_convert_failed" ? failed.conversionId : "";
+    await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
+    expect(sent).toEqual([
+      { type: "song_convert_undone", conversionId, songId: "song-z", restoredShows: 0, skippedShows: 0 },
+    ]);
+    expect(await decks.listDecks()).toEqual([]);
+    expect(await songs.getSong("song-z")).not.toBeNull();
+  });
+
+  it("a second undo while one is running replies busy", async () => {
+    const songs = await import("./songs");
+    const itemMappings = await import("./pco/itemMappings");
+    await songs.reloadSongs();
+    await itemMappings.reloadItemMappings();
+    // Placeholder lyrics only.
+    await songs.saveSong({
+      id: "song-w",
+      title: "Placeholder W",
+      sections: [{ id: "v", kind: "verse", label: "Verse", slides: [{ id: "a", lines: ["Line A"] }] }],
+      defaultArrangement: ["v"],
+      customFields: {},
+    });
+    await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-w", titleSlide: false }, send);
+    const reply = sent[0];
+    const conversionId = reply?.type === "song_converted" ? reply.conversionId : "";
+    sent = [];
+    await Promise.all([
+      handleSlidesMessage({ type: "undo_convert_song", conversionId }, send),
+      handleSlidesMessage({ type: "undo_convert_song", conversionId }, send),
+    ]);
+    expect(sent.map((m) => (m.type === "error" ? m.code : m.type)).sort()).toEqual(["busy", "song_convert_undone"]);
+  });
 });
 // [/P3.12]

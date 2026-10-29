@@ -11,7 +11,15 @@ import * as templates from "./templates";
 import * as slidesSession from "./slidesSession";
 // [/P3.9]
 // [P3.12]
-import { SongNotFoundError, convertSongToDeck, undoConversion } from "./decksConvert";
+import {
+  ConvertFailedError,
+  ConvertRollbackError,
+  SongNotFoundError,
+  UndoInProgressError,
+  conversionShowIds,
+  convertSongToDeck,
+  undoConversion,
+} from "./decksConvert";
 import * as songs from "./songs";
 // [/P3.12]
 
@@ -211,9 +219,15 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
           send({ type: "error", code: "not_found", message: msg.songId });
           return;
         }
-        send({ type: "error", code: "handler_error", message: err instanceof Error ? err.message : String(err) });
-        // A failed convert rolls back, or (ConvertRollbackError) keeps its undo record; lists may have moved either way.
-        await broadcastConvertChanges(null, []);
+        const message = err instanceof Error ? err.message : String(err);
+        send({ type: "error", code: "handler_error", message });
+        if (err instanceof ConvertRollbackError) {
+          // The undo record is kept: give the client its id so it can offer Undo.
+          send({ type: "song_convert_failed", conversionId: err.conversionId, songId: err.songId, message });
+        }
+        // Shows were written (and maybe put back): re-send them so no client keeps a stale copy.
+        const showIds = err instanceof ConvertRollbackError || err instanceof ConvertFailedError ? err.showIds : [];
+        await broadcastConvertChanges(null, showIds);
         return;
       }
       send({
@@ -233,9 +247,15 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       try {
         res = await undoConversion(msg.conversionId);
       } catch (err) {
-        // The undo record is kept, so the operator can try again.
-        send({ type: "error", code: "handler_error", message: err instanceof Error ? err.message : String(err) });
-        await broadcastConvertChanges(null, []);
+        const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof UndoInProgressError) {
+          send({ type: "error", code: "busy", message });
+          return;
+        }
+        // The undo record is kept, so the operator can try again. Some shows
+        // may already be back: re-send every show the conversion touched.
+        send({ type: "error", code: "handler_error", message });
+        await broadcastConvertChanges(null, conversionShowIds(msg.conversionId));
         return;
       }
       if (!res) {
