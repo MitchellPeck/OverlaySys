@@ -30,9 +30,11 @@ export function FieldInput({ field, value, onChange }: Props) {
       // the editor's `<img>` preview loads in dev mode (operator @ :3000,
       // server @ :4000). In Electron production the operator is served by
       // the asset server itself so this is a no-op.
-      return <ImageInput value={resolveAssetUrl(v)} onChange={onChange} onUpload={upload} />;
+      // [P2b.9] resolve for the preview only, so the stored path is shown and kept as is.
+      return <ImageInput value={v} resolveUrl={resolveAssetUrl} onChange={onChange} onUpload={upload} />;
     case "video":
-      return <VideoInput value={resolveAssetUrl(v)} onChange={onChange} onUpload={upload} />;
+      return <VideoInput value={v} resolveUrl={resolveAssetUrl} onChange={onChange} onUpload={upload} />;
+    // [/P2b.9]
     case "number":
       return (
         <Input

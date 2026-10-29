@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { Textarea } from "@overlaysys/ui";
 
 /**
@@ -22,7 +22,7 @@ export function AutoTextarea({
 }) {
   // Textarea doesn't forward a ref, so find it through a wrapper.
   const ref = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
+  const fit = useCallback(() => {
     const el = ref.current?.querySelector("textarea");
     if (!el) return;
     el.style.height = "auto";
@@ -30,7 +30,22 @@ export function AutoTextarea({
     const max = lh * maxRows + 14;
     el.style.height = `${Math.min(el.scrollHeight + 2, max)}px`;
     el.style.overflowY = el.scrollHeight + 2 > max ? "auto" : "hidden";
-  }, [value, maxRows]);
+  }, [maxRows]);
+  useLayoutEffect(fit, [value, fit]);
+  // Wrapping changes with the width (e.g. the inspector widening to 320 px), so re-fit then too.
+  useLayoutEffect(() => {
+    const host = ref.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    let lastW = host.getBoundingClientRect().width;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? lastW;
+      if (w === lastW) return; // our own height change re-fires the observer
+      lastW = w;
+      fit();
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [fit]);
   return (
     <div ref={ref} style={{ minWidth: 0 }}>
     <Textarea

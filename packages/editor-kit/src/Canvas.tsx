@@ -87,12 +87,12 @@ const MIN_LAYER_SIZE = 1;
 const HOST_PADDING = 32;
 const EMPTY_IMAGE_CSS = `.ovs-edit-stage img[data-layer-type="image"]:not([src]),
 .ovs-edit-stage img[data-layer-type="image"][src=""] {
-  background-color: rgba(255,255,255,0.10);
-  background-image: linear-gradient(45deg, rgba(255,255,255,0.22) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.22) 75%),
-    linear-gradient(45deg, rgba(255,255,255,0.22) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.22) 75%);
+  background-color: ${colors.surface3};
+  background-image: linear-gradient(45deg, ${colors.borderStrong} 25%, transparent 25%, transparent 75%, ${colors.borderStrong} 75%),
+    linear-gradient(45deg, ${colors.borderStrong} 25%, transparent 25%, transparent 75%, ${colors.borderStrong} 75%);
   background-size: 24px 24px;
   background-position: 0 0, 12px 12px;
-  outline: 1px dashed rgba(255,255,255,0.45);
+  outline: 1px dashed ${colors.textMuted};
   outline-offset: -1px;
 }`;
 
@@ -137,12 +137,21 @@ export function Canvas(props: Props) {
   const { zoom, setZoom } = useCanvasZoom(hostRef, () => setPan({ x: 0, y: 0 }));
   const scale = fit * zoom;
   scaleRef.current = scale;
-  if (props.visibleAreaRef) {
-    props.visibleAreaRef.current = () => {
+  const viewRef = useRef({ pan, scale, size: props.template.size });
+  viewRef.current = { pan, scale, size: props.template.size };
+  const visibleAreaRef = props.visibleAreaRef;
+  useLayoutEffect(() => {
+    if (!visibleAreaRef) return;
+    // The getter reads the latest view when called, so it's installed once.
+    visibleAreaRef.current = () => {
       const r = hostRef.current?.getBoundingClientRect();
-      return visibleArtboardRect({ w: r?.width ?? 0, h: r?.height ?? 0 }, props.template.size, pan, scale);
+      const v = viewRef.current;
+      return visibleArtboardRect({ w: r?.width ?? 0, h: r?.height ?? 0 }, v.size, v.pan, v.scale);
     };
-  }
+    return () => {
+      visibleAreaRef.current = null;
+    };
+  }, [visibleAreaRef]);
 
   const selectedIds = props.selectedLayerIds ?? (props.selectedLayerId ? [props.selectedLayerId] : []);
   const selectedRef = useRef(selectedIds);

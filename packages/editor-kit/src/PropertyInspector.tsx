@@ -544,7 +544,7 @@ function ToggleIcon({ label, pressed, onClick, children }: { label: string; pres
       aria-pressed={pressed}
       title={label}
       onClick={onClick}
-      style={pressed ? { background: colors.brandFill, borderColor: colors.brandFill, color: "#fff" } : undefined}
+      style={pressed ? { background: colors.brandFill, borderColor: colors.brandFill, color: colors.text } : undefined}
     >
       {children}
     </IconButton>

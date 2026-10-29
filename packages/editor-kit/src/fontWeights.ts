@@ -30,6 +30,9 @@ function keywordWeight(s: string): number | null {
  * there are none, i.e. the font's weights aren't known.
  */
 export function weightsFromDescriptors(descs: string[]): number[] | undefined {
+  // A face registered without descriptors reports "normal": that says nothing
+  // about the weights it can render (variable fonts, synthetic bold), so it's unknown.
+  if (descs.every((d) => d.trim().toLowerCase() === "normal")) return undefined;
   const out = new Set<number>();
   for (const d of descs) {
     const parts = d.trim().split(/\s+/).map(keywordWeight);

@@ -15,6 +15,10 @@ describe("weightsFromDescriptors", () => {
   it("is undefined when the font isn't known", () => {
     expect(weightsFromDescriptors([])).toBeUndefined();
   });
+  it("treats a face registered without a weight (only \"normal\") as unknown", () => {
+    expect(weightsFromDescriptors(["normal"])).toBeUndefined();
+    expect(weightsFromDescriptors(["normal", "normal"])).toBeUndefined();
+  });
   it("maps keywords and numbers to the nine weights", () => {
     expect(weightsFromDescriptors(["normal", "bold", "300"])).toEqual([300, 400, 700]);
   });

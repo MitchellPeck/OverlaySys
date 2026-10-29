@@ -70,7 +70,8 @@ export function DesignerInspector({
   const hasSelection = selectedLayers.length > 0;
   const [tab, setTab] = useState<Tab>(hasSelection ? "layer" : "template");
   // Selecting a layer shows its properties; clearing the selection shows the template.
-  useEffect(() => setTab(hasSelection ? "layer" : "template"), [hasSelection]);
+  // Keyed on the primary id too, so picking another layer from the Template tab shows that layer.
+  useEffect(() => setTab(hasSelection ? "layer" : "template"), [hasSelection, selectedLayerId]);
   const primary = selectedLayers.find((l) => l.id === selectedLayerId) ?? selectedLayers[0] ?? null;
   const subtitle = tab === "layer" ? (selectedLayers.length > 1 ? `${selectedLayers.length} layers` : (primary?.name ?? "")) : "";
 

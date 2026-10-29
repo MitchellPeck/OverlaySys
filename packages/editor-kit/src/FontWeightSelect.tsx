@@ -1,5 +1,5 @@
 import { Select } from "@overlaysys/ui";
-import { fontWeightOptions } from "./fontWeights";
+import { FONT_WEIGHTS, fontWeightOptions } from "./fontWeights";
 
 export function FontWeightSelect({
   value,
@@ -18,7 +18,7 @@ export function FontWeightSelect({
   const hasValue = opts.some((o) => o.value === value);
   return (
     <Select id={id} aria-label={ariaLabel} value={value} onChange={(e) => onChange(Number(e.target.value))}>
-      {!hasValue && <option value={value}>{value}</option>}
+      {!hasValue && <option value={value}>{FONT_WEIGHTS.find((w) => w.value === value)?.label ?? value}</option>}
       {opts.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
