@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type FocusEvent,
@@ -14,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { colors, fontSize, radius, shadow } from "./tokens";
+import { tooltipLeft } from "./tooltipPlace";
 
 const SHOW_DELAY_MS = 400;
 const GAP = 6;
@@ -42,6 +44,8 @@ type Anchor = { x: number; top: number; bottom: number };
 export function Tooltip({ content, children, side = "top" }: Props) {
   const id = useId();
   const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const child = children as ReactElement<ChildProps>;
   const props = child.props;
@@ -73,6 +77,16 @@ export function Tooltip({ content, children, side = "top" }: Props) {
   }, [anchor, hide]);
 
   useEffect(() => clearTimer, []);
+
+  // Measure the natural (max-content) width, then clamp inside the viewport.
+  useLayoutEffect(() => {
+    if (!anchor) {
+      setLeft(null);
+      return;
+    }
+    const w = tipRef.current?.offsetWidth ?? 0;
+    setLeft(tooltipLeft(anchor.x, w, window.innerWidth));
+  }, [anchor, content]);
 
   const describedBy = anchor
     ? [props["aria-describedby"], id].filter(Boolean).join(" ")
@@ -110,13 +124,16 @@ export function Tooltip({ content, children, side = "top" }: Props) {
       {anchor && typeof document !== "undefined"
         ? createPortal(
             <div
+              ref={tipRef}
               id={id}
               role="tooltip"
               style={{
                 position: "fixed",
-                left: Math.max(8, Math.min(anchor.x, window.innerWidth - 8)),
+                left: left ?? 0,
+                visibility: left === null ? "hidden" : "visible",
+                width: "max-content",
                 top: side === "top" ? anchor.top - GAP : anchor.bottom + GAP,
-                transform: side === "top" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
+                transform: side === "top" ? "translateY(-100%)" : undefined,
                 zIndex: 1200, // above Menu (1100)
                 pointerEvents: "none",
                 maxWidth: 280,

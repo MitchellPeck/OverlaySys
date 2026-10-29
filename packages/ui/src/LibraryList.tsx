@@ -78,6 +78,16 @@ export type LibraryListProps<T> = {
 };
 
 const ROW_H = 44;
+const ITEM_CLASS = "ovs-ll-item";
+const FOCUS_WRAP_CLASS = "ovs-ll-focus-wrap";
+// Hover lives in CSS so pointer movement never re-renders the list.
+// Unselected rows have no inline background, so :hover applies.
+const LIST_CSS = `
+.${ITEM_CLASS}[role="option"] { background: transparent; }
+.${ITEM_CLASS}.ovs-ll-card { background: ${colors.surface}; }
+.${ITEM_CLASS}[aria-selected="false"]:hover { background: ${colors.surface2}; }
+.${FOCUS_WRAP_CLASS}:focus-visible { box-shadow: 0 0 0 2px ${colors.brand}; }
+`;
 const COL_GAP = 12;
 
 function safeStorage(): Storage | null {
@@ -131,12 +141,16 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
   const [prefs, setPrefs] = useState<ListPrefs>({ sort: defaultSort, filters: {}, view: "list" });
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef(new Map<string, HTMLElement>());
   const { open: openMenu, menu } = useContextMenu();
 
   const sortIdsKey = sorts.map((s) => s.id).join("|");
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" && !sortIdsKey.split("|").includes(defaultSort)) {
+      console.warn(`LibraryList(${storageKey}): defaultSort "${defaultSort}" is not one of sorts [${sortIdsKey}].`);
+    }
+  }, [defaultSort, sortIdsKey, storageKey]);
   // Load after mount (SSR-safe), then persist every change.
   useEffect(() => {
     setPrefs(
@@ -286,6 +300,7 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
       else itemRefs.current.delete(id);
     },
     role: "option" as const,
+    className: ITEM_CLASS,
     "aria-selected": id === selectedVisible,
     tabIndex: id === tabStop ? 0 : -1,
     onClick: () => {
@@ -294,8 +309,6 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
     },
     onFocus: () => setSelected(id),
     onContextMenu: (e: ReactMouseEvent) => openItemMenu(item, e),
-    onMouseEnter: () => setHovered(id),
-    onMouseLeave: () => setHovered((h) => (h === id ? null : h)),
   });
 
   const hasKind = !!kind;
@@ -390,6 +403,7 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
             <div
               key={id}
               {...itemHandlers(item, id)}
+              className={`${ITEM_CLASS} ovs-ll-card`}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -398,7 +412,7 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
                 minWidth: 0,
                 borderRadius: radius.lg,
                 border: `1px solid ${colors.border}`,
-                background: isSel ? colors.surface3 : hovered === id ? colors.surface2 : colors.surface,
+                background: isSel ? colors.surface3 : undefined,
                 boxShadow: isSel ? `0 0 0 2px ${colors.brand}` : undefined,
                 cursor: "pointer",
                 outline: "none",
@@ -461,7 +475,7 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
                   ...rowGrid,
                   height: ROW_H,
                   borderBottom: `1px solid ${colors.border}`,
-                  background: isSel ? colors.surface3 : hovered === id ? colors.surface2 : "transparent",
+                  background: isSel ? colors.surface3 : undefined,
                   boxShadow: isSel ? `inset 2px 0 0 ${colors.brand}` : undefined,
                   cursor: "pointer",
                   outline: "none",
@@ -522,7 +536,10 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
       onKeyDown={onRootKeyDown}
       style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", minWidth: 0 }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, height: 36, minWidth: 0 }}>
+      <style>{LIST_CSS}</style>
+      <div
+        style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, minHeight: 36, minWidth: 0 }}
+      >
         <div ref={searchBoxRef} style={{ position: "relative", flex: "1 1 200px", maxWidth: 360, minWidth: 140 }}>
           <Search
             size={14}
@@ -610,7 +627,11 @@ export function LibraryList<T>(props: LibraryListProps<T>) {
         {headerActions}
         {primaryButton && createDisabledReason ? (
           <Tooltip content={createDisabledReason} side="bottom">
-            <span tabIndex={0} style={{ display: "inline-flex", borderRadius: radius.md, outline: "none" }}>
+            <span
+              tabIndex={0}
+              className={FOCUS_WRAP_CLASS}
+              style={{ display: "inline-flex", borderRadius: radius.md, outline: "none" }}
+            >
               {primaryButton}
             </span>
           </Tooltip>
