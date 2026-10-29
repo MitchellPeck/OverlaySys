@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Plus } from "lucide-react";
+import { Button, IconButton, Input, colors, radius, shadow } from "@overlaysys/ui";
 import { fontFamilyFromFilename, fontPickerOptions } from "./fontUtils";
 
 type Props = {
@@ -12,6 +14,8 @@ type Props = {
   onAddFont: (entry: { family: string; src: string }) => void;
   /** When provided, the picked font file is uploaded; else inline data URL. */
   onUpload?: (file: File) => Promise<string>;
+  /** Id for the family field, so a FieldRow label focuses it. */
+  id?: string;
 };
 
 /**
@@ -100,47 +104,30 @@ export function FontInput(props: Props) {
   const canSubmit = !!pendingFamily.trim() && !!pendingSrc && !uploading;
 
   return (
-    <div style={{ display: "flex", gap: 4, alignItems: "center", width: "100%", position: "relative" }}>
-      <input
+    <div style={{ display: "flex", gap: 4, alignItems: "center", width: "100%", minWidth: 0, position: "relative" }}>
+      <Input
+        id={props.id}
         list={listId}
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder="Inter, system-ui, sans-serif"
-        style={{
-          flex: 1,
-          background: "var(--panel, #14161a)",
-          color: "var(--text, #e9eaee)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          padding: "4px 6px",
-          fontSize: 12,
-          fontFamily: "inherit",
-        }}
+        title={props.value}
+        style={{ flex: 1, minWidth: 0 }}
       />
       <datalist id={listId}>
         {options.map((o) => (
           <option key={o} value={o} />
         ))}
       </datalist>
-      <button
-        type="button"
+      <IconButton
+        size={24}
         onClick={() => setPopoverOpen((v) => !v)}
+        aria-label="Add font from file"
         title="Add font from file"
-        style={{
-          width: 24,
-          height: 24,
-          background: "var(--panel-2, #1c1f25)",
-          color: "var(--text, #e9eaee)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          cursor: "pointer",
-          fontSize: 14,
-          lineHeight: "1",
-          padding: 0,
-        }}
+        aria-expanded={popoverOpen}
       >
-        +
-      </button>
+        <Plus size={14} aria-hidden />
+      </IconButton>
 
       {popoverOpen && (
         <div
@@ -150,18 +137,18 @@ export function FontInput(props: Props) {
             top: "calc(100% + 4px)",
             right: 0,
             zIndex: 10,
-            background: "var(--panel, #14161a)",
-            border: "1px solid var(--border, #2a2e36)",
-            borderRadius: 4,
+            background: colors.surface2,
+            border: `1px solid ${colors.borderStrong}`,
+            borderRadius: radius.md,
             padding: 8,
             display: "flex",
             flexDirection: "column",
             gap: 6,
             width: 240,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+            boxShadow: shadow.modal,
           }}
         >
-          <label htmlFor={fileInputId} style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Font file</label>
+          <label htmlFor={fileInputId} style={{ fontSize: 11, color: colors.textDim }}>Font file</label>
           <input
             ref={fileRef}
             id={fileInputId}
@@ -171,66 +158,27 @@ export function FontInput(props: Props) {
               const f = e.target.files?.[0];
               if (f) onFile(f);
             }}
-            style={{ fontSize: 12, color: "var(--text, #e9eaee)" }}
+            style={{ fontSize: 12, color: colors.text, maxWidth: "100%" }}
           />
-          <label htmlFor={familyInputId} style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>Family name</label>
-          <input
+          <label htmlFor={familyInputId} style={{ fontSize: 11, color: colors.textDim }}>Family name</label>
+          <Input
             id={familyInputId}
             value={pendingFamily}
             onChange={(e) => setPendingFamily(e.target.value)}
             placeholder="My Font"
-            style={{
-              background: "var(--panel-2, #1c1f25)",
-              color: "var(--text, #e9eaee)",
-              border: "1px solid var(--border, #2a2e36)",
-              borderRadius: 3,
-              padding: "4px 6px",
-              fontSize: 12,
-            }}
           />
           {(uploading || error) && (
-            <div
-              style={{
-                fontSize: 11,
-                color: error ? "var(--red, #f87171)" : "var(--text-dim, #9099a8)",
-              }}
-            >
+            <div role={error ? "alert" : undefined} style={{ fontSize: 11, color: error ? colors.dangerText : colors.textDim }}>
               {error ? error : "Uploading…"}
             </div>
           )}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
-            <button
-              type="button"
-              onClick={closePopover}
-              style={{
-                padding: "4px 8px",
-                background: "transparent",
-                color: "var(--text-dim, #9099a8)",
-                border: "1px solid var(--border, #2a2e36)",
-                borderRadius: 3,
-                fontSize: 11,
-                cursor: "pointer",
-              }}
-            >
+            <Button size="sm" variant="ghost" onClick={closePopover}>
               Cancel
-            </button>
-            <button
-              type="button"
-              disabled={!canSubmit}
-              onClick={onSubmit}
-              style={{
-                padding: "4px 8px",
-                background: canSubmit ? "var(--accent, #4ade80)" : "var(--panel-2, #1c1f25)",
-                color: canSubmit ? "#0c0d10" : "var(--text-dim, #9099a8)",
-                border: "1px solid var(--border, #2a2e36)",
-                borderRadius: 3,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: canSubmit ? "pointer" : "not-allowed",
-              }}
-            >
+            </Button>
+            <Button size="sm" variant="primary" disabled={!canSubmit} onClick={onSubmit}>
               Add
-            </button>
+            </Button>
           </div>
         </div>
       )}

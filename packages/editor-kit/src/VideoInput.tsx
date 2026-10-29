@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { FolderOpen, Play, X } from "lucide-react";
+import { IconButton, Input, colors, fontFamily, radius } from "@overlaysys/ui";
 
 type Props = {
   value: string;
@@ -8,6 +10,8 @@ type Props = {
   // [P2a.18] preview src for stored paths ("/assets/…" on the server's origin); the text field still shows `value`.
   resolveUrl?: (v: string) => string;
   // [/P2a.18]
+  /** Id for the path field, so a FieldRow label focuses it. */
+  id?: string;
 };
 
 /**
@@ -16,7 +20,7 @@ type Props = {
  * Adds drag-and-drop — drop a video file anywhere on the control to
  * upload it (or embed as a data URL when onUpload isn't wired).
  */
-export function VideoInput({ value, onChange, onUpload, resolveUrl }: Props) {
+export function VideoInput({ value, onChange, onUpload, resolveUrl, id }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -44,155 +48,121 @@ export function VideoInput({ value, onChange, onUpload, resolveUrl }: Props) {
   }
 
   const isDataUrl = value.startsWith("data:");
+  const previewSrc = value ? (resolveUrl ? resolveUrl(value) : value) : "";
 
   return (
-    <div
-      onDragOver={(e) => {
-        // Has to happen on dragover (not just drop) for the drop event to fire.
-        e.preventDefault();
-        e.stopPropagation();
-        if (!dragOver) setDragOver(true);
-      }}
-      onDragLeave={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragOver(false);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragOver(false);
-        const f = e.dataTransfer?.files?.[0];
-        if (f && (f.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name))) {
-          onFile(f);
-        }
-      }}
-      style={{
-        display: "flex",
-        gap: 6,
-        alignItems: "center",
-        width: "100%",
-        padding: dragOver ? 4 : 0,
-        background: dragOver ? "rgba(74, 222, 128, 0.08)" : "transparent",
-        border: dragOver ? "1px dashed #4ade80" : "1px solid transparent",
-        borderRadius: 4,
-        transition: "background 80ms, border-color 80ms",
-      }}
-    >
+    <div style={{ position: "relative", minWidth: 0 }}>
       <div
+        onDragOver={(e) => {
+          // Has to happen on dragover (not just drop) for the drop event to fire.
+          e.preventDefault();
+          e.stopPropagation();
+          if (!dragOver) setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOver(false);
+          const f = e.dataTransfer?.files?.[0];
+          if (f && (f.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name))) {
+            onFile(f);
+          }
+        }}
         style={{
-          width: 32,
-          height: 24,
-          background: "var(--panel, #14161a)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          overflow: "hidden",
-          flexShrink: 0,
           display: "flex",
+          gap: 4,
           alignItems: "center",
-          justifyContent: "center",
-          position: "relative",
-        }}
-      >
-        {value ? (
-          // muted+playsInline gives us a reliable poster-style preview without
-          // autoplay-block warnings; loop so the operator sees motion.
-          <video
-            src={resolveUrl ? resolveUrl(value) : value}
-            muted
-            playsInline
-            loop
-            autoPlay
-            preload="metadata"
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={(e) => {
-              (e.target as HTMLVideoElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <span style={{ color: "var(--text-dim, #9099a8)", fontSize: 14 }}>▶</span>
-        )}
-      </div>
-      <input
-        value={isDataUrl ? "(embedded video)" : value}
-        readOnly={isDataUrl}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="https://… or path · drop a file"
-        title={isDataUrl ? "Inline data URL — clear to paste a new URL" : undefined}
-        style={{
-          flex: 1,
+          width: "100%",
           minWidth: 0,
-          padding: "4px 8px",
-          background: "var(--panel-2, #1c1f25)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          color: isDataUrl ? "var(--text-dim, #9099a8)" : "var(--text, #e9eaee)",
-          fontSize: 12,
-          outline: "none",
-          fontFamily: isDataUrl ? "ui-monospace, monospace" : undefined,
-        }}
-      />
-      <button
-        type="button"
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        title={onUpload ? "Upload video" : "Embed as data URL"}
-        style={{
-          width: 28,
-          height: 24,
-          background: "var(--panel-2, #1c1f25)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          cursor: uploading ? "wait" : "pointer",
-          fontSize: 12,
-          opacity: uploading ? 0.6 : 1,
+          boxSizing: "border-box",
+          padding: dragOver ? 3 : 0,
+          background: dragOver ? colors.brandSubtle : "transparent",
+          border: dragOver ? `1px dashed ${colors.accent}` : "1px solid transparent",
+          borderRadius: radius.md,
+          transition: "background 80ms, border-color 80ms",
         }}
       >
-        {uploading ? "…" : "📁"}
-      </button>
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          title="Clear"
-          style={{
-            width: 24,
-            height: 24,
-            background: "transparent",
-            color: "var(--text-dim, #9099a8)",
-            border: "1px solid var(--border, #2a2e36)",
-            borderRadius: 3,
-            cursor: "pointer",
-            fontSize: 14,
-          }}
-        >
-          ×
-        </button>
-      )}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="video/*"
-        style={{ display: "none" }}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onFile(f);
-          e.target.value = "";
-        }}
-      />
-      {error && (
         <div
           style={{
-            position: "absolute",
-            marginTop: 28,
-            padding: "2px 6px",
-            background: "var(--red, #f87171)",
-            color: "#0c0d10",
-            fontSize: 10,
-            borderRadius: 3,
-            zIndex: 5,
+            width: 32,
+            height: 24,
+            background: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: radius.sm,
+            overflow: "hidden",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
+          {previewSrc ? (
+            // muted+playsInline gives a reliable poster-style preview without
+            // autoplay-block warnings; loop so the operator sees motion.
+            <video
+              key={previewSrc}
+              src={previewSrc}
+              muted
+              playsInline
+              loop
+              autoPlay
+              preload="metadata"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              onError={(e) => {
+                (e.target as HTMLVideoElement).style.display = "none";
+              }}
+            />
+          ) : (
+            <Play size={12} aria-hidden color="currentColor" style={{ color: colors.textMuted }} />
+          )}
+        </div>
+        <Input
+          id={id}
+          value={isDataUrl ? "(embedded video)" : value}
+          readOnly={isDataUrl}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="URL or path · drop a file"
+          title={isDataUrl ? "Inline data URL — clear to paste a new URL" : value || undefined}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            color: isDataUrl ? colors.textDim : colors.text,
+            fontFamily: isDataUrl ? fontFamily.mono : undefined,
+          }}
+        />
+        <IconButton
+          size={24}
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          aria-label={onUpload ? "Upload video" : "Embed video file"}
+          title={onUpload ? "Upload video" : "Embed as data URL"}
+        >
+          {uploading ? "…" : <FolderOpen size={14} aria-hidden />}
+        </IconButton>
+        {value && (
+          <IconButton size={24} onClick={() => onChange("")} aria-label="Clear video" title="Clear">
+            <X size={14} aria-hidden />
+          </IconButton>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="video/*"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onFile(f);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {error && (
+        <div role="alert" style={{ marginTop: 4, fontSize: 11, color: colors.dangerText }}>
           {error}
         </div>
       )}

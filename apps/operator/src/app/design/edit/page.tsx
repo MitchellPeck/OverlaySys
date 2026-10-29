@@ -7,15 +7,11 @@ import { v4 as uuid } from "uuid";
 import {
   Canvas,
   LayerTree,
-  PropertyInspector,
   TimelinePanel,
-  FieldsPanel,
-  TEMPLATE_SIZE_PRESETS,
   alignLayers,
   copyLayersPayload,
   distributeLayers,
   duplicateLayers,
-  fontUsage,
   isEditableTarget,
   moveLayersZ,
   nudgeForKey,
@@ -23,10 +19,6 @@ import {
   parseLayersPayload,
   pasteLayers,
   removeLayers,
-  removeTemplateFont,
-  templateSizePresetKey,
-  useEditCoalescer,
-  type AlignMode,
   type LayerClipboard,
   type ZMove,
 } from "@overlaysys/editor-kit";
@@ -38,8 +30,7 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { isLocalDraftEdit, shouldAdoptIncoming } from "@/lib/stageDesigner";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
-import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { uploadAsset } from "@/lib/uploadAsset";
+import { resolveAssetUrl, uploadAsset } from "@/lib/uploadAsset";
 import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { downloadJson } from "@/lib/download";
 import { exportFileName } from "@/lib/exportName";
@@ -56,6 +47,7 @@ import { useDialog } from "@/lib/dialog";
 import { DesignerHeader } from "./DesignerHeader";
 import { PreviewOnPvwButton } from "./PreviewOnPvwButton"; // [P2b.11]
 import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
+import { DesignerInspector } from "./DesignerInspector";
 import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
 type Recipe = (d: Draft<Template>) => void;
@@ -327,6 +319,8 @@ function DesignPageInner() {
 
   // ---- Keyboard ----
   const spacePannedRef = useRef(false);
+  /** Canvas fills this with the artboard area on screen; new layers land in its centre. */
+  const visibleAreaRef = useRef<(() => { x: number; y: number; w: number; h: number }) | null>(null);
   const keyActionsRef = useRef({ play, pause, deleteSelection, duplicateSelection, moveZ });
   keyActionsRef.current = { play, pause, deleteSelection, duplicateSelection, moveZ };
   useEffect(() => {
@@ -572,7 +566,6 @@ function DesignPageInner() {
   const selectedLayers = selectedLayerIds
     .map((id) => findLayer(draft.layers, id))
     .filter((l): l is Layer => !!l);
-  const primary = selectedLayerId ? findLayer(draft.layers, selectedLayerId) : null;
   const offline = !cloud && conn !== "open";
   const saveFirst = (what: string) => `Save first. ${what} uses the saved template.`;
 
@@ -631,6 +624,7 @@ function DesignPageInner() {
               onSelect={setSelectedLayer}
               onSelectLayers={selectLayers}
               onCommit={commit}
+              getVisibleArea={() => visibleAreaRef.current?.() ?? null}
             />
           </DesignerPanel>
         }
@@ -649,51 +643,23 @@ function DesignPageInner() {
             onCancelDrag={cancelDrag}
             spacePannedRef={spacePannedRef}
             onPasteboardClick={() => selectLayers([])}
+            visibleAreaRef={visibleAreaRef}
           />
         }
         inspector={
-          selectedLayers.length === 0 ? (
-            <DesignerPanel title="Template" subtitle="nothing selected">
-              <TemplateSettings template={draft} onCommit={commit} onLive={applyLive} />
-              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-                <FieldsPanel template={draft} onCommit={commit} onLive={applyLive} onUpload={uploadInspector} />
-              </div>
-            </DesignerPanel>
-          ) : (
-            <DesignerPanel
-              title="Inspector"
-              subtitle={selectedLayers.length > 1 ? `${selectedLayers.length} layers` : (primary?.name ?? "")}
-            >
-              <ArrangeBar
-                count={selectedLayers.length}
-                onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
-                onDistribute={(axis) => commit(distributeLayers(useEditor.getState().selectedLayerIds, axis))}
-                onZ={moveZ}
-              />
-              {selectedLayers.length === 1 && (
-                <>
-                  <PropertyInspector
-                    template={draft}
-                    selectedId={selectedLayerId}
-                    onCommit={commit}
-                    onLive={applyLive}
-                    onPushHistory={pushHistory}
-                    onUpload={uploadInspector}
-                  />
-                  {selectedLayerId && (
-                    <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-                      <ClipBySection template={draft} selectedLayerId={selectedLayerId} onCommit={commit} />
-                    </div>
-                  )}
-                </>
-              )}
-              {selectedLayers.length > 1 && (
-                <p style={{ fontSize: 11, color: colors.textDim, lineHeight: 1.5 }}>
-                  Arrows nudge (Shift = 10px) · ⌘D duplicate · ⌘C / ⌘V copy and paste · Delete removes.
-                </p>
-              )}
-            </DesignerPanel>
-          )
+          <DesignerInspector
+            draft={draft}
+            selectedLayers={selectedLayers}
+            selectedLayerId={selectedLayerId}
+            onCommit={commit}
+            onLive={applyLive}
+            onPushHistory={pushHistory}
+            onUpload={uploadInspector}
+            resolveUrl={resolveAssetUrl}
+            onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
+            onDistribute={(axis) => commit(distributeLayers(useEditor.getState().selectedLayerIds, axis))}
+            onZ={moveZ}
+          />
         }
         timeline={
           <TimelinePanel
@@ -721,419 +687,6 @@ function DesignPageInner() {
   );
 }
 
-const ALIGN_BUTTONS: { mode: AlignMode; label: string }[] = [
-  { mode: "left", label: "Left" },
-  { mode: "hcenter", label: "Centre" },
-  { mode: "right", label: "Right" },
-  { mode: "top", label: "Top" },
-  { mode: "vcenter", label: "Middle" },
-  { mode: "bottom", label: "Bottom" },
-];
-
-/** Align / distribute / z-order for the selection. One layer aligns to the canvas (or its group). */
-function ArrangeBar({
-  count,
-  onAlign,
-  onDistribute,
-  onZ,
-}: {
-  count: number;
-  onAlign: (mode: AlignMode) => void;
-  onDistribute: (axis: "x" | "y") => void;
-  onZ: (to: ZMove) => void;
-}) {
-  return (
-    <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${colors.border}` }}>
-      <div style={{ fontSize: 10, color: colors.textDim, marginBottom: 4 }}>
-        {count === 1 ? "Align to canvas" : "Align"}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 2 }}>
-        {ALIGN_BUTTONS.map((b) => (
-          <button key={b.mode} type="button" onClick={() => onAlign(b.mode)} title={`Align ${b.label.toLowerCase()}`} style={miniBtn}>
-            {b.label}
-          </button>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 2, marginTop: 4 }}>
-        {count >= 3 && (
-          <>
-            <button type="button" onClick={() => onDistribute("x")} style={miniBtn}>Distribute ↔</button>
-            <button type="button" onClick={() => onDistribute("y")} style={miniBtn}>Distribute ↕</button>
-          </>
-        )}
-        <button type="button" onClick={() => onZ("top")} title="Bring to front (⇧⌘])" style={miniBtn}>To front</button>
-        <button type="button" onClick={() => onZ("bottom")} title="Send to back (⇧⌘[)" style={miniBtn}>To back</button>
-      </div>
-    </div>
-  );
-}
-
-const miniBtn: React.CSSProperties = {
-  flex: 1,
-  padding: "3px 4px",
-  background: colors.panel,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 3,
-  color: colors.text,
-  fontSize: 10,
-  cursor: "pointer",
-};
-
-function TemplateSettings({
-  template,
-  onCommit: commitStep,
-  onLive,
-}: {
-  template: Template;
-  onCommit: (recipe: Recipe) => void;
-  onLive: (recipe: Recipe) => void;
-}) {
-  // Typing makes one undo step per field edit, not one per keystroke.
-  const { commit: onCommit, handlers } = useEditCoalescer(commitStep, onLive);
-  const seconds =
-    template.autoOutMs && template.autoOutMs > 0 ? template.autoOutMs / 1000 : 0;
-  const channelConfigs = useResolvedChannelConfigs();
-  const channelChoices = useMemo(
-    () => channelConfigs.filter((c) => !c.mirrorOf),
-    [channelConfigs],
-  );
-  const blink = template.blinkOnTake;
-  // Show the blink-config inputs whenever the object exists (even if
-  // disabled), so the operator can leave saved color / duration / count
-  // values intact while toggling the feature off and back on.
-  const showBlinkConfig = !!blink;
-  const presetKey = templateSizePresetKey(template.size);
-  const [customSize, setCustomSize] = useState(false);
-  const showCustom = customSize || presetKey === "custom";
-
-  function setSize(w: number, h: number) {
-    if (w === template.size.w && h === template.size.h) return;
-    // Layers keep their positions; nothing is scaled.
-    onCommit((d) => {
-      d.size = { w, h };
-    });
-  }
-
-  return (
-    <div {...handlers}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: colors.textDim,
-          marginBottom: 8,
-        }}
-      >
-        Settings
-      </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-        <span style={{ minWidth: 70 }}>Canvas</span>
-        <select
-          value={showCustom ? "custom" : presetKey}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "custom") {
-              setCustomSize(true);
-              return;
-            }
-            setCustomSize(false);
-            const p = TEMPLATE_SIZE_PRESETS.find((s) => `${s.w}x${s.h}` === v);
-            if (p) setSize(p.w, p.h);
-          }}
-          style={{ ...settingsInputStyle, width: "auto", flex: 1 }}
-        >
-          {TEMPLATE_SIZE_PRESETS.map((p) => (
-            <option key={`${p.w}x${p.h}`} value={`${p.w}x${p.h}`}>
-              {p.label}
-            </option>
-          ))}
-          <option value="custom">Custom…</option>
-        </select>
-      </label>
-      {showCustom && (
-        <div style={{ display: "flex", gap: 8, marginTop: 6, marginLeft: 78 }}>
-          <SizeInput label="W" value={template.size.w} onCommit={(w) => setSize(w, template.size.h)} />
-          <SizeInput label="H" value={template.size.h} onCommit={(h) => setSize(template.size.w, h)} />
-        </div>
-      )}
-
-      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 8 }}>
-        <span style={{ minWidth: 70 }}>Auto-out</span>
-        <input
-          type="number"
-          min={0}
-          step={0.1}
-          value={seconds === 0 ? "" : seconds}
-          placeholder="off"
-          onChange={(e) => {
-            const v = e.target.value.trim();
-            const next = v === "" ? undefined : Math.max(0, Math.round(Number(v) * 1000));
-            onCommit((d) => {
-              if (!next || next <= 0) {
-                delete d.autoOutMs;
-              } else {
-                d.autoOutMs = next;
-              }
-            });
-          }}
-          title="Auto-clear this template N seconds after it's taken. Empty / 0 to disable."
-          style={settingsInputStyle}
-        />
-        <span style={{ color: colors.textDim, fontSize: 11 }}>
-          seconds {seconds > 0 ? "" : "(off)"}
-        </span>
-      </label>
-
-      <label
-        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 8 }}
-        title="Suggested channel — prefills the channel selector in the Take panel and channelHint when this template is added to a rundown."
-      >
-        <span style={{ minWidth: 70 }}>Default ch.</span>
-        <select
-          value={template.defaultChannel ?? ""}
-          onChange={(e) => {
-            const v = e.target.value;
-            onCommit((d) => {
-              if (!v) delete d.defaultChannel;
-              else d.defaultChannel = v;
-            });
-          }}
-          style={{ ...settingsInputStyle, width: "auto", flex: 1 }}
-        >
-          <option value="">(none)</option>
-          {/* Preserve out-of-list values rather than silently drop them when
-              a previously-set channel was removed or became a mirror. */}
-          {template.defaultChannel &&
-            !channelChoices.some((c) => c.id === template.defaultChannel) && (
-              <option value={template.defaultChannel}>
-                {template.defaultChannel} (missing)
-              </option>
-            )}
-          {channelChoices.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label
-        style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, marginTop: 8 }}
-        title="Flash a color overlay on each take. Re-taking the same template re-blinks; updates (same take) do not."
-      >
-        <input
-          type="checkbox"
-          checked={blink?.enabled ?? false}
-          onChange={(e) => {
-            const next = e.target.checked;
-            onCommit((d) => {
-              if (next) {
-                // Seed defaults the first time the operator turns it on so
-                // the renderer has a usable config without further input.
-                if (!d.blinkOnTake) {
-                  d.blinkOnTake = {
-                    enabled: true,
-                    color: "#ffffff",
-                    durationMs: 500,
-                    count: 2,
-                  };
-                } else {
-                  d.blinkOnTake.enabled = true;
-                }
-              } else if (d.blinkOnTake) {
-                d.blinkOnTake.enabled = false;
-              }
-            });
-          }}
-        />
-        <span style={{ minWidth: 70 }}>Blink on take</span>
-      </label>
-
-      {showBlinkConfig && (
-        <div
-          style={{
-            marginTop: 6,
-            marginLeft: 22,
-            display: "grid",
-            gridTemplateColumns: "70px 1fr 1fr",
-            gap: 6,
-            alignItems: "center",
-            fontSize: 12,
-          }}
-        >
-          <span style={{ color: colors.textDim, fontSize: 11 }}>color</span>
-          <input
-            type="color"
-            value={blink?.color ?? "#ffffff"}
-            onChange={(e) => {
-              const v = e.target.value;
-              onCommit((d) => {
-                if (!d.blinkOnTake) return;
-                d.blinkOnTake.color = v;
-              });
-            }}
-            style={{
-              width: "100%",
-              height: 24,
-              padding: 0,
-              border: `1px solid ${colors.border}`,
-              borderRadius: 3,
-              background: "transparent",
-            }}
-          />
-          <input
-            value={blink?.color ?? "#ffffff"}
-            onChange={(e) => {
-              const v = e.target.value;
-              onCommit((d) => {
-                if (!d.blinkOnTake) return;
-                d.blinkOnTake.color = v;
-              });
-            }}
-            style={{ ...settingsInputStyle, fontFamily: "ui-monospace, monospace" }}
-          />
-
-          <span style={{ color: colors.textDim, fontSize: 11 }}>duration</span>
-          <input
-            type="number"
-            min={50}
-            step={50}
-            value={blink?.durationMs ?? 500}
-            onChange={(e) => {
-              const v = Math.max(50, Math.round(Number(e.target.value)));
-              if (!Number.isFinite(v)) return;
-              onCommit((d) => {
-                if (!d.blinkOnTake) return;
-                d.blinkOnTake.durationMs = v;
-              });
-            }}
-            style={settingsInputStyle}
-          />
-          <span style={{ color: colors.textDim, fontSize: 11 }}>ms per cycle</span>
-
-          <span style={{ color: colors.textDim, fontSize: 11 }}>count</span>
-          <input
-            type="number"
-            min={1}
-            max={20}
-            step={1}
-            value={blink?.count ?? 2}
-            onChange={(e) => {
-              const v = Math.max(1, Math.min(20, Math.round(Number(e.target.value))));
-              if (!Number.isFinite(v)) return;
-              onCommit((d) => {
-                if (!d.blinkOnTake) return;
-                d.blinkOnTake.count = v;
-              });
-            }}
-            style={settingsInputStyle}
-          />
-          <span style={{ color: colors.textDim, fontSize: 11 }}>blinks</span>
-        </div>
-      )}
-
-      <EmbeddedFonts template={template} onCommit={onCommit} />
-    </div>
-  );
-}
-
-/** Fonts embedded in the template JSON, with remove (they're never pruned otherwise). */
-function EmbeddedFonts({ template, onCommit }: { template: Template; onCommit: (r: Recipe) => void }) {
-  if (template.fonts.length === 0) return null;
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim, marginBottom: 6 }}>Embedded fonts</div>
-      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-        {template.fonts.map((f, i) => {
-          const usedBy = fontUsage(template, f.family);
-          return (
-            // Older templates can embed the same family twice, so the name alone isn't a unique key.
-            <li key={`${i}:${f.family}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4 }}>
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: f.family }}>
-                {f.family}
-              </span>
-              {usedBy.length > 0 && (
-                <span style={{ fontSize: 10, color: colors.textDim }} title={usedBy.join(", ")}>
-                  used ×{usedBy.length}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => onCommit(removeTemplateFont(f.family))}
-                aria-label={`Remove font ${f.family}`}
-                title={
-                  usedBy.length > 0
-                    ? `Remove — ${usedBy.join(", ")} will fall back to an installed font`
-                    : "Remove font"
-                }
-                style={{ ...miniBtn, flex: "none", color: colors.danger }}
-              >
-                Remove
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-/** Positive integer input that commits on blur or Enter. */
-function SizeInput({ label, value, onCommit }: { label: string; value: number; onCommit: (v: number) => void }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
-  function commit() {
-    const n = Math.round(Number(text));
-    if (!Number.isFinite(n) || n <= 0) {
-      setText(String(value));
-      return;
-    }
-    if (n !== value) onCommit(n);
-  }
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: colors.textDim }}>
-      {label}
-      <input
-        type="number"
-        min={1}
-        step={1}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-        style={{ ...settingsInputStyle, width: 72 }}
-      />
-    </label>
-  );
-}
-
-const settingsInputStyle: React.CSSProperties = {
-  width: 80,
-  padding: "4px 6px",
-  background: colors.panel,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 3,
-  color: colors.text,
-  fontSize: 12,
-};
-
-/**
- * Flatten the template's layer tree into a list usable by a layer-picker
- * dropdown. Excludes the layer being edited so a layer can't reference
- * itself.
- */
-function flattenLayers(layers: Layer[], excludeId: string): Array<{ id: string; name: string; type: Layer["type"] }> {
-  const out: Array<{ id: string; name: string; type: Layer["type"] }> = [];
-  function visit(l: Layer): void {
-    if (l.id !== excludeId) out.push({ id: l.id, name: l.name, type: l.type });
-    if (l.type === "group") for (const c of l.children) visit(c);
-  }
-  for (const l of layers) visit(l);
-  return out;
-}
-
 function findLayer(layers: Layer[], id: string): Layer | null {
   for (const l of layers) {
     if (l.id === id) return l;
@@ -1144,113 +697,3 @@ function findLayer(layers: Layer[], id: string): Layer | null {
   }
   return null;
 }
-
-function ClipBySection({
-  template,
-  selectedLayerId,
-  onCommit,
-}: {
-  template: Template;
-  selectedLayerId: string;
-  onCommit: (recipe: Recipe) => void;
-}) {
-  const layer = findLayer(template.layers, selectedLayerId);
-  if (!layer) return null;
-  const candidates = flattenLayers(template.layers, selectedLayerId);
-  const clipBy = layer.clipBy;
-
-  function setClip(
-    layerId: string | null,
-    hide?: "inside" | "outside" | "above" | "below" | "left" | "right",
-  ) {
-    onCommit((d) => {
-      const target = findLayerInDraft(d.layers, selectedLayerId);
-      if (!target) return;
-      if (!layerId) {
-        delete target.clipBy;
-        return;
-      }
-      target.clipBy = {
-        layerId,
-        hide: hide ?? target.clipBy?.hide ?? "inside",
-      };
-    });
-  }
-
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: colors.textDim,
-          marginBottom: 8,
-        }}
-      >
-        Clip by
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <select
-          value={clipBy?.layerId ?? ""}
-          onChange={(e) => setClip(e.target.value || null)}
-          style={selectStyle}
-          title="Reference layer whose bounding box defines a reveal edge for this layer."
-        >
-          <option value="">none</option>
-          {candidates.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} ({c.type})
-            </option>
-          ))}
-        </select>
-        {clipBy && (
-          <select
-            value={clipBy.hide}
-            onChange={(e) =>
-              setClip(
-                clipBy.layerId,
-                e.target.value as "inside" | "outside" | "above" | "below" | "left" | "right",
-              )
-            }
-            style={selectStyle}
-            title="How the reference's bounding box masks this layer."
-          >
-            <option value="inside">hide where overlapping (inside)</option>
-            <option value="outside">show only inside reference</option>
-            <option value="below">half-plane: hide below</option>
-            <option value="above">half-plane: hide above</option>
-            <option value="right">half-plane: hide right</option>
-            <option value="left">half-plane: hide left</option>
-          </select>
-        )}
-        {clipBy && (
-          <p style={{ margin: 0, fontSize: 11, color: colors.textDim, lineHeight: 1.4 }}>
-            Set the reference layer to invisible (eye toggle in the Layers panel) to use it
-            as a positional marker without rendering it.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function findLayerInDraft(layers: Draft<Layer>[], id: string): Draft<Layer> | null {
-  for (const l of layers) {
-    if (l.id === id) return l;
-    if (l.type === "group") {
-      const found = findLayerInDraft(l.children, id);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-const selectStyle: React.CSSProperties = {
-  padding: "4px 6px",
-  background: colors.panel,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 3,
-  color: colors.text,
-  fontSize: 12,
-  width: "100%",
-};

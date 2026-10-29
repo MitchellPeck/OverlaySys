@@ -165,7 +165,7 @@ function Toolbar(props: Props) {
         <option value="out">out ({props.template.timelines.out.duration}s)</option>
       </select>
       <NumberSpinner
-        label="dur"
+        label="Duration"
         value={tl.duration}
         step={0.05}
         min={minTimelineDuration(tl)}
@@ -195,7 +195,7 @@ function Toolbar(props: Props) {
         title="Loop the preview playback here in the editor"
       >
         <input type="checkbox" checked={props.loop} onChange={props.onLoopToggle} />
-        loop preview
+        Loop
       </label>
 
       <select
@@ -288,7 +288,13 @@ function Transport({
       >
         ◄
       </TransportBtn>
-      <button onClick={playing ? onPause : onPlay} style={playBtn(playing)}>
+      <button
+        type="button"
+        onClick={playing ? onPause : onPlay}
+        aria-label={playing ? "Pause (Space)" : "Play (Space)"}
+        title={playing ? "Pause (Space)" : "Play (Space)"}
+        style={playBtn(playing)}
+      >
         {playing ? "⏸" : "▶"}
       </button>
       <TransportBtn
@@ -460,10 +466,13 @@ function TrackList({
                 e.stopPropagation();
                 deleteTrack(track.layerId, track.property as TrackProperty);
               }}
+              type="button"
               title="Delete track"
+              aria-label={`Delete ${track.property} track of ${layerName}`}
               style={{
-                width: 18,
-                height: 18,
+                width: 24,
+                height: 24,
+                flexShrink: 0,
                 background: "transparent",
                 color: "var(--text-dim, #9099a8)",
                 border: "1px solid var(--border, #2a2e36)",

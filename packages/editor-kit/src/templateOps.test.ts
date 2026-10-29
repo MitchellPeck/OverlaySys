@@ -6,6 +6,7 @@ import {
   applyAnimationPreset,
   clampTimelineDuration,
   copyLayersPayload,
+  dedupeFontFaces,
   distributeLayers,
   duplicateLayers,
   fieldKeyError,
@@ -16,12 +17,14 @@ import {
   nudgeLayers,
   parseLayersPayload,
   pasteLayers,
+  placementForNewLayer,
   removeField,
   removeLayers,
   renameFieldKey,
   toggleLayerLocked,
   topmostIds,
   upsertKeyframe,
+  visibleArtboardRect,
 } from "./templateOps";
 import { TEMPLATE_STARTERS, templateFromStarter } from "./templateStarters";
 import { findLayer } from "./utils";
@@ -365,5 +368,44 @@ describe("starters", () => {
 
   it("unknown starter ids give a blank template", () => {
     expect(templateFromStarter("nope", "x", "X").layers).toEqual([]);
+  });
+});
+
+describe("placementForNewLayer", () => {
+  it("centres the layer in the visible artboard area", () => {
+    expect(placementForNewLayer({ x: 0, y: 0, w: 960, h: 540 }, { w: 400, h: 100 })).toEqual({ x: 280, y: 220 });
+  });
+
+  it("returns whole pixels for a fractional view", () => {
+    const p = placementForNewLayer({ x: 10.5, y: 3.25, w: 701.3, h: 399.9 }, { w: 400, h: 100 });
+    expect(Number.isInteger(p.x)).toBe(true);
+    expect(Number.isInteger(p.y)).toBe(true);
+  });
+});
+
+describe("visibleArtboardRect", () => {
+  it("is the whole artboard when it all fits", () => {
+    expect(visibleArtboardRect({ w: 1000, h: 600 }, { w: 1920, h: 1080 }, { x: 0, y: 0 }, 0.5)).toEqual({ x: 0, y: 0, w: 1920, h: 1080 });
+  });
+
+  it("is the panned window when zoomed in", () => {
+    // 2× zoom on a 960×540 host shows 480×270 artboard px around the centre, panned 200 screen px left.
+    expect(visibleArtboardRect({ w: 960, h: 540 }, { w: 1920, h: 1080 }, { x: -200, y: 0 }, 2)).toEqual({ x: 820, y: 405, w: 480, h: 270 });
+  });
+
+  it("falls back to the whole artboard when it's panned out of view", () => {
+    expect(visibleArtboardRect({ w: 100, h: 100 }, { w: 1920, h: 1080 }, { x: 5000, y: 0 }, 1)).toEqual({ x: 0, y: 0, w: 1920, h: 1080 });
+  });
+});
+
+describe("dedupeFontFaces", () => {
+  it("keeps the first entry per family, ignoring case", () => {
+    const out = dedupeFontFaces([
+      { family: "Work Sans", src: "a" },
+      { family: "work sans", src: "b" },
+      { family: "Inter", src: "c" },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0]!.src).toBe("a");
   });
 });

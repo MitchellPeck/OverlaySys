@@ -614,3 +614,53 @@ export function removeTemplateFont(family: string): Recipe {
     d.fonts = d.fonts.filter((f) => f.family !== family);
   };
 }
+
+/**
+ * One entry per family (case-insensitive), keeping the first. Older templates
+ * can embed the same family twice; the duplicate adds nothing.
+ */
+export function dedupeFontFaces<F extends { family: string; src: string }>(fonts: F[]): F[] {
+  const seen = new Set<string>();
+  return fonts.filter((f) => {
+    const k = f.family.trim().toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+// ───── New layers ───────────────────────────────────────────────────────────
+
+/**
+ * The part of the artboard the canvas currently shows, in artboard px. The
+ * artboard is centred in the host, then panned by `pan` (screen px) and
+ * scaled by `scale`. Falls back to the whole artboard if none of it is visible.
+ */
+export function visibleArtboardRect(
+  host: { w: number; h: number },
+  artboard: { w: number; h: number },
+  pan: { x: number; y: number },
+  scale: number,
+): Rect {
+  const whole = { x: 0, y: 0, w: artboard.w, h: artboard.h };
+  if (!(scale > 0) || host.w <= 0 || host.h <= 0) return whole;
+  const cx = artboard.w / 2 - pan.x / scale;
+  const cy = artboard.h / 2 - pan.y / scale;
+  const x0 = Math.max(0, cx - host.w / scale / 2);
+  const x1 = Math.min(artboard.w, cx + host.w / scale / 2);
+  const y0 = Math.max(0, cy - host.h / scale / 2);
+  const y1 = Math.min(artboard.h, cy + host.h / scale / 2);
+  if (x1 <= x0 || y1 <= y0) return whole;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** Where a new layer of `size` lands: centred in `view` (the visible artboard area), whole pixels. */
+export function placementForNewLayer(
+  view: { x: number; y: number; w: number; h: number },
+  size: { w: number; h: number },
+): { x: number; y: number } {
+  return {
+    x: Math.round(view.x + (view.w - size.w) / 2),
+    y: Math.round(view.y + (view.h - size.h) / 2),
+  };
+}

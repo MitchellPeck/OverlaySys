@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from "react";
+import { Input, NumberInput, colors, fontFamily, radius } from "@overlaysys/ui";
 
 type Props = {
   /** Any CSS color string the layer schema can hold: hex, hex+alpha, rgb(), rgba(), named. */
   value: string;
   onChange: (next: string) => void;
+  /** Id for the hex field, so a FieldRow label focuses it. */
+  id?: string;
+  /** Names the colour in the controls' accessible names ("Fill colour", "Fill opacity"). */
+  label?: string;
 };
 
 type RGBA = { r: number; g: number; b: number; a: number };
 
-export function ColorInput({ value, onChange }: Props) {
+/**
+ * Swatch and hex on the first line, opacity (0–100 %) on the second, so the
+ * control fits a 300 px inspector column without scrolling sideways.
+ */
+export function ColorInput({ value, onChange, id, label = "Color" }: Props) {
   const parsed = parseColor(value);
   const [hex, setHex] = useState(toHex(parsed));
   const [alpha, setAlpha] = useState(parsed.a);
@@ -32,47 +41,55 @@ export function ColorInput({ value, onChange }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <input
-        type="color"
-        value={hex}
-        onChange={(e) => emit(e.target.value, alpha)}
-        style={{ padding: 0, width: 32, height: 24, background: "transparent", border: "1px solid var(--border, #2a2e36)", borderRadius: 3 }}
-      />
-      <input
-        value={hex}
-        onChange={(e) => {
-          const v = e.target.value.trim();
-          if (/^#[0-9a-fA-F]{6}$/.test(v)) emit(v, alpha);
-          else setHex(v);
-        }}
-        onBlur={() => {
-          if (!/^#[0-9a-fA-F]{6}$/.test(hex)) setHex(toHex(parsed));
-        }}
-        style={{
-          flex: 1,
-          padding: "2px 6px",
-          background: "var(--panel-2, #1c1f25)",
-          border: "1px solid var(--border, #2a2e36)",
-          borderRadius: 3,
-          color: "var(--text, #e9eaee)",
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 11,
-          minWidth: 0,
-          width: 80,
-        }}
-      />
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }} title={`alpha: ${alpha.toFixed(2)}`}>
-        <span style={{ fontSize: 10, color: "var(--text-dim, #9099a8)" }}>α</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
         <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={alpha}
-          onChange={(e) => emit(hex, parseFloat(e.target.value))}
-          style={{ width: 60 }}
+          type="color"
+          aria-label={`${label} swatch`}
+          value={hex}
+          onChange={(e) => emit(e.target.value, alpha)}
+          style={{
+            flexShrink: 0,
+            padding: 0,
+            width: 28,
+            height: 24,
+            background: "transparent",
+            border: `1px solid ${colors.border}`,
+            borderRadius: radius.sm,
+            cursor: "pointer",
+          }}
         />
+        <Input
+          id={id}
+          aria-label={`${label} hex`}
+          value={hex}
+          onChange={(e) => {
+            const v = e.target.value.trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(v)) emit(v, alpha);
+            else setHex(v);
+          }}
+          onBlur={() => {
+            if (!/^#[0-9a-fA-F]{6}$/.test(hex)) setHex(toHex(parsed));
+          }}
+          style={{ flex: 1, minWidth: 0, fontFamily: fontFamily.mono }}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <span style={{ flexShrink: 0, fontSize: 11, color: colors.textMuted }} aria-hidden>
+          Opacity
+        </span>
+        <div style={{ width: 72 }}>
+          <NumberInput
+            size="sm"
+            int
+            min={0}
+            max={100}
+            suffix="%"
+            aria-label={`${label} opacity`}
+            value={Math.round(alpha * 100)}
+            onCommit={(v) => emit(hex, clamp(v, 0, 100) / 100)}
+          />
+        </div>
       </div>
     </div>
   );

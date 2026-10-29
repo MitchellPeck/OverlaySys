@@ -19,7 +19,18 @@ import {
 import type { Layer, Template } from "@overlaysys/core";
 import { colors } from "@overlaysys/ui";
 import { flattenLayersForDisplay, moveLayer } from "./utils";
-import { duplicateLayers, moveLayersZ, newLayerId, removeLayers, toggleLayerLocked, toggleLayerVisible } from "./templateOps";
+import {
+  duplicateLayers,
+  moveLayersZ,
+  newLayerId,
+  placementForNewLayer,
+  removeLayers,
+  toggleLayerLocked,
+  toggleLayerVisible,
+} from "./templateOps";
+
+type Area = { x: number; y: number; w: number; h: number };
+const NEW_LAYER_SIZE = { w: 400, h: 100 };
 
 type Props = {
   template: Template;
@@ -31,6 +42,8 @@ type Props = {
   onSelectLayers?: (ids: string[], additive: boolean) => void;
   /** Mutate draft + history. */
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
+  /** The artboard area on screen; new layers land in its centre (else the artboard's). */
+  getVisibleArea?: () => Area | null;
 };
 
 const ICON = 14;
@@ -45,7 +58,7 @@ const ICON_BY_TYPE: Record<Layer["type"], LucideIcon> = {
 
 type DropZone = "before" | "into" | "after";
 
-export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, onSelect, onSelectLayers, onCommit }: Props) {
+export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, onSelect, onSelectLayers, onCommit, getVisibleArea }: Props) {
   // Photoshop ordering: top of panel = on top of z-stack, with group children
   // expanding beneath their header. flattenLayersForDisplay handles both.
   const flat = flattenLayersForDisplay(template.layers);
@@ -72,7 +85,15 @@ export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, 
 
   return (
     <div>
-      <Toolbar selectedIds={selectedIds} onCommit={onCommit} onSelect={select} />
+      <Toolbar
+        selectedIds={selectedIds}
+        onCommit={onCommit}
+        onSelect={select}
+        newLayerAt={() => {
+          const area = getVisibleArea?.() ?? { x: 0, y: 0, w: template.size.w, h: template.size.h };
+          return placementForNewLayer(area, NEW_LAYER_SIZE);
+        }}
+      />
 
       {flat.length === 0 ? (
         <p style={{ color: "var(--text-dim, #9099a8)", fontSize: 12, padding: 8 }}>
@@ -155,8 +176,8 @@ export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, 
                   position: "relative",
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "6px 8px",
+                  gap: 4,
+                  padding: "2px 4px 2px 8px",
                   paddingLeft: 8 + depth * 16,
                   cursor: "pointer",
                   fontSize: 13,
@@ -171,7 +192,7 @@ export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, 
               >
                 {dt === "before" && <DropLine position="top" />}
                 {dt === "after" && <DropLine position="bottom" />}
-                <TypeIcon size={ICON} aria-hidden style={{ flexShrink: 0, color: "var(--text-dim, #9099a8)" }} />
+                <TypeIcon size={ICON} aria-hidden style={{ flexShrink: 0, marginRight: 4, color: "var(--text-dim, #9099a8)" }} />
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {layer.name}
                 </span>
@@ -230,17 +251,20 @@ function Toolbar({
   selectedIds,
   onCommit,
   onSelect,
+  newLayerAt,
 }: {
   selectedIds: string[];
   onCommit: (recipe: (d: Draft<Template>) => void) => void;
   onSelect: (ids: string[], additive: boolean) => void;
+  newLayerAt: () => { x: number; y: number };
 }) {
   const none = selectedIds.length === 0;
 
   function add(type: Layer["type"]) {
     const id = newLayerId(type);
+    const at = newLayerAt();
     onCommit((d) => {
-      const layer: Layer = makeLayer(type, id);
+      const layer: Layer = makeLayer(type, id, at);
       d.layers.push(layer);
     });
     onSelect([id], false);
@@ -334,22 +358,26 @@ const iconBtn: React.CSSProperties = {
   background: "transparent",
   border: "none",
   color: "var(--text-dim, #9099a8)",
-  padding: 2,
+  width: 24,
+  height: 24,
+  padding: 0,
+  flexShrink: 0,
+  borderRadius: 4,
   cursor: "pointer",
 };
 
 // ───── Layer factories & tree mutations (work on Immer drafts) ──────────────
 
-function makeLayer(type: Layer["type"], id: string): Layer {
+function makeLayer(type: Layer["type"], id: string, at: { x: number; y: number }): Layer {
   const base = {
     id,
     name: capitalize(type),
     visible: true,
     transform: {
-      x: 100,
-      y: 100,
-      w: 400,
-      h: 100,
+      x: at.x,
+      y: at.y,
+      w: NEW_LAYER_SIZE.w,
+      h: NEW_LAYER_SIZE.h,
       rotation: 0,
       scaleX: 1,
       scaleY: 1,

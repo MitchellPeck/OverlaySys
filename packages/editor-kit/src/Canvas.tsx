@@ -23,7 +23,7 @@ import {
   rectsIntersect,
 } from "./stageCanvasMath";
 import { GuideOverlays, ViewToolbar, useCanvasZoom, type GuideToggles } from "./canvasView";
-import { hasTrack, locateLayer, topmostIds, upsertKeyframe } from "./templateOps";
+import { hasTrack, locateLayer, topmostIds, upsertKeyframe, visibleArtboardRect } from "./templateOps";
 
 type Recipe = (d: Draft<Template>) => void;
 
@@ -54,6 +54,8 @@ type Props = {
   spacePannedRef?: React.MutableRefObject<boolean>;
   /** A pointerdown on the pasteboard (outside the artboard) with no pan. */
   onPasteboardClick?: () => void;
+  /** Filled with a getter for the artboard area currently on screen (artboard px), e.g. to place new layers. */
+  visibleAreaRef?: React.MutableRefObject<(() => Rect) | null>;
 };
 
 type Point = { x: number; y: number };
@@ -83,6 +85,16 @@ const SELECT_COLOR = colors.accent;
 const GUIDE_COLOR = "#ff00ff";
 const MIN_LAYER_SIZE = 1;
 const HOST_PADDING = 32;
+const EMPTY_IMAGE_CSS = `.ovs-edit-stage img[data-layer-type="image"]:not([src]),
+.ovs-edit-stage img[data-layer-type="image"][src=""] {
+  background-color: rgba(255,255,255,0.10);
+  background-image: linear-gradient(45deg, rgba(255,255,255,0.22) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.22) 75%),
+    linear-gradient(45deg, rgba(255,255,255,0.22) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.22) 75%);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+  outline: 1px dashed rgba(255,255,255,0.45);
+  outline-offset: -1px;
+}`;
 
 const HANDLES: { mode: ResizeHandle; fx: number; fy: number; cursor: string }[] = [
   { mode: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
@@ -125,6 +137,12 @@ export function Canvas(props: Props) {
   const { zoom, setZoom } = useCanvasZoom(hostRef, () => setPan({ x: 0, y: 0 }));
   const scale = fit * zoom;
   scaleRef.current = scale;
+  if (props.visibleAreaRef) {
+    props.visibleAreaRef.current = () => {
+      const r = hostRef.current?.getBoundingClientRect();
+      return visibleArtboardRect({ w: r?.width ?? 0, h: r?.height ?? 0 }, props.template.size, pan, scale);
+    };
+  }
 
   const selectedIds = props.selectedLayerIds ?? (props.selectedLayerId ? [props.selectedLayerId] : []);
   const selectedRef = useRef(selectedIds);
@@ -686,8 +704,11 @@ export function Canvas(props: Props) {
           boxShadow: "0 0 0 1px var(--border, #2a2e36), 0 8px 40px rgba(0,0,0,0.6)",
         }}
       >
+        {/* An image layer with no source would be invisible: show a checkerboard until one is set. */}
+        <style>{EMPTY_IMAGE_CSS}</style>
         <div
           ref={stageRef}
+          className="ovs-edit-stage"
           onPointerDown={onStagePointerDown}
           onPointerMove={onStagePointerMove}
           onPointerUp={(e) => onStagePointerUp(e, "up")}

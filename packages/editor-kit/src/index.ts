@@ -24,3 +24,5 @@ export { FieldRow } from "./FieldRow";
 export { FONT_WEIGHTS, fontWeightOptions } from "./fontWeights";
 export { FontWeightSelect } from "./FontWeightSelect";
 export { escAction } from "./groupSelection";
+export { Section as InspectorSection } from "./PropertyInspector";
+export { AutoTextarea } from "./AutoTextarea";
