@@ -31,7 +31,7 @@ export function draftReducer<T>(s: DraftState<T>, a: DraftAction<T>): DraftState
     case "saveFail":
       return { ...s, saving: false, error: a.error };
     case "revert":
-      return { ...s, draft: s.saved, error: null };
+      return { ...s, draft: s.saved, error: null, changedElsewhere: false };
   }
 }
 

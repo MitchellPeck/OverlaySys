@@ -60,6 +60,14 @@ describe("settingsDraft", () => {
     expect(s.changedElsewhere).toBe(true);
     expect(isDirty(s)).toBe(true);
   });
+  it("revert after a dirty reload clears changedElsewhere", () => {
+    const dirty = draftReducer(loaded, { type: "edit", value: { a: 2, b: "x" } });
+    const reloaded = draftReducer(dirty, { type: "loaded", value: { a: 5, b: "x" } });
+    const s = draftReducer(reloaded, { type: "revert" });
+    expect(s.draft).toEqual({ a: 5, b: "x" });
+    expect(s.changedElsewhere).toBe(false);
+    expect(isDirty(s)).toBe(false);
+  });
   it("loaded while clean adopts the new value", () => {
     const s = draftReducer(loaded, { type: "loaded", value: { a: 7, b: "q" } });
     expect(s.draft).toEqual({ a: 7, b: "q" });
