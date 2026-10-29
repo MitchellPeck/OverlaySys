@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Draft } from "immer";
 import type { StageFeed, StageLayout, StageRect, StageWidget, StageWidgetKind } from "@overlaysys/core";
+import { STAGE_WIDGET_LABELS } from "@overlaysys/core";
 import { StageWidgetView } from "@overlaysys/stage-widgets";
+import { colors } from "@overlaysys/ui";
 import { fitScale, isEditableTarget } from "./utils";
 import { SNAP_SCREEN_PX, type Guide, type ResizeHandle } from "./stageGeometry";
 import { STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
@@ -94,6 +96,7 @@ export function StageCanvas(props: StageCanvasProps) {
   const [fit, setFit] = useState(1);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [marquee, setMarquee] = useState<StageRect | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [overlays, setOverlays] = useState<GuideToggles>({ safe: false, center: false, thirds: false });
   // View: zoom (⌘+/−/0, ⌘+wheel) on top of fit-to-window; middle-drag or wheel pans.
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
@@ -371,11 +374,15 @@ export function StageCanvas(props: StageCanvasProps) {
         {layout.widgets.map((w) => {
           const isSel = selected.has(w.id);
           if (w.hidden && !isSel) return null;
+          const isHover = hoverId === w.id && !isSel;
+          const label = STAGE_WIDGET_LABELS[w.kind];
           return (
             <div
               key={w.id}
               data-widget-id={w.id}
               onPointerDown={(e) => onWidgetPointerDown(e, w)}
+              onPointerEnter={() => setHoverId(w.id)}
+              onPointerLeave={() => setHoverId((h) => (h === w.id ? null : h))}
               style={{
                 position: "absolute",
                 left: w.rect.x,
@@ -384,10 +391,36 @@ export function StageCanvas(props: StageCanvasProps) {
                 height: w.rect.h,
                 boxSizing: "border-box",
                 cursor: w.locked ? "default" : "move",
-                outline: isSel ? `${2 * line}px ${w.hidden ? "dashed" : "solid"} ${SELECT_COLOR}` : undefined,
+                outline: isSel
+                  ? `${2 * line}px ${w.hidden ? "dashed" : "solid"} ${SELECT_COLOR}`
+                  : `${line}px ${isHover ? "solid" : "dashed"} ${isHover ? colors.accent : colors.borderStrong}`,
                 outlineOffset: -line,
               }}
-            />
+            >
+              {/* Kind chip, counter-scaled so it stays 11 px on screen. */}
+              <span
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  maxWidth: `${100 * scale}%`,
+                  transform: `scale(${line})`,
+                  transformOrigin: "0 0",
+                  padding: "1px 5px",
+                  fontSize: 11,
+                  lineHeight: "14px",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  background: isSel ? SELECT_COLOR : "rgba(12,13,16,0.85)",
+                  color: isSel ? "#0c0d10" : colors.textDim,
+                  pointerEvents: "none",
+                }}
+              >
+                {label}
+              </span>
+            </div>
           );
         })}
 

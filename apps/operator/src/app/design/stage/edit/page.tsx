@@ -3,10 +3,12 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
+import { ChevronLeft, ChevronRight, Plus, Redo2, Undo2 } from "lucide-react";
 import {
   CURRENT_ITEM_TIMER_ID,
   STAGE_SAMPLE_KINDS,
   STAGE_SAMPLE_LABELS,
+  STAGE_WIDGET_LABELS,
   isBuiltInStageLayoutId,
   sampleStageFeed,
   type StageLayout,
@@ -17,12 +19,11 @@ import {
   ColorInput,
   StageCanvas,
   StageInspector,
-  StagePalette,
   StageWidgetList,
   isEditableTarget,
   moveInOrder,
 } from "@overlaysys/editor-kit";
-import { Button, colors } from "@overlaysys/ui";
+import { Button, IconButton, Menu, NumberInput, Select, colors, toast, useConfirm, type MenuItem, type SaveBarProps } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useStageEditor } from "@/lib/stageEditorStore";
@@ -43,22 +44,30 @@ import {
   centeredRectAt,
   createTrailingThrottle,
   isLocalDraftEdit,
+  sampleKindFor,
   shouldAdoptIncomingLayout,
   sizePresetKey,
   stageEditorShortcut,
 } from "@/lib/stageDesigner";
+import { anythingOnAir } from "@/lib/onAir";
+import { useConnection } from "@/lib/useConnection";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
+import { ackErrorText, sendAndAwaitAck } from "@/lib/awaitAck";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
+import { StageEditorHeader } from "./StageEditorHeader";
+import { StagePreviewSwitch } from "./StagePreviewSwitch";
+import { StageStartDialog } from "./StageStartDialog";
 
 const FEED_TICK_MS = 250;
 const PREVIEW_THROTTLE_MS = 150;
 const NOOP = () => {};
 /** Delay before the one retry of a get_stage_layout that came back not_found. */
 const NOT_FOUND_RETRY_MS = 300;
-const UNSAVED_PROMPT = "You have unsaved changes to this stage layout. Leave anyway?";
+const UNSAVED_PROMPT = "You have unsaved changes to this stage layout.";
+const RAIL_PX = 24;
 
 export default function StageLayoutEditorPage() {
   return (
@@ -79,6 +88,12 @@ function StageLayoutEditorInner() {
       </>
     );
   }
+  return <StageLayoutEditorRoute />;
+}
+
+function StageLayoutEditorRoute() {
+  const searchParams = useSearchParams();
+  if (searchParams?.get("new") === "1") return <StageStartDialog />;
   return <StageLayoutEditor />;
 }
 
@@ -103,6 +118,14 @@ function StageLayoutEditor() {
 
   const [error, setError] = useState<string | null>(null);
   const [previewOn, setPreviewOn] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null);
+  /** Channels with a stage screen attached, from the server's status broadcasts; null until one arrives. */
+  const [screenChannels, setScreenChannels] = useState<Set<string> | null>(null);
+  const channelStates = useStore((s) => s.channelStates);
+  const { connected } = useConnection();
+  const confirmDialog = useConfirm();
   const [previewChannel, setPreviewChannel] = useState("");
   const fetchedRef = useRef<string | null>(null);
   const savingRef = useRef<StageLayout | null>(null);
@@ -158,10 +181,13 @@ function StageLayoutEditor() {
           setDraft(msg.layout);
           setError((e) => (e === notFound ? null : e));
         }
+      } else if (msg.type === "stage_layout_status") {
+        setScreenChannels(new Set(msg.screens.map((x) => x.channel)));
       } else if (msg.type === "ack") {
         if (msg.op === "save_stage_layout" && msg.id === layoutId) {
           const sent = savingRef.current;
           savingRef.current = null;
+          setSaving(false);
           awaitingEchoRef.current = msg.id;
           // Edits made while the save was in flight stay unsaved.
           if (sent && useStageEditor.getState().draft === sent) markSaved();
@@ -177,7 +203,9 @@ function StageLayoutEditor() {
           retryTimer = setTimeout(() => send({ type: "get_stage_layout", layoutId }), NOT_FOUND_RETRY_MS);
         } else if (msg.code === "not_found") setError(notFound);
         else if (msg.code === "read_only") setError("Built-in layouts are read-only. Duplicate to edit.");
+        if (savingRef.current) toast({ tone: "error", message: "Not saved: the server rejected this layout." });
         savingRef.current = null;
+        setSaving(false);
         duplicateRef.current = { pending: false, copyId: null };
       }
     });
@@ -193,6 +221,14 @@ function StageLayoutEditor() {
     fetchedRef.current = layoutId;
     send({ type: "get_stage_layout", layoutId });
   }, [conn, layoutId, send]);
+
+  // Pick the sample feed that suits the layout once per opened layout.
+  const sampledForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draft || draft.id !== layoutId || sampledForRef.current === layoutId) return;
+    sampledForRef.current = layoutId;
+    setSampleKind(sampleKindFor(draft));
+  }, [draft, layoutId, setSampleKind]);
 
   // ---- Unsaved-changes guard ----
   // On the first render after an in-place layout switch, `dirty` still
@@ -263,6 +299,7 @@ function StageLayoutEditor() {
     const cur = useStageEditor.getState().draft;
     if (!cur || readOnly || conn !== "open") return;
     savingRef.current = cur;
+    setSaving(true);
     send({ type: "save_stage_layout", layout: cur });
   }
 
@@ -279,6 +316,26 @@ function StageLayoutEditor() {
     if (!draft || dirty || conn !== "open") return;
     duplicateRef.current = { pending: true, copyId: null };
     send({ type: "duplicate_stage_layout", layoutId: draft.id });
+  }
+
+  async function deleteLayout() {
+    if (!draft || readOnly || conn !== "open") return;
+    const ok = await confirmDialog({
+      title: `Delete ${draft.name}?`,
+      message: "This stage layout is removed for good.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await sendAndAwaitAck(getClient(), { type: "delete_stage_layout", layoutId: draft.id }, { op: "delete_stage_layout", id: draft.id });
+    } catch (e) {
+      toast({ tone: "error", message: `Not deleted: ${ackErrorText(e)}` });
+      return;
+    }
+    // Deleted: nothing left to guard.
+    markSaved();
+    router.push("/design?tab=stage");
   }
 
   function newWidgetId(kind: string): string {
@@ -349,8 +406,8 @@ function StageLayoutEditor() {
       // Save works from inside an inspector input too, and must never fall
       // through to the browser's Save Page dialog.
       if (action === "save") {
+        // The SaveBar's own ⌘S handler saves; only block the browser dialog here.
         e.preventDefault();
-        a.save();
         return;
       }
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
@@ -387,66 +444,80 @@ function StageLayoutEditor() {
   }
 
   const presetKey = sizePresetKey(draft.size);
+  const showLive = anythingOnAir(channelStates);
+  // Unknown until the first status broadcast: assume the monitor is in use.
+  const channelInUse = screenChannels === null ? true : screenChannels.has(previewChannel);
+  const bar: SaveBarProps = {
+    dirty,
+    saving,
+    onSave: save,
+    onRevert: revert,
+    ...(connected ? {} : { disabledReason: "Reconnect to save" }),
+  };
+  const addItems: MenuItem[] = (Object.keys(STAGE_WIDGET_LABELS) as StageWidgetKind[]).map((kind) => ({
+    id: kind,
+    label: STAGE_WIDGET_LABELS[kind],
+    onSelect: () => addKind(kind),
+  }));
+  const duplicateDisabled: boolean | string = dirty ? "Save first. Duplicate copies the saved layout." : conn !== "open" ? "Reconnect to duplicate" : false;
 
   return (
-    // PageChrome renders into the shell (returns null): toolbar, then the editor.
+    // PageChrome renders into the shell (returns null): the title, then the editor.
     <div style={{ height: "100%", display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden" }}>
       <PageChrome
         title={draft.name}
         context={
-          <>
-            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
-            {dirty && (
-              <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>
-                <span
-                  aria-hidden
-                  style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }}
-                />
-                unsaved
-              </span>
-            )}
-            {previewingNames.length > 0 && (
-              <span style={{ color: colors.ok, fontSize: 11, fontWeight: 600 }}>Previewing on {previewingNames.join(", ")}</span>
-            )}
-          </>
-        }
-        actions={
-          <>
-            <Button onClick={undo} variant="ghost" size="sm" disabled={readOnly || !canUndo}>↶ Undo</Button>
-            <Button onClick={redo} variant="ghost" size="sm" disabled={readOnly || !canRedo}>↷ Redo</Button>
-            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button
-              onClick={duplicateLayout}
-              variant="ghost"
-              size="sm"
-              disabled={dirty || conn !== "open"}
-              title={dirty ? "Save first — Duplicate copies the saved layout" : "Duplicate this layout"}
-            >
-              Duplicate
-            </Button>
-            <Button onClick={save} variant="primary" size="sm" disabled={readOnly || !dirty || conn !== "open"}>
-              Save (⌘S)
-            </Button>
-          </>
+          previewingNames.length > 0 ? (
+            <span style={{ color: colors.ok, fontSize: 11, fontWeight: 600 }}>Previewing on {previewingNames.join(", ")}</span>
+          ) : undefined
         }
       />
 
-      <Toolbar
-        draft={draft}
-        readOnly={readOnly}
-        presetKey={presetKey}
-        sampleKind={sampleKind}
-        onSampleKind={setSampleKind}
-        onCommit={commit}
-        stageChannels={stageChannels}
-        previewChannel={previewChannel}
-        onPreviewChannel={setPreviewChannel}
-        previewOn={previewOn}
-        onPreviewOn={setPreviewOn}
-        previewDisabled={conn !== "open" || stageChannels.length === 0}
-      />
+      <div style={{ padding: "8px 12px", background: colors.surface, borderBottom: `1px solid ${colors.border}` }}>
+        <StageEditorHeader
+          name={draft.name}
+          readOnly={readOnly}
+          onRename={(name) =>
+            commit((d) => {
+              d.name = name;
+            })
+          }
+          bar={bar}
+          onDuplicate={duplicateLayout}
+          duplicateDisabled={duplicateDisabled}
+          onDelete={() => void deleteLayout()}
+          deleteDisabled={readOnly ? "Built-in layouts can't be deleted" : conn !== "open" ? "Reconnect to delete" : false}
+        />
+      </div>
 
       <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <Toolbar
+          draft={draft}
+          readOnly={readOnly}
+          presetKey={presetKey}
+          sampleKind={sampleKind}
+          onSampleKind={setSampleKind}
+          onCommit={commit}
+          onAddClick={(el) => setAddAnchor(el)}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          preview={
+            <StagePreviewSwitch
+              channels={stageChannels}
+              channelId={previewChannel}
+              onChannel={setPreviewChannel}
+              on={previewOn}
+              onChange={setPreviewOn}
+              disabled={conn !== "open" || stageChannels.length === 0}
+              showLive={showLive}
+              channelInUse={channelInUse}
+            />
+          }
+        />
+        {addAnchor && !readOnly && <Menu items={addItems} anchor={addAnchor} onClose={() => setAddAnchor(null)} />}
+
         {readOnly && (
           <div
             style={{
@@ -459,8 +530,10 @@ function StageLayoutEditor() {
               borderBottom: `1px solid ${colors.border}`,
             }}
           >
-            <span>Built-in layout — Duplicate to edit</span>
-            <Button onClick={duplicateLayout} variant="primary" size="sm" disabled={conn !== "open"}>Duplicate</Button>
+            <span>Built-in layout. Duplicate to edit.</span>
+            <Button onClick={duplicateLayout} variant="primary" size="sm" disabled={conn !== "open"}>
+              Duplicate to edit
+            </Button>
           </div>
         )}
         {error && (
@@ -471,7 +544,7 @@ function StageLayoutEditor() {
           style={{
             flex: 1,
             display: "grid",
-            gridTemplateColumns: "240px minmax(0, 1fr) 300px",
+            gridTemplateColumns: `220px minmax(0, 1fr) ${inspectorOpen ? 300 : RAIL_PX}px`,
             gap: 1,
             background: colors.border,
             minHeight: 0,
@@ -480,25 +553,20 @@ function StageLayoutEditor() {
         >
           <EditorSection title="Widgets">
             <fieldset disabled={readOnly} style={fieldsetStyle}>
-              <StagePalette onAdd={addKind} />
+              <StageWidgetList
+                layout={draft}
+                selectedIds={selectedIds}
+                onSelect={(id, additive) => select([id], additive)}
+                onReorder={(id, to) => {
+                  if (readOnly) return;
+                  commit((d) => {
+                    d.widgets = moveInOrder(d.widgets, id, to);
+                  });
+                }}
+                onToggleHidden={(id) => !readOnly && commit(toggleHidden(id))}
+                onToggleLocked={(id) => !readOnly && commit(toggleLocked(id))}
+              />
             </fieldset>
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-              <fieldset disabled={readOnly} style={fieldsetStyle}>
-                <StageWidgetList
-                  layout={draft}
-                  selectedIds={selectedIds}
-                  onSelect={(id, additive) => select([id], additive)}
-                  onReorder={(id, to) => {
-                    if (readOnly) return;
-                    commit((d) => {
-                      d.widgets = moveInOrder(d.widgets, id, to);
-                    });
-                  }}
-                  onToggleHidden={(id) => !readOnly && commit(toggleHidden(id))}
-                  onToggleLocked={(id) => !readOnly && commit(toggleLocked(id))}
-                />
-              </fieldset>
-            </div>
           </EditorSection>
 
           <CanvasPane
@@ -514,19 +582,34 @@ function StageLayoutEditor() {
             onDropKind={dropKind}
           />
 
-          <EditorSection title="Inspector">
-            <fieldset disabled={readOnly} style={fieldsetStyle}>
-              <StageInspector
-                layout={draft}
-                selectedIds={selectedIds}
-                onPatch={(id, patch) => !readOnly && commit(patchWidget(id, patch))}
-                onAlign={(mode) => !readOnly && commit(alignWidgets(useStageEditor.getState().selectedIds, mode))}
-                onDistribute={(axis) => !readOnly && commit(distributeWidgets(useStageEditor.getState().selectedIds, axis))}
-                timerChoices={timerChoices}
-                channelChoices={channelChoices}
-              />
-            </fieldset>
-          </EditorSection>
+          {inspectorOpen ? (
+            <EditorSection
+              title="Inspector"
+              action={
+                <IconButton size={24} aria-label="Collapse inspector" onClick={() => setInspectorOpen(false)}>
+                  <ChevronRight size={14} aria-hidden />
+                </IconButton>
+              }
+            >
+              <fieldset disabled={readOnly} style={fieldsetStyle}>
+                <StageInspector
+                  layout={draft}
+                  selectedIds={selectedIds}
+                  onPatch={(id, patch) => !readOnly && commit(patchWidget(id, patch))}
+                  onAlign={(mode) => !readOnly && commit(alignWidgets(useStageEditor.getState().selectedIds, mode))}
+                  onDistribute={(axis) => !readOnly && commit(distributeWidgets(useStageEditor.getState().selectedIds, axis))}
+                  timerChoices={timerChoices}
+                  channelChoices={channelChoices}
+                />
+              </fieldset>
+            </EditorSection>
+          ) : (
+            <div style={{ background: colors.panel, display: "flex", justifyContent: "center", paddingTop: 8 }}>
+              <IconButton size={24} aria-label="Expand inspector" onClick={() => setInspectorOpen(true)}>
+                <ChevronLeft size={14} aria-hidden />
+              </IconButton>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -594,12 +677,12 @@ function Toolbar({
   sampleKind,
   onSampleKind,
   onCommit,
-  stageChannels,
-  previewChannel,
-  onPreviewChannel,
-  previewOn,
-  onPreviewOn,
-  previewDisabled,
+  onAddClick,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  preview,
 }: {
   draft: StageLayout;
   readOnly: boolean;
@@ -607,34 +690,14 @@ function Toolbar({
   sampleKind: StageSampleKind;
   onSampleKind: (k: StageSampleKind) => void;
   onCommit: (r: Recipe) => void;
-  stageChannels: { id: string; name: string }[];
-  previewChannel: string;
-  onPreviewChannel: (id: string) => void;
-  previewOn: boolean;
-  onPreviewOn: (on: boolean) => void;
-  previewDisabled: boolean;
+  onAddClick: (el: HTMLElement) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  preview: React.ReactNode;
 }) {
-  const [name, setName] = useState(draft.name);
   const [customOpen, setCustomOpen] = useState(false);
-  const skipNameCommitRef = useRef(false);
-  useEffect(() => setName(draft.name), [draft.name]);
-
-  function commitName() {
-    if (skipNameCommitRef.current) {
-      // Escape: blur fires with the typed (stale) name; discard it.
-      skipNameCommitRef.current = false;
-      setName(draft.name);
-      return;
-    }
-    const next = name.trim();
-    if (!next || next === draft.name) {
-      setName(draft.name);
-      return;
-    }
-    onCommit((d) => {
-      d.name = next;
-    });
-  }
 
   function setSize(w: number, h: number) {
     if (w === draft.size.w && h === draft.size.h) return;
@@ -652,59 +715,67 @@ function Toolbar({
         display: "flex",
         flexWrap: "wrap",
         alignItems: "center",
-        gap: 12,
-        padding: "8px 12px",
+        gap: "6px 12px",
+        padding: "6px 12px",
         background: colors.surface,
         borderBottom: `1px solid ${colors.border}`,
         fontSize: 12,
       }}
     >
-      <input
-        value={name}
-        disabled={readOnly}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={commitName}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            skipNameCommitRef.current = true;
-            setName(draft.name);
-            (e.target as HTMLInputElement).blur();
-          }
-        }}
-        title="Layout name"
-        style={{ ...inputStyle, width: 200, fontWeight: 600 }}
-      />
+      {!readOnly && (
+        <Button size="sm" icon={<Plus size={12} aria-hidden />} onClick={(e) => onAddClick(e.currentTarget)}>
+          Add
+        </Button>
+      )}
+      <div style={{ display: "flex", gap: 2 }}>
+        <IconButton aria-label="Undo" disabled={readOnly || !canUndo} onClick={onUndo}>
+          <Undo2 size={14} aria-hidden />
+        </IconButton>
+        <IconButton aria-label="Redo" disabled={readOnly || !canRedo} onClick={onRedo}>
+          <Redo2 size={14} aria-hidden />
+        </IconButton>
+      </div>
 
       <label style={labelStyle}>
         Size
-        <select
-          value={showCustom ? "custom" : presetKey}
-          disabled={readOnly}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === "custom") {
-              setCustomOpen(true);
-              return;
-            }
-            setCustomOpen(false);
-            const p = STAGE_SIZE_PRESETS.find((s) => `${s.w}x${s.h}` === v);
-            if (p) setSize(p.w, p.h);
-          }}
-          style={inputStyle}
-        >
-          {STAGE_SIZE_PRESETS.map((p) => (
-            <option key={`${p.w}x${p.h}`} value={`${p.w}x${p.h}`}>
-              {p.w}×{p.h}
-            </option>
-          ))}
-          <option value="custom">Custom…</option>
-        </select>
+        <span style={{ width: 120 }}>
+          <Select
+            value={showCustom ? "custom" : presetKey}
+            disabled={readOnly}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "custom") {
+                setCustomOpen(true);
+                return;
+              }
+              setCustomOpen(false);
+              const p = STAGE_SIZE_PRESETS.find((x) => `${x.w}x${x.h}` === v);
+              if (p) setSize(p.w, p.h);
+            }}
+          >
+            {STAGE_SIZE_PRESETS.map((p) => (
+              <option key={`${p.w}x${p.h}`} value={`${p.w}x${p.h}`}>
+                {p.w}×{p.h}
+              </option>
+            ))}
+            <option value="custom">Custom…</option>
+          </Select>
+        </span>
       </label>
       {showCustom && (
         <>
-          <SizeInput label="W" value={draft.size.w} disabled={readOnly} onCommit={(w) => setSize(w, draft.size.h)} />
-          <SizeInput label="H" value={draft.size.h} disabled={readOnly} onCommit={(h) => setSize(draft.size.w, h)} />
+          <label style={labelStyle}>
+            W
+            <span style={{ width: 80 }}>
+              <NumberInput aria-label="Width" value={draft.size.w} int min={1} disabled={readOnly} onCommit={(w) => setSize(w, draft.size.h)} />
+            </span>
+          </label>
+          <label style={labelStyle}>
+            H
+            <span style={{ width: 80 }}>
+              <NumberInput aria-label="Height" value={draft.size.h} int min={1} disabled={readOnly} onCommit={(h) => setSize(draft.size.w, h)} />
+            </span>
+          </label>
         </>
       )}
 
@@ -724,80 +795,29 @@ function Toolbar({
 
       <label style={labelStyle}>
         Sample
-        <select value={sampleKind} onChange={(e) => onSampleKind(e.target.value as StageSampleKind)} style={inputStyle}>
-          {STAGE_SAMPLE_KINDS.map((k) => (
-            <option key={k} value={k}>
-              {STAGE_SAMPLE_LABELS[k]}
-            </option>
-          ))}
-        </select>
+        <span style={{ width: 130 }}>
+          <Select value={sampleKind} onChange={(e) => onSampleKind(e.target.value as StageSampleKind)}>
+            {STAGE_SAMPLE_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {STAGE_SAMPLE_LABELS[k]}
+              </option>
+            ))}
+          </Select>
+        </span>
       </label>
 
-      <div style={{ ...labelStyle, marginLeft: "auto" }}>
-        Preview on monitor
-        <select
-          value={previewChannel}
-          disabled={stageChannels.length === 0}
-          onChange={(e) => onPreviewChannel(e.target.value)}
-          style={inputStyle}
-        >
-          {stageChannels.length === 0 && <option value="">No stage channels</option>}
-          {stageChannels.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <input
-            type="checkbox"
-            checked={previewOn}
-            disabled={previewDisabled && !previewOn}
-            onChange={(e) => onPreviewOn(e.target.checked)}
-          />
-          {previewOn ? "On" : "Off"}
-        </label>
-      </div>
+      <div style={{ marginLeft: "auto" }}>{preview}</div>
     </div>
   );
 }
 
-/** Positive integer input that commits on blur or Enter. */
-function SizeInput({ label, value, disabled, onCommit }: { label: string; value: number; disabled: boolean; onCommit: (v: number) => void }) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => setText(String(value)), [value]);
-  function commit() {
-    const n = Math.round(Number(text));
-    if (!Number.isFinite(n) || n <= 0) {
-      setText(String(value));
-      return;
-    }
-    if (n !== value) onCommit(n);
-  }
-  return (
-    <label style={labelStyle}>
-      {label}
-      <input
-        type="number"
-        min={1}
-        step={1}
-        value={text}
-        disabled={disabled}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        }}
-        style={{ ...inputStyle, width: 72 }}
-      />
-    </label>
-  );
-}
-
-function EditorSection({ title, children }: { title: string; children: React.ReactNode }) {
+function EditorSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section style={{ background: colors.panel, padding: 12, overflow: "auto", minHeight: 0 }}>
-      <h3 style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 600, color: colors.textDim }}>{title}</h3>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 8px" }}>
+        <h3 style={{ margin: 0, fontSize: 11, fontWeight: 600, color: colors.textDim }}>{title}</h3>
+        {action}
+      </div>
       {children}
     </section>
   );
@@ -805,13 +825,4 @@ function EditorSection({ title, children }: { title: string; children: React.Rea
 
 const fieldsetStyle: React.CSSProperties = { border: 0, padding: 0, margin: 0, minWidth: 0 };
 
-const labelStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 6, color: colors.textDim };
-
-const inputStyle: React.CSSProperties = {
-  padding: "4px 6px",
-  background: colors.panel,
-  border: `1px solid ${colors.border}`,
-  borderRadius: 3,
-  color: colors.text,
-  fontSize: 12,
-};
+const labelStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 6, color: colors.textDim, whiteSpace: "nowrap" };

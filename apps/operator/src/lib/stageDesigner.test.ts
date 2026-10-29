@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { produce } from "immer";
-import { StageLayoutSchema, type StageLayout } from "@overlaysys/core";
+import { LYRICS_LAYOUT, SCRIPTURE_LAYOUT, SPEAKER_LAYOUT, StageLayoutSchema, type StageLayout } from "@overlaysys/core";
 import { useStageEditor } from "./stageEditorStore";
 import { patchWidget, toggleHidden } from "./stageLayoutOps";
 import {
   STAGE_SIZE_PRESETS,
+  STAGE_START_FROM,
+  newLayoutFrom,
+  previewNeedsConfirm,
+  sampleKindFor,
   shouldAdoptIncomingLayout,
   stageLayoutsEqual,
   centeredRectAt,
@@ -292,5 +296,45 @@ describe("shouldDisarmSentinel", () => {
     expect(shouldDisarmSentinel({ armedHref: null, currentHref: A, onSentinel: true, dirty: false })).toBe(false);
     expect(shouldDisarmSentinel({ armedHref: A, currentHref: "http://x/other", onSentinel: true, dirty: false })).toBe(false);
     expect(shouldDisarmSentinel({ armedHref: A, currentHref: A, onSentinel: false, dirty: false })).toBe(false);
+  });
+});
+
+describe("sampleKindFor", () => {
+  it("picks the sample that matches the largest text widget", () => {
+    expect(sampleKindFor(SCRIPTURE_LAYOUT)).toBe("scripture");
+    expect(sampleKindFor(SPEAKER_LAYOUT)).toBe("notes");
+    expect(sampleKindFor(LYRICS_LAYOUT)).toBe("song");
+  });
+  it("falls back to song for a layout with no text widgets", () => {
+    expect(sampleKindFor(newLayoutFrom("blank", "Empty"))).toBe("song");
+  });
+});
+
+describe("newLayoutFrom", () => {
+  it("offers blank, speaker, lyrics and scripture", () => {
+    expect([...STAGE_START_FROM]).toEqual(["blank", "speaker", "lyrics", "scripture"]);
+  });
+  it("blank has no widgets", () => {
+    expect(newLayoutFrom("blank", "Pastor").widgets.length).toBe(0);
+  });
+  it("copies the built-in widgets and is not built-in", () => {
+    const l = newLayoutFrom("speaker", "Pastor");
+    expect(l.widgets).toEqual(SPEAKER_LAYOUT.widgets);
+    expect(l.builtIn).toBeUndefined();
+    expect(l.name).toBe("Pastor");
+    expect(StageLayoutSchema.safeParse(l).success).toBe(true);
+  });
+  it("id is a slug of the name plus a 4-char suffix", () => {
+    expect(newLayoutFrom("blank", "Main Stage!").id).toMatch(/^main-stage-[a-z0-9]{4}$/);
+    expect(newLayoutFrom("blank", "***").id).toMatch(/^stage-layout-[a-z0-9]{4}$/);
+  });
+});
+
+describe("previewNeedsConfirm", () => {
+  it("only asks when a show is live and the channel is in use", () => {
+    expect(previewNeedsConfirm({ showLive: true, channelInUse: true })).toBe(true);
+    expect(previewNeedsConfirm({ showLive: true, channelInUse: false })).toBe(false);
+    expect(previewNeedsConfirm({ showLive: false, channelInUse: true })).toBe(false);
+    expect(previewNeedsConfirm({ showLive: false, channelInUse: false })).toBe(false);
   });
 });

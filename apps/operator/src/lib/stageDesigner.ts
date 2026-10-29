@@ -1,4 +1,12 @@
-import type { StageLayout, StageRect } from "@overlaysys/core";
+import {
+  LYRICS_LAYOUT,
+  SCRIPTURE_LAYOUT,
+  SPEAKER_LAYOUT,
+  StageLayoutSchema,
+  type StageLayout,
+  type StageRect,
+  type StageSampleKind,
+} from "@overlaysys/core";
 
 /** Key-order-insensitive deep equality; a key holding `undefined` counts as absent. */
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -219,4 +227,51 @@ export function shouldDisarmSentinel(c: {
   dirty: boolean;
 }): boolean {
   return !c.dirty && !!c.armedHref && c.onSentinel && c.currentHref === c.armedHref;
+}
+
+const TEXT_KINDS = new Set(["currentSlide", "nextSlide", "sermonNotes", "rowTitle", "rowCue", "message", "text"]);
+
+/**
+ * Which sample feed best previews a layout: judged by its largest text widget.
+ * Scripture when that is a current-slide widget showing the reference, notes
+ * when it is sermon notes, otherwise song.
+ */
+export function sampleKindFor(layout: StageLayout): StageSampleKind {
+  let best: StageLayout["widgets"][number] | null = null;
+  for (const w of layout.widgets) {
+    if (!TEXT_KINDS.has(w.kind)) continue;
+    if (!best || w.rect.w * w.rect.h > best.rect.w * best.rect.h) best = w;
+  }
+  if (!best) return "song";
+  if (best.kind === "currentSlide" && best.props.showReference) return "scripture";
+  if (best.kind === "sermonNotes") return "notes";
+  return "song";
+}
+
+export const STAGE_START_FROM = ["blank", "speaker", "lyrics", "scripture"] as const;
+export type StageStartFrom = (typeof STAGE_START_FROM)[number];
+
+const START_SOURCES: Record<Exclude<StageStartFrom, "blank">, StageLayout> = {
+  speaker: SPEAKER_LAYOUT,
+  lyrics: LYRICS_LAYOUT,
+  scripture: SCRIPTURE_LAYOUT,
+};
+
+/** A new, editable layout: blank or a copy of a built-in. Id = slug of the name + a 4-char suffix. */
+export function newLayoutFrom(start: StageStartFrom, name: string): StageLayout {
+  const slug =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "stage-layout";
+  const suffix = Math.random().toString(36).slice(2, 6).padEnd(4, "0");
+  const id = `${slug}-${suffix}`;
+  if (start === "blank") return StageLayoutSchema.parse({ id, name, widgets: [] });
+  const { builtIn: _builtIn, updatedAt: _updatedAt, ...rest } = structuredClone(START_SOURCES[start]);
+  return StageLayoutSchema.parse({ ...rest, id, name });
+}
+
+/** Whether turning on the monitor preview must ask first: it would replace a live stage monitor. */
+export function previewNeedsConfirm(i: { showLive: boolean; channelInUse: boolean }): boolean {
+  return i.showLive && i.channelInUse;
 }
