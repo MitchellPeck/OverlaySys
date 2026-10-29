@@ -220,7 +220,8 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
           return;
         }
         const message = err instanceof Error ? err.message : String(err);
-        send({ type: "error", code: "handler_error", message });
+        // Tagged with the song id so the requesting client can tell this reply is its own.
+        send({ type: "error", code: "handler_error", message: `${message} [song:${msg.songId}]` });
         if (err instanceof ConvertRollbackError) {
           // The undo record is kept: give the client its id so it can offer Undo.
           send({ type: "song_convert_failed", conversionId: err.conversionId, songId: err.songId, message });
@@ -254,7 +255,8 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
         }
         // The undo record is kept, so the operator can try again. Some shows
         // may already be back: re-send every show the conversion touched.
-        send({ type: "error", code: "handler_error", message });
+        // Tagged with the conversion id so the requesting client can tell this reply is its own.
+        send({ type: "error", code: "handler_error", message: `${message} [conversion:${msg.conversionId}]` });
         await broadcastConvertChanges(null, conversionShowIds(msg.conversionId));
         return;
       }

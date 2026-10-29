@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DeckLicensing, Song } from "@overlaysys/core";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
-import { Button, Checkbox, Dialog, Tooltip, colors, fontSize, radius, toast, useToast } from "@overlaysys/ui";
+import { Button, Checkbox, Dialog, Tooltip, colors, fontSize, radius, toast } from "@overlaysys/ui";
 import { getClient } from "../../lib/useWs";
 import { LicensingField } from "./LicensingField";
 import { convertResultMessage, convertWarningsMessage, derivedLicensing, titleSlideBlocker } from "./convertCopy";
@@ -52,8 +52,9 @@ function requestConvert(songId: string, titleSlide: boolean, licensing: DeckLice
           finish(() => reject(err));
         } else if (m.type === "error" && m.code === "not_found" && m.message === songId) {
           finish(() => reject(new ConvertError("This song no longer exists.")));
-        } else if (m.type === "error" && m.code === "handler_error") {
-          pendingError = new ConvertError(m.message);
+        } else if (m.type === "error" && m.code === "handler_error" && m.message.endsWith(`[song:${songId}]`)) {
+          // The server tags its reply with the song id; other requests' errors are ignored.
+          pendingError = new ConvertError(m.message.slice(0, m.message.lastIndexOf(" [song:")));
           setTimeout(() => finish(() => reject(pendingError!)), 50);
         }
       }),
@@ -66,14 +67,19 @@ function requestConvert(songId: string, titleSlide: boolean, licensing: DeckLice
 }
 
 /** Undo a conversion and toast the outcome. Module-level so a toast's Undo outlives the dialog. */
+const undoInFlight = new Set<string>();
+
 export function undoConversion(conversionId: string, title: string): void {
+  if (undoInFlight.has(conversionId)) return;
   const client = getClient();
   if (client.getStatus() !== "open") {
     toast({ tone: "error", message: "Couldn't undo: not connected to the server." });
     return;
   }
   const offs: Array<() => void> = [];
+  undoInFlight.add(conversionId);
   const finish = () => {
+    undoInFlight.delete(conversionId);
     clearTimeout(timer);
     for (const off of offs) off();
   };
@@ -93,17 +99,21 @@ export function undoConversion(conversionId: string, title: string): void {
               ? ` · left ${m.skippedShows} show${m.skippedShows === 1 ? "" : "s"} alone because they were edited since`
               : ""),
         });
-      } else if (m.type === "error" && m.code === "busy") {
+      } else if (m.type === "error" && m.code === "busy" && m.message.includes(conversionId)) {
         finish();
         toast({ tone: "warn", message: "Undo is already in progress." });
-      } else if (m.type === "error" && (m.code === "not_found" || m.code === "handler_error")) {
+      } else if (
+        m.type === "error" &&
+        ((m.code === "not_found" && m.message === conversionId) ||
+          (m.code === "handler_error" && m.message.endsWith(`[conversion:${conversionId}]`)))
+      ) {
         finish();
         toast({
           tone: "error",
           message:
             m.code === "not_found"
               ? "Nothing to undo: this conversion was already undone."
-              : `Couldn't undo: ${m.message}`,
+              : `Couldn't undo: ${m.message.slice(0, m.message.lastIndexOf(" [conversion:"))}`,
           ...(m.code === "handler_error"
             ? { action: { label: "Try again", onClick: () => undoConversion(conversionId, title) } }
             : {}),
@@ -126,8 +136,17 @@ export function undoConversion(conversionId: string, title: string): void {
  * (the server does the work; this collects licensing and the title-slide
  * choice, then toasts the result with Undo).
  */
-export function ConvertToDeckDialog({ song, onClose }: { song: Song | null; onClose(): void }) {
-  const toastOut = useToast();
+export function ConvertToDeckDialog({
+  song,
+  onClose,
+  onConverted,
+}: {
+  song: Song | null;
+  onClose(): void;
+  /** Called once the server has converted the song (before the toast), e.g. to leave the song's editor. */
+  onConverted?(res: Converted): void;
+}) {
+  const converting = useRef(false);
   const [titleSlide, setTitleSlide] = useState(false);
   const [licensing, setLicensing] = useState<DeckLicensing | null>(null);
   const [busy, setBusy] = useState(false);
@@ -147,22 +166,24 @@ export function ConvertToDeckDialog({ song, onClose }: { song: Song | null; onCl
   const noIntro = titleSlideBlocker(song);
 
   const convert = async () => {
-    if (busy || !licensing) return;
+    if (converting.current || !licensing) return;
+    converting.current = true;
     setBusy(true);
     try {
       const res = await requestConvert(song.id, titleSlide && !noIntro, licensing);
+      onConverted?.(res);
       onClose();
-      toastOut({
+      toast({
         tone: "ok",
         message: convertResultMessage(res),
         action: { label: "Undo", onClick: () => undoConversion(res.conversionId, title) },
       });
       const warn = convertWarningsMessage(res.warnings);
-      if (warn) toastOut({ tone: "warn", message: warn });
+      if (warn) toast({ tone: "warn", message: warn });
     } catch (e) {
       const err = e instanceof ConvertError ? e : new ConvertError(e instanceof Error ? e.message : String(e));
       onClose();
-      toastOut({
+      toast({
         tone: "error",
         message: `Couldn't convert “${title}”: ${err.message}`,
         ...(err.conversionId
@@ -170,6 +191,7 @@ export function ConvertToDeckDialog({ song, onClose }: { song: Song | null; onCl
           : {}),
       });
     } finally {
+      converting.current = false;
       setBusy(false);
     }
   };

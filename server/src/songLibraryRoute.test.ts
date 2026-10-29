@@ -39,6 +39,17 @@ describe("buildSongLibrary", () => {
   });
 });
 
+describe("buildSongLibrary deleted rows", () => {
+  it("passes converted_to_deck through so the editor can name the deck", () => {
+    const lib = buildSongLibrary(
+      [],
+      [song("conv", { deletedAt: "2026-10-02T00:00:00.000Z", customFields: { converted_to_deck: "deck-1" } })],
+      [],
+    );
+    expect(lib.deleted[0]!.customFields).toEqual({ converted_to_deck: "deck-1" });
+  });
+});
+
 describe("buildSongLibrary createdAt and lastUsed", () => {
   it("passes createdAt through and reports lastUsed as the latest past show date", () => {
     const lib = buildSongLibrary(

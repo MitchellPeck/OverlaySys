@@ -363,7 +363,7 @@ describe("convert handlers", () => {
     const spy = vi.spyOn(decks, "saveDeck").mockRejectedValueOnce(new Error("disk full"));
     await handleSlidesMessage({ type: "convert_song_to_deck", songId: "song-y", titleSlide: false }, send);
     spy.mockRestore();
-    expect(sent).toEqual([{ type: "error", code: "handler_error", message: "disk full" }]);
+    expect(sent).toEqual([{ type: "error", code: "handler_error", message: "disk full [song:song-y]" }]);
     expect(await songs.getSong("song-y")).not.toBeNull();
     expect((await shows.getShow("sh2"))!.rows[0]).toMatchObject({ kind: "song" });
 
@@ -377,7 +377,9 @@ describe("convert handlers", () => {
     const undoSpy = vi.spyOn(songs, "saveSong").mockRejectedValueOnce(new Error("disk full"));
     await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
     undoSpy.mockRestore();
-    expect(sent).toEqual([{ type: "error", code: "handler_error", message: "disk full" }]);
+    expect(sent).toEqual([
+      { type: "error", code: "handler_error", message: `disk full [conversion:${conversionId}]` },
+    ]);
 
     sent = [];
     await handleSlidesMessage({ type: "undo_convert_song", conversionId }, send);
@@ -450,6 +452,8 @@ describe("convert handlers", () => {
       handleSlidesMessage({ type: "undo_convert_song", conversionId }, send),
     ]);
     expect(sent.map((m) => (m.type === "error" ? m.code : m.type)).sort()).toEqual(["busy", "song_convert_undone"]);
+    // The busy reply names the conversion, so the requesting client can tell it is its own.
+    expect(sent.find((m) => m.type === "error" && m.code === "busy")).toMatchObject({ message: expect.stringContaining(conversionId) });
   });
 });
 // [/P3.12]

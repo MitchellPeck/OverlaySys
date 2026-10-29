@@ -372,6 +372,20 @@ function SongEditorPageInner() {
       <ConvertToDeckDialog
         song={convertOpen ? (baseline ?? draft) : null}
         onClose={() => setConvertOpen(false)}
+        onConverted={() => {
+          // The song is now soft-deleted: drop every local copy (and with them the leave
+          // guard) so Save can't resurrect it, and show the converted-to-deck view.
+          draftRef.current = null;
+          baselineRef.current = null;
+          useStore.setState((st) => {
+            const { [id]: _gone, ...rest } = st.songCache;
+            return { songCache: rest };
+          });
+          setDraft(null);
+          setBaseline(null);
+          setConflict(null);
+          setNotFound(true);
+        }}
       />
       {/* [/P3.20] */}
     </>
@@ -432,7 +446,10 @@ function SongNotFound({
     <div role="alert" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
       <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
         {deleted?.deckId
-          ? `This song was converted to the deck “${decks.find((d) => d.id === deleted.deckId)?.name ?? deleted.deckId}”`
+          ? (() => {
+              const name = decks.find((d) => d.id === deleted.deckId)?.name;
+              return name ? `This song was converted to the deck “${name}”` : "This song was converted to a slide deck";
+            })()
           : "This song doesn't exist (it may have been deleted)."}
       </h2>
       {deleted && !deleted.deckId && (
