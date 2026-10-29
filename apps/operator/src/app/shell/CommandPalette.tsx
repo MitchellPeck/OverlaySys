@@ -5,15 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { Modal, colors, fontSize, radius } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { getDesktopApi } from "@/lib/desktop";
-import { fuzzyMatch } from "./fuzzyMatch";
+import { useStore } from "@/lib/store";
+import { buildPaletteEntries, rankEntries, type PaletteEntry } from "./paletteEntries";
 import { enterArea } from "./TopBar";
 import { OPEN_FIRST_RUN_EVENT } from "./FirstRunChecklist";
 import { AREAS, LAST_NON_LIVE_KEY, areasFor, destinationsFor, liveToggleTarget, routeToArea } from "./areas";
 
-type Command = { label: string; run: () => void };
-
 /**
- * ⌘K jump-to palette. Built on the kit Modal (focus trap, Esc from anywhere,
+ * ⌘K palette: destinations, library items (shows, songs, designs, hotcards)
+ * and app actions, ranked by `rankEntries`. Built on the kit Modal (focus trap, Esc from anywhere,
  * keys stopped before the live shortcuts) with an ARIA combobox: the input
  * owns focus and points at the highlighted option via aria-activedescendant.
  */
@@ -54,32 +54,34 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const commands: Command[] = useMemo(() => {
+  const shows = useStore((s) => s.showMetas);
+  const songs = useStore((s) => s.songs);
+  const templates = useStore((s) => s.templates);
+  const stageLayouts = useStore((s) => s.stageLayouts);
+  const hotcards = useStore((s) => s.hotcards);
+  const projectId = useStore((s) => s.currentProjectId);
+
+  const entries: PaletteEntry[] = useMemo(() => {
     const cloud = isCloudMode();
-    const nav: Command[] = areasFor(cloud).flatMap((id) =>
-      destinationsFor(id, cloud).map((d) => ({
-        label: `${AREAS[id].label} · ${d.label}`,
-        run: () => router.push(d.route),
-      })),
+    const destinations = areasFor(cloud).flatMap((id) =>
+      destinationsFor(id, cloud).map((d) => ({ label: `${AREAS[id].label} · ${d.label}`, href: d.route })),
     );
-    const actions: Command[] = areasFor(cloud).map((id) => ({
+    const extras: PaletteEntry[] = areasFor(cloud).map((id) => ({
+      id: `area:${id}`,
       label: `Go to ${AREAS[id].label}`,
+      group: "Go to",
       run: () => enterArea(router, id, cloud),
     }));
-    const extras: Command[] = [];
     const api = getDesktopApi();
     if (api) {
-      extras.push({ label: "Getting started checklist", run: () => window.dispatchEvent(new Event(OPEN_FIRST_RUN_EVENT)) });
-      if (api.copyDiagnostics) extras.push({ label: "Copy diagnostics", run: () => void api.copyDiagnostics?.() });
-      if (api.revealLogs) extras.push({ label: "Reveal logs", run: () => void api.revealLogs?.() });
+      extras.push({ id: "app:first-run", label: "Getting started checklist", group: "App", run: () => window.dispatchEvent(new Event(OPEN_FIRST_RUN_EVENT)) });
+      if (api.copyDiagnostics) extras.push({ id: "app:copy-diagnostics", label: "Copy diagnostics", group: "App", run: () => void api.copyDiagnostics?.() });
+      if (api.revealLogs) extras.push({ id: "app:reveal-logs", label: "Reveal logs", group: "App", run: () => void api.revealLogs?.() });
     }
-    return [...nav, ...actions, ...extras];
-  }, [router]);
+    return buildPaletteEntries({ destinations, shows, songs, templates, stageLayouts, hotcards, projectId, cloud, extras });
+  }, [router, shows, songs, templates, stageLayouts, hotcards, projectId]);
 
-  const filtered = useMemo(
-    () => commands.filter((c) => fuzzyMatch(query, c.label)),
-    [commands, query],
-  );
+  const filtered = useMemo(() => rankEntries(query, entries), [entries, query]);
 
   const clampedIndex = Math.min(index, Math.max(0, filtered.length - 1));
 
@@ -91,11 +93,11 @@ export function CommandPalette() {
   }, [open, clampedIndex]);
 
   function runAt(i: number) {
-    const cmd = filtered[i];
-    if (cmd) {
-      setOpen(false);
-      cmd.run();
-    }
+    const entry = filtered[i];
+    if (!entry) return;
+    setOpen(false);
+    if (entry.href) router.push(entry.href);
+    else entry.run?.();
   }
 
   return (
@@ -111,7 +113,7 @@ export function CommandPalette() {
       <input
         data-autofocus
         value={query}
-        placeholder="Jump to…"
+        placeholder="Jump to or find…"
         role="combobox"
         aria-label="Jump to"
         aria-expanded={filtered.length > 0}
@@ -150,12 +152,12 @@ export function CommandPalette() {
       <ul
         id={listId}
         role="listbox"
-        aria-label="Destinations"
+        aria-label="Results"
         style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: 360, overflow: "auto" }}
       >
         {filtered.map((c, i) => (
           <li
-            key={c.label}
+            key={c.id}
             id={optionId(i)}
             role="option"
             aria-selected={i === clampedIndex}
@@ -164,6 +166,9 @@ export function CommandPalette() {
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => runAt(i)}
             style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 12,
               padding: "8px 10px",
               borderRadius: radius.md,
               cursor: "pointer",
@@ -171,7 +176,8 @@ export function CommandPalette() {
               background: i === clampedIndex ? colors.brandSubtle : "transparent",
             }}
           >
-            {c.label}
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.label}</span>
+            <span style={{ flexShrink: 0, fontSize: fontSize.xs, color: colors.textDim }}>{c.group}</span>
           </li>
         ))}
         {filtered.length === 0 && (
@@ -180,6 +186,17 @@ export function CommandPalette() {
           </li>
         )}
       </ul>
+      <div
+        aria-hidden
+        style={{
+          padding: "6px 12px",
+          borderTop: `1px solid ${colors.border}`,
+          color: colors.textDim,
+          fontSize: fontSize.xs,
+        }}
+      >
+        ↑↓ to move · ↵ to open · esc to close
+      </div>
     </Modal>
   );
 }
