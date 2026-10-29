@@ -19,14 +19,22 @@ export function clampTimelineHeight(h: number, viewportH: number): number {
   return Math.round(Math.min(maxFor(viewportH), Math.max(MIN_TIMELINE_H, h)));
 }
 
+/** Out-tab missing-out warnings: 20 px a line, plus 2+2 padding and a 1 px border. */
+const WARN_LINE_H = 20;
+const WARN_CHROME_H = 5;
+
 /** Rows the timeline draws: one header per animated layer plus one per track. */
 export function timelineRowCount(tracks: readonly { layerId: string }[]): number {
   return tracks.length + new Set(tracks.map((t) => t.layerId)).size;
 }
 
-/** Room for every row (see timelineRowCount) without scrolling, clamped. */
-export function defaultTimelineHeight(rowCount: number, viewportH: number): number {
-  return clampTimelineHeight(rowCount * ROW_H + CHROME_H, viewportH);
+/**
+ * Room for every row (see timelineRowCount) and any missing-out warning lines
+ * (Out tab) without scrolling, clamped.
+ */
+export function defaultTimelineHeight(rowCount: number, viewportH: number, warningLines = 0): number {
+  const warn = warningLines > 0 ? warningLines * WARN_LINE_H + WARN_CHROME_H : 0;
+  return clampTimelineHeight(rowCount * ROW_H + CHROME_H + warn, viewportH);
 }
 
 /** A stored height, or null when missing or not a positive number. */

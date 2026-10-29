@@ -14,6 +14,10 @@ describe("defaultTimelineHeight", () => {
     expect(rows).toBe(3);
     expect(defaultTimelineHeight(rows, 800)).toBe(161);
   });
+  it("adds the Out tab's warning lines (20 px each + 5)", () => {
+    expect(defaultTimelineHeight(3, 800, 0)).toBe(161);
+    expect(defaultTimelineHeight(3, 800, 2)).toBe(206);
+  });
   it("caps at 45 % of the viewport", () => {
     expect(defaultTimelineHeight(20, 800)).toBe(360);
     expect(defaultTimelineHeight(20, 901)).toBe(405);

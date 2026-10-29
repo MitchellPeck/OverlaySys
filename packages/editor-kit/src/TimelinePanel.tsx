@@ -20,7 +20,7 @@ import { findLayer } from "./utils";
 import { useEditCoalescer } from "./editCoalescer";
 import { ANIMATION_PRESETS, applyAnimationPreset, clampTimelineDuration, minTimelineDuration, type AnimationPreset } from "./templateOps";
 import { TRACK_PAD, rulerTicks, timeToX, xToTime } from "./timelineRuler";
-import { TRACK_PROPERTY_LABELS, groupTracksByLayer, layersMissingOut, missingOutMessage, type TrackGroup } from "./timelineLabels";
+import { TRACK_PROPERTY_LABELS, groupTracksByLayer, keyframeValueInput, layersMissingOut, missingOutMessage, type TrackGroup } from "./timelineLabels";
 
 type Props = {
   template: Template;
@@ -50,18 +50,8 @@ const DIAMOND = 8;
 const CURVE_POPOVER_W = 340;
 const CURVE_POPOVER_H = 200;
 
-const ALL_PROPERTIES = [
-  "x",
-  "y",
-  "rotation",
-  "scaleX",
-  "scaleY",
-  "opacity",
-  "w",
-  "h",
-  "wipe",
-] as const;
-type TrackProperty = (typeof ALL_PROPERTIES)[number];
+type TrackProperty = Track["property"];
+const ALL_PROPERTIES = Object.keys(TRACK_PROPERTY_LABELS) as TrackProperty[];
 
 const keyOf = (t: { layerId: string; property: string }) => `${t.layerId}::${t.property}`;
 
@@ -70,7 +60,7 @@ export function TimelinePanel(rawProps: Props) {
   const { commit, handlers } = useEditCoalescer(rawProps.onCommit, rawProps.onLive);
   const props = { ...rawProps, onCommit: commit };
   const tl = props.template.timelines[props.active];
-  const missingOut = props.active === "out" ? layersMissingOut(props.template) : [];
+  const missingOut = layersMissingOut(props.template);
 
   return (
     <div
@@ -83,7 +73,7 @@ export function TimelinePanel(rawProps: Props) {
         minHeight: 0,
       }}
     >
-      <Toolbar {...props} />
+      <Toolbar {...props} outMissing={missingOut.length > 0} />
       <div
         style={{
           display: "flex",
@@ -98,7 +88,7 @@ export function TimelinePanel(rawProps: Props) {
       >
         <KeyframeRow {...props} />
       </div>
-      <MissingOutWarnings entries={missingOut} />
+      <MissingOutWarnings entries={props.active === "out" ? missingOut : []} />
       <TrackArea {...props} tracks={tl.tracks} duration={tl.duration} />
     </div>
   );
@@ -106,13 +96,13 @@ export function TimelinePanel(rawProps: Props) {
 
 // ──────────────────────────────────────────────────────────────────────────
 
-function Toolbar(props: Props) {
+function Toolbar(props: Props & { outMissing: boolean }) {
   const tl = props.template.timelines[props.active];
   const selectedLayer = props.selectedLayerId
     ? findLayer(props.template.layers, props.selectedLayerId)
     : null;
   const layerName = selectedLayer?.name ?? null;
-  const outMissing = layersMissingOut(props.template).length > 0;
+  const outMissing = props.outMissing;
 
   // Properties not yet on this layer for this timeline.
   const usedForLayer = new Set(
@@ -138,7 +128,12 @@ function Toolbar(props: Props) {
     <div
       style={{
         display: "flex",
-        flexWrap: "wrap",
+        // One line always: the designer's default height assumes it (timelineSize CHROME_H).
+        // Narrow layouts scroll sideways instead of wrapping.
+        flexWrap: "nowrap",
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        whiteSpace: "nowrap",
         alignItems: "center",
         gap: 8,
         padding: "4px 8px",
@@ -326,18 +321,19 @@ function MissingOutWarnings({ entries }: { entries: { layerId: string; name: str
   return (
     <div
       role="status"
+      // Fixed metrics (20 px a line + 2+2 padding + 1 border) so the designer's
+      // default height can count them (timelineSize WARN_LINE_H / WARN_CHROME_H).
       style={{
-        padding: "4px 10px",
+        padding: "2px 10px",
         borderBottom: `1px solid ${colors.border}`,
         display: "flex",
         flexDirection: "column",
-        gap: 2,
       }}
     >
       {entries.map((e) => (
         <div
           key={e.layerId}
-          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.sm, color: colors.warn }}
+          style={{ height: 20, display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.sm, color: colors.warn, whiteSpace: "nowrap", overflow: "hidden" }}
         >
           <AlertTriangle size={12} aria-hidden />
           {missingOutMessage(e.name)}
@@ -450,6 +446,27 @@ function TrackArea(props: Props & { tracks: Track[]; duration: number }) {
     dragRef.current = null;
     // Don't sort: gsap-timeline.ts sorts internally and sorting here
     // would invalidate selectedKeyframe.index.
+  }
+
+  function onKfKey(e: React.KeyboardEvent, trackKey: string, index: number, t: number) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      props.setSelectedKeyframe({ trackKey, index });
+      return;
+    }
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    // Keep the designer's own arrow handling (layer nudge) out of it.
+    e.preventDefault();
+    e.stopPropagation();
+    const step = e.shiftKey ? 0.1 : STEP_SECONDS;
+    const next = clamp(t + (e.key === "ArrowLeft" ? -step : step), 0, duration);
+    if (next === t) return;
+    props.setSelectedKeyframe({ trackKey, index });
+    // Only `t` changes, as with a drag.
+    props.onCommit((draft) => {
+      const kf = trackByKey(draft.timelines[activeTimeline].tracks, trackKey)?.keyframes[index];
+      if (kf) kf.t = next;
+    });
   }
 
   function addKeyframeAt(track: Track, t: number) {
@@ -661,11 +678,20 @@ function TrackArea(props: Props & { tracks: Track[]; duration: number }) {
                 {track.keyframes.map((kf, j) => {
                   const on = props.selectedKeyframe?.trackKey === trackKey && props.selectedKeyframe.index === j;
                   return (
-                    // 14×24 hit area around the small visible diamond.
+                    // 14×24 hit area around the small visible diamond. Focusable:
+                    // focus selects it, ←/→ nudge by a frame (Shift: 0.1 s).
                     <div
                       key={j}
-                      title={`${meta.label} ${String(kf.value)}${meta.unit} at ${kf.t.toFixed(2)}s: drag to move, double-click the track to add, Delete to remove`}
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={on}
+                      aria-label={`${row.group.name} ${meta.label} keyframe at ${kf.t.toFixed(2)}s`}
+                      title={`${meta.label} ${String(kf.value)}${meta.unit} at ${kf.t.toFixed(2)}s: drag or ←/→ to move, double-click the track to add, Delete to remove`}
                       onPointerDown={(e) => startKfDrag(e, trackKey, j, kf.t)}
+                      onFocus={() => {
+                        if (!on) props.setSelectedKeyframe({ trackKey, index: j });
+                      }}
+                      onKeyDown={(e) => onKfKey(e, trackKey, j, kf.t)}
                       style={{
                         position: "absolute",
                         left: x(kf.t) - 7,
@@ -794,7 +820,7 @@ function KeyframeRow(props: Props) {
   const isCustom = Array.isArray(easing);
   const named = typeof easing === "string" ? easing : "";
   const known = (EASING_PRESETS as readonly string[]).includes(named);
-  const valueStep = track.property === "rotation" || meta.unit === "px" ? 1 : 0.01;
+  const valueInput = keyframeValueInput(track.property);
 
   return (
     <>
@@ -807,6 +833,7 @@ function KeyframeRow(props: Props) {
           step={0.01}
           precision={2}
           min={0}
+          max={props.template.timelines[active].duration}
           suffix="s"
           onCommit={(v) => patch({ t: v })}
         />
@@ -817,7 +844,8 @@ function KeyframeRow(props: Props) {
             size="sm"
             aria-label={`${meta.label} value`}
             value={kf.value}
-            step={valueStep}
+            step={valueInput.step}
+            precision={valueInput.precision}
             suffix={meta.unit || undefined}
             onCommit={(v) => patch({ value: v })}
           />

@@ -68,6 +68,7 @@ export function DesignerLayout({
   inspector,
   timeline,
   rowCount,
+  warningLines = 0,
   banner,
 }: {
   header: ReactNode;
@@ -77,6 +78,8 @@ export function DesignerLayout({
   timeline: ReactNode;
   /** Tracks in the active timeline; sizes the timeline until the user drags it. */
   rowCount: number;
+  /** Missing-out warning lines shown above the tracks (Out tab only). */
+  warningLines?: number;
   /** Error strip over the top of the canvas. */
   banner?: ReactNode;
 }) {
@@ -85,7 +88,7 @@ export function DesignerLayout({
   const width = useWidth(gridRef);
   const [stored, setStored] = useState<number | null>(null);
   useLayoutEffect(() => setStored(readStored()), []);
-  const timelineH = stored !== null ? clampTimelineHeight(stored, vh) : defaultTimelineHeight(rowCount, vh);
+  const timelineH = stored !== null ? clampTimelineHeight(stored, vh) : defaultTimelineHeight(rowCount, vh, warningLines);
   const inspectorW = width >= WIDE_MIN_W ? 320 : 300;
 
   const dragRef = useRef<{ pointerId: number; startY: number; startH: number } | null>(null);

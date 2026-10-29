@@ -1,5 +1,5 @@
 import type { Layer, Template, Track } from "@overlaysys/core";
-import { flattenLayers, flattenLayersForDisplay } from "./utils";
+import { flattenLayersForDisplay } from "./utils";
 
 /** Human name and unit for each animatable property. */
 export const TRACK_PROPERTY_LABELS: Record<Track["property"], { label: string; unit: string }> = {
@@ -14,11 +14,24 @@ export const TRACK_PROPERTY_LABELS: Record<Track["property"], { label: string; u
   wipe: { label: "Wipe", unit: "" },
 };
 
-/** Layers with at least one `in` track and no `out` track, in layer order. */
+/**
+ * Arrow step and shown/committed decimals for a keyframe value. Matches the
+ * layer inspector: px and degrees keep 2 dp (22.5° stays 22.5), unitless and
+ * × values keep 3.
+ */
+export function keyframeValueInput(property: Track["property"]): { step: number; precision: number } {
+  const unit = TRACK_PROPERTY_LABELS[property].unit;
+  return unit === "px" || unit === "°" ? { step: 1, precision: 2 } : { step: 0.01, precision: 3 };
+}
+
+/**
+ * Layers with at least one `in` track and no `out` track, in Layers-panel
+ * order (topmost first): the same order as the timeline's group headers.
+ */
 export function layersMissingOut(t: Template): { layerId: string; name: string }[] {
   const hasIn = new Set(t.timelines.in.tracks.map((tr) => tr.layerId));
   const hasOut = new Set(t.timelines.out.tracks.map((tr) => tr.layerId));
-  return flattenLayers(t.layers)
+  return flattenLayersForDisplay(t.layers)
     .filter(({ layer }) => hasIn.has(layer.id) && !hasOut.has(layer.id))
     .map(({ layer }) => ({ layerId: layer.id, name: layer.name }));
 }

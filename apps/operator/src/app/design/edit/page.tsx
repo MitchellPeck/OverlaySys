@@ -8,6 +8,7 @@ import {
   Canvas,
   LayerTree,
   TimelinePanel,
+  layersMissingOut,
   alignLayers,
   copyLayersPayload,
   distributeLayers,
@@ -575,6 +576,7 @@ function DesignPageInner() {
       <PageChrome docTitle={draft.name} />
       <DesignerLayout
         rowCount={timelineRowCount(draft.timelines[activeTimeline].tracks)}
+        warningLines={activeTimeline === "out" ? layersMissingOut(draft).length : 0}
         header={
           <DesignerHeader
             name={draft.name}

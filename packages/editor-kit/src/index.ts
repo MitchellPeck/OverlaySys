@@ -28,3 +28,4 @@ export { Section as InspectorSection } from "./PropertyInspector";
 export { AutoTextarea } from "./AutoTextarea";
 export * from "./timelineRuler";
 export * from "./timelineLabels";
+export { EASING_PRESETS } from "./EasingPicker";

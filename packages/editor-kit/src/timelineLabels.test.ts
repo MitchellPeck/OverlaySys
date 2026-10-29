@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Layer, Template, Track } from "@overlaysys/core";
+import { formatNumber } from "@overlaysys/ui";
 import {
   TRACK_PROPERTY_LABELS,
+  keyframeValueInput,
   groupTracksByLayer,
   layersMissingOut,
   missingOutMessage,
@@ -48,15 +50,16 @@ describe("layersMissingOut", () => {
     );
     expect(layersMissingOut(t)).toEqual([{ layerId: "subtitle", name: "Subtitle" }]);
   });
-  it("ignores layers with no in tracks, and walks groups in layer order", () => {
+  it("ignores layers with no in tracks, and walks groups in panel order", () => {
     const t = tpl(
       [layer("g", "Group", [layer("a", "A"), layer("b", "B")]), layer("c", "C")],
       [track("c", "x"), track("a", "x")],
       [],
     );
+    // Layers-panel order (topmost first), the same order as the timeline's group headers.
     expect(layersMissingOut(t)).toEqual([
-      { layerId: "a", name: "A" },
       { layerId: "c", name: "C" },
+      { layerId: "a", name: "A" },
     ]);
   });
   it("words the warning", () => {
@@ -76,5 +79,18 @@ describe("groupTracksByLayer", () => {
   it("puts tracks of unknown layers last, under a generic name", () => {
     const groups = groupTracksByLayer([layer("a", "A")], [track("gone", "x"), track("a", "y")]);
     expect(groups.map((g) => [g.layerId, g.name])).toEqual([["a", "A"], ["gone", "Missing layer"]]);
+  });
+});
+
+describe("keyframeValueInput", () => {
+  it("keeps fractional px and degrees (2 dp) and unitless/× values (3 dp)", () => {
+    expect(keyframeValueInput("rotation")).toEqual({ step: 1, precision: 2 });
+    expect(keyframeValueInput("x")).toEqual({ step: 1, precision: 2 });
+    expect(keyframeValueInput("opacity")).toEqual({ step: 0.01, precision: 3 });
+    expect(keyframeValueInput("scaleX")).toEqual({ step: 0.01, precision: 3 });
+  });
+  it("shows a stored 22.5° as 22.5, not 23", () => {
+    expect(formatNumber(22.5, keyframeValueInput("rotation").precision)).toBe("22.5");
+    expect(formatNumber(0.125, keyframeValueInput("opacity").precision)).toBe("0.125");
   });
 });
