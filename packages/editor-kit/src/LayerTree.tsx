@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Layer, Template } from "@overlaysys/core";
+import { colors } from "@overlaysys/ui";
 import { flattenLayersForDisplay, moveLayer } from "./utils";
 import { duplicateLayers, moveLayersZ, newLayerId, removeLayers, toggleLayerLocked, toggleLayerVisible } from "./templateOps";
 
@@ -160,12 +161,10 @@ export function LayerTree({ template, selectedId, selectedIds: selectedIdsProp, 
                   cursor: "pointer",
                   fontSize: 13,
                   background:
-                    dt === "into"
-                      ? "rgba(74,222,128,0.18)"
-                      : selected
-                        ? "rgba(74, 222, 128, 0.10)"
-                        : "transparent",
-                  borderLeft: selected ? "2px solid #4ade80" : "2px solid transparent",
+                    dt === "into" || selected ? colors.brandSubtle : "transparent",
+                  borderLeft: selected ? `2px solid ${colors.accent}` : "2px solid transparent",
+                  // Dropping into a group: outlined, so it reads apart from the selection.
+                  boxShadow: dt === "into" ? `inset 0 0 0 1px ${colors.accent}` : undefined,
                   color: layer.visible === false ? "var(--text-dim, #9099a8)" : "inherit",
                   opacity: isDragging ? 0.5 : 1,
                 }}
@@ -220,8 +219,7 @@ function DropLine({ position }: { position: "top" | "bottom" }) {
         right: 0,
         [position]: -1,
         height: 2,
-        background: "#4ade80",
-        boxShadow: "0 0 6px rgba(74,222,128,0.8)",
+        background: colors.accent,
         pointerEvents: "none",
       }}
     />

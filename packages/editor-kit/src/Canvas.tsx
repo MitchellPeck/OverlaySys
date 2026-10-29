@@ -3,6 +3,7 @@ import { commitRect } from "./geometryCommit";
 import type { Draft } from "immer";
 import type { Template, Layer } from "@overlaysys/core";
 import { mountTemplate, type MountedTemplate } from "@overlaysys/template-engine";
+import { colors } from "@overlaysys/ui";
 import { fitScale, findLayer } from "./utils";
 import { escAction } from "./groupSelection";
 import {
@@ -77,7 +78,8 @@ type PanState = {
   startPan: { x: number; y: number };
 };
 
-const SELECT_COLOR = "#4ade80";
+/** Selection is blue (accent); green means preview / next [D5]. */
+const SELECT_COLOR = colors.accent;
 const GUIDE_COLOR = "#ff00ff";
 const MIN_LAYER_SIZE = 1;
 const HOST_PADDING = 32;
@@ -732,7 +734,7 @@ export function Canvas(props: Props) {
               width: marquee.w,
               height: marquee.h,
               border: `${line}px solid ${SELECT_COLOR}`,
-              background: "rgba(74, 222, 128, 0.12)",
+              background: colors.brandSubtle,
               pointerEvents: "none",
             }}
           />
