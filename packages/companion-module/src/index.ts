@@ -18,7 +18,7 @@ import {
   feedbackPredicate,
   feedbackDefinitionsForSDK,
 } from "./feedbacks.js";
-import { projectVariables, variableDefinitions } from "./variables.js";
+import { projectVariables, rundownPageVariables, variableDefinitions } from "./variables.js";
 import { presetDefinitions } from "./presets.js";
 import { sttVariables, videoVariables } from "./live.js";
 import { protocolMismatch, PROTOCOL_VERSION } from "@overlaysys/ws-protocol";
@@ -27,6 +27,7 @@ import {
   defaultConfig,
   parseChannels,
   type ModuleConfig,
+  rowKindPages,
 } from "./config.js";
 
 class OverlaySysInstance extends InstanceBase<ModuleConfig> {
@@ -175,8 +176,10 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
       ),
     );
     this.setFeedbackDefinitions(
-      feedbackDefinitionsForSDK(this.state, (id, options) =>
-        feedbackPredicate(this.state, id, options),
+      feedbackDefinitionsForSDK(
+        this.state,
+        (id, options) => feedbackPredicate(this.state, id, options),
+        () => this.state,
       ),
     );
   }
@@ -189,7 +192,10 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
   }
 
   private refreshDynamic(): void {
-    const all = projectVariables(this.state, this.channels);
+    const all = {
+      ...projectVariables(this.state, this.channels),
+      ...rundownPageVariables(this.state, rowKindPages(this.currentConfig)),
+    };
     this.setVariableValues(all);
     this.fastValues = { ...videoVariables(this.state, this.channels), ...sttVariables(this.state) };
     this.checkFeedbacks();

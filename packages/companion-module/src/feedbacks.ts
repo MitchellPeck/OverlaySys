@@ -1,12 +1,14 @@
 import type { ActiveGraphic, Show, ShowSong, Song, RundownRow, SongRow } from "@overlaysys/core";
 import type {
   CompanionFeedbackDefinitions,
+  CompanionInputFieldColor,
   CompanionInputFieldDropdown,
   CompanionInputFieldNumber,
   CompanionInputFieldTextInput,
 } from "@companion-module/base";
 import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
 import { rowChoices } from "./labels";
+import type { RowKind } from "./config";
 import { sttSilentSec, videoInfo } from "./live";
 import { CURRENT_ITEM_TIMER_ID, timerMs, timerPhase } from "@overlaysys/core";
 
@@ -710,8 +712,37 @@ const rowKindInputF: CompanionInputFieldDropdown = {
     { id: "graphic", label: "Graphic" },
     { id: "video", label: "Video" },
     { id: "scripture", label: "Scripture" },
+    { id: "slides", label: "Slides" },
   ],
 };
+
+/** Default background per row kind for the "row colour by type" feedback. */
+const KIND_COLOR_DEFAULTS: Record<RowKind, number> = {
+  song: 0x2a3cf5,
+  graphic: 0xff9a40,
+  scripture: 0x2a0020,
+  video: 0xff00ff,
+  slides: 0x008080,
+};
+
+const KIND_LABELS: Record<RowKind, string> = {
+  song: "Song",
+  graphic: "Graphic",
+  scripture: "Scripture",
+  video: "Video",
+  slides: "Slides",
+};
+
+/** The colour for the kind of the loaded show's row at a 1-based index; undefined when there is no such row. */
+export function rowKindColor(
+  state: CompanionState,
+  rowIndex: number,
+  colors: Partial<Record<RowKind, number>>,
+): number | undefined {
+  if (state.loadedShowId == null) return undefined;
+  const row = state.showCache.get(state.loadedShowId)?.rows[rowIndex - 1];
+  return row ? colors[row.kind as RowKind] : undefined;
+}
 
 export type FeedbackChecker = (
   id: FeedbackId,
@@ -721,6 +752,8 @@ export type FeedbackChecker = (
 export function feedbackDefinitionsForSDK(
   state: CompanionState,
   isTrue: FeedbackChecker,
+  /** Live state for value feedbacks; defaults to the snapshot the definitions were built from. */
+  getState: () => CompanionState = () => state,
 ): CompanionFeedbackDefinitions {
   const defs: CompanionFeedbackDefinitions = {};
 
@@ -756,5 +789,34 @@ export function feedbackDefinitionsForSDK(
       callback: (fb) => isTrue(d.id, fb.options as FeedbackOptions),
     };
   }
+
+  defs.row_at_index_kind_color = {
+    name: "Rundown: row colour by type (by number)",
+    description:
+      "Sets the button background to the colour picked for the type of the row " +
+      "at the given 1-based index — one feedback instead of one per type.",
+    type: "advanced",
+    options: [
+      rowIndexInputF,
+      ...(Object.keys(KIND_LABELS) as RowKind[]).map(
+        (k): CompanionInputFieldColor => ({
+          id: `color_${k}`,
+          type: "colorpicker",
+          label: KIND_LABELS[k],
+          default: KIND_COLOR_DEFAULTS[k],
+        }),
+      ),
+    ],
+    callback: (fb) => {
+      const o = fb.options;
+      const colors: Partial<Record<RowKind, number>> = {};
+      for (const k of Object.keys(KIND_LABELS) as RowKind[]) {
+        const v = Number(o[`color_${k}`]);
+        if (Number.isFinite(v)) colors[k] = v;
+      }
+      const bgcolor = rowKindColor(getState(), Number(o.rowIndex ?? 1), colors);
+      return bgcolor === undefined ? {} : { bgcolor };
+    },
+  };
   return defs;
 }

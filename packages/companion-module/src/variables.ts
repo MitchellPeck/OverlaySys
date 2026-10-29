@@ -1,11 +1,13 @@
 import type { ActiveGraphic, RundownRow } from "@overlaysys/core";
 import {
+  rowButtonLabel,
   rowDisplayLabel,
   sectionDisplayLabel,
   songTitleForChannel,
 } from "./labels";
 import { ITEM_WARN_MS, serverNow, type CompanionState } from "./types";
 import { sttVariables, videoVariables } from "./live";
+import type { RowKind } from "./config";
 import {
   CURRENT_ITEM_TIMER_ID,
   formatSignedTime,
@@ -159,7 +161,9 @@ export function variableDefinitions(
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
     defs.push(
       { variableId: `rundown_${n}_name`, name: `Rundown row ${n} display label` },
+      { variableId: `rundown_${n}_label`, name: `Rundown row ${n} button label (graphic title, else display label)` },
       { variableId: `rundown_${n}_kind`, name: `Rundown row ${n} kind` },
+      { variableId: `rundown_${n}_page`, name: `Rundown row ${n} page for its kind (module config; blank = none)` },
       { variableId: `rundown_${n}_is_active`, name: `Rundown row ${n} matches PGM` },
     );
   }
@@ -208,6 +212,20 @@ function rowMatchesPgm(
     if (a[k] !== b[k]) return false;
   }
   return true;
+}
+
+/** `rundown_<n>_page`: the configured Companion page for each row's kind. */
+export function rundownPageVariables(
+  state: CompanionState,
+  pages: Partial<Record<RowKind, string>>,
+): Record<string, string> {
+  const show = state.loadedShowId ? state.showCache.get(state.loadedShowId) : undefined;
+  const out: Record<string, string> = {};
+  for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
+    const kind = show?.rows[n - 1]?.kind as RowKind | undefined;
+    out[`rundown_${n}_page`] = (kind && pages[kind]) || "";
+  }
+  return out;
 }
 
 export function projectVariables(
@@ -337,6 +355,7 @@ export function projectVariables(
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
     const row = loadedShow?.rows[n - 1];
     out[`rundown_${n}_name`] = row ? rowDisplayLabel(state, row) : "";
+    out[`rundown_${n}_label`] = row ? rowButtonLabel(state, row) : "";
     out[`rundown_${n}_kind`] = row?.kind ?? "";
     out[`rundown_${n}_is_active`] =
       row && rowMatchesPgm(pgmActive, pgmSongId, row, pgmScriptureRowId, pgmSlidesRowId) ? "yes" : "no";

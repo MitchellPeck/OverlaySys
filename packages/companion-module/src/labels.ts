@@ -18,6 +18,15 @@ export function rowDisplayLabel(
   return tpl?.name ?? row.templateId;
 }
 
+/** Button text: a graphic's `title` field when it has one, else the row's display label. */
+export function rowButtonLabel(state: CompanionState, row: RundownRow): string {
+  if (row.kind === "graphic") {
+    const title = row.data.title?.trim();
+    if (title) return title;
+  }
+  return rowDisplayLabel(state, row);
+}
+
 export function sectionDisplayLabel(
   song: Song,
   arrangement: string[],

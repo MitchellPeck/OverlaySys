@@ -146,6 +146,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Rundown: row on program (by number) | `row_at_index_is_active` | Row index (1-based; survives show changes) | True when the row at the given 1-based index currently matches PGM — survives show changes. |
 | Rundown: cursor row is type | `cursor_row_kind_is` | Row type | True when the row at the cursor is the chosen type (song, graphic, video, scripture). Use it to style a button or branch a button's actions when the current line is a song. |
 | Rundown: row is type (by number) | `row_at_index_kind_is` | Row index (1-based; survives show changes), Row type | True when the row at the given 1-based index is the chosen type — survives show changes. |
+| Rundown: row colour by type (by number) | `row_at_index_kind_color` | Row index (1-based; survives show changes), Song, Graphic, Scripture, Video, Slides | Sets the button background to the colour picked for the type of the row at the given 1-based index — one feedback instead of one per type. |
 
 ### Variables
 
@@ -208,7 +209,9 @@ The tables below are generated from the module's own definitions. Do not edit th
 | `service_next_item` | PCO Live next item title |
 | `service_delta` | PCO Live projected overrun in minutes (+over / −under) |
 | `rundown_<n>_name` | Rundown row <n> display label |
+| `rundown_<n>_label` | Rundown row <n> button label (graphic title, else display label) |
 | `rundown_<n>_kind` | Rundown row <n> kind |
+| `rundown_<n>_page` | Rundown row <n> page for its kind (module config; blank = none) |
 | `rundown_<n>_is_active` | Rundown row <n> matches PGM |
 <!-- generated:end -->
 
