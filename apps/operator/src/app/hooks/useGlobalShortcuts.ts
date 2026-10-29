@@ -8,8 +8,11 @@ import { onAirMediaFor } from "@/lib/mediaTake";
 import { pvwTakeMessages } from "@/lib/onAir";
 import { rowFireMessages, sectionKeyAction, sectionKeyFor } from "@/lib/liveKeys";
 import {
+  advanceMessage,
+  blankMessage,
   escapeMessages,
   hasCommandModifier,
+  keyMode,
   hotcardForEvent,
   hotcardFireMessage,
   hotkeyForEvent,
@@ -30,13 +33,15 @@ import {
  *   Enter           cue the selection → preview (scripture: slide 1; video: nothing)
  *   ⌘/Ctrl+Enter   take preview to program (pvwTakeMessages)
  *
- * When NO song session is live on program (rundown keys):
- *   Space           take the selection (video: play / pause when on air)
+ * Keys mode (keyMode, D2): a program song, else scripture, else slides
+ * session drives Space; with none, the rundown does (the Keys badge says which).
+ *   Space           song / scripture / slides: advance + 1 · rundown: take the
+ *                   selection (video: play / pause when on air)
+ *   Shift+Space     song / scripture / slides: advance − 1
+ *   B               slides: blank (in song mode B is the bridge)
  *   Esc             clear program (graphics and video)
  *
  * When a song session IS live on program (song mode):
- *   Space           advance + 1 slide
- *   Shift+Space     advance − 1 slide
  *   C / B / T       jump to the chorus / bridge / tag
  *   1..9, 0         jump to verse 1..9, 10
  *                   (a section the song doesn't have toasts and sends nothing)
@@ -70,6 +75,22 @@ export function useGlobalShortcuts(): void {
         }
         const action = e.shiftKey ? "cue" : "take";
         send(hotcardFireMessage(full, action));
+        return;
+      }
+
+      // What Space / Shift+Space and B drive: a program song, scripture or
+      // slides session, else the rundown (D2; shown as the Keys badge).
+      const mode = keyMode(store);
+      if (mode !== "rundown" && e.code === "Space" && !hasCommandModifier(e)) {
+        e.preventDefault();
+        const m = advanceMessage(mode, e.shiftKey ? -1 : 1);
+        if (m) send(m);
+        return;
+      }
+      if (mode === "slides" && e.key.toLowerCase() === "b" && !hasCommandModifier(e)) {
+        e.preventDefault();
+        const m = blankMessage("slides");
+        if (m) send(m);
         return;
       }
 
@@ -158,11 +179,7 @@ type Sender = ReturnType<typeof getClient>["send"];
  */
 function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): boolean {
   if (hasCommandModifier(e)) return false;
-  if (e.code === "Space") {
-    e.preventDefault();
-    send({ type: "song_advance", channel, delta: e.shiftKey ? -1 : 1 });
-    return true;
-  }
+  // Space / Shift+Space are handled by keyMode before this.
   if (e.code === "Escape") {
     e.preventDefault();
     // Panic key: end the song and clear any program video with it.
@@ -171,7 +188,8 @@ function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): b
   }
   if (e.key === "." || e.code === "Period") {
     e.preventDefault();
-    send({ type: "song_blank", channel });
+    const m = blankMessage("song");
+    if (m) send(m);
     return true;
   }
   // Section jumps (e.key, so Shift+C still works). A section the song

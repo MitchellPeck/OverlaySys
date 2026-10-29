@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button, colors, radius, space } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { hotcardFireMessage } from "@/lib/shortcutGuards";
+import { hotcardFireMessage, scriptureKeyChannel } from "@/lib/shortcutGuards";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { rowView } from "@/lib/rowView";
 import { thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
@@ -34,7 +34,9 @@ export function StageArea() {
   const ctx = useThumbCtx();
   const [quickTake, setQuickTake] = useState(false);
 
-  const mode = stageModeFor({ show, selectedRowId, selectedHotcardId, songSessions, quickTake });
+  // A program scripture session drives the keys (keyMode), so the hint follows it.
+  const scriptureLive = scriptureKeyChannel(channelStates) !== null;
+  const mode = stageModeFor({ show, selectedRowId, selectedHotcardId, songSessions, quickTake, scriptureLive });
   const sel = selectionOf(mode);
   const liveRow = mode.kind === "song-live" ? channelStates[mode.channel]?.liveRow : undefined;
   const rowId = regionRowId(mode, show, liveRow);
