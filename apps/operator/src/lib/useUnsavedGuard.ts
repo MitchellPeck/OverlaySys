@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { chooseAction } from "@overlaysys/ui";
-import { afterChoice, guardActions, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
+import { afterChoice, guardActions, leaveMethod, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
 import { sentinelPopAction, shouldConfirmLinkNavigation, shouldDisarmSentinel } from "@/lib/stageDesigner";
 
 export const DEFAULT_UNSAVED_PROMPT = "You have unsaved changes.";
@@ -140,7 +140,10 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
         if (!r.navigate) return;
         leavingRef.current = true;
         armedHrefRef.current = null;
-        routerRef.current.push(href);
+        // On the sentinel, replace it so Back from the next page doesn't
+        // land on the editor twice.
+        if (leaveMethod(onSentinelEntry()) === "replace") routerRef.current.replace(href);
+        else routerRef.current.push(href);
       });
     };
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -178,6 +181,16 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
     // Our popstate handler ignores this pop (nothing is armed any more).
     if (disarm) window.history.back();
   }, [dirty, resetKey, canArm]);
+  // Unmounting while still standing on our sentinel (no navigation replaced
+  // it): neutralise it so it can't act for another page.
+  useEffect(
+    () => () => {
+      if (armedHrefRef.current && onSentinelEntry()) {
+        window.history.replaceState({ ...window.history.state, [SENTINEL_FLAG]: false }, "", window.location.href);
+      }
+    },
+    [],
+  );
   useEffect(() => {
     const onPopState = () => {
       if (leavingRef.current) return;

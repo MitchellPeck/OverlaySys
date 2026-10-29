@@ -14,6 +14,15 @@ export function guardActions(canSave: boolean): { id: GuardChoice; label: string
 }
 
 /**
+ * How to navigate to a link target after the user chose to leave. Standing on
+ * our sentinel entry, replace it so no extra editor entry is left behind
+ * (history [P, E, S] -> [P, E, N]); otherwise a plain push.
+ */
+export function leaveMethod(onSentinel: boolean): "replace" | "push" {
+  return onSentinel ? "replace" : "push";
+}
+
+/**
  * What to do after the dialog. `saved` is the onSave result (null when not
  * attempted). A popped sentinel was re-pushed before asking, so leaving by
  * history means going back past both entries (-2); a link just pushes.

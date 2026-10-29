@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { afterChoice, guardActions } from "./unsavedGuardFlow";
+import { afterChoice, guardActions, leaveMethod } from "./unsavedGuardFlow";
 
 describe("unsavedGuardFlow", () => {
+  it("replaces the sentinel entry when leaving by link", () => {
+    expect(leaveMethod(true)).toBe("replace");
+    expect(leaveMethod(false)).toBe("push");
+  });
+
   it("offers Save and leave only when the page can save", () => {
     expect(guardActions(false).map((a) => a.id)).toEqual(["stay", "discard"]);
     expect(guardActions(true).map((a) => a.label)).toEqual(["Stay", "Discard changes", "Save and leave"]);
