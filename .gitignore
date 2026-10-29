@@ -37,6 +37,19 @@ data/assets/**
 !data/shows/.gitkeep
 !data/templates/fixtures/
 !data/shows/fixtures/
+# Per-install state the server writes that has no tracked fixtures:
+# decks, PCO item mappings / plan headers / config, live-state snapshots,
+# stage layouts, per-project channel overrides, settings (incl. API keys),
+# security config, CCLI usage logs, and header-migration backups.
+data/decks/
+data/pco/
+data/live/
+data/stage-layouts/
+data/channel_overrides/
+data/settings/
+data/security/
+data/usage/
+*.pre-sections.bak
 
 # tsbuild
 *.tsbuildinfo
