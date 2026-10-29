@@ -1,23 +1,50 @@
 "use client";
 
 import { Cloud } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Button, colors } from "@overlaysys/ui";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Button,
+  LibraryList,
+  OfflineState,
+  Pill,
+  colors,
+  confirm,
+  prompt,
+  toast,
+  type Column,
+} from "@overlaysys/ui";
 import { DEFAULT_PROJECT_ID, type Project } from "@overlaysys/core";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
+import { useConnection } from "@/lib/useConnection";
+import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
-import { ManagementList } from "@/app/components/ManagementList";
+import { PageBody } from "@/app/components/PageShell";
 import { isCloudMode } from "@/lib/mode";
 import { isElectron } from "@/lib/desktop";
 import { useAuthStore } from "@/lib/useAuth";
 import {
   deleteProjectCloud,
+  getHotcardCloud,
+  getShowCloud,
+  refreshHotcardMetasCloud,
   refreshProjectsCloud,
+  refreshShowMetasCloud,
+  saveHotcardCloud,
   saveProjectCloud,
+  saveShowCloud,
 } from "@/lib/cloudData";
 import { publishProjectToCloud } from "@/lib/projectPublish";
 import { CustomFieldSchemaModal } from "./CustomFieldSchemaModal";
+import {
+  projectMenuItems,
+  projectNameError,
+  projectSecondary,
+  projectSorts,
+  unassignedItems,
+  type ProjectActions,
+  type ProjectRow,
+} from "./projectsList";
 
 /**
  * The Projects page lists every Project for the org and lets the
@@ -38,7 +65,8 @@ export default function ProjectsIndexPage() {
   const setCurrentProjectId = useStore((s) => s.setCurrentProjectId);
   const showMetas = useStore((s) => s.showMetas);
   const hotcards = useStore((s) => s.hotcards);
-  const { alert, prompt, dialog } = useDialog();
+  const { alert } = useDialog();
+  const { retry } = useConnection();
   const cloud = isCloudMode();
   const disabled = !cloud && conn !== "open";
 
@@ -113,20 +141,29 @@ export default function ProjectsIndexPage() {
 
   useEffect(() => {
     if (cloud) {
-      refreshProjectsCloud().catch((err) =>
-        console.warn("[projects] cloud list failed", err),
-      );
+      Promise.all([
+        refreshProjectsCloud(),
+        refreshShowMetasCloud(),
+        refreshHotcardMetasCloud(),
+      ]).catch((err) => console.warn("[projects] cloud list failed", err));
     } else if (conn === "open") {
       send({ type: "list_projects" });
+      // Counts per project come from these two lists.
+      send({ type: "list_shows" });
+      send({ type: "list_hotcards" });
     }
   }, [cloud, conn, send]);
 
-  async function createProject(name: string): Promise<string> {
-    const id = slugify(name);
-    if (!id) throw new Error("Name produced an empty slug");
-    if (projects.some((p) => p.id === id)) {
-      throw new Error(`A project with id "${id}" already exists`);
-    }
+  async function newProject() {
+    const name = await prompt({
+      title: "New project",
+      message: "Name the project",
+      confirmLabel: "Create",
+      required: true,
+      validate: (v) => projectNameError(v, names) ?? (slugify(v) ? null : "Use at least one letter or number"),
+    });
+    if (!name) return;
+    const id = uniqueId(slugify(name), projects.map((p) => p.id));
     const now = new Date().toISOString();
     const project: Project = {
       id,
@@ -134,14 +171,17 @@ export default function ProjectsIndexPage() {
       createdAt: now,
       updatedAt: now,
     };
-    if (cloud) {
-      await saveProjectCloud(project);
-      await refreshProjectsCloud();
-    } else {
-      send({ type: "save_project", project });
+    try {
+      if (cloud) {
+        await saveProjectCloud(project);
+        await refreshProjectsCloud();
+      } else {
+        send({ type: "save_project", project });
+      }
+      setCurrentProjectId(id);
+    } catch (err) {
+      await showError("create", err);
     }
-    setCurrentProjectId(id);
-    return id;
   }
 
   async function saveSchema(
@@ -177,6 +217,9 @@ export default function ProjectsIndexPage() {
       message: `Rename "${p.name}"`,
       defaultValue: p.name,
       confirmLabel: "Rename",
+      required: true,
+      validate: (v) =>
+        projectNameError(v, names.filter((n) => n !== p.name)),
     });
     if (!next || next === p.name) return;
     const updated = { ...p, name: next, updatedAt: new Date().toISOString() };
@@ -202,98 +245,218 @@ export default function ProjectsIndexPage() {
     if (currentProjectId === p.id) setCurrentProjectId(DEFAULT_PROJECT_ID);
   }
 
-  return (
-    <>
-      <ManagementList<Project>
-        title="Projects"
-        entityNoun="project"
-        items={projects}
-        disabled={disabled}
-        createFn={createProject}
-        deleteFn={deleteProject}
-        rowKey={(p) => p.id}
-        rowPrimary={(p) => (
-          <>
-            {p.name}
-            {p.id === currentProjectId && (
-              <span
-                style={{
-                  marginLeft: 8,
-                  color: colors.textDim,
-                  fontSize: 11,
-                }}
-              >
-                ◆ current
-              </span>
-            )}
-          </>
-        )}
-        rowSecondary={(p) => {
-          const showCount = showMetas.filter((s) => s.projectId === p.id).length;
-          const hotcardCount = hotcards.filter((h) => h.projectId === p.id).length;
-          return `${p.id} · ${showCount} show${showCount === 1 ? "" : "s"}, ${hotcardCount} hotcard${hotcardCount === 1 ? "" : "s"}`;
-        }}
-        rowActions={(p) => (
-          <>
-            {inElectron && (
-              <Button
-                onClick={() => publish(p)}
-                disabled={publishBlockedReason !== null}
-                title={
-                  publishBlockedReason ??
-                  "Push this project — shows, hotcards, templates, songs and assets — to the cloud"
-                }
-                variant="primary"
-                size="sm"
-                style={{ width: 96 }}
-              >
-                {publishing === p.id ? "Publishing…" : <><Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Publish</>}
-              </Button>
-            )}
-            {p.id !== currentProjectId && (
-              <Button
-                onClick={() => setCurrentProjectId(p.id)}
-                size="sm"
-                style={{ width: 88 }}
-              >
-                Switch to
-              </Button>
-            )}
-            <Button onClick={() => rename(p)} size="sm" style={{ width: 70 }}>
-              Rename
-            </Button>
-            <Button
-              onClick={() => setSchemaEditing(p)}
-              size="sm"
-              style={{ width: 104 }}
-              title="Edit recommended song custom fields"
-            >
-              Custom fields
-            </Button>
-          </>
-        )}
-        itemDisplayName={(p) => p.name || p.id}
-        canDelete={(p) => p.id !== DEFAULT_PROJECT_ID}
-        cannotDeleteReason={() => "The default project can't be deleted"}
-        deleteConfirmDetails={(p) => {
-          const showsInProject = showMetas.filter((s) => s.projectId === p.id).length;
-          const hotcardsInProject = hotcards.filter((h) => h.projectId === p.id).length;
-          if (showsInProject + hotcardsInProject === 0) return null;
-          return (
-            <span style={{ color: colors.red }}>
-              {showsInProject} show{showsInProject === 1 ? "" : "s"} and{" "}
-              {hotcardsInProject} hotcard
-              {hotcardsInProject === 1 ? "" : "s"} reference this project and will
-              become orphaned. Move them first or they won&apos;t appear in any project
-              view.
-            </span>
+  const names = projects.map((p) => p.name);
+  const rows: ProjectRow[] = useMemo(
+    () =>
+      projects.map((p) => ({
+        id: p.id,
+        name: p.name || p.id,
+        shows: showMetas.filter((s) => s.projectId === p.id).length,
+        hotcards: hotcards.filter((h) => h.projectId === p.id).length,
+        isCurrent: p.id === currentProjectId,
+        isDefault: p.id === DEFAULT_PROJECT_ID,
+      })),
+    [projects, showMetas, hotcards, currentProjectId],
+  );
+  const projectOf = (id: string) => projects.find((p) => p.id === id);
+  const currentName = projectOf(currentProjectId)?.name ?? "the current project";
+
+  const orphans = useMemo(
+    () => unassignedItems(showMetas, hotcards, projects.map((p) => p.id)),
+    [showMetas, hotcards, projects],
+  );
+  const orphanCount = orphans.shows.length + orphans.hotcards.length;
+  const [moving, setMoving] = useState(false);
+
+  async function moveUnassigned() {
+    if (!projectOf(currentProjectId)) return;
+    setMoving(true);
+    try {
+      for (const s of orphans.shows) {
+        if (cloud) {
+          const full = await getShowCloud(s.id);
+          if (full) await saveShowCloud({ ...full, projectId: currentProjectId });
+        } else {
+          const full = await requestOne(
+            getClient(),
+            { type: "get_show", showId: s.id },
+            (m) => (m.type === "show" && m.show.id === s.id ? m.show : undefined),
           );
-        }}
-        emptyMessage={
-          <span style={{ color: colors.textDim, fontSize: 13 }}>Loading…</span>
+          await sendAndAwaitAck(
+            getClient(),
+            { type: "save_show", show: { ...full, projectId: currentProjectId } },
+            { op: "save_show", id: s.id },
+          );
         }
-      />
-      {dialog}
+      }
+      for (const h of orphans.hotcards) {
+        if (cloud) {
+          const full = await getHotcardCloud(h.id);
+          if (full) await saveHotcardCloud({ ...full, projectId: currentProjectId });
+        } else {
+          const full = await requestOne(
+            getClient(),
+            { type: "get_hotcard", hotcardId: h.id },
+            (m) => (m.type === "hotcard" && m.hotcard.id === h.id ? m.hotcard : undefined),
+          );
+          await sendAndAwaitAck(
+            getClient(),
+            { type: "save_hotcard", hotcard: { ...full, projectId: currentProjectId } },
+            { op: "save_hotcard", id: h.id },
+          );
+        }
+      }
+      toast({ message: `Moved ${orphanCount} items to ${currentName}`, tone: "ok" });
+    } catch (err) {
+      toast({ message: `Couldn't move items. ${ackErrorText(err)}`, tone: "error" });
+    } finally {
+      setMoving(false);
+      if (cloud) {
+        refreshShowMetasCloud().catch(() => {});
+        refreshHotcardMetasCloud().catch(() => {});
+      } else {
+        send({ type: "list_shows" });
+        send({ type: "list_hotcards" });
+      }
+    }
+  }
+
+  async function confirmDelete(row: ProjectRow) {
+    const p = projectOf(row.id);
+    if (!p) return;
+    const ok = await confirm({
+      title: "Delete project",
+      message: `Delete "${p.name}"? This can't be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (ok) await deleteProject(p);
+  }
+
+  function copyId(id: string) {
+    navigator.clipboard
+      ?.writeText(id)
+      .then(() => toast({ message: "Copied id", tone: "ok" }))
+      .catch(() => toast({ message: "Couldn't copy the id", tone: "error" }));
+  }
+
+  const actionsFor = (row: ProjectRow): ProjectActions => {
+    const p = projectOf(row.id);
+    return {
+      makeCurrent: () => setCurrentProjectId(row.id),
+      rename: () => p && void rename(p),
+      customFields: () => p && setSchemaEditing(p),
+      copyId: () => copyId(row.id),
+      remove: () => void confirmDelete(row),
+      ...(inElectron
+        ? {
+            publish: {
+              run: () => p && void publish(p),
+              disabledReason: publishBlockedReason ?? undefined,
+            },
+          }
+        : {}),
+    };
+  };
+
+  const columns: Column<ProjectRow>[] = [
+    {
+      id: "items",
+      label: "Items",
+      width: "90px",
+      align: "right",
+      render: (r) => String(r.shows + r.hotcards),
+    },
+    {
+      id: "current",
+      label: "",
+      width: "120px",
+      render: (r) =>
+        r.isCurrent ? (
+          <Pill tone="accent">Current</Pill>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={`Make ${r.name} the current project`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCurrentProjectId(r.id);
+            }}
+          >
+            Make current
+          </Button>
+        ),
+    },
+  ];
+
+  const offlineEmpty = !cloud && conn !== "open" && projects.length === 0;
+  const stale = !cloud && conn !== "open" && projects.length > 0;
+
+  return (
+    <PageBody variant="list">
+      {offlineEmpty ? (
+        <OfflineState noun="projects" onRetry={retry} />
+      ) : (
+        <>
+          {stale && <OfflineState noun="projects" variant="stale" onRetry={retry} />}
+          {orphanCount > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 10px",
+                background: colors.surface2,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 6,
+                fontSize: 12,
+                color: colors.textDim,
+              }}
+            >
+              <span style={{ flex: 1 }}>
+                <strong style={{ color: colors.text }}>Unassigned.</strong>{" "}
+                {orphanCount} item{orphanCount === 1 ? "" : "s"} {orphanCount === 1 ? "isn't" : "aren't"} in any project
+                ({orphans.shows.length} show{orphans.shows.length === 1 ? "" : "s"}, {orphans.hotcards.length} hotcard
+                {orphans.hotcards.length === 1 ? "" : "s"}).
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={moving || disabled || !projectOf(currentProjectId)}
+                onClick={() => void moveUnassigned()}
+              >
+                {moving ? "Moving…" : `Move to ${currentName}`}
+              </Button>
+            </div>
+          )}
+          <LibraryList<ProjectRow>
+            items={rows}
+            getId={(r) => r.id}
+            primary={(r) => r.name}
+            secondary={projectSecondary}
+            columns={columns}
+            searchText={(r) => r.name}
+            sorts={projectSorts}
+            defaultSort="name-asc"
+            menuItems={(r) => projectMenuItems(r, actionsFor(r))}
+            onOpen={(r) => setCurrentProjectId(r.id)}
+            storageKey="projects"
+            primaryAction={{
+              label: "New project",
+              disabledReason: disabled ? "Reconnect to create a project" : undefined,
+              onClick: () => void newProject(),
+            }}
+            emptyState={{
+              title: "No projects yet",
+              body: "A project groups shows and hotcards.",
+              action: { label: "New project", onClick: () => void newProject() },
+            }}
+            loading={projects.length === 0 && (cloud || conn === "open")}
+          />
+        </>
+      )}
       {schemaEditing && (
         <CustomFieldSchemaModal
           project={schemaEditing}
@@ -305,8 +468,13 @@ export default function ProjectsIndexPage() {
           }}
         />
       )}
-    </>
+    </PageBody>
   );
+}
+
+function uniqueId(base: string, taken: string[]): string {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n++) if (!taken.includes(`${base}-${n}`)) return `${base}-${n}`;
 }
 
 function slugify(s: string): string {
