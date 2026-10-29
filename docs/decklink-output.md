@@ -80,7 +80,7 @@ video sound can go out the SDI with no extra work.
 - the stage layout is on the TV and changes with takes, with no flash or
   "no signal" in between;
 - **Outputs** shows the stage channel connected, named after the card;
-- the app log (Help → Reveal logs) has `[decklink]` lines around
+- the app log (**Settings → Connection → Reveal logs**) has `[decklink]` lines around
   `599 frames in 10s`;
 - after quitting OverlaySys, `pgrep -fl ffmpeg-decklink` prints nothing.
 
