@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { Copy, Download, FolderInput, Trash2, Files } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import type { Show } from "@overlaysys/core";
 import { LibraryList, confirm, prompt, toast, type Column, type MenuItem } from "@overlaysys/ui";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
+import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
+import { listLoadState } from "@/lib/listLoadState";
 import { useStore, type ShowMeta } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { exportFileName } from "@/lib/exportName";
 import { formatDuration, formatRelative, formatServiceDate, plural } from "@/lib/listFormat";
-import { matchesWhen, metaDate, showFilterWhenOptions, showListStatus, showSorts } from "./showListModel";
+import { matchesWhen, metaDate, showFilterWhenOptions, showSorts } from "./showListModel";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -34,10 +36,8 @@ export default function ShowsIndexPage() {
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
-  const initialMetas = useRef(allShowMetas);
-  const [cloudListed, setCloudListed] = useState(false);
-  const listed = cloud ? cloudListed : allShowMetas !== initialMetas.current || initialMetas.current.length > 0;
-  const status = showListStatus({ cloud, conn, listed });
+  const showsLoaded = useStore((s) => s.showsLoaded);
+  const load = listLoadState({ cloud, conn, loaded: showsLoaded });
   const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
@@ -57,9 +57,9 @@ export default function ShowsIndexPage() {
     if (cloud) {
       // Cloud mode: pull project + show metadata from Supabase. Projects
       // come along because the move-to-project selector needs them.
-      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()])
-        .catch((err) => console.warn("[shows] cloud list failed", err))
-        .finally(() => setCloudListed(true));
+      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()]).catch(
+        (err) => console.warn("[shows] cloud list failed", err),
+      );
     } else if (conn === "open") {
       send({ type: "list_shows" });
     }
@@ -79,8 +79,7 @@ export default function ShowsIndexPage() {
       await refreshShowMetasCloud();
       return id;
     }
-    if (conn !== "open") throw new Error("WS not connected");
-    send({ type: "save_show", show });
+    await sendAndAwaitAck(getClient(), { type: "save_show", show }, { op: "save_show", id });
     return id;
   }
 
@@ -105,8 +104,12 @@ export default function ShowsIndexPage() {
       }
       return;
     }
-    if (conn !== "open") return;
-    send({ type: "duplicate_show", showId: id });
+    try {
+      // The ack carries the copy's id, so match on the op alone.
+      await sendAndAwaitAck(getClient(), { type: "duplicate_show", showId: id }, { op: "duplicate_show" });
+    } catch (err) {
+      toast({ message: `Not duplicated: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
   async function exportShow(id: string) {
@@ -142,45 +145,34 @@ export default function ShowsIndexPage() {
       await refreshShowMetasCloud();
       return;
     }
-    send({ type: "delete_show", showId: meta.id });
+    try {
+      await sendAndAwaitAck(getClient(), { type: "delete_show", showId: meta.id }, { op: "delete_show", id: meta.id });
+    } catch (err) {
+      toast({ message: `Not deleted: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
-  async function moveToProject(id: string, nextProjectId: string) {
+  /** Throws when the move did not happen. */
+  async function moveToProject(id: string, nextProjectId: string): Promise<void> {
     if (cloud) {
-      try {
-        const src = await getShowCloud(id);
-        if (!src) throw new Error("show not found");
-        await saveShowCloud({ ...src, projectId: nextProjectId });
-        await refreshShowMetasCloud();
-      } catch (err) {
-        await showError("move", err);
-      }
+      const src = await getShowCloud(id);
+      if (!src) throw new Error("Show not found.");
+      await saveShowCloud({ ...src, projectId: nextProjectId });
+      await refreshShowMetasCloud();
       return;
     }
-    if (conn !== "open") return;
-    // Re-fetch and re-save so the rest of the show payload comes along.
-    // The store may already cache the show body — prefer that to avoid a
-    // round-trip; fall back to requesting it then deferring the save.
+    // Re-save the whole show so the rest of the payload comes along.
     const cached = useStore.getState().showCache[id];
-    if (cached) {
-      send({ type: "save_show", show: { ...cached, projectId: nextProjectId } });
-      return;
-    }
-    send({ type: "get_show", showId: id });
-    const start = Date.now();
-    const tick = () => {
-      const fresh = useStore.getState().showCache[id];
-      if (fresh) {
-        send({
-          type: "save_show",
-          show: { ...fresh, projectId: nextProjectId },
-        });
-        return;
-      }
-      if (Date.now() - start > 2000) return;
-      setTimeout(tick, 50);
-    };
-    setTimeout(tick, 50);
+    const show =
+      cached ??
+      (await requestOne(getClient(), { type: "get_show", showId: id }, (m) =>
+        m.type === "show" && m.show.id === id ? m.show : undefined,
+      ));
+    await sendAndAwaitAck(
+      getClient(),
+      { type: "save_show", show: { ...show, projectId: nextProjectId } },
+      { op: "save_show", id },
+    );
   }
 
   const columns: Column<ShowMeta>[] = useMemo(
@@ -216,7 +208,7 @@ export default function ShowsIndexPage() {
       const id = await createShow(name.trim());
       router.push(`/shows/edit?id=${encodeURIComponent(id)}`);
     } catch (err) {
-      toast({ message: err instanceof Error ? err.message : "Could not create the show", tone: "error" });
+      toast({ message: `Not created: ${ackErrorText(err)}`, tone: "error" });
     }
   }
 
@@ -232,11 +224,23 @@ export default function ShowsIndexPage() {
 
   async function moveWithUndo(s: ShowMeta, target: { id: string; name: string }) {
     const from = projects.find((p) => p.id === s.projectId);
-    await moveToProject(s.id, target.id);
+    try {
+      await moveToProject(s.id, target.id);
+    } catch (err) {
+      toast({ message: `Not moved: ${ackErrorText(err)}`, tone: "error" });
+      return;
+    }
+    const undo = async () => {
+      try {
+        await moveToProject(s.id, from!.id);
+      } catch (err) {
+        toast({ message: `Not moved back: ${ackErrorText(err)}`, tone: "error" });
+      }
+    };
     toast({
       message: `Moved to ${target.name}`,
       tone: "ok",
-      action: from ? { label: "Undo", onClick: () => void moveToProject(s.id, from.id) } : undefined,
+      action: from ? { label: "Undo", onClick: () => void undo() } : undefined,
     });
   }
 
@@ -291,8 +295,8 @@ export default function ShowsIndexPage() {
         body: "A show is the rundown for one service. Create one here, or import a plan from Planning Center.",
         action: { label: "New show", onClick: () => void newShow() },
       }}
-      loading={status.loading}
-      error={status.error}
+      loading={load.loading}
+      error={load.error ? "Not connected to the server" : null}
     />
   );
 }

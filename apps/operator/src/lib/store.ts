@@ -116,6 +116,9 @@ type StoreState = {
   // [P1.13] true once the first song list has arrived
   songsLoaded: boolean;
   // [/P1.13]
+  // [P1.12] true once the first show list has arrived
+  showsLoaded: boolean;
+  // [/P1.12]
   songCache: Record<string, Song>;
   showCache: Record<string, Show>;
   songSessions: Record<string, SongSessionSummary | null>;
@@ -246,6 +249,7 @@ export const useStore = create<StoreState>((set) => ({
   // [/P3.13]
   songs: [],
   songsLoaded: false, // [P1.13]
+  showsLoaded: false, // [P1.12]
   songCache: {},
   showCache: {},
   songSessions: {},
@@ -281,7 +285,7 @@ export const useStore = create<StoreState>((set) => ({
   setTemplates: (t) => set({ templates: t, templatesLoaded: true }), // [P1.10]
   setTemplate: (t) =>
     set((cur) => ({ templateCache: { ...cur.templateCache, [t.id]: t } })),
-  setShowMetas: (s) => set({ showMetas: s }),
+  setShowMetas: (s) => set({ showMetas: s, showsLoaded: true }), // [P1.12]
   setShow: (s) =>
     set((cur) => {
       // A selected hotcard survives a show (re-)broadcast: auto-selecting row 1
