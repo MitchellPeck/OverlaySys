@@ -113,6 +113,9 @@ type StoreState = {
   deckEpoch: number;
   // [/P3.13]
   songs: SongMeta[];
+  // [P1.13] true once the first song list has arrived
+  songsLoaded: boolean;
+  // [/P1.13]
   songCache: Record<string, Song>;
   showCache: Record<string, Show>;
   songSessions: Record<string, SongSessionSummary | null>;
@@ -242,6 +245,7 @@ export const useStore = create<StoreState>((set) => ({
   deckEpoch: 0,
   // [/P3.13]
   songs: [],
+  songsLoaded: false, // [P1.13]
   songCache: {},
   showCache: {},
   songSessions: {},
@@ -385,7 +389,7 @@ export const useStore = create<StoreState>((set) => ({
       delete next[key];
       return { projectChannelOverrides: next };
     }),
-  setSongs: (songs) => set({ songs }),
+  setSongs: (songs) => set({ songs, songsLoaded: true }), // [P1.13]
   // [P3.13]
   setDecks: (decks) => set({ decks }),
   upsertDeck: (d) =>

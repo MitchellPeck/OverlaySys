@@ -20,6 +20,7 @@ import type { Song } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
+import { listLoadState } from "@/lib/listLoadState";
 import { isCloudMode } from "@/lib/mode";
 import { downloadJson } from "@/lib/download";
 import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
@@ -56,6 +57,7 @@ export default function SongsPage() {
   const confirm = useConfirm();
   const prompt = usePrompt();
   const songs = useStore((s) => s.songs);
+  const songsLoaded = useStore((s) => s.songsLoaded);
   const { connected, conn } = useConnection();
   const [importOpen, setImportOpen] = useState(false);
   const [ccliOpen, setCcliOpen] = useState(false);
@@ -63,6 +65,7 @@ export default function SongsPage() {
   const [library, setLibrary] = useState<SongLibrary | null>(null);
   const cloud = isCloudMode();
   const disabled = !connected;
+  const load = listLoadState({ cloud, conn, loaded: songsLoaded });
 
   useEffect(() => {
     if (cloud) {
@@ -224,13 +227,13 @@ export default function SongsPage() {
         await refreshSongMetasCloud();
         return;
       }
-      send({ type: "delete_song", songId: row.id });
+      await sendAndAwaitAck(getClient(), { type: "delete_song", songId: row.id }, { op: "delete_song", id: row.id });
       toast({
         message: `Deleted “${name}”`,
         action: { label: "Undo", onClick: () => void undoDelete(row) },
       });
     } catch (err) {
-      toast({ tone: "error", message: `Couldn't delete “${name}”: ${ackErrorText(err)}` });
+      toast({ tone: "error", message: `Not deleted: ${ackErrorText(err)}` });
     }
   }
 
@@ -334,7 +337,8 @@ export default function SongsPage() {
             body: "Add a song, import a SongSelect or ChordPro file, or bring songs in from Planning Center.",
             action: { label: "New song", onClick: () => void createSong() },
           }}
-          error={connected ? null : "Not connected to the server. Retrying…"}
+          loading={load.loading}
+          error={load.error ? "Not connected to the server. Retrying…" : null}
         />
       </PageBody>
       {importOpen && (
