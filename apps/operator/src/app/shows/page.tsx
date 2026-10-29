@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { Copy, Download, FolderInput, Trash2, Files } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import type { Show } from "@overlaysys/core";
-import { Button, colors } from "@overlaysys/ui";
+import { LibraryList, confirm, prompt, toast, type Column, type MenuItem } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore, type ShowMeta } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
-import { ManagementList } from "@/app/components/ManagementList";
+import { exportFileName } from "@/lib/exportName";
+import { formatDuration, formatRelative, formatServiceDate, plural } from "@/lib/listFormat";
+import { matchesWhen, metaDate, showFilterWhenOptions, showSorts } from "./showListModel";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -27,7 +30,7 @@ export default function ShowsIndexPage() {
   const allShowMetas = useStore((s) => s.showMetas);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const projects = useStore((s) => s.projects);
-  const { alert, dialog } = useDialog();
+  const { alert } = useDialog();
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
@@ -106,7 +109,7 @@ export default function ShowsIndexPage() {
     if (cloud) {
       try {
         const show = await getShowCloud(id);
-        if (show) downloadJson(`${id}.json`, show);
+        if (show) downloadJson(exportFileName("show", show), show);
       } catch (err) {
         await showError("export", err);
       }
@@ -114,7 +117,7 @@ export default function ShowsIndexPage() {
     }
     const cached = useStore.getState().showCache[id];
     if (cached) {
-      downloadJson(`${id}.json`, cached);
+      downloadJson(exportFileName("show", cached), cached);
       return;
     }
     if (conn !== "open") return;
@@ -122,7 +125,7 @@ export default function ShowsIndexPage() {
     const start = Date.now();
     const tick = () => {
       const c = useStore.getState().showCache[id];
-      if (c) { downloadJson(`${id}.json`, c); return; }
+      if (c) { downloadJson(exportFileName("show", c), c); return; }
       if (Date.now() - start > 2000) return;
       setTimeout(tick, 50);
     };
@@ -176,67 +179,116 @@ export default function ShowsIndexPage() {
     setTimeout(tick, 50);
   }
 
+  const columns: Column<ShowMeta>[] = useMemo(
+    () => [
+      { id: "date", label: "Date", width: "110px", render: (s) => { const d = metaDate(s); return d ? formatServiceDate(d, new Date()) : "—"; } },
+      { id: "items", label: "Items", width: "64px", align: "right", render: (s) => s.rowCount },
+      { id: "length", label: "Length", width: "72px", align: "right", render: (s) => (s.totalLengthSec ? formatDuration(s.totalLengthSec) : "—") },
+      { id: "edited", label: "Edited", width: "120px", render: (s) => formatRelative(s.updatedAt, new Date()) || "—" },
+    ],
+    [],
+  );
+  const filters = useMemo(
+    () => [
+      {
+        id: "when",
+        label: "dates",
+        options: showFilterWhenOptions,
+        test: (s: ShowMeta, v: string) => matchesWhen(s, v, new Date()),
+      },
+    ],
+    [],
+  );
+
+  async function newShow() {
+    const name = await prompt({
+      title: "New show",
+      placeholder: "Show name",
+      confirmLabel: "Create",
+      required: true,
+    });
+    if (!name?.trim()) return;
+    try {
+      const id = await createShow(name.trim());
+      router.push(`/shows/edit?id=${encodeURIComponent(id)}`);
+    } catch (err) {
+      toast({ message: err instanceof Error ? err.message : "Could not create the show", tone: "error" });
+    }
+  }
+
+  async function removeShow(s: ShowMeta) {
+    const ok = await confirm({
+      title: `Delete ${s.name || "this show"}?`,
+      message: "This removes the show and its rundown. It can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (ok) await deleteShow(s);
+  }
+
+  async function moveWithUndo(s: ShowMeta, target: { id: string; name: string }) {
+    const from = projects.find((p) => p.id === s.projectId);
+    await moveToProject(s.id, target.id);
+    toast({
+      message: `Moved to ${target.name}`,
+      tone: "ok",
+      action: from ? { label: "Undo", onClick: () => void moveToProject(s.id, from.id) } : undefined,
+    });
+  }
+
+  const menuItems = (s: ShowMeta): MenuItem[] => {
+    const others = projects.filter((p) => p.id !== s.projectId);
+    const items: MenuItem[] = [
+      { id: "open", label: "Open", onSelect: () => router.push(`/shows/edit?id=${encodeURIComponent(s.id)}`) },
+      { id: "duplicate", label: "Duplicate", icon: <Files size={14} />, disabled: disabled ? "Not connected to the server" : false, onSelect: () => void duplicate(s.id) },
+      { id: "export", label: "Export", icon: <Download size={14} />, disabled: disabled ? "Not connected to the server" : false, onSelect: () => void exportShow(s.id) },
+    ];
+    if (others.length > 0) {
+      items.push({ separator: true });
+      for (const p of others) {
+        items.push({
+          id: `move-${p.id}`,
+          label: `Move to ${p.name}`,
+          icon: <FolderInput size={14} />,
+          disabled: disabled ? "Not connected to the server" : false,
+          onSelect: () => void moveWithUndo(s, p),
+        });
+      }
+    }
+    items.push(
+      { separator: true },
+      { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void navigator.clipboard?.writeText(s.id) },
+      { id: "delete", label: "Delete", icon: <Trash2 size={14} />, danger: true, disabled: disabled ? "Not connected to the server" : false, onSelect: () => void removeShow(s) },
+    );
+    return items;
+  };
+
   return (
-    <>
-      <ManagementList<ShowMeta>
-        title="Shows"
-        entityNoun="show"
-        context={
-          currentProject && (
-            <span>
-              in <strong style={{ color: "var(--text)" }}>{currentProject.name}</strong>
-            </span>
-          )
-        }
-        items={showMetas}
-        disabled={disabled}
-        createFn={createShow}
-        onCreated={(id) => router.push(`/shows/edit?id=${encodeURIComponent(id)}`)}
-        deleteFn={deleteShow}
-        rowKey={(s) => s.id}
-        rowHref={(s) => `/shows/edit?id=${encodeURIComponent(s.id)}`}
-        rowPrimary={(s) => s.name}
-        rowSecondary={(s) => `${s.id} · ${s.rowCount} ${s.rowCount === 1 ? "row" : "rows"}`}
-        rowActions={(s) => (
-          <>
-            {projects.length > 1 && (
-              <select
-                value={s.projectId}
-                onChange={(e) => moveToProject(s.id, e.target.value)}
-                title="Move to project"
-                style={{
-                  background: "var(--panel-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  padding: "3px 6px",
-                  fontSize: 12,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Button onClick={() => duplicate(s.id)} size="sm" style={{ width: 84 }}>
-              Duplicate
-            </Button>
-            <Button onClick={() => exportShow(s.id)} size="sm" style={{ width: 64 }}>
-              Export
-            </Button>
-          </>
-        )}
-        itemDisplayName={(s) => s.name || s.id}
-        emptyMessage={
-          <span style={{ color: colors.textDim, fontSize: 13 }}>
-            No shows in this project yet. Create one to get started.
-          </span>
-        }
-      />
-      {dialog}
-    </>
+    <LibraryList<ShowMeta>
+      items={showMetas}
+      getId={(s) => s.id}
+      primary={(s) => s.name || "Untitled show"}
+      secondary={(s) => plural(s.rowCount, "item")}
+      columns={columns}
+      searchText={(s) => s.name}
+      sorts={showSorts}
+      defaultSort="date-desc"
+      filters={filters}
+      menuItems={menuItems}
+      onOpen={(s) => router.push(`/shows/edit?id=${encodeURIComponent(s.id)}`)}
+      primaryAction={{
+        label: "New show",
+        onClick: () => void newShow(),
+        disabledReason: disabled ? "Not connected to the server" : undefined,
+      }}
+      storageKey="shows"
+      emptyState={{
+        title: "No shows yet",
+        body: "A show is the rundown for one service. Create one here, or import a plan from Planning Center.",
+        action: { label: "New show", onClick: () => void newShow() },
+      }}
+      loading={!cloud && conn === "connecting"}
+      error={disabled && conn === "closed" ? "Not connected to the server" : null}
+    />
   );
 }
