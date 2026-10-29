@@ -1,4 +1,4 @@
-import { groupRowsBySection, type Show } from "@overlaysys/core";
+import { groupRowsBySection, type Show, type SlidesRowView } from "@overlaysys/core";
 import type { AirState } from "../../../lib/rowAirState";
 import type { RowLike } from "../../../lib/rowLike";
 import { nextRowId } from "../../../lib/liveNext";
@@ -24,6 +24,15 @@ export function takeableNextRowId(
     if (air[r.id] !== "program" && canTake(r.id)) return r.id;
   }
   return null;
+}
+
+/**
+ * A slides row can be taken only once its deck is loaded and has slides to
+ * show: never a missing (deleted, not found) deck, nor one still loading.
+ * Some slides missing from the deck is fine; the rest still play.
+ */
+export function slidesTakeable(view: Pick<SlidesRowView, "missingDeck" | "slides"> | null): boolean {
+  return !!view && !view.missingDeck && view.slides.length > 0;
 }
 
 export type LiveRowState = {

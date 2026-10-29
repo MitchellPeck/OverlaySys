@@ -7,6 +7,7 @@ import {
   liveRowState,
   liveRowSurface,
   nudgeTarget,
+  slidesTakeable,
   takeableNextRowId,
 } from "./rundownModel";
 
@@ -113,5 +114,24 @@ describe("nudgeTarget", () => {
   });
   it("is null at the very top", () => {
     expect(nudgeTarget(show, "1", -1)).toBe(null);
+  });
+});
+
+describe("slidesTakeable", () => {
+  const v = (o: object) => ({ title: "Deck", detail: "", slides: [{}], missingDeck: false, missingSlides: 0, licensing: null, ...o }) as never;
+  it("a loaded deck with slides can be taken, even with some slides missing", () => {
+    expect(slidesTakeable(v({}))).toBe(true);
+    expect(slidesTakeable(v({ missingSlides: 2 }))).toBe(true);
+  });
+  it("a missing deck, a deck still loading (no slides) or no view can't", () => {
+    expect(slidesTakeable(v({ missingDeck: true, slides: [] }))).toBe(false);
+    expect(slidesTakeable(v({ slides: [] }))).toBe(false);
+    expect(slidesTakeable(null)).toBe(false);
+  });
+  it("the next row skips a missing-deck slides row", () => {
+    const rows = [row("r1"), { kind: "slides", id: "s1" } as never, row("r3")];
+    const views: Record<string, unknown> = { s1: v({ missingDeck: true, slides: [] }) };
+    const canTake = (id: string) => (id in views ? slidesTakeable(views[id] as never) : true);
+    expect(takeableNextRowId(rows, { r1: "program" }, "r1", canTake)).toBe("r3");
   });
 });

@@ -2,21 +2,20 @@
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { Button, OfflineState, colors } from "@overlaysys/ui";
-import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
+import { songTakeChannel } from "@/lib/songChannel";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
-import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 import { rowAirState, type AirState } from "@/lib/rowAirState";
-import { editedFieldKeys, graphicRowMessage, withEffectiveData } from "@/lib/rowData";
+import { editedFieldKeys, withEffectiveData } from "@/lib/rowData";
 import { rowView, type RowView } from "@/lib/rowView";
 import { liveGroups } from "@/lib/liveNext";
-import { slidesRowTakeMessages } from "@/lib/slidesRowView";
+import { slidesRowViewFor } from "@/lib/slidesRowView";
+import { rowFireMessages } from "@/lib/liveKeys";
 import { requestedDecks } from "@/lib/deckRequests";
 import { RundownList } from "./rundown/RundownList";
-import { takeableNextRowId } from "./rundown/rundownModel";
+import { slidesTakeable, takeableNextRowId } from "./rundown/rundownModel";
 import { useWarnRowIds } from "./live/overflowStore";
 
 type Row = NonNullable<ReturnType<typeof useStore.getState>["show"]>["rows"][number];
@@ -68,7 +67,7 @@ export function Rundown() {
   const model = useMemo(() => {
     if (!show) return null;
     const rows = liveGroups(show).flatMap((g) => g.rows) as Row[];
-    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache };
+    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound };
     const air: Record<string, AirState> = {};
     const views: Record<string, RowView> = {};
     const edited = new Set<string>();
@@ -93,8 +92,11 @@ export function Rundown() {
           return true;
         case "scripture":
           return row.slides.length > 0;
-        case "slides":
-          return slidesRowTakeMessages(show.id, row, "take") !== null;
+        case "slides": {
+          // Never a missing deck, nor one still loading (nextRowId must not pick it).
+          const id = row.deckId;
+          return slidesTakeable(slidesRowViewFor(row, id ? (deckNotFound[id] ? null : deckCache[id]) : null));
+        }
         default:
           return false;
       }
@@ -105,7 +107,7 @@ export function Rundown() {
     };
     const next = takeableNextRowId(rows, air, selectedRowId, canTake);
     return { byId, air, edited, canCue, next };
-  }, [show, songs, songCache, templates, templateCache, overrides, deckCache, channelStates, songSessions, caches, selectedRowId]);
+  }, [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions, caches, selectedRowId]);
 
   if (!show || !model) {
     if (!connected) return <OfflineState noun="shows" onRetry={retry} compact />;
@@ -119,47 +121,19 @@ export function Rundown() {
     );
   }
 
-  const sendAll = (msgs: ClientMessage[] | null) => {
-    for (const m of msgs ?? []) send(m);
-  };
-
-  /** Take or cue one row with its kind's message. */
+  /** Take or cue one row with its kind's message (shared with Enter / Space). */
   const fire = (rowId: string, action: "take" | "cue") => {
     const row = model.byId.get(rowId);
     if (!row) return;
     setSelectedRow(row.id);
     const st = useStore.getState();
-    switch (row.kind) {
-      case "graphic":
-        send(graphicRowMessage(row, action, st.rowDataOverrides, show.id));
-        return;
-      case "song": {
-        const channel = action === "take" ? songTakeChannel(row, show, caches) : songCueChannel(row, show, caches);
-        send({ type: "song_take", channel, showId: show.id, songRowId: row.id });
-        return;
-      }
-      case "scripture": {
-        if (row.slides.length === 0) return;
-        if (action === "cue") {
-          send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, channel: "preview" });
-          return;
-        }
-        // The first slide, or the next one when this scripture is already live on its channel.
-        const channel = row.channelHint ?? "program";
-        const live = st.channelStates[channel]?.scriptureSession;
-        const slideIdx = live?.rowId === row.id ? Math.min(live.slideIdx + 1, row.slides.length - 1) : 0;
-        send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx, channel });
-        return;
-      }
-      case "video":
-        if (action === "cue") return; // video has no Cue
-        if (onAirMediaFor(row, st.channelStates)) return;
-        send(videoRowTakeMessage(row, show.id));
-        return;
-      case "slides":
-        sendAll(slidesRowTakeMessages(show.id, row, action));
-        return;
-    }
+    const msgs = rowFireMessages(row, action, {
+      show,
+      overrides: st.rowDataOverrides,
+      caches,
+      channelStates: st.channelStates,
+    });
+    for (const m of msgs) send(m);
   };
 
   // Double-click keeps today's behaviour (take); Task 16 makes it a setting (D4).

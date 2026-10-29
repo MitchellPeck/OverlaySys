@@ -77,10 +77,14 @@ function act(fn?: () => void) {
 
 function SecondLine({ view }: { view: RowView }): ReactNode {
   if (view.warning) {
+    // Keep the detail ("1 of 3 slides") before the warning: both matter.
     return (
-      <span style={{ color: colors.warn, display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
-        <TriangleAlert size={12} aria-hidden style={{ flexShrink: 0 }} />
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{view.warning}</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+        {view.detail && <span style={{ flexShrink: 0 }}>{view.detail} ·</span>}
+        <span style={{ color: colors.warn, display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+          <TriangleAlert size={12} aria-hidden style={{ flexShrink: 0 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{view.warning}</span>
+        </span>
       </span>
     );
   }
@@ -220,6 +224,18 @@ export function RundownRow(p: Props) {
       </div>
       {live?.chip === "onair" && <span style={stateChip(colors.onairFill)}>ON AIR</span>}
       {live?.chip === "cued" && <span style={stateChip(colors.okFill)}>CUED</span>}
+      {live?.otherShow && (
+        <span
+          style={{
+            ...stateChip("transparent"),
+            color: colors.textMuted,
+            border: `1px solid ${colors.border}`,
+            fontWeight: 600,
+          }}
+        >
+          OTHER SHOW
+        </span>
+      )}
       {(live?.showCue || live?.showTake) && (
         <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           {live.showCue && p.onCue && (

@@ -25,6 +25,8 @@ export type RowViewCtx = {
   templateCache: Record<string, Template>;
   overrides: RowDataOverrides;
   deckCache: Record<string, Deck>;
+  /** Decks the server answered "not found" for: shown as missing, not loading. */
+  deckNotFound?: Record<string, true>;
 };
 
 export type RowView = {
@@ -129,7 +131,8 @@ function rowViewInner(row: RowLike, ctx: RowViewCtx): RowView {
     }
     case "slides": {
       const deckId = (row as { deckId?: string }).deckId;
-      const v = slidesRowViewFor(row, deckId ? ctx.deckCache[deckId] : null);
+      const deck = !deckId ? null : ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId];
+      const v = slidesRowViewFor(row, deck);
       if (!v) {
         return { ...base(row, "slides"), title: "Slides deck", detail: "Needs Slides decks", supported: false };
       }

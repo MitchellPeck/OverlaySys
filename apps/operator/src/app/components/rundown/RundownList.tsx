@@ -53,6 +53,7 @@ export function RundownList(p: RundownListProps) {
   const templateCache = useStore((s) => s.templateCache);
   const storeOverrides = useStore((s) => s.rowDataOverrides);
   const deckCache = useStore((s) => s.deckCache);
+  const deckNotFound = useStore((s) => s.deckNotFound);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<DropAt | null>(null);
 
@@ -67,11 +68,12 @@ export function RundownList(p: RundownListProps) {
       templateCache,
       overrides: edit ? {} : storeOverrides,
       deckCache,
+      deckNotFound,
     };
     const out: Record<string, RowView> = {};
     for (const r of flat) out[r.id] = rowView(r, ctx);
     return out;
-  }, [show, flat, songs, songCache, templates, templateCache, storeOverrides, deckCache, edit]);
+  }, [show, flat, songs, songCache, templates, templateCache, storeOverrides, deckCache, deckNotFound, edit]);
   const starts = useMemo(() => (edit ? cumulativeStarts(flat) : []), [edit, flat]);
 
   const drop = (pos: DropPos) => {

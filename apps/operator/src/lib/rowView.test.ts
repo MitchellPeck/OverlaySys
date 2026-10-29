@@ -115,6 +115,14 @@ describe("rowView", () => {
     slidesMock.mockReturnValueOnce({ title: "Missing deck", detail: "x", missingDeck: true, missingSlides: 0 });
     expect(rowView({ kind: "slides", id: "x", deckId: "d" }, ctx()).supported).toBe(false);
   });
+  it("a deck the server reported not found is passed as missing (null), not still loading", () => {
+    slidesMock.mockReturnValueOnce({ title: "Missing deck", detail: "x", missingDeck: true, missingSlides: 0 });
+    rowView({ kind: "slides", id: "x", deckId: "d" }, ctx({ deckNotFound: { d: true } }));
+    expect(slidesMock).toHaveBeenLastCalledWith(expect.anything(), null);
+    slidesMock.mockReturnValueOnce({ title: "Slides deck", detail: "Loading…", missingDeck: false, missingSlides: 0 });
+    rowView({ kind: "slides", id: "x", deckId: "d" }, ctx());
+    expect(slidesMock).toHaveBeenLastCalledWith(expect.anything(), undefined);
+  });
   it("a slides row with some slides missing exposes a warning", () => {
     slidesMock.mockReturnValueOnce({ title: "Gloria", detail: "1 of 3 slides", missingDeck: false, missingSlides: 2 });
     expect(rowView({ kind: "slides", id: "x", deckId: "d" }, ctx()).warning).toBe("2 slides no longer in the deck");
