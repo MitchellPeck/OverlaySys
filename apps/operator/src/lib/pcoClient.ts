@@ -112,7 +112,24 @@ export async function setPcoCredentials(
 /** Forget the in-memory Planning Center credential (PAT or OAuth) on the server. */
 export async function clearPcoCredentials(): Promise<void> {
   const res = await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
-  if (!res.ok) throw new Error(`Failed to disconnect (${res.status})`);
+  if (res.status === 403) throw new Error("Disconnect from the computer running OverlaySys.");
+  if (!res.ok) throw new Error(`Couldn't disconnect from Planning Center (${res.status}).`);
+}
+
+/**
+ * Shared Disconnect: clear the server credentials first; only when that
+ * succeeds sign the desktop OAuth session out. Throws on failure (callers
+ * should re-check status so the UI shows the truth).
+ */
+export async function disconnectPco(
+  signOut?: () => Promise<unknown> | undefined,
+): Promise<void> {
+  await clearPcoCredentials();
+  try {
+    await signOut?.();
+  } catch {
+    /* server credentials are already gone */
+  }
 }
 
 export async function listServiceTypes(): Promise<PcoServiceType[]> {

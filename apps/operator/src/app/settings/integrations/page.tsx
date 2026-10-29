@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button, Panel, Pill, colors, confirm, fontSize, type PillTone } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { getDesktopApi } from "@/lib/desktop";
-import { clearPcoCredentials, getPcoStatus } from "@/lib/pcoClient";
+import { disconnectPco, getPcoStatus } from "@/lib/pcoClient";
 import { useAuthStore } from "@/lib/useAuth";
 import { integrationStatus } from "./integrationStatus";
 
@@ -38,6 +38,7 @@ function PlanningCenterPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const api = getDesktopApi();
+  const router = useRouter();
 
   const check = useCallback(async () => {
     try {
@@ -83,11 +84,11 @@ function PlanningCenterPanel() {
     setBusy(true);
     setError(null);
     try {
-      await api?.pcoSignOut?.();
-      await clearPcoCredentials();
+      await disconnectPco(() => api?.pcoSignOut?.());
       await check();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      await check();
     } finally {
       setBusy(false);
     }
@@ -109,11 +110,9 @@ function PlanningCenterPanel() {
               {busy ? "Waiting for browser…" : "Sign in with browser"}
             </Button>
           )}
-          <Link href="/pco" style={{ textDecoration: "none" }}>
-            <Button size="sm" variant={connected ? "secondary" : "primary"} tabIndex={-1}>
-              {connected ? "Manage" : "Connect"}
-            </Button>
-          </Link>
+          <Button size="sm" variant={connected ? "secondary" : "primary"} onClick={() => router.push("/pco")}>
+            {connected ? "Manage" : "Connect"}
+          </Button>
         </div>
       </div>
       {error && <div style={{ color: colors.danger, fontSize: fontSize.sm, marginBottom: 8 }}>{error}</div>}
@@ -128,19 +127,19 @@ function PlanningCenterPanel() {
 function CloudPanel() {
   const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
+  const initialized = useAuthStore((s) => s.initialized);
+  const router = useRouter();
   return (
     <Panel title="OverlaySys Cloud" padding="md">
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <StatusPill configured={status !== "signed_out"} ok={status === "signed_in"} />
+        <StatusPill configured={!initialized || status !== "signed_out"} ok={initialized ? status === "signed_in" : null} />
         {status === "signed_in" && user?.email && (
           <span style={{ color: colors.textDim, fontSize: fontSize.sm }}>{user.email}</span>
         )}
         <div style={{ marginLeft: "auto" }}>
-          <Link href="/account" style={{ textDecoration: "none" }}>
-            <Button size="sm" tabIndex={-1}>
-              {status === "signed_out" ? "Sign in" : "Account"}
-            </Button>
-          </Link>
+          <Button size="sm" onClick={() => router.push("/account")}>
+            {status === "signed_out" ? "Sign in" : "Account"}
+          </Button>
         </div>
       </div>
       <p style={{ color: colors.textDim, fontSize: fontSize.sm, margin: 0 }}>

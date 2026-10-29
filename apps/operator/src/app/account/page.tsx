@@ -27,6 +27,7 @@ export default function AccountPage() {
   const status = useAuthStore((s) => s.status);
   const user = useAuthStore((s) => s.user);
   const orgId = useAuthStore((s) => s.orgId);
+  const initialized = useAuthStore((s) => s.initialized);
   const lastVerifiedAt = useAuthStore((s) => s.lastVerifiedAt);
   const cloud = isCloudMode();
   const inElectron = isElectron();
@@ -54,12 +55,14 @@ export default function AccountPage() {
     setBusy(true);
     try {
       await signInFromElectron();
+    } catch {
+      toast({ tone: "error", message: "Couldn't sign in. Try again." });
     } finally {
       setBusy(false);
     }
   }
 
-  const signedOut = status === "signed_out";
+  const signedOut = initialized && status === "signed_out";
 
   return (
     <>
