@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Music } from "lucide-react";
+import { ChevronDown, ChevronRight, Music, X } from "lucide-react";
 import {
   type ChannelConfig,
   type Show,
@@ -11,7 +11,7 @@ import {
   type Template,
   type TemplateMeta,
 } from "@overlaysys/core";
-import { Button, Panel, Pill, Select, StatusDot, colors } from "@overlaysys/ui";
+import { Button, IconButton, Pill, Select, StatusDot, colors } from "@overlaysys/ui";
 import { SongOverrideEditor } from "./SongOverrideEditor";
 
 interface SongsInShowPanelProps {
@@ -83,7 +83,7 @@ export function SongsInShowPanel({
     if (refCount > 0) {
       setWarning((prev) => ({
         ...prev,
-        [songId]: `Used by ${refCount} rundown row${refCount === 1 ? "" : "s"}. Remove those first.`,
+        [songId]: `Used by ${refCount} item${refCount === 1 ? "" : "s"} in the rundown. Remove those first.`,
       }));
       return;
     }
@@ -122,13 +122,12 @@ export function SongsInShowPanel({
   }
 
   return (
-    <Panel title="Songs in this show" padding="md" style={{ marginBottom: 16 }}>
-      {draft.songs.length === 0 && (
-        <p style={{ fontSize: 12, color: colors.textDim, fontStyle: "italic", margin: "0 0 8px" }}>
-          No songs in this show yet. Add a song from the picker below or via
-          “+ Add song” on the rundown.
-        </p>
-      )}
+    <div>
+      <p style={{ fontSize: 12, color: colors.textMuted, margin: "0 0 8px" }}>
+        {draft.songs.length === 0
+          ? "No show-wide song defaults yet. Songs added to the rundown appear here."
+          : "Defaults apply to every item of that song in this show; an item's own settings win."}
+      </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {draft.songs.map((entry) => {
@@ -146,7 +145,7 @@ export function SongsInShowPanel({
               style={{
                 border: `1px solid ${colors.border}`,
                 borderRadius: 4,
-                background: colors.panel2,
+                background: colors.surface2,
               }}
             >
               <div
@@ -157,31 +156,16 @@ export function SongsInShowPanel({
                   padding: "6px 10px",
                 }}
               >
-                <button
-                  type="button"
+                <IconButton
                   onClick={() => toggleExpanded(entry.songId)}
-                  aria-label={isExpanded ? "Collapse" : "Expand"}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: colors.textDim,
-                    cursor: "pointer",
-                    fontSize: 12,
-                    width: 18,
-                    padding: 0,
-                  }}
+                  aria-label={`${isExpanded ? "Collapse" : "Expand"} ${title}`}
+                  aria-expanded={isExpanded}
                 >
-                  {isExpanded ? <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> : <ChevronRight size={14} aria-hidden style={{ verticalAlign: "-2px" }} />}
-                </button>
-                <span style={{ fontWeight: 600, fontSize: 13 }}><Music size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {title}</span>
-                <span
-                  style={{
-                    fontFamily: "ui-monospace, monospace",
-                    fontSize: 10,
-                    color: colors.textDim,
-                  }}
-                >
-                  {entry.songId}
+                  {isExpanded ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                </IconButton>
+                <span style={{ fontWeight: 600, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  <Music size={14} aria-hidden style={{ flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
                 </span>
                 <div style={{ display: "flex", gap: 4, marginLeft: 8, flexWrap: "wrap" }}>
                   <OverrideChip label="Intro" overridden={entry.introTemplateId !== undefined} />
@@ -198,15 +182,14 @@ export function SongsInShowPanel({
                   <Button onClick={() => toggleExpanded(entry.songId)} size="sm">
                     {isExpanded ? "Hide" : "Configure"}
                   </Button>
-                  <Button
+                  <IconButton
                     onClick={() => removeSong(entry.songId)}
-                    variant="ghost"
-                    size="sm"
-                    title="Remove from show"
-                    style={{ color: colors.red }}
+                    title="Remove from show defaults"
+                    aria-label={`Remove ${title} from show defaults`}
+                    tone="danger"
                   >
-                    ×
-                  </Button>
+                    <X size={14} aria-hidden />
+                  </IconButton>
                 </div>
               </div>
               {warn && (
@@ -261,12 +244,13 @@ export function SongsInShowPanel({
           value={pickerValue}
           onChange={(e) => setPickerValue(e.target.value)}
           style={{ flex: 1, maxWidth: 360 }}
+          aria-label="Set show-wide defaults for a song"
           disabled={availableSongs.length === 0}
         >
           <option value="">
             {availableSongs.length === 0
-              ? "All songs already added"
-              : "+ Add song…"}
+              ? "Every song already has show-wide defaults"
+              : "Set show-wide defaults for a song…"}
           </option>
           {availableSongs.map((s) => (
             <option key={s.id} value={s.id}>
@@ -282,7 +266,7 @@ export function SongsInShowPanel({
           Add
         </Button>
       </div>
-    </Panel>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { ShowSection } from "@overlaysys/core";
 import { IconButton, Input, colors } from "@overlaysys/ui";
@@ -16,6 +16,9 @@ type Props = {
   onMenu?(e: React.MouseEvent | HTMLElement): void;
   onDragOver?(e: React.DragEvent): void;
   onDrop?(e: React.DragEvent): void;
+  // [P2a.17] Edit: open the inline rename (a new section, or the section menu's Rename).
+  startRename?: boolean;
+  // [/P2a.17]
 };
 
 const bar: CSSProperties = {
@@ -35,9 +38,15 @@ const bar: CSSProperties = {
 };
 
 /** A section header in the rundown. Never aired; in Live it isn't interactive. */
-export function SectionDivider({ section, lengthSec, mode, dropActive, onRename, onMenu, onDragOver, onDrop }: Props) {
+export function SectionDivider({ section, lengthSec, mode, dropActive, onRename, onMenu, onDragOver, onDrop, startRename }: Props) {
   const [draft, setDraft] = useState<string | null>(null);
   const edit = mode === "edit";
+  // [P2a.17]
+  useEffect(() => {
+    if (edit && startRename) setDraft(section.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startRename, edit]);
+  // [/P2a.17]
   const commit = () => {
     const name = draft?.trim();
     setDraft(null);
@@ -58,6 +67,9 @@ export function SectionDivider({ section, lengthSec, mode, dropActive, onRename,
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
+          // [P2a.17]
+          onFocus={(e) => e.currentTarget.select()}
+          // [/P2a.17]
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === "Enter") commit();

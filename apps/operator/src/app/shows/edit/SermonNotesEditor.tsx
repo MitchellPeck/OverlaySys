@@ -4,10 +4,9 @@ import { useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 import type { SermonNotes, Show } from "@overlaysys/core";
 import { splitPoints } from "@overlaysys/core";
-import { ChevronDown, ChevronRight } from "lucide-react";
-import { Button, IconButton, Input, Panel, Select, colors } from "@overlaysys/ui";
+import { ChevronDown, ChevronRight, FileUp, Plus, Trash2 } from "lucide-react";
+import { Button, IconButton, Input, Panel, Select, Textarea, colors, useConfirm } from "@overlaysys/ui";
 import { notesFromFile } from "@/lib/notesImport";
-import { useDialog } from "@/lib/dialog";
 
 /** Compact "Notes set" picker used inside row editors. Hidden when the show has no sets. */
 export function NotesSetPicker({
@@ -45,7 +44,7 @@ export function SermonNotesEditor({
   notes: SermonNotes[];
   onUpdate: (recipe: (s: Show) => void) => void;
 }) {
-  const { confirm, dialog } = useDialog();
+  const confirm = useConfirm();
   const fileRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -81,9 +80,9 @@ export function SermonNotesEditor({
   async function deleteSet(set: SermonNotes) {
     const ok = await confirm({
       title: "Delete notes set?",
-      message: `Delete "${set.title || "Untitled notes"}"? Rows linked to it lose their notes.`,
+      message: `Delete "${set.title || "Untitled notes"}"? Items linked to it lose their notes.`,
       confirmLabel: "Delete",
-      destructive: true,
+      danger: true,
     });
     if (!ok) return;
     onUpdate((s) => {
@@ -100,10 +99,10 @@ export function SermonNotesEditor({
       actions={
         <div style={{ display: "flex", gap: 8 }}>
           <Button size="sm" onClick={() => addSet("Sermon notes", "")}>
-            + New set
+            <Plus size={14} aria-hidden /> New set
           </Button>
           <Button size="sm" onClick={() => fileRef.current?.click()}>
-            Import…
+            <FileUp size={14} aria-hidden /> Import…
           </Button>
           <input
             ref={fileRef}
@@ -119,7 +118,10 @@ export function SermonNotesEditor({
         </div>
       }
     >
-      {error && <p style={{ color: colors.red, fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
+      <p style={{ color: colors.textMuted, fontSize: 12, margin: "0 0 8px" }}>
+        Each heading starts a new point. Without headings, each blank-line paragraph is a point.
+      </p>
+      {error && <p style={{ color: colors.dangerText, fontSize: 12, margin: "0 0 8px" }}>{error}</p>}
       {notes.length === 0 && (
         <p style={{ color: colors.textDim, fontSize: 12, margin: 0 }}>
           No notes yet. Add a set or import a .docx, .md or .txt file.
@@ -135,14 +137,16 @@ export function SermonNotesEditor({
                 <IconButton
                   onClick={() => setOpen((o) => ({ ...o, [set.id]: !isOpen }))}
                   title={isOpen ? "Collapse" : "Expand"}
-                  size={24}
+                  aria-label={`${isOpen ? "Collapse" : "Expand"} ${set.title || "Untitled notes"}`}
+                  aria-expanded={isOpen}
                 >
-                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  {isOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
                 </IconButton>
                 <Input
                   value={set.title}
                   onChange={(e) => patchSet(set.id, { title: e.target.value })}
                   placeholder="Title"
+                  aria-label="Notes set title"
                 />
                 <span style={{ color: colors.textDim, fontSize: 11, whiteSpace: "nowrap" }}>
                   {points.length} point{points.length === 1 ? "" : "s"}
@@ -150,54 +154,41 @@ export function SermonNotesEditor({
                 <IconButton
                   onClick={() => deleteSet(set)}
                   title="Delete notes set"
-                  size={24}
-                  style={{ color: colors.red, fontSize: 14 }}
+                  aria-label={`Delete ${set.title || "Untitled notes"}`}
+                  tone="danger"
                 >
-                  ×
+                  <Trash2 size={14} aria-hidden />
                 </IconButton>
               </div>
               {isOpen && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <textarea
+                    <Textarea
                       value={set.body}
                       onChange={(e) => patchSet(set.id, { body: e.target.value })}
                       rows={12}
                       spellCheck
-                      style={{
-                        width: "100%",
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                        fontSize: 12,
-                        background: colors.panel2,
-                        color: colors.text,
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: 4,
-                        padding: 8,
-                        resize: "vertical",
-                        boxSizing: "border-box",
-                      }}
+                      mono
+                      aria-label={`Notes for ${set.title || "Untitled notes"}`}
+                      placeholder={"# Point one\nText for point one\n\n# Point two"}
                     />
                     <div style={{ fontSize: 12, color: colors.text, overflow: "auto", maxHeight: 280 }}>
-                      <div style={{ color: colors.textDim, marginBottom: 4 }}>
+                      <div style={{ color: colors.textMuted, marginBottom: 4 }}>
                         {points.length} point{points.length === 1 ? "" : "s"}
                       </div>
                       <ol style={{ margin: 0, paddingLeft: 20 }}>
                         {points.map((p, i) => (
-                          <li key={i}>{p.heading || <em style={{ color: colors.textDim }}>(untitled)</em>}</li>
+                          <li key={i}>{p.heading || <em style={{ color: colors.textMuted }}>(untitled)</em>}</li>
                         ))}
                       </ol>
                     </div>
                   </div>
-                  <p style={{ color: colors.textDim, fontSize: 11, margin: "6px 0 0" }}>
-                    Start each point with a heading (# Point), or separate points with a blank line.
-                  </p>
                 </div>
               )}
             </div>
           );
         })}
       </div>
-      {dialog}
     </Panel>
   );
 }

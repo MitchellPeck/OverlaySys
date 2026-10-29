@@ -66,7 +66,7 @@ tokens: `sectionKindColor` (§9) lives with the song editor.
 - `Toast` + `useToast()` → `toast({ message, tone?: "info" | "ok" | "warn" | "error", action?: { label; onClick }, durationMs? })`; one `<ToastHost />`.
 - `Tooltip` — `{ content: ReactNode; children; side?: "top" | "bottom" }`.
 - `KindBar` — `{ kind: ItemKind }` thin 3px vertical bar.
-- `SaveBar` — `{ dirty: boolean; saving: boolean; onSave(); onRevert(); disabledReason?: string; revertMessage?: string /* [P2a.20] body of the Revert confirm; default "Your unsaved edits will be lost." */ }` (unsaved dot + Revert + Save ⌘S, binds ⌘/Ctrl+S) — used by every editor and settings page. Offline: `disabledReason: "Reconnect to save"`.
+- `SaveBar` — `{ dirty: boolean; saving: boolean; onSave(); onRevert(); disabledReason?: string; revertTitle?: string /* [P2a.17] title of the Revert confirm; default "Revert changes?" */; revertMessage?: string /* [P2a.20] body of the Revert confirm; default "Your unsaved edits will be lost." */ }` (unsaved dot + Revert + Save ⌘S, binds ⌘/Ctrl+S) — used by every editor and settings page. Offline: `disabledReason: "Reconnect to save"`.
 - `OfflineState` — `{ noun?: string; variant?: "empty" | "stale"; onRetry(): void; compact?: boolean; children?: ReactNode }`. Copy from pure `offlineCopy(noun?: string, variant: "empty" | "stale" = "empty"): { title: string; body: string }` (`packages/ui/src/offlineCopy.ts`): empty + noun → `{ title: "Can't load <noun>", body: "Not connected to the server." }`; stale → `{ title: "Not connected to the server", body: "Showing what was last loaded." }`. Button "Retry" (secondary, lucide `RefreshCw`). `stale` renders a slim notice above `children`.
 
 ## 3. Shared library list (`packages/ui/src/LibraryList.tsx`) — owner P1.9

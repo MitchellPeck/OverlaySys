@@ -4,26 +4,70 @@ import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { ChannelConfig, SermonNotes, Show, RundownRow, GraphicRow, ScriptureRow, VideoRow, SongRow, ShowSong, Song, SongMeta, Template, TemplateMeta } from "@overlaysys/core";
-import { resolveArrangement } from "@overlaysys/core";
-import { BookOpen, ChevronDown, ChevronRight, Film } from "lucide-react";
-import { Button, IconButton, Input, Select, colors } from "@overlaysys/ui";
+import type {
+  ChannelConfig,
+  SermonNotes,
+  Show,
+  RundownRow,
+  GraphicRow,
+  ScriptureRow,
+  VideoRow,
+  SongRow,
+  ShowSong,
+  Song,
+  SongMeta,
+  Template,
+  TemplateMeta,
+} from "@overlaysys/core";
+import { addSection, deleteSection, moveRow, renameSection, resolveArrangement } from "@overlaysys/core";
+import { BookOpen, ChevronDown, ChevronRight, Copy, Film, FolderInput, Music, Plus, Presentation, Rows3, Trash2, Type } from "lucide-react";
+import {
+  Button,
+  Checkbox,
+  Input,
+  KindBar,
+  Select,
+  alertDialog,
+  colors,
+  fontSize,
+  useConfirm,
+  useContextMenu,
+  useToast,
+  type MenuItem,
+} from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
-import { useDialog } from "@/lib/dialog";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
+import { useConnection } from "@/lib/useConnection";
+import { AckError, ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
+import { slidesAddItemEnabled } from "@/lib/slidesRowView";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
+import { RundownList } from "@/app/components/rundown/RundownList";
+import { rowDomId } from "@/app/components/rundown/RundownRow";
 import { isCloudMode } from "@/lib/mode";
-import { SongsInShowPanel } from "./SongsInShowPanel";
-import { SermonNotesEditor, NotesSetPicker } from "./SermonNotesEditor";
+import { NotesSetPicker } from "./SermonNotesEditor";
 import { formatRowLength, parseRowLength } from "@/lib/rowLength";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
 import { VideoThumb } from "@/app/components/VideoThumb";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
+import { canSave, removeRowAt, restoreRow } from "./showEditOps";
+import {
+  duplicateRowIn,
+  insertNewRows,
+  moveRowToSection,
+  moveToSectionChoices,
+  savedSettles,
+  sectionIdOf,
+  sectionRowCount,
+  showForSave,
+} from "./showEditorModel";
+import { ShowHeader } from "./ShowHeader";
+import { ShowDetailsPane } from "./ShowDetailsPane";
+import { SlidesAddFlow, SlidesItemForm } from "./forms/SlidesItemForm";
 import {
   deleteShowCloud,
   getShowCloud,
@@ -35,6 +79,8 @@ import {
   refreshTemplateMetasCloud,
   saveShowCloud,
 } from "@/lib/cloudData";
+
+type Update = (recipe: (s: Show) => void) => void;
 
 // Suspense wrapper required by Next.js static export when the page calls
 // useSearchParams().
@@ -51,77 +97,105 @@ function ShowEditPageInner() {
   const showId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
   const router = useRouter();
+  const { connected } = useConnection();
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const songs = useStore((s) => s.songs);
   const songCache = useStore((s) => s.songCache);
   const channelConfigs = useResolvedChannelConfigs();
   // Mirror channels reflect another channel's state; targeting one would be
-  // a no-op, so they're hidden from row-level channel hints.
-  const takeableChannels = useMemo(
-    () => channelConfigs.filter((c) => !c.mirrorOf),
-    [channelConfigs],
-  );
+  // a no-op, so they're hidden from item output pickers.
+  const takeableChannels = useMemo(() => channelConfigs.filter((c) => !c.mirrorOf), [channelConfigs]);
 
   const templateCache = useStore((s) => s.templateCache);
   const setTemplate = useStore((s) => s.setTemplate);
   const setSong = useStore((s) => s.setSong);
-  const [draft, setDraft] = useState<Show | null>(null);
-  const [dirty, setDirty] = useState(false);
-  // Mirror `dirty` into a ref so the WS `show` listener below — which
-  // captures its closure at subscribe time, before the user has edited
-  // anything — reads the live value when deciding whether to clobber
-  // the draft. Without this, a `show` broadcast arriving after the user
-  // started editing would overwrite their in-flight changes because the
-  // closure still sees the original `dirty=false`. The most common
-  // trigger in practice is the user saving and then editing again
-  // before the save's echo broadcast lands.
+  const [draft, setDraftState] = useState<Show | null>(null);
+  // The latest draft for event handlers: edits compose on it synchronously.
+  const draftRef = useRef<Show | null>(null);
+  draftRef.current = draft;
+  // Last loaded or saved version. Revert returns here; it moves only on a confirmed save.
+  const baselineRef = useRef<Show | null>(null);
+  const [dirty, setDirtyState] = useState(false);
+  // Live `dirty` for the WS `show` listener (its closure is from subscribe
+  // time): an echo broadcast must never clobber in-flight edits.
   const dirtyRef = useRef(false);
-  useEffect(() => {
-    dirtyRef.current = dirty;
-  }, [dirty]);
-  // Ask before leaving with unsaved edits: reload/close, in-app links and
-  // browser Back/Forward. Must run before the `!draft` early return below.
-  useUnsavedGuard(dirty, { resetKey: showId, canArm: draft?.id === showId });
-  const [dragRowId, setDragRowId] = useState<string | null>(null);
+  const setDirty = (v: boolean) => {
+    dirtyRef.current = v;
+    setDirtyState(v);
+  };
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [renameSectionId, setRenameSectionId] = useState<string | null>(null);
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [editingVideoRow, setEditingVideoRow] = useState<VideoRow | null>(null);
+  const [slidesAddOpen, setSlidesAddOpen] = useState(false);
   // Cloud `updated_at` value at the moment the editor loaded the draft.
   // Used by save() in cloud mode to detect concurrent writes — a newer
   // value in Supabase means another tab/user saved while we were editing.
   const loadedAtRef = useRef<string | null>(null);
   const fetchedRef = useRef<string | null>(null);
-  const { confirm, alert, dialog } = useDialog();
+  const confirm = useConfirm();
+  const toast = useToast();
+  const menu = useContextMenu();
   const cloud = isCloudMode();
+
+  // Ask before leaving with unsaved edits: reload/close, in-app links and
+  // browser Back/Forward. Must run before the `!draft` early return below.
+  useUnsavedGuard(dirty, {
+    resetKey: showId,
+    canArm: draft?.id === showId,
+    getDirty: () => dirtyRef.current,
+    onSave: save,
+  });
+
+  function load(show: Show) {
+    draftRef.current = show;
+    baselineRef.current = show;
+    setDraftState(show);
+    setDirty(false);
+  }
+
+  /** Replace the draft with an edited copy (no-op when unchanged). */
+  function commit(next: Show) {
+    if (next === draftRef.current) return;
+    draftRef.current = next;
+    setDraftState(next);
+    setDirty(true);
+  }
+
+  const update: Update = (recipe) => {
+    const cur = draftRef.current;
+    if (cur) commit(produce(cur, recipe));
+  };
 
   async function showCloudError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
     console.warn(`[shows/edit] cloud ${action} failed`, err);
-    await alert({
+    await alertDialog({
       title: `Cloud ${action} failed`,
-      message: (
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
-          {message}
-        </pre>
-      ),
+      message: <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>{message}</pre>,
     });
   }
 
   useEffect(() => {
     fetchedRef.current = null;
-    setDraft(null);
+    draftRef.current = null;
+    baselineRef.current = null;
+    setDraftState(null);
     setDirty(false);
+    setSelectedRowId(null);
     if (cloud) return; // no WS subscription in cloud mode — see effect below
     const off = getClient().on((msg) => {
       if (msg.type === "show" && msg.show.id === showId) {
-        // Read live dirty via the ref so post-mount edits aren't
-        // clobbered by an echo broadcast — see dirtyRef declaration.
-        if (!dirtyRef.current) setDraft(msg.show);
+        if (!dirtyRef.current) load(msg.show);
       }
     });
     return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showId, cloud]);
 
   useEffect(() => {
@@ -132,14 +206,9 @@ function ShowEditPageInner() {
       // payload populates `draft` directly; template/song meta feeds the
       // same store slices the WS path populates so downstream readers
       // don't care which mode we're in.
-      Promise.all([
-        getShowCloud(showId),
-        getShowUpdatedAtCloud(showId),
-        refreshTemplateMetasCloud(),
-        refreshSongMetasCloud(),
-      ])
+      Promise.all([getShowCloud(showId), getShowUpdatedAtCloud(showId), refreshTemplateMetasCloud(), refreshSongMetasCloud()])
         .then(([show, updatedAt]) => {
-          if (show) setDraft(show);
+          if (show) load(show);
           loadedAtRef.current = updatedAt;
         })
         .catch((err) => console.warn("[shows/edit] cloud load failed", err));
@@ -151,18 +220,15 @@ function ShowEditPageInner() {
     send({ type: "get_show", showId });
     send({ type: "list_templates" });
     send({ type: "list_songs" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloud, conn, showId, send]);
 
   useEffect(() => {
     if (!draft) return;
     // Hydrate template bodies for: rows that already reference them PLUS
-    // every other template in the library. The "every other" pass is what
-    // makes addRow's defaultChannel prefill work — without it, Add row
-    // picks templates[0] but its body hasn't been fetched, so the
-    // defaultChannel hint is silently dropped.
-    const needed = new Set<string>(
-      draft.rows.flatMap((r) => (r.kind === "graphic" ? [r.templateId] : [])),
-    );
+    // every other template in the library, so a new graphic item's
+    // defaultChannel prefill works.
+    const needed = new Set<string>(draft.rows.flatMap((r) => (r.kind === "graphic" ? [r.templateId] : [])));
     for (const meta of templates) needed.add(meta.id);
     for (const id of needed) {
       if (!id) continue;
@@ -181,9 +247,7 @@ function ShowEditPageInner() {
 
   useEffect(() => {
     if (!draft) return;
-    const needed = new Set(
-      draft.rows.flatMap((r) => (r.kind === "song" ? [r.songId] : [])),
-    );
+    const needed = new Set(draft.rows.flatMap((r) => (r.kind === "song" ? [r.songId] : [])));
     for (const id of needed) {
       if (songCache[id]) continue;
       if (cloud) {
@@ -198,86 +262,95 @@ function ShowEditPageInner() {
     }
   }, [draft, songCache, cloud, conn, send, setSong]);
 
-  function update(recipe: (s: Show) => void) {
-    setDraft((cur) => {
-      if (!cur) return cur;
-      const next = produce(cur, recipe);
-      if (next === cur) return cur;
-      setDirty(true);
-      return next;
-    });
-  }
+  // A rename request only needs to reach the divider once.
+  useEffect(() => {
+    if (!renameSectionId) return;
+    const t = setTimeout(() => setRenameSectionId(null), 0);
+    return () => clearTimeout(t);
+  }, [renameSectionId]);
 
-  async function save() {
-    if (!draft) return;
-    if (cloud) {
-      try {
+  /** Save; resolves true once the server (or cloud) confirmed. The baseline moves only then. */
+  async function save(): Promise<boolean> {
+    const sent = draftRef.current;
+    if (!sent || savingRef.current || !dirtyRef.current) return false;
+    const payload = showForSave(sent);
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      if (cloud) {
         // Conflict detection: compare cloud's current updated_at against
-        // the snapshot we loaded with. Newer means somebody else saved
-        // in the meantime. Confirm before overwriting.
+        // the snapshot we loaded with. Newer means somebody else saved.
         if (loadedAtRef.current) {
-          const cur = await getShowUpdatedAtCloud(draft.id);
+          const cur = await getShowUpdatedAtCloud(payload.id);
           if (cur && cur > loadedAtRef.current) {
             const ok = await confirm({
               title: "Cloud has newer changes",
-              message: (
-                <>
-                  This show was updated in the cloud after you loaded it. Save
-                  anyway and overwrite their changes?
-                </>
-              ),
+              message: "This show was updated in the cloud after you loaded it. Save anyway and overwrite their changes?",
               confirmLabel: "Overwrite",
-              destructive: true,
+              danger: true,
             });
-            if (!ok) return;
+            if (!ok) return false;
           }
         }
-        await saveShowCloud(draft);
-        await refreshShowMetasCloud();
-        // Refresh the loaded timestamp so subsequent saves don't re-prompt.
-        loadedAtRef.current = await getShowUpdatedAtCloud(draft.id);
+        try {
+          await saveShowCloud(payload);
+          await refreshShowMetasCloud();
+          loadedAtRef.current = await getShowUpdatedAtCloud(payload.id);
+        } catch (err) {
+          await showCloudError("save", err);
+          return false;
+        }
+      } else {
+        await sendAndAwaitAck(getClient(), { type: "save_show", show: payload }, { op: "save_show", id: payload.id });
+      }
+      baselineRef.current = payload;
+      if (savedSettles(sent, draftRef.current)) {
+        draftRef.current = payload;
+        setDraftState(payload);
         setDirty(false);
-      } catch (err) {
-        await showCloudError("save", err);
       }
-      return;
+      return true;
+    } catch (e) {
+      toast({ tone: "error", message: `Not saved: ${ackErrorText(e)}` });
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
-    send({ type: "save_show", show: draft });
+  }
+
+  // SaveBar binds ⌘S and runs it only when Save is enabled (canSave ok). When
+  // it's disabled because the server is unreachable, say why instead of
+  // ignoring the keystroke.
+  const offlineRef = useRef({ connected, cloud, dirty, saving });
+  offlineRef.current = { connected, cloud, dirty, saving };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "s") return;
+      const gate = canSave(offlineRef.current);
+      if (!gate.ok && gate.reason === "Not connected") {
+        toast({ tone: "error", message: `Not saved: ${ackErrorText(new AckError("not_connected"))}` });
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [toast]);
+
+  function revert() {
+    // SaveBar has already asked "Discard unsaved changes to this show?".
+    const b = baselineRef.current;
+    if (!b) return;
+    draftRef.current = b;
+    setDraftState(b);
     setDirty(false);
   }
 
-  async function revert() {
-    fetchedRef.current = null;
-    setDraft(null);
-    setDirty(false);
+  async function removeShow() {
+    const cur = draftRef.current;
+    if (!cur) return;
     if (cloud) {
       try {
-        const show = await getShowCloud(showId);
-        if (show) setDraft(show);
-      } catch (err) {
-        await showCloudError("revert", err);
-      }
-      return;
-    }
-    send({ type: "get_show", showId });
-  }
-
-  async function remove() {
-    if (!draft) return;
-    const ok = await confirm({
-      title: "Delete show",
-      message: (
-        <>
-          Delete <strong>{draft.name}</strong>?
-        </>
-      ),
-      confirmLabel: "Delete",
-      destructive: true,
-    });
-    if (!ok) return;
-    if (cloud) {
-      try {
-        await deleteShowCloud(draft.id);
+        await deleteShowCloud(cur.id);
         await refreshShowMetasCloud();
         router.push("/shows");
       } catch (err) {
@@ -285,63 +358,68 @@ function ShowEditPageInner() {
       }
       return;
     }
-    send({ type: "delete_show", showId: draft.id });
-    setTimeout(() => router.push("/shows"), 150);
+    try {
+      await sendAndAwaitAck(getClient(), { type: "delete_show", showId: cur.id }, { op: "delete_show", id: cur.id });
+      router.push("/shows");
+    } catch (e) {
+      toast({ tone: "error", message: `Not deleted: ${ackErrorText(e)}` });
+    }
   }
 
-  function addRow() {
-    update((s) => {
-      const firstMeta = templates[0];
-      const firstTpl = firstMeta?.id ?? "";
-      // Prefer the meta's defaultChannel (always available from list_templates)
-      // and fall back to the cached body. Reading from the meta avoids the
-      // race where the operator clicks Add row before the body has loaded.
-      const channelHint =
-        firstMeta?.defaultChannel || templateCache[firstTpl]?.defaultChannel || undefined;
-      s.rows.push({
-        kind: "graphic",
-        id: uuid(),
-        templateId: firstTpl,
-        data: {},
-        ...(channelHint ? { channelHint } : {}),
-      });
-    });
+  async function duplicateShow() {
+    const cur = draftRef.current;
+    if (!cur) return;
+    try {
+      let copyId: string;
+      if (cloud) {
+        // No server-side duplicate_show in cloud mode — copy locally.
+        copyId = `show-${uuid().slice(0, 8)}`;
+        await saveShowCloud({ ...cur, id: copyId, name: `${cur.name} (copy)`, rows: cur.rows.map((r) => ({ ...r, id: uuid() })) });
+        await refreshShowMetasCloud();
+      } else {
+        copyId = await requestOne(getClient(), { type: "duplicate_show", showId: cur.id }, (m) =>
+          m.type === "ack" && m.op === "duplicate_show" && m.id ? m.id : undefined,
+        );
+      }
+      router.push(`/shows/edit?id=${encodeURIComponent(copyId)}`);
+    } catch (e) {
+      toast({ tone: "error", message: `Not duplicated: ${ackErrorText(e)}` });
+    }
   }
 
-  function addSongRow() {
+  /** Insert new items after the selection (in its section) and select the last one. */
+  function addRows(rows: RundownRow[], songId?: string) {
+    const cur = draftRef.current;
+    if (!cur || rows.length === 0) return;
+    let next = insertNewRows(cur, selectedRowId, rows);
+    // Register a song in the show-wide defaults so overrides have a home.
+    if (songId && !next.songs.some((e) => e.songId === songId)) next = { ...next, songs: [...next.songs, { songId }] };
+    commit(next);
+    setSelectedRowId(rows[rows.length - 1]!.id);
+  }
+
+  function addGraphic() {
+    const firstMeta = templates[0];
+    const firstTpl = firstMeta?.id ?? "";
+    // Prefer the meta's defaultChannel (always available from list_templates).
+    const channelHint = firstMeta?.defaultChannel || templateCache[firstTpl]?.defaultChannel || undefined;
+    addRows([{ kind: "graphic", id: uuid(), templateId: firstTpl, data: {}, ...(channelHint ? { channelHint } : {}) }]);
+  }
+
+  function addSong() {
     const firstSong = songs[0];
     if (!firstSong) {
-      void alert({
-        title: "No songs yet",
-        message: "No songs in library yet. Create one in Songs first.",
-      });
+      toast({ tone: "warn", message: "No songs in the library yet. Create one in Songs first." });
       return;
     }
-    update((s) => {
-      const cachedSong = songCache[firstSong.id];
-      // Lyric template cascade: ShowSong override → song default → first template.
-      const showSong = s.songs.find((e) => e.songId === firstSong.id);
-      const lyricTemplateId =
-        showSong?.lyricTemplateId ??
-        cachedSong?.defaultLyricTemplateId ??
-        templates[0]?.id ??
-        "";
-      // Auto-add to the Songs panel so the operator can layer show-level
-      // overrides without an extra click. Silent — matches the UX agreed in
-      // plan review.
-      if (!showSong) {
-        s.songs.push({ songId: firstSong.id });
-      }
-      s.rows.push({
-        kind: "song",
-        id: uuid(),
-        songId: firstSong.id,
-        lyricTemplateId,
-      });
-    });
+    const showSong = draftRef.current?.songs.find((e) => e.songId === firstSong.id);
+    // Lyric template cascade: ShowSong override → song default → first template.
+    const lyricTemplateId =
+      showSong?.lyricTemplateId ?? songCache[firstSong.id]?.defaultLyricTemplateId ?? templates[0]?.id ?? "";
+    addRows([{ kind: "song", id: uuid(), songId: firstSong.id, lyricTemplateId }], firstSong.id);
   }
 
-  function addScriptureRow(args: ScriptureSaveArgs) {
+  function saveScriptureRow(args: ScriptureSaveArgs) {
     // Undefined values clear a previous override when switching back to "default".
     const introFields = {
       introTemplateId: args.intro.introTemplateId,
@@ -349,6 +427,7 @@ function ShowEditPageInner() {
       introFieldLiterals: args.intro.introFieldLiterals,
       skipIntro: args.intro.skipIntro || undefined,
     };
+    const abbr = args.translationAbbreviation !== undefined ? { translationAbbreviation: args.translationAbbreviation } : {};
     if (editingScriptureRow) {
       update((s) => {
         const idx = s.rows.findIndex((r) => r.id === editingScriptureRow.id);
@@ -357,38 +436,32 @@ function ShowEditPageInner() {
             ...editingScriptureRow,
             reference: args.reference,
             translation: args.translation,
-            ...(args.translationAbbreviation !== undefined
-              ? { translationAbbreviation: args.translationAbbreviation }
-              : {}),
+            ...abbr,
             attribution: args.attribution,
-            slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
+            slides: args.slides.map((sl) => ({ id: sl.id, verses: sl.verses })),
             templateId: args.templateId,
             ...introFields,
           };
         }
       });
-      setScriptureModalOpen(false);
-      setEditingScriptureRow(null);
-      return;
+    } else {
+      addRows([
+        {
+          kind: "scripture",
+          id: uuid(),
+          reference: args.reference,
+          translation: args.translation,
+          ...abbr,
+          attribution: args.attribution,
+          ...(args.passage.source ? { source: args.passage.source } : {}),
+          slides: args.slides.map((sl) => ({ id: sl.id, verses: sl.verses })),
+          templateId: args.templateId,
+          ...introFields,
+        },
+      ]);
     }
-    const row: ScriptureRow = {
-      kind: "scripture",
-      id: uuid(),
-      reference: args.reference,
-      translation: args.translation,
-      ...(args.translationAbbreviation !== undefined
-        ? { translationAbbreviation: args.translationAbbreviation }
-        : {}),
-      attribution: args.attribution,
-      ...(args.passage.source ? { source: args.passage.source } : {}),
-      slides: args.slides.map((s) => ({ id: s.id, verses: s.verses })),
-      templateId: args.templateId,
-      ...introFields,
-    };
-    update((s) => {
-      s.rows.push(row);
-    });
     setScriptureModalOpen(false);
+    setEditingScriptureRow(null);
   }
 
   function saveVideoRow(args: VideoRowSaveArgs) {
@@ -411,170 +484,276 @@ function ShowEditPageInner() {
         }
       });
     } else {
-      update((s) => {
-        s.rows.push({ kind: "video", id: uuid(), ...fields });
-      });
+      addRows([{ kind: "video", id: uuid(), ...fields }]);
     }
     setVideoModalOpen(false);
     setEditingVideoRow(null);
   }
 
+  function addSectionHere() {
+    const cur = draftRef.current;
+    if (!cur) return;
+    const { show, section } = addSection(cur, "", sectionIdOf(cur, selectedRowId));
+    commit(show);
+    setRenameSectionId(section.id);
+  }
+
   function deleteRow(rowId: string) {
-    update((s) => {
-      s.rows = s.rows.filter((r) => r.id !== rowId);
+    const cur = draftRef.current;
+    if (!cur) return;
+    const { show, removed } = removeRowAt(cur, rowId);
+    if (!removed) return;
+    commit(show);
+    if (selectedRowId === rowId) setSelectedRowId(null);
+    toast({
+      message: "Item deleted",
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const now = draftRef.current;
+          if (!now) return;
+          commit(restoreRow(now, removed));
+          setSelectedRowId(removed.row.id);
+        },
+      },
     });
   }
 
-  function moveRow(sourceId: string, targetId: string, where: "before" | "after") {
-    if (sourceId === targetId) return;
-    update((s) => {
-      const src = s.rows.findIndex((r) => r.id === sourceId);
-      const tgt = s.rows.findIndex((r) => r.id === targetId);
-      if (src === -1 || tgt === -1) return;
-      const [row] = s.rows.splice(src, 1);
-      const adjustedTgt = src < tgt ? tgt - 1 : tgt;
-      const insertIdx = where === "before" ? adjustedTgt : adjustedTgt + 1;
-      s.rows.splice(insertIdx, 0, row!);
-    });
+  function deleteSectionAs(sectionId: string, mode: "keep-rows" | "delete-rows") {
+    const prev = draftRef.current;
+    if (!prev) return;
+    const next = deleteSection(prev, sectionId, mode);
+    commit(next);
+    if (selectedRowId && !next.rows.some((r) => r.id === selectedRowId)) setSelectedRowId(null);
+    toast({ message: "Section deleted", action: { label: "Undo", onClick: () => commit(prev) } });
   }
 
-  // Save on Cmd/Ctrl+S.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.code === "KeyS") {
-        e.preventDefault();
-        save();
-      }
+  function openSectionMenu(sectionId: string, e: React.MouseEvent | HTMLElement) {
+    const cur = draftRef.current;
+    if (!cur) return;
+    const section = (cur.sections ?? []).find((s) => s.id === sectionId);
+    if (!section) return;
+    const n = sectionRowCount(cur, sectionId);
+    const items: MenuItem[] = [
+      { id: "rename", label: "Rename", onSelect: () => setRenameSectionId(sectionId) },
+      { separator: true },
+      {
+        id: "delete-keep",
+        label: n > 0 ? "Delete section (keep its items)" : "Delete section",
+        icon: <Trash2 size={14} />,
+        onSelect: () => deleteSectionAs(sectionId, "keep-rows"),
+      },
+    ];
+    if (n > 0) {
+      items.push({
+        id: "delete-all",
+        label: `Delete section and its ${n} ${n === 1 ? "item" : "items"}`,
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onSelect: () =>
+          void confirm({
+            title: "Delete section and its items?",
+            message: `Delete "${section.name}" and its ${n} ${n === 1 ? "item" : "items"}?`,
+            confirmLabel: "Delete",
+            danger: true,
+          }).then((ok) => {
+            if (ok) deleteSectionAs(sectionId, "delete-rows");
+          }),
+      });
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
+    menu.open(e, items);
+  }
+
+  function openRowMenu(rowId: string, e: React.MouseEvent | HTMLElement) {
+    const cur = draftRef.current;
+    if (!cur) return;
+    const choices = moveToSectionChoices(cur, rowId);
+    const items: MenuItem[] = [
+      {
+        id: "duplicate",
+        label: "Duplicate",
+        icon: <Copy size={14} />,
+        onSelect: () => {
+          const now = draftRef.current;
+          if (!now) return;
+          const id = uuid();
+          commit(duplicateRowIn(now, rowId, id));
+          setSelectedRowId(id);
+        },
+      },
+      {
+        id: "move",
+        label: "Move to section…",
+        icon: <FolderInput size={14} />,
+        disabled: choices.length === 0 ? "No other sections" : false,
+        onSelect: () => {
+          const el = document.getElementById(rowDomId(rowId));
+          if (!el) return;
+          menu.open(
+            el,
+            choices.map((c) => ({
+              id: `to-${c.id ?? "none"}`,
+              label: c.label,
+              onSelect: () => {
+                const now = draftRef.current;
+                if (now) commit(moveRowToSection(now, rowId, c.id));
+              },
+            })),
+          );
+        },
+      },
+      { separator: true },
+      { id: "delete", label: "Delete", icon: <Trash2 size={14} />, danger: true, onSelect: () => deleteRow(rowId) },
+    ];
+    menu.open(e, items);
+  }
+
+  function openAddMenu(e: React.MouseEvent) {
+    menu.open(e, [
+      { id: "graphic", label: "Graphic", icon: <Type size={14} />, onSelect: addGraphic },
+      { id: "song", label: "Song", icon: <Music size={14} />, onSelect: addSong },
+      {
+        id: "scripture",
+        label: "Scripture",
+        icon: <BookOpen size={14} />,
+        onSelect: () => {
+          setEditingScriptureRow(null);
+          setScriptureModalOpen(true);
+        },
+      },
+      {
+        id: "video",
+        label: "Video",
+        icon: <Film size={14} />,
+        onSelect: () => {
+          setEditingVideoRow(null);
+          setVideoModalOpen(true);
+        },
+      },
+      {
+        id: "slides",
+        label: "Slides",
+        icon: <Presentation size={14} />,
+        disabled: slidesAddItemEnabled ? false : "Needs Slides decks",
+        onSelect: () => setSlidesAddOpen(true),
+      },
+    ]);
+  }
 
   if (!draft) {
     return (
       <>
         <PageChrome />
         <PageBody style={{ height: "100%" }}>
-          <p style={{ color: colors.textDim, marginTop: 12 }}>
-            Loading show <code>{showId}</code>…
-          </p>
+          <p style={{ color: colors.textDim, marginTop: 12 }}>Loading show…</p>
         </PageBody>
       </>
     );
   }
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        gridTemplateRows: "minmax(0, 1fr)",
-        overflow: "hidden",
-      }}
-    >
-      <PageChrome
-        context={
-          <>
-            <input
-              value={draft.name}
-              onChange={(e) => update((s) => { s.name = e.target.value; })}
-              style={{
-                background: "transparent",
-                border: "1px solid transparent",
-                color: colors.text,
-                fontSize: 15,
-                fontWeight: 600,
-                padding: "2px 6px",
-                borderRadius: 4,
-                minWidth: 200,
-              }}
-            />
-            <input
-              type="date"
-              value={draft.scheduledFor ?? ""}
-              onChange={(e) =>
-                update((s) => {
-                  const v = e.target.value;
-                  if (v) s.scheduledFor = v;
-                  else delete s.scheduledFor;
-                })
-              }
-              title="Service date (used by Companion 'select next show')"
-              style={{
-                background: "transparent",
-                border: "1px solid transparent",
-                color: colors.text,
-                fontSize: 12,
-                padding: "2px 6px",
-                borderRadius: 4,
-              }}
-            />
-            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
-            <span style={{ color: colors.textDim, fontSize: 11 }}>· {draft.rows.length} rows</span>
-            {dirty && <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}><span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved</span>}
-          </>
-        }
-        actions={
-          <>
-            <Button onClick={remove} variant="danger" size="sm">Delete</Button>
-            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button
-              onClick={save}
-              variant="primary"
-              size="sm"
-              disabled={!dirty || (!cloud && conn !== "open")}
-            >
-              Save (⌘S)
-            </Button>
-          </>
-        }
-      />
+  const selectedRow = selectedRowId ? draft.rows.find((r) => r.id === selectedRowId) ?? null : null;
+  const notesSets = cloud ? [] : draft.sermonNotes ?? [];
+  const offlineReason = !connected && !cloud ? "Reconnect to save" : null;
+  const duplicateReason = dirty ? "Save your changes first" : !connected && !cloud ? "Not connected to the server" : null;
+  const empty = draft.rows.length === 0 && (draft.sections ?? []).length === 0;
 
-      <div style={{ overflow: "auto", padding: "16px 24px" }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <SongsInShowPanel
-            draft={draft}
-            songs={songs}
-            songCache={songCache}
-            templates={templates}
-            templateCache={templateCache}
-            channels={takeableChannels}
-            onUpdate={update}
-          />
-          <RundownTable
-            draft={draft}
-            templates={templates}
-            templateCache={templateCache}
-            songs={songs}
-            songCache={songCache}
-            channels={takeableChannels}
-            dragRowId={dragRowId}
-            onDragRowId={setDragRowId}
-            onMoveRow={moveRow}
-            onUpdate={update}
-            onDeleteRow={deleteRow}
-            onEditScriptureRow={(row) => {
-              setEditingScriptureRow(row);
-              setScriptureModalOpen(true);
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+      <PageChrome docTitle={draft.name.trim() || "Untitled show"} />
+      <ShowHeader
+        draft={draft}
+        onChange={commit}
+        dirty={dirty}
+        saving={saving}
+        onSave={() => void save()}
+        onRevert={revert}
+        onDelete={() => void removeShow()}
+        onDuplicate={() => void duplicateShow()}
+        canSaveReason={offlineReason}
+        duplicateReason={duplicateReason}
+      />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "grid",
+          gridTemplateColumns: "minmax(320px, 38%) 1fr",
+        }}
+      >
+        <div style={{ overflow: "auto", borderRight: `1px solid ${colors.border}`, minHeight: 0 }}>
+          <ShowDetailsRow selected={!selectedRow} onSelect={() => setSelectedRowId(null)} />
+          <RundownList
+            show={draft}
+            mode="edit"
+            selectedRowId={selectedRow ? selectedRow.id : null}
+            onSelect={setSelectedRowId}
+            onMoveRow={(rowId, t) => {
+              const cur = draftRef.current;
+              if (cur) commit(moveRow(cur, rowId, t.toSectionId, t.toIndex));
             }}
-            onEditVideoRow={(row) => {
-              setEditingVideoRow(row);
-              setVideoModalOpen(true);
+            onSectionMenu={openSectionMenu}
+            onRenameSection={(id, name) => {
+              const cur = draftRef.current;
+              if (cur) commit(renameSection(cur, id, name));
             }}
+            onRowMenu={openRowMenu}
+            renameSectionId={renameSectionId}
+            footer={
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {empty && (
+                  <p style={{ color: colors.textMuted, fontSize: 12, margin: 0 }}>
+                    No items yet. Add an item, or a section to group items.
+                  </p>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Button size="sm" icon={<Plus size={14} />} onClick={openAddMenu} aria-haspopup="menu">
+                    Add item <ChevronDown size={14} aria-hidden />
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={<Rows3 size={14} />} onClick={addSectionHere}>
+                    Section
+                  </Button>
+                </div>
+              </div>
+            }
           />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={addRow} style={addRowBtn}>+ Add row</button>
-            <button onClick={addSongRow} style={addRowBtn}>+ Add song</button>
-            <button onClick={() => setScriptureModalOpen(true)} style={addRowBtn}>+ Scripture</button>
-            <button onClick={() => setVideoModalOpen(true)} style={addRowBtn}>+ Video</button>
-          </div>
-          {cloud ? (
-            <p style={{ color: colors.textDim, fontSize: 13, margin: 0 }}>
-              Sermon notes are available in the desktop app.
-            </p>
+        </div>
+        <div style={{ overflow: "auto", padding: 16, minHeight: 0, minWidth: 0 }}>
+          {selectedRow ? (
+            <ItemPane
+              key={selectedRow.id}
+              row={selectedRow}
+              draft={draft}
+              templates={templates}
+              templateCache={templateCache}
+              songs={songs}
+              songCache={songCache}
+              channels={takeableChannels}
+              sermonNotes={notesSets}
+              onUpdate={update}
+              onReplaceRow={(next) => update((s) => {
+                const i = s.rows.findIndex((r) => r.id === next.id);
+                if (i >= 0) s.rows[i] = next as RundownRow;
+              })}
+              onEditScripture={(row) => {
+                setEditingScriptureRow(row);
+                setScriptureModalOpen(true);
+              }}
+              onEditVideo={(row) => {
+                setEditingVideoRow(row);
+                setVideoModalOpen(true);
+              }}
+            />
           ) : (
-            <SermonNotesEditor notes={draft.sermonNotes ?? []} onUpdate={update} />
+            <ShowDetailsPane
+              draft={draft}
+              onUpdate={update}
+              songs={songs}
+              songCache={songCache}
+              templates={templates}
+              templateCache={templateCache}
+              channels={takeableChannels}
+              cloud={cloud}
+            />
           )}
         </div>
       </div>
@@ -585,7 +764,7 @@ function ShowEditPageInner() {
           setScriptureModalOpen(false);
           setEditingScriptureRow(null);
         }}
-        onSave={addScriptureRow}
+        onSave={saveScriptureRow}
       />
       <VideoRowModal
         open={videoModalOpen}
@@ -597,665 +776,358 @@ function ShowEditPageInner() {
         }}
         onSave={saveVideoRow}
       />
-      {dialog}
+      <SlidesAddFlow
+        open={slidesAddOpen}
+        onClose={() => setSlidesAddOpen(false)}
+        onAdd={(row) => {
+          addRows([row as RundownRow]);
+          setSlidesAddOpen(false);
+        }}
+      />
+      {menu.menu}
     </div>
   );
 }
 
-/** Set or clear a row's length (clearing removes the key) and mark it manual. */
-function commitRowLength(
-  onUpdate: (recipe: (s: Show) => void) => void,
-  rowId: string,
-  lengthSec: number | undefined,
-) {
+/** The "Show details" pseudo-row at the top of the list: selects the show-wide pane. */
+function ShowDetailsRow({ selected, onSelect }: { selected: boolean; onSelect(): void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onSelect}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        width: "100%",
+        height: 32,
+        padding: "0 8px 0 14px",
+        background: selected ? colors.control : "transparent",
+        border: "none",
+        borderBottom: `1px solid ${colors.border}`,
+        color: colors.text,
+        fontSize: fontSize.md,
+        fontWeight: 500,
+        textAlign: "left",
+        cursor: "pointer",
+      }}
+    >
+      Show details
+      <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontWeight: 400 }}>Sermon notes · song defaults</span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Selected item pane. Interim forms (P2a.18 replaces them with forms/*).
+// ---------------------------------------------------------------------------
+
+const KIND_LABEL: Record<string, string> = {
+  graphic: "Graphic",
+  song: "Song",
+  scripture: "Scripture",
+  video: "Video",
+  slides: "Slides",
+};
+
+/** Set or clear keys on one row: `undefined` removes the key. */
+function patchRowIn(onUpdate: Update, rowId: string, patch: Record<string, unknown>) {
   onUpdate((s) => {
-    const r = s.rows.find((x) => x.id === rowId);
+    const r = s.rows.find((x) => x.id === rowId) as Record<string, unknown> | undefined;
     if (!r) return;
-    if (lengthSec === undefined) delete r.lengthSec;
-    else r.lengthSec = lengthSec;
-    r.lengthSecManual = true;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) delete r[key];
+      else r[key] = value;
+    }
   });
 }
 
-function RundownTable({
+function FormRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: 8, alignItems: "start" }}>
+      <span style={{ fontSize: fontSize.sm, color: colors.textDim, paddingTop: 5 }}>{label}</span>
+      <div style={{ minWidth: 0 }}>{children}</div>
+    </div>
+  );
+}
+
+function ItemPane({
+  row,
   draft,
   templates,
   templateCache,
   songs,
   songCache,
   channels,
-  dragRowId,
-  onDragRowId,
-  onMoveRow,
+  sermonNotes,
   onUpdate,
-  onDeleteRow,
-  onEditScriptureRow,
-  onEditVideoRow,
+  onReplaceRow,
+  onEditScripture,
+  onEditVideo,
 }: {
+  row: RundownRow;
   draft: Show;
   templates: TemplateMeta[];
   templateCache: Record<string, Template>;
   songs: SongMeta[];
   songCache: Record<string, Song>;
   channels: ChannelConfig[];
-  dragRowId: string | null;
-  onDragRowId: (id: string | null) => void;
-  onMoveRow: (sourceId: string, targetId: string, where: "before" | "after") => void;
-  onUpdate: (recipe: (s: Show) => void) => void;
-  onDeleteRow: (id: string) => void;
-  onEditScriptureRow?: (row: ScriptureRow) => void;
-  onEditVideoRow?: (row: VideoRow) => void;
+  sermonNotes: SermonNotes[];
+  onUpdate: Update;
+  onReplaceRow(next: { id: string }): void;
+  onEditScripture(row: ScriptureRow): void;
+  onEditVideo(row: VideoRow): void;
 }) {
-  // Cloud shows can't store sermon notes yet, so don't offer to link them.
-  const notesSets = isCloudMode() ? [] : draft.sermonNotes ?? [];
-  if (draft.rows.length === 0) {
-    return (
-      <p style={{ color: colors.textDim, fontSize: 13, padding: 24, textAlign: "center" }}>
-        No rows yet. Click <strong>+ Add row</strong> below to start building the rundown.
+  const kind = KIND_LABEL[row.kind] ?? "Item";
+  let name = "";
+  let body: ReactNode;
+  if (row.kind === "graphic") {
+    name = templates.find((t) => t.id === row.templateId)?.name ?? "Missing template";
+    body = (
+      <GraphicRowForm
+        row={row}
+        templates={templates}
+        template={templateCache[row.templateId] ?? null}
+        onUpdate={onUpdate}
+      />
+    );
+  } else if (row.kind === "song") {
+    name = songCache[row.songId]?.title ?? songs.find((s) => s.id === row.songId)?.title ?? "Missing song";
+    body = (
+      <SongRowForm
+        row={row}
+        showSong={draft.songs.find((e) => e.songId === row.songId)}
+        songs={songs}
+        songCache={songCache}
+        templates={templates}
+        onUpdate={onUpdate}
+      />
+    );
+  } else if (row.kind === "scripture") {
+    name = row.reference;
+    body = (
+      <FormRow label="Passage">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.md }}>
+          <span>
+            {row.reference} ({row.translation})
+          </span>
+          <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
+            {row.slides.length} slide{row.slides.length !== 1 ? "s" : ""}
+          </span>
+          <Button size="sm" onClick={() => onEditScripture(row)}>
+            Edit slides…
+          </Button>
+        </div>
+      </FormRow>
+    );
+  } else if (row.kind === "video") {
+    name = row.label || "Video";
+    body = (
+      <FormRow label="Video">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.md }}>
+          <VideoThumb assetUrl={row.assetUrl} width={64} />
+          <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
+            {row.endAction === "clear" ? "Clears at end" : "Holds at end"}
+          </span>
+          <Button size="sm" onClick={() => onEditVideo(row)}>
+            Edit video…
+          </Button>
+        </div>
+      </FormRow>
+    );
+  } else if (row.kind === "slides") {
+    // [P3.8] placeholder for slides rows; P3.16 fills in SlidesItemForm.
+    body = <SlidesItemForm row={row} show={draft} onChange={onReplaceRow} />;
+  } else {
+    body = (
+      <p style={{ color: colors.textMuted, fontSize: 12, margin: 0 }}>
+        This item type isn&apos;t supported by this version. It is kept as is when you save.
       </p>
     );
   }
-
+  const known = ["graphic", "song", "scripture", "video"].includes(row.kind);
+  const showSong = row.kind === "song" ? draft.songs.find((e) => e.songId === row.songId) : undefined;
+  const inheritedChannel =
+    row.kind === "song" ? showSong?.channelOverride ?? songCache[row.songId]?.defaultChannel : undefined;
   return (
-    <table
-      style={{
-        width: "100%",
-        borderCollapse: "separate",
-        borderSpacing: 0,
-        fontSize: 13,
-      }}
-    >
-      <thead>
-        <tr style={{ color: colors.textDim, textAlign: "left" }}>
-          <th style={th}>#</th>
-          <th style={th}>Template</th>
-          <th style={th}>Fields</th>
-          <th style={th}>Channel</th>
-          <th style={th}>Notes</th>
-          <th style={th}></th>
-        </tr>
-      </thead>
-      <tbody>
-        {draft.rows.map((row, i) => {
-          const dragProps = {
-            index: i,
-            isDragging: dragRowId === row.id,
-            onDragStart: () => onDragRowId(row.id),
-            onDragEnd: () => onDragRowId(null),
-            onDropBefore: (sourceId: string) => onMoveRow(sourceId, row.id, "before"),
-            onDropAfter: (sourceId: string) => onMoveRow(sourceId, row.id, "after"),
-            onDelete: () => onDeleteRow(row.id),
-          };
-          if (row.kind === "song") {
-            const showSong = draft.songs.find((e) => e.songId === row.songId);
-            return (
-              <SongRowEditor
-                key={row.id}
-                row={row}
-                showSong={showSong}
-                songs={songs}
-                songCache={songCache}
-                templates={templates}
-                channels={channels}
-                sermonNotes={notesSets}
-                onUpdate={onUpdate}
-                {...dragProps}
-              />
-            );
-          }
-          if (row.kind === "scripture") {
-            return (
-              <DraggableRow
-                key={row.id}
-                rowId={row.id}
-                index={i}
-                isDragging={dragProps.isDragging}
-                onDragStart={dragProps.onDragStart}
-                onDragEnd={dragProps.onDragEnd}
-                onDropBefore={dragProps.onDropBefore}
-                onDropAfter={dragProps.onDropAfter}
-              >
-                <td colSpan={5} style={{ padding: "6px 8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span><BookOpen size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.reference} ({row.translation})</span>
-                    <span style={{ color: colors.textDim, fontSize: 11 }}>
-                      {row.slides.length} slide{row.slides.length !== 1 ? "s" : ""}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onEditScriptureRow?.(row)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: colors.accent,
-                        cursor: "pointer",
-                        fontSize: 11,
-                        padding: 0,
-                        textDecoration: "underline",
-                        marginLeft: "auto",
-                      }}
-                    >
-                      Edit slides…
-                    </button>
-                    <RowLengthInput
-                      value={row.lengthSec}
-                      onCommit={(lengthSec) => commitRowLength(onUpdate, row.id, lengthSec)}
-                    />
-                    {notesSets.length > 0 && (
-                      <div style={{ width: 160 }}>
-                        <NotesSetPicker
-                          sets={notesSets}
-                          value={row.sermonNotesId}
-                          onChange={(v) =>
-                            onUpdate((s) => {
-                              const r = s.rows.find((x) => x.id === row.id);
-                              if (r) r.sermonNotesId = v;
-                            })
-                          }
-                        />
-                      </div>
-                    )}
-                    <IconButton
-                      onClick={() => onDeleteRow(row.id)}
-                      title="Delete row"
-                      size={24}
-                      style={{ color: colors.red, fontSize: 14 }}
-                    >
-                      ×
-                    </IconButton>
-                  </div>
-                </td>
-              </DraggableRow>
-            );
-          }
-          if (row.kind === "video") {
-            return (
-              <DraggableRow
-                key={row.id}
-                rowId={row.id}
-                index={i}
-                isDragging={dragProps.isDragging}
-                onDragStart={dragProps.onDragStart}
-                onDragEnd={dragProps.onDragEnd}
-                onDropBefore={dragProps.onDropBefore}
-                onDropAfter={dragProps.onDropAfter}
-              >
-                <td colSpan={5} style={{ padding: "6px 8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <VideoThumb assetUrl={row.assetUrl} width={40} />
-                    <span><Film size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {row.label || "Video"}</span>
-                    <span style={{ color: colors.textDim, fontSize: 11 }}>
-                      {row.channelHint ?? "program"} · {row.endAction === "clear" ? "clears at end" : "holds at end"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onEditVideoRow?.(row)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: colors.accent,
-                        cursor: "pointer",
-                        fontSize: 11,
-                        padding: 0,
-                        textDecoration: "underline",
-                        marginLeft: "auto",
-                      }}
-                    >
-                      Edit video…
-                    </button>
-                    <RowLengthInput
-                      value={row.lengthSec}
-                      onCommit={(lengthSec) => commitRowLength(onUpdate, row.id, lengthSec)}
-                    />
-                    {notesSets.length > 0 && (
-                      <div style={{ width: 160 }}>
-                        <NotesSetPicker
-                          sets={notesSets}
-                          value={row.sermonNotesId}
-                          onChange={(v) =>
-                            onUpdate((s) => {
-                              const r = s.rows.find((x) => x.id === row.id);
-                              if (r) r.sermonNotesId = v;
-                            })
-                          }
-                        />
-                      </div>
-                    )}
-                    <IconButton
-                      onClick={() => onDeleteRow(row.id)}
-                      title="Delete row"
-                      size={24}
-                      style={{ color: colors.red, fontSize: 14 }}
-                    >
-                      ×
-                    </IconButton>
-                  </div>
-                </td>
-              </DraggableRow>
-            );
-          }
-          // [P3.8] placeholder until slides rows have operator UI
-          if (row.kind === "slides") return null;
-          return (
-            <RundownRowEditor
-              key={row.id}
-              row={row}
-              templates={templates}
-              template={templateCache[row.templateId] ?? null}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
+      <h2 style={{ margin: 0, fontSize: fontSize.base, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+        <KindBar kind={row.kind as Parameters<typeof KindBar>[0]["kind"]} />
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {kind}
+          {name ? ` · ${name}` : ""}
+        </span>
+      </h2>
+      {body}
+      {known && (
+        <>
+          <FormRow label="Output">
+            <ChannelHintSelect
+              value={row.channelHint}
+              onChange={(v) => patchRowIn(onUpdate, row.id, { channelHint: v })}
               channels={channels}
-              sermonNotes={notesSets}
-              onUpdate={onUpdate}
-              {...dragProps}
+              inheritedValue={inheritedChannel}
             />
-          );
-        })}
-      </tbody>
-    </table>
+          </FormRow>
+          <FormRow label="Length">
+            <RowLengthInput
+              value={row.lengthSec}
+              onCommit={(lengthSec) => patchRowIn(onUpdate, row.id, { lengthSec, lengthSecManual: true })}
+            />
+          </FormRow>
+          <FormRow label="Cue note">
+            <Input
+              aria-label="Cue note"
+              value={row.notes ?? ""}
+              onChange={(e) => patchRowIn(onUpdate, row.id, { notes: e.target.value || undefined })}
+              placeholder="Operator cue…"
+            />
+          </FormRow>
+          {sermonNotes.length > 0 && (
+            <FormRow label="Sermon notes">
+              <NotesSetPicker
+                sets={sermonNotes}
+                value={row.sermonNotesId}
+                onChange={(v) => patchRowIn(onUpdate, row.id, { sermonNotesId: v })}
+              />
+            </FormRow>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
-
-/**
- * A rundown table row that can be dragged and dropped onto (before/after by
- * pointer half) — shared by every row kind so the whole run of show reorders.
- * Renders the row-number cell (also the drag grip) then `children`.
- */
-function DraggableRow({
-  rowId,
-  index,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDropBefore,
-  onDropAfter,
-  background,
-  children,
-}: {
-  rowId: string;
-  index: number;
-  isDragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDropBefore: (sourceId: string) => void;
-  onDropAfter: (sourceId: string) => void;
-  background?: string;
-  children: ReactNode;
-}) {
-  const [dropZone, setDropZone] = useState<"before" | "after" | null>(null);
-  return (
-    <tr
-      draggable
-      onDragStart={(e) => {
-        onDragStart();
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", rowId);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-        setDropZone(e.clientY < r.top + r.height / 2 ? "before" : "after");
-      }}
-      onDragLeave={() => setDropZone(null)}
-      onDrop={(e) => {
-        e.preventDefault();
-        const sourceId = e.dataTransfer.getData("text/plain");
-        const z = dropZone;
-        setDropZone(null);
-        if (!sourceId || !z) return;
-        if (z === "before") onDropBefore(sourceId);
-        else onDropAfter(sourceId);
-      }}
-      onDragEnd={onDragEnd}
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        // 2px borders here are intentional drag indicators, not the standard token.
-        borderTop: dropZone === "before" ? `2px solid ${colors.green}` : "1px solid transparent",
-        borderBottom: dropZone === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
-        ...(background ? { background } : {}),
-      }}
-    >
-      <td style={{ ...td, width: 30, textAlign: "center", color: colors.textDim, cursor: "grab" }}>
-        {index + 1}
-      </td>
-      {children}
-    </tr>
-  );
-}
-
-function RundownRowEditor({
+function GraphicRowForm({
   row,
-  index,
   templates,
   template,
-  channels,
-  sermonNotes,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDropBefore,
-  onDropAfter,
   onUpdate,
-  onDelete,
 }: {
   row: GraphicRow;
-  index: number;
   templates: TemplateMeta[];
   template: Template | null;
-  channels: ChannelConfig[];
-  sermonNotes: SermonNotes[];
-  isDragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDropBefore: (sourceId: string) => void;
-  onDropAfter: (sourceId: string) => void;
-  onUpdate: (recipe: (s: Show) => void) => void;
-  onDelete: () => void;
+  onUpdate: Update;
 }) {
-
-  function patchRow(patch: Partial<GraphicRow>) {
-    onUpdate((s) => {
-      const r = s.rows.find((r) => r.id === row.id);
-      if (!r || r.kind !== "graphic") return;
-      // Explicit `undefined` clears the key (same as the song patchRow).
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined) delete (r as Record<string, unknown>)[key];
-        else (r as Record<string, unknown>)[key] = value;
-      }
-    });
-  }
   function setData(key: string, value: string) {
     onUpdate((s) => {
-      const r = s.rows.find((r) => r.id === row.id);
+      const r = s.rows.find((x) => x.id === row.id);
       if (!r || r.kind !== "graphic") return;
       r.data = { ...r.data, [key]: value };
     });
   }
-
   return (
-    <DraggableRow
-      rowId={row.id}
-      index={index}
-      isDragging={isDragging}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDropBefore={onDropBefore}
-      onDropAfter={onDropAfter}
-    >
-      <td style={{ ...td, width: 220 }}>
+    <>
+      <FormRow label="Template">
         <Select
+          aria-label="Template"
           value={row.templateId}
           onChange={(e) => {
             const nextId = e.target.value;
-            // Prefill channelHint from the new template's defaultChannel
-            // only when the row has no hint yet — don't clobber a hint the
-            // operator deliberately picked.
-            const nextMeta = templates.find((t) => t.id === nextId);
-            const nextHint =
-              row.channelHint ??
-              nextMeta?.defaultChannel ??
-              undefined;
-            patchRow({ templateId: nextId, channelHint: nextHint });
+            // Prefill the output from the new template only when the item has none yet.
+            const nextHint = row.channelHint ?? templates.find((t) => t.id === nextId)?.defaultChannel ?? undefined;
+            patchRowIn(onUpdate, row.id, { templateId: nextId, channelHint: nextHint });
           }}
         >
-          {!templates.some((t) => t.id === row.templateId) && (
-            <option value={row.templateId}>{row.templateId} (missing)</option>
-          )}
+          {!templates.some((t) => t.id === row.templateId) && <option value={row.templateId}>Missing template</option>}
           {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
           ))}
         </Select>
-      </td>
-      <td style={{ ...td, minWidth: 320 }}>
+      </FormRow>
+      <FormRow label="Fields">
         <FieldsEditor template={template} data={row.data} onChange={setData} />
-      </td>
-      <td style={{ ...td, width: 100 }}>
-        <ChannelHintSelect
-          value={row.channelHint}
-          onChange={(v) => patchRow({ channelHint: v })}
-          channels={channels}
-        />
-      </td>
-      <td style={{ ...td, width: 200 }}>
-        <Input
-          value={row.notes ?? ""}
-          onChange={(e) => patchRow({ notes: e.target.value || undefined })}
-          placeholder="—"
-        />
-        <RowLengthInput
-          value={row.lengthSec}
-          onCommit={(lengthSec) => patchRow({ lengthSec, lengthSecManual: true })}
-        />
-        <NotesSetPicker
-          sets={sermonNotes}
-          value={row.sermonNotesId}
-          onChange={(v) => patchRow({ sermonNotesId: v })}
-        />
-      </td>
-      <td style={{ ...td, width: 36, textAlign: "center" }}>
-        <IconButton onClick={onDelete} title="Delete row" size={24} style={{ color: colors.red, fontSize: 14 }}>
-          ×
-        </IconButton>
-      </td>
-    </DraggableRow>
+      </FormRow>
+    </>
   );
 }
 
-function SongRowEditor({
+function SongRowForm({
   row,
   showSong,
-  index,
   songs,
   songCache,
   templates,
-  channels,
-  sermonNotes,
-  isDragging,
-  onDragStart,
-  onDragEnd,
-  onDropBefore,
-  onDropAfter,
   onUpdate,
-  onDelete,
 }: {
   row: SongRow;
   showSong: ShowSong | undefined;
-  index: number;
   songs: SongMeta[];
   songCache: Record<string, Song>;
   templates: TemplateMeta[];
-  channels: ChannelConfig[];
-  sermonNotes: SermonNotes[];
-  isDragging: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onDropBefore: (sourceId: string) => void;
-  onDropAfter: (sourceId: string) => void;
-  onUpdate: (recipe: (s: Show) => void) => void;
-  onDelete: () => void;
+  onUpdate: Update;
 }) {
-  // Per-row overrides are collapsed by default — most users won't need them
-  // and the row stays compact. Local state per editor instance.
   const [overridesOpen, setOverridesOpen] = useState(false);
   const [arrModalOpen, setArrModalOpen] = useState(false);
-
-  function patchRow(patch: Partial<SongRow>) {
-    onUpdate((s) => {
-      const r = s.rows.find((r) => r.id === row.id);
-      if (!r || r.kind !== "song") return;
-      // Build the patched row by applying each entry — explicit `undefined`
-      // values clear keys rather than persisting as undefined-in-object, since
-      // the schema treats these fields as `.optional()`.
-      for (const [key, value] of Object.entries(patch) as Array<
-        [keyof SongRow, SongRow[keyof SongRow]]
-      >) {
-        if (value === undefined) {
-          delete (r as Record<string, unknown>)[key as string];
-        } else {
-          (r as Record<string, unknown>)[key as string] = value;
-        }
-      }
-    });
-  }
+  const patch = (p: Partial<SongRow>) => patchRowIn(onUpdate, row.id, p as Record<string, unknown>);
 
   function pickSong(songId: string) {
     const cached = songCache[songId];
     onUpdate((s) => {
-      const r = s.rows.find((r) => r.id === row.id);
+      const r = s.rows.find((x) => x.id === row.id);
       if (!r || r.kind !== "song") return;
       const changed = r.songId !== songId;
       r.songId = songId;
-      // Lyric template cascade mirrors addSongRow:
-      // ShowSong.lyricTemplateId → Song.defaultLyricTemplateId → first template.
+      // Lyric template cascade: ShowSong → Song default → first template.
       const targetShowSong = s.songs.find((e) => e.songId === songId);
-      const nextLyricTpl =
-        targetShowSong?.lyricTemplateId ??
-        cached?.defaultLyricTemplateId ??
-        templates[0]?.id;
+      const nextLyricTpl = targetShowSong?.lyricTemplateId ?? cached?.defaultLyricTemplateId ?? templates[0]?.id;
       if (nextLyricTpl) r.lyricTemplateId = nextLyricTpl;
-      // When the songId actually changes, the per-row intro/outro overrides
-      // (template ids + field maps + skip flags) belonged to the old song and
-      // are almost certainly wrong for the new one (field maps are template-
-      // shape-specific). Clear them; the operator can reapply if desired.
+      // Intro/outro overrides belonged to the old song (field maps are
+      // template-specific): clear them when the song changes.
       if (changed) {
-        delete (r as Record<string, unknown>).introTemplateId;
-        delete (r as Record<string, unknown>).introFieldMap;
-        delete (r as Record<string, unknown>).outroTemplateId;
-        delete (r as Record<string, unknown>).outroFieldMap;
-        delete (r as Record<string, unknown>).skipIntro;
-        delete (r as Record<string, unknown>).skipOutro;
+        const rec = r as Record<string, unknown>;
+        for (const k of ["introTemplateId", "introFieldMap", "outroTemplateId", "outroFieldMap", "skipIntro", "skipOutro"]) delete rec[k];
       }
-      // Mirror addSongRow's auto-add behavior — picking a different library
-      // song from this row should also register it on the Songs panel so
-      // show-level overrides have a place to live.
-      if (!s.songs.some((e) => e.songId === songId)) {
-        s.songs.push({ songId });
-      }
+      if (!s.songs.some((e) => e.songId === songId)) s.songs.push({ songId });
     });
   }
 
-  const songMeta = songs.find((s) => s.id === row.songId);
-  // Resolve inherited values for the override visualization. Cascade:
-  // row → ShowSong → Song. The label uses the template `name` when known,
-  // falling back to the raw id for missing/unloaded entries.
   const cachedSong = songCache[row.songId];
-  const inheritedLyricTplId =
-    showSong?.lyricTemplateId ?? cachedSong?.defaultLyricTemplateId;
-  const inheritedIntroTplId =
-    showSong?.introTemplateId ?? cachedSong?.defaultIntroTemplateId;
-  const inheritedOutroTplId =
-    showSong?.outroTemplateId ?? cachedSong?.defaultOutroTemplateId;
-  const inheritedChannel =
-    showSong?.channelOverride ?? cachedSong?.defaultChannel;
-  function tplName(id: string | undefined): string {
-    if (!id) return "(none)";
-    return templates.find((t) => t.id === id)?.name ?? id;
-  }
-  function chanName(id: string | undefined): string {
-    if (!id) return "(any)";
-    return channels.find((c) => c.id === id)?.name ?? id;
-  }
+  const inheritedLyricTplId = showSong?.lyricTemplateId ?? cachedSong?.defaultLyricTemplateId;
+  const inheritedIntroTplId = showSong?.introTemplateId ?? cachedSong?.defaultIntroTemplateId;
+  const inheritedOutroTplId = showSong?.outroTemplateId ?? cachedSong?.defaultOutroTemplateId;
+  const tplName = (id: string | undefined) => (!id ? "(none)" : templates.find((t) => t.id === id)?.name ?? "Missing template");
 
   return (
     <>
-    <DraggableRow
-      rowId={row.id}
-      index={index}
-      isDragging={isDragging}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDropBefore={onDropBefore}
-      onDropAfter={onDropAfter}
-      background="rgba(255, 177, 58, 0.06)"
-    >
-      <td style={{ ...td, width: 220 }}>
-        <Select value={row.songId} onChange={(e) => pickSong(e.target.value)}>
-          {!songs.some((s) => s.id === row.songId) && (
-            <option value={row.songId}>{row.songId} (missing)</option>
-          )}
+      <FormRow label="Song">
+        <Select aria-label="Song" value={row.songId} onChange={(e) => pickSong(e.target.value)}>
+          {!songs.some((s) => s.id === row.songId) && <option value={row.songId}>Missing song</option>}
           {songs.map((s) => (
-            <option key={s.id} value={s.id}>{s.title}</option>
+            <option key={s.id} value={s.id}>
+              {s.title}
+            </option>
           ))}
         </Select>
-        {songMeta && (
-          <div style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace", marginTop: 2 }}>
-            {songMeta.id}
+      </FormRow>
+      <FormRow label="Lyric template">
+        <Select aria-label="Lyric template" value={row.lyricTemplateId} onChange={(e) => patch({ lyricTemplateId: e.target.value })}>
+          {!templates.some((t) => t.id === row.lyricTemplateId) && <option value={row.lyricTemplateId}>Missing template</option>}
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </Select>
+        {inheritedLyricTplId && row.lyricTemplateId !== inheritedLyricTplId && (
+          <div style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>
+            Show default: {tplName(inheritedLyricTplId)}
           </div>
         )}
-      </td>
-      <td style={{ ...td, minWidth: 320 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ width: 60, fontSize: 11, color: colors.textDim, flexShrink: 0 }}>template</span>
-          <Select
-            value={row.lyricTemplateId}
-            onChange={(e) => patchRow({ lyricTemplateId: e.target.value })}
-            style={{ flex: 1 }}
-          >
-            {!templates.some((t) => t.id === row.lyricTemplateId) && (
-              <option value={row.lyricTemplateId}>{row.lyricTemplateId} (missing)</option>
-            )}
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </Select>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6, fontSize: 11 }}>
-          <label style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer", color: colors.textDim }}>
-            <input
-              type="checkbox"
-              checked={!!row.skipIntro}
-              onChange={(e) => patchRow({ skipIntro: e.target.checked || undefined })}
-            />
-            Skip intro
-          </label>
-          <label style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer", color: colors.textDim }}>
-            <input
-              type="checkbox"
-              checked={!!row.skipOutro}
-              onChange={(e) => patchRow({ skipOutro: e.target.checked || undefined })}
-            />
-            Skip outro
-          </label>
-          <button
-            type="button"
-            onClick={() => setOverridesOpen((v) => !v)}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: colors.accent,
-              cursor: "pointer",
-              padding: 0,
-              fontSize: 11,
-              textDecoration: "underline",
-              marginLeft: "auto",
-            }}
-            aria-expanded={overridesOpen}
-          >
-            {overridesOpen ? <><ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Hide overrides</> : <><ChevronRight size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Per-row overrides</>}
-          </button>
-        </div>
-        {cachedSong && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginTop: 4 }}>
-            <span style={{ color: colors.textDim }}>Arrangement:</span>
-            <span style={{ color: colors.text }}>
-              {arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)}
-            </span>
-            <button
-              type="button"
-              onClick={() => setArrModalOpen(true)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: colors.accent,
-                cursor: "pointer",
-                fontSize: 11,
-                padding: 0,
-                textDecoration: "underline",
-              }}
-            >
-              Arrangement…
-            </button>
+      </FormRow>
+      <FormRow label="Arrangement">
+        {cachedSong ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.sm }}>
+            <span>{arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)}</span>
+            <Button size="sm" onClick={() => setArrModalOpen(true)}>
+              Edit arrangement…
+            </Button>
           </div>
+        ) : (
+          <span style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Loading song…</span>
         )}
         {arrModalOpen && cachedSong && (
           <ArrangementModal
@@ -1263,112 +1135,69 @@ function SongRowEditor({
             level="row"
             value={row.arrangement}
             inherited={showSong?.arrangement ?? cachedSong.defaultArrangement}
-            onSave={(next) => patchRow({ arrangement: next })}
+            onSave={(next) => patch({ arrangement: next })}
             onClose={() => setArrModalOpen(false)}
           />
         )}
-      </td>
-      <td style={{ ...td, width: 100 }}>
-        <ChannelHintSelect
-          value={row.channelHint}
-          onChange={(v) => patchRow({ channelHint: v })}
-          channels={channels}
-          inheritedValue={inheritedChannel}
-        />
-      </td>
-      <td style={{ ...td, width: 200 }}>
-        <Input
-          value={row.notes ?? ""}
-          onChange={(e) => patchRow({ notes: e.target.value || undefined })}
-          placeholder="—"
-        />
-        <RowLengthInput
-          value={row.lengthSec}
-          onCommit={(lengthSec) => patchRow({ lengthSec, lengthSecManual: true })}
-        />
-        <NotesSetPicker
-          sets={sermonNotes}
-          value={row.sermonNotesId}
-          onChange={(v) => patchRow({ sermonNotesId: v })}
-        />
-      </td>
-      <td style={{ ...td, width: 36, textAlign: "center" }}>
-        <IconButton onClick={onDelete} title="Delete row" size={24} style={{ color: colors.red, fontSize: 14 }}>
-          ×
-        </IconButton>
-      </td>
-    </DraggableRow>
-    {overridesOpen && (
-      <tr style={{ background: "rgba(255, 177, 58, 0.04)" }}>
-        <td colSpan={6} style={{ padding: "8px 16px 12px 48px" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11 }}>
-            <div style={{ color: colors.textDim, marginBottom: 4 }}>
-              Per-row overrides — sit on top of any show-level overrides.
-            </div>
-            <RowOverrideField
-              label="Intro template"
-              isOverridden={row.introTemplateId !== undefined}
-              inheritedLabel={inheritedIntroTplId ? tplName(inheritedIntroTplId) : "(none — skip)"}
-              onRevert={() => patchRow({ introTemplateId: undefined, introFieldMap: undefined })}
-              onOverride={() =>
-                patchRow({
-                  introTemplateId: inheritedIntroTplId ?? templates[0]?.id ?? "",
-                })
-              }
-            >
-              <RowTemplateSelect
-                value={row.introTemplateId}
-                templates={templates}
-                onChange={(v) => patchRow({ introTemplateId: v })}
-                allowEmpty
-              />
-            </RowOverrideField>
-            <RowOverrideField
-              label="Outro template"
-              isOverridden={row.outroTemplateId !== undefined}
-              inheritedLabel={inheritedOutroTplId ? tplName(inheritedOutroTplId) : "(none — skip)"}
-              onRevert={() => patchRow({ outroTemplateId: undefined, outroFieldMap: undefined })}
-              onOverride={() =>
-                patchRow({
-                  outroTemplateId: inheritedOutroTplId ?? templates[0]?.id ?? "",
-                })
-              }
-            >
-              <RowTemplateSelect
-                value={row.outroTemplateId}
-                templates={templates}
-                onChange={(v) => patchRow({ outroTemplateId: v })}
-                allowEmpty
-              />
-            </RowOverrideField>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", color: colors.textDim }}>
-              <span style={{ width: 100, flexShrink: 0 }}>Lyric template</span>
-              <span style={{ flex: 1, fontStyle: "italic" }}>
-                Set above — currently {tplName(row.lyricTemplateId)}
-                {inheritedLyricTplId && row.lyricTemplateId !== inheritedLyricTplId && (
-                  <> (show default: {tplName(inheritedLyricTplId)})</>
-                )}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", color: colors.textDim }}>
-              <span style={{ width: 100, flexShrink: 0 }}>Channel</span>
-              <span style={{ flex: 1, fontStyle: "italic" }}>
-                Set in the Channel column — inherits from {chanName(inheritedChannel)} if blank.
-              </span>
-            </div>
+      </FormRow>
+      <FormRow label="Intro / outro">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", gap: 16 }}>
+            <Checkbox checked={!!row.skipIntro} onChange={(v) => patch({ skipIntro: v || undefined })} label="Skip intro" />
+            <Checkbox checked={!!row.skipOutro} onChange={(v) => patch({ skipOutro: v || undefined })} label="Skip outro" />
           </div>
-        </td>
-      </tr>
-    )}
+          <div>
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={overridesOpen}
+              icon={overridesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              onClick={() => setOverridesOpen((v) => !v)}
+            >
+              Intro and outro templates for this item
+            </Button>
+          </div>
+          {overridesOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: fontSize.xs }}>
+              <RowOverrideField
+                label="Intro template"
+                isOverridden={row.introTemplateId !== undefined}
+                inheritedLabel={inheritedIntroTplId ? tplName(inheritedIntroTplId) : "(none — skip)"}
+                onRevert={() => patch({ introTemplateId: undefined, introFieldMap: undefined })}
+                onOverride={() => patch({ introTemplateId: inheritedIntroTplId ?? templates[0]?.id ?? "" })}
+              >
+                <RowTemplateSelect
+                  label="Intro template"
+                  value={row.introTemplateId}
+                  templates={templates}
+                  onChange={(v) => patch({ introTemplateId: v })}
+                  allowEmpty
+                />
+              </RowOverrideField>
+              <RowOverrideField
+                label="Outro template"
+                isOverridden={row.outroTemplateId !== undefined}
+                inheritedLabel={inheritedOutroTplId ? tplName(inheritedOutroTplId) : "(none — skip)"}
+                onRevert={() => patch({ outroTemplateId: undefined, outroFieldMap: undefined })}
+                onOverride={() => patch({ outroTemplateId: inheritedOutroTplId ?? templates[0]?.id ?? "" })}
+              >
+                <RowTemplateSelect
+                  label="Outro template"
+                  value={row.outroTemplateId}
+                  templates={templates}
+                  onChange={(v) => patch({ outroTemplateId: v })}
+                  allowEmpty
+                />
+              </RowOverrideField>
+            </div>
+          )}
+        </div>
+      </FormRow>
     </>
   );
 }
 
-/**
- * Inline row used in {@link SongRowEditor}'s expanded override panel. Mirrors
- * `OverrideRow` from `SongsInShowPanel` but compact and inline-styled to fit
- * inside the rundown table's row spacing.
- */
+/** An inherited value with "Override" / "Use show value". */
 function RowOverrideField({
   label,
   isOverridden,
@@ -1382,12 +1211,12 @@ function RowOverrideField({
   inheritedLabel: string;
   onRevert: () => void;
   onOverride: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <span style={{ width: 100, flexShrink: 0, color: colors.textDim }}>{label}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, maxWidth: 320 }}>
         {isOverridden ? (
           children
         ) : (
@@ -1400,37 +1229,27 @@ function RowOverrideField({
               color: colors.textDim,
               fontStyle: "italic",
             }}
-            title="Inherited from show value"
+            title="Inherited from the show or song"
           >
             {inheritedLabel}
           </span>
         )}
       </div>
-      <button
-        type="button"
-        onClick={isOverridden ? onRevert : onOverride}
-        style={{
-          background: "transparent",
-          border: "none",
-          color: colors.accent,
-          cursor: "pointer",
-          fontSize: 11,
-          padding: 0,
-          textDecoration: "underline",
-        }}
-      >
+      <Button size="sm" variant="ghost" onClick={isOverridden ? onRevert : onOverride}>
         {isOverridden ? "Use show value" : "Override"}
-      </button>
+      </Button>
     </div>
   );
 }
 
 function RowTemplateSelect({
+  label,
   value,
   templates,
   onChange,
   allowEmpty,
 }: {
+  label: string;
   value: string | undefined;
   templates: TemplateMeta[];
   onChange: (v: string | undefined) => void;
@@ -1439,16 +1258,13 @@ function RowTemplateSelect({
   const current = value ?? "";
   const known = current && templates.some((t) => t.id === current);
   return (
-    <Select
-      value={current}
-      onChange={(e) => onChange(e.target.value || undefined)}
-    >
+    <Select aria-label={label} value={current} onChange={(e) => onChange(e.target.value || undefined)}>
       {allowEmpty && <option value="">(none — skip)</option>}
-      {!known && current && (
-        <option value={current}>{current} (missing)</option>
-      )}
+      {!known && current && <option value={current}>Missing template</option>}
       {templates.map((t) => (
-        <option key={t.id} value={t.id}>{t.name}</option>
+        <option key={t.id} value={t.id}>
+          {t.name}
+        </option>
       ))}
     </Select>
   );
@@ -1463,36 +1279,21 @@ function FieldsEditor({
   data: Record<string, string>;
   onChange: (key: string, value: string) => void;
 }) {
-  const declaredKeys = useMemo(
-    () => template?.fields.map((f) => f.key) ?? [],
-    [template],
-  );
+  const declaredKeys = useMemo(() => template?.fields.map((f) => f.key) ?? [], [template]);
   const orphanKeys = Object.keys(data).filter((k) => !declaredKeys.includes(k));
   const fieldsToShow = template?.fields ?? [];
 
   if (!template) {
-    return (
-      <span style={{ color: colors.textDim, fontSize: 11 }}>
-        Loading template…
-      </span>
-    );
+    return <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>Loading template…</span>;
   }
-
   if (fieldsToShow.length === 0 && orphanKeys.length === 0) {
-    return (
-      <span style={{ color: colors.textDim, fontSize: 11 }}>
-        Template declares no fields.
-      </span>
-    );
+    return <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>This template has no fields.</span>;
   }
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {fieldsToShow.map((f) => (
         <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 90, fontSize: 11, color: colors.textDim, flexShrink: 0 }}>
-            {f.label}
-          </span>
+          <span style={{ width: 110, fontSize: fontSize.xs, color: colors.textDim, flexShrink: 0 }}>{f.label}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <FieldInput field={f} value={data[f.key]} onChange={(v) => onChange(f.key, v)} />
           </div>
@@ -1501,15 +1302,12 @@ function FieldsEditor({
       {orphanKeys.map((k) => (
         <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.7 }}>
           <span
-            style={{ width: 90, fontSize: 11, color: colors.accent2, flexShrink: 0 }}
-            title="Not declared by the template — will still be sent on take. Edit the template's Fields panel to declare it."
+            style={{ width: 110, fontSize: fontSize.xs, color: colors.warn, flexShrink: 0 }}
+            title="Not declared by the template — still sent on Take. Declare it in the template's Fields panel."
           >
             {k}*
           </span>
-          <Input
-            value={data[k] ?? ""}
-            onChange={(e) => onChange(k, e.target.value)}
-          />
+          <Input aria-label={k} value={data[k] ?? ""} onChange={(e) => onChange(k, e.target.value)} />
         </div>
       ))}
     </div>
@@ -1525,34 +1323,18 @@ function ChannelHintSelect({
   value: string | undefined;
   onChange: (v: string | undefined) => void;
   channels: ChannelConfig[];
-  /**
-   * Cascade-resolved channel that applies when `value` is undefined. Used to
-   * label the empty option so the operator sees the actual at-take channel
-   * (e.g. "(inherited: Program)") instead of a bare "(any)" that hides where
-   * the song's defaultChannel is winding up.
-   */
+  /** Cascade-resolved output used when `value` is unset (labels the empty option). */
   inheritedValue?: string;
 }) {
   const current = value ?? "";
   const knownChannel = current && channels.some((c) => c.id === current);
-  const inheritedLabel = inheritedValue
-    ? channels.find((c) => c.id === inheritedValue)?.name ?? inheritedValue
-    : null;
-  const emptyLabel = inheritedLabel
-    ? `(inherited: ${inheritedLabel})`
-    : "(any)";
-  // Preserve out-of-list values rather than silently dropping them — a row
-  // might reference a channel that's been removed or is now a mirror, and we
-  // don't want a save to quietly overwrite that hint.
+  const inheritedLabel = inheritedValue ? channels.find((c) => c.id === inheritedValue)?.name ?? inheritedValue : null;
+  const emptyLabel = inheritedLabel ? `${inheritedLabel} (inherited)` : "Program (auto)";
+  // Keep out-of-list values rather than silently dropping them on save.
   return (
-    <Select
-      value={current}
-      onChange={(e) => onChange(e.target.value ? e.target.value : undefined)}
-    >
+    <Select aria-label="Output" value={current} onChange={(e) => onChange(e.target.value ? e.target.value : undefined)} style={{ maxWidth: 320 }}>
       <option value="">{emptyLabel}</option>
-      {!knownChannel && current && (
-        <option value={current}>{current} (missing)</option>
-      )}
+      {!knownChannel && current && <option value={current}>{current} (missing)</option>}
       {channels.map((c) => (
         <option key={c.id} value={c.id}>
           {c.name}
@@ -1562,38 +1344,8 @@ function ChannelHintSelect({
   );
 }
 
-const th: React.CSSProperties = {
-  padding: "8px 8px",
-  borderBottom: `1px solid ${colors.border}`,
-  fontWeight: 600,
-  fontSize: 11,
-  color: colors.textDim,
-};
-const td: React.CSSProperties = {
-  padding: "8px",
-  verticalAlign: "top",
-};
-const addRowBtn: React.CSSProperties = {
-  marginTop: 12,
-  padding: "10px 16px",
-  background: colors.panel,
-  color: colors.text,
-  border: `1px dashed ${colors.border}`,
-  borderRadius: 4,
-  fontWeight: 600,
-  fontSize: 12,
-  cursor: "pointer",
-  width: "100%",
-};
-
 /** "Length" text input: commits on blur when valid, reverts when not. */
-function RowLengthInput({
-  value,
-  onCommit,
-}: {
-  value: number | undefined;
-  onCommit: (sec: number | undefined) => void;
-}) {
+function RowLengthInput({ value, onCommit }: { value: number | undefined; onCommit: (sec: number | undefined) => void }) {
   const [text, setText] = useState(formatRowLength(value));
   const focusedRef = useRef(false);
   // Sync from the model, but never clobber what the user is typing.
@@ -1617,10 +1369,10 @@ function RowLengthInput({
         if (parsed.sec !== value) onCommit(parsed.sec);
         setText(formatRowLength(parsed.sec));
       }}
-      placeholder="Length"
+      placeholder="M:SS"
       title="Length (M:SS) — starts the item countdown when taken"
       aria-label="Length"
-      style={{ width: 70, marginTop: 4 }}
+      style={{ width: 90 }}
     />
   );
 }
