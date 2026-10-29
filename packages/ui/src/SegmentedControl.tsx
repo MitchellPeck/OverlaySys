@@ -34,6 +34,8 @@ export function SegmentedControl<T extends string>({
         border: `1px solid ${colors.border}`,
         borderRadius: radius.md,
         boxSizing: "border-box",
+        // Never wider than the field it sits in; the buttons share what is left.
+        maxWidth: "100%",
       }}
     >
       {options.map((o, i) => {
@@ -60,7 +62,12 @@ export function SegmentedControl<T extends string>({
             }}
             style={{
               height: h - 6,
-              padding: "0 10px",
+              padding: size === "sm" ? "0 8px" : "0 10px",
+              minWidth: 0,
+              flex: "0 1 auto",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
               border: "none",
               borderRadius: radius.sm,
               background: on ? colors.brandFill : colors.surface2,

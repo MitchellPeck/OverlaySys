@@ -61,6 +61,7 @@ function Row({
       <button
         type="button"
         aria-pressed={selected}
+        title={secondary ? `${primary} (${secondary})` : primary}
         onFocus={(e) => setRing(e.currentTarget.matches(":focus-visible"))}
         onBlur={() => setRing(false)}
         onClick={(e) => props.onSelect(w.id, e.shiftKey)}
