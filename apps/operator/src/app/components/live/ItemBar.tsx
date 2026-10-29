@@ -64,8 +64,9 @@ export function ItemBar({ row, hotcardId = null, quickTake = false, onQuickTakeC
       const end = (row as { endAction?: string }).endAction === "clear" ? "clears" : "holds";
       detail = [detail, `At end: ${end}`].filter(Boolean).join(" · ");
     }
-    if (row.kind === "graphic") {
-      const t = templateCache[(row as GraphicRow).templateId];
+    // Graphics and scripture: a design with no layers shows nothing on air.
+    if (row.kind === "graphic" || row.kind === "scripture") {
+      const t = templateCache[(row as { templateId: string }).templateId];
       // Only a template with no layers at all: image/video-only templates (logos) are fine.
       if (t && (t.layers ?? []).length === 0) {
         noText = true;
@@ -197,7 +198,22 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
     case "scripture": {
       const r = row as Extract<RowLike, { kind: "scripture" }>;
       return (
-        <ScriptureTakeStrip show={show} row={r} channel={r.channelHint ?? "program"} />
+        <ScriptureTakeStrip
+          show={show}
+          row={r}
+          channel={r.channelHint ?? "program"}
+          confirmStart={
+            noText
+              ? () =>
+                  confirm({
+                    title: "Take scripture with no layers?",
+                    message: `The design "${templateCache[r.templateId]?.name ?? "Untitled"}" has no layers, so nothing will show.`,
+                    confirmLabel: "Take",
+                    danger: true,
+                  })
+              : undefined
+          }
+        />
       );
     }
     case "video": {

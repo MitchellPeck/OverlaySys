@@ -14,6 +14,8 @@ interface Props {
   show: Show;
   row: ScriptureRow;
   channel: string;
+  /** Asked before starting the scripture on air (e.g. its design has no layers); false cancels. */
+  confirmStart?: () => Promise<boolean>;
 }
 
 /**
@@ -22,7 +24,7 @@ interface Props {
  * pressed here. Per-slide jumps live in the thumbnail strip. On program every
  * button but End is an on-air action (D5).
  */
-export function ScriptureTakeStrip({ show, row, channel }: Props) {
+export function ScriptureTakeStrip({ show, row, channel, confirmStart }: Props) {
   const { send } = useWs();
   const settings = useScriptureSettings();
   const ch = useStore((s) => s.channelStates[channel]);
@@ -32,10 +34,14 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
   const disconnected = useStore((s) => s.conn) !== "open";
   const variant = channel === "program" ? "onair" : "secondary";
 
-  function next() {
+  async function next() {
     // Live: step on. Otherwise start at the first slide.
-    if (session) send({ type: "scripture_advance", channel, delta: 1 });
-    else send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, channel });
+    if (session) {
+      send({ type: "scripture_advance", channel, delta: 1 });
+      return;
+    }
+    if (confirmStart && channel !== "preview" && !(await confirmStart())) return;
+    send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, channel });
   }
 
   return (
@@ -67,7 +73,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
         onMouseDown={keep}
         variant={variant}
         disabled={disconnected || (!!session && session.slideIdx >= session.slideCount - 1)}
-        onClick={next}
+        onClick={() => void next()}
       >
         Next
       </Button>
