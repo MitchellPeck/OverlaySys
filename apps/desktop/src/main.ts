@@ -307,6 +307,9 @@ const deckLink = createDeckLinkHost({
   ffmpegSetting: () => loadPrefs(prefsFilePath()).decklinkFfmpegPath,
   onOpenChange: (channelId, open) => {
     updatePowerSaveBlocker();
+    // Switched to a display window while the device output was closing:
+    // the channel is open, so don't tell the operator it closed.
+    if (!open && isChannelWindowOpen(channelId)) return;
     operatorWindow?.webContents.send(
       open ? "overlaysys:channel-window-opened" : "overlaysys:channel-window-closed",
       channelId,
@@ -735,6 +738,7 @@ function reloadAllWindowsOnNewPort(): void {
   for (const [id, w] of channelWindows) {
     if (!w.isDestroyed()) void w.loadURL(rendererChannelUrl(id));
   }
+  deckLink.reloadAll();
 }
 
 function pingHealth(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
@@ -905,6 +909,10 @@ function createOperatorWindow(): BrowserWindow {
     }
     channelWindows.clear();
     channelWindowDisplays.clear();
+    // Device outputs too: their offscreen windows would otherwise keep the
+    // card playing and count as "windows", so the Dock icon couldn't bring
+    // the console back.
+    void deckLink.stopAll().then(updatePowerSaveBlocker);
     updatePowerSaveBlocker();
   });
 
@@ -1142,8 +1150,7 @@ function openConfiguredChannelWindow(
     const w = channelWindows.get(channelId);
     if (w && !w.isDestroyed()) w.close();
     const reused = deckLink.isOpen(channelId) && !forceRecreate;
-    if (forceRecreate) void deckLink.close(channelId).then(() => deckLink.open(channelId, pref));
-    else void deckLink.open(channelId, pref);
+    void deckLink.open(channelId, pref, { force: forceRecreate });
     return { reused };
   }
   if (deckLink.isOpen(channelId)) void deckLink.close(channelId);
@@ -1791,7 +1798,9 @@ if (!gotSingleInstanceLock) {
 
 app.on("activate", () => {
   if (!gotSingleInstanceLock) return;
-  if (BrowserWindow.getAllWindows().length === 0 && !isDev) {
+  // Offscreen device renderers aren't windows a person can see or click.
+  const visible = BrowserWindow.getAllWindows().filter((w) => !w.webContents.isOffscreen());
+  if (visible.length === 0 && !isDev) {
     operatorWindow = createOperatorWindow();
   }
 });
