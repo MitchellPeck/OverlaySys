@@ -26,3 +26,5 @@ export { FontWeightSelect } from "./FontWeightSelect";
 export { escAction } from "./groupSelection";
 export { Section as InspectorSection } from "./PropertyInspector";
 export { AutoTextarea } from "./AutoTextarea";
+export * from "./timelineRuler";
+export * from "./timelineLabels";

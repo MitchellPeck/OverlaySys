@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { EasingSpec } from "@overlaysys/core";
 
-const PRESETS = [
+export const EASING_PRESETS = [
   "linear",
   "power1.in", "power1.out", "power1.inOut",
   "power2.in", "power2.out", "power2.inOut",
@@ -141,7 +141,7 @@ export function EasingPicker({ value, onChange }: Props) {
             }}
           >
             <option value="">— preset —</option>
-            {PRESETS.map((p) => (
+            {EASING_PRESETS.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>

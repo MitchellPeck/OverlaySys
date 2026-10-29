@@ -1,10 +1,26 @@
 import type { Draft } from "immer";
-import { useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Template, Track, Keyframe, EasingSpec, Layer } from "@overlaysys/core";
-import { EasingPicker } from "./EasingPicker";
+import { Checkbox, IconButton, Input, NumberInput, SegmentedControl, Select, colors, fontSize, radius, shadow } from "@overlaysys/ui";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Spline,
+  Trash2,
+  X,
+} from "lucide-react";
+import { EASING_PRESETS, EasingPicker } from "./EasingPicker";
 import { findLayer } from "./utils";
 import { useEditCoalescer } from "./editCoalescer";
 import { ANIMATION_PRESETS, applyAnimationPreset, clampTimelineDuration, minTimelineDuration, type AnimationPreset } from "./templateOps";
+import { TRACK_PAD, rulerTicks, timeToX, xToTime } from "./timelineRuler";
+import { TRACK_PROPERTY_LABELS, groupTracksByLayer, layersMissingOut, missingOutMessage, type TrackGroup } from "./timelineLabels";
 
 type Props = {
   template: Template;
@@ -26,8 +42,13 @@ type Props = {
 };
 
 const TRACK_HEIGHT = 24;
+const RULER_HEIGHT = 20;
 const HEADER_WIDTH = 240;
 const STEP_SECONDS = 1 / 30; // single-frame step at ~30fps
+/** Visible diamond: an 8 px square turned 45° (~11 px across, so TRACK_PAD keeps the end ones whole). */
+const DIAMOND = 8;
+const CURVE_POPOVER_W = 340;
+const CURVE_POPOVER_H = 200;
 
 const ALL_PROPERTIES = [
   "x",
@@ -42,11 +63,14 @@ const ALL_PROPERTIES = [
 ] as const;
 type TrackProperty = (typeof ALL_PROPERTIES)[number];
 
+const keyOf = (t: { layerId: string; property: string }) => `${t.layerId}::${t.property}`;
+
 export function TimelinePanel(rawProps: Props) {
   // Typed values (duration, keyframe t/value) make one undo step per field edit.
   const { commit, handlers } = useEditCoalescer(rawProps.onCommit, rawProps.onLive);
   const props = { ...rawProps, onCommit: commit };
   const tl = props.template.timelines[props.active];
+  const missingOut = props.active === "out" ? layersMissingOut(props.template) : [];
 
   return (
     <div
@@ -54,66 +78,28 @@ export function TimelinePanel(rawProps: Props) {
       style={{
         height: "100%",
         display: "grid",
-        gridTemplateRows: "auto 1fr",
-        background: "var(--panel, #14161a)",
+        gridTemplateRows: "auto auto auto minmax(0, 1fr)",
+        background: colors.surface,
         minHeight: 0,
       }}
     >
       <Toolbar {...props} />
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: `${HEADER_WIDTH}px minmax(0, 1fr) 220px`,
-          minHeight: 0,
-          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          height: 32,
+          padding: "0 8px",
+          borderBottom: `1px solid ${colors.border}`,
+          fontSize: fontSize.xs,
+          minWidth: 0,
         }}
       >
-        <TrackList
-          tracks={tl.tracks}
-          template={props.template}
-          activeTimeline={props.active}
-          selectedLayerId={props.selectedLayerId}
-          onSelectLayer={(id) => {
-            // Selecting a track header also focuses the layer in the inspector.
-            // We funnel through the existing keyframe-selection clearing.
-            props.setSelectedKeyframe(null);
-            // Note: we don't have an onSelectLayer prop on TimelinePanel. The
-            // Canvas/LayerTree own layer selection — keep this as a no-op for now.
-            void id;
-          }}
-          onCommit={props.onCommit}
-        />
-        <TrackLanes
-          tracks={tl.tracks}
-          duration={tl.duration}
-          selectedLayerId={props.selectedLayerId}
-          time={props.time}
-          setTime={props.setTime}
-          playing={props.playing}
-          onPause={props.onPause}
-          selectedKeyframe={props.selectedKeyframe}
-          onSelectKeyframe={props.setSelectedKeyframe}
-          activeTimeline={props.active}
-          onCommit={props.onCommit}
-          onLive={props.onLive}
-          onPushHistory={props.onPushHistory}
-        />
-        <KeyframeInspector
-          template={props.template}
-          activeTimeline={props.active}
-          selected={props.selectedKeyframe}
-          onCommit={props.onCommit}
-          onDeleteSelected={() => {
-            if (!props.selectedKeyframe) return;
-            const sel = props.selectedKeyframe;
-            props.onCommit((d) => {
-              const t = trackByKey(d.timelines[props.active].tracks, sel.trackKey);
-              if (t) t.keyframes.splice(sel.index, 1);
-            });
-            props.setSelectedKeyframe(null);
-          }}
-        />
+        <KeyframeRow {...props} />
       </div>
+      <MissingOutWarnings entries={missingOut} />
+      <TrackArea {...props} tracks={tl.tracks} duration={tl.duration} />
     </div>
   );
 }
@@ -126,6 +112,7 @@ function Toolbar(props: Props) {
     ? findLayer(props.template.layers, props.selectedLayerId)
     : null;
   const layerName = selectedLayer?.name ?? null;
+  const outMissing = layersMissingOut(props.template).length > 0;
 
   // Properties not yet on this layer for this timeline.
   const usedForLayer = new Set(
@@ -145,38 +132,64 @@ function Toolbar(props: Props) {
     });
   }
 
+  const minDur = minTimelineDuration(tl);
+
   return (
     <div
       style={{
         display: "flex",
+        flexWrap: "wrap",
         alignItems: "center",
         gap: 8,
-        padding: "6px 10px",
-        borderBottom: "1px solid var(--border, #2a2e36)",
-        background: "var(--panel-2, #1c1f25)",
+        padding: "4px 8px",
+        borderBottom: `1px solid ${colors.border}`,
+        background: colors.surface2,
+        fontSize: fontSize.xs,
+        color: colors.textDim,
       }}
     >
-      <select
+      <SegmentedControl
+        size="sm"
+        aria-label="Timeline"
         value={props.active}
-        onChange={(e) => props.setActive(e.target.value as "in" | "out")}
-        style={selectStyle}
-      >
-        <option value="in">in ({props.template.timelines.in.duration}s)</option>
-        <option value="out">out ({props.template.timelines.out.duration}s)</option>
-      </select>
-      <NumberSpinner
-        label="Duration"
-        value={tl.duration}
-        step={0.05}
-        min={minTimelineDuration(tl)}
-        title={`Timeline length (s). Can't be shorter than the last keyframe (${minTimelineDuration(tl).toFixed(2)}s) — move or delete keyframes first.`}
-        onChange={(v) =>
-          props.onCommit((d) => {
-            const t = d.timelines[props.active];
-            t.duration = clampTimelineDuration(t, v);
-          })
-        }
+        onChange={props.setActive}
+        options={[
+          { value: "in", label: `In · ${fmtSec(props.template.timelines.in.duration)}` },
+          {
+            value: "out",
+            label: (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                Out · {fmtSec(props.template.timelines.out.duration)}
+                {outMissing && <AlertTriangle size={12} color={colors.warn} aria-label="Some layers have no out animation" />}
+              </span>
+            ),
+            title: outMissing ? "Some layers have no out animation" : undefined,
+          },
+        ]}
       />
+      <label
+        style={{ display: "flex", alignItems: "center", gap: 4 }}
+        title={`Timeline length. Can't be shorter than the last keyframe (${minDur.toFixed(2)}s): move or delete keyframes first.`}
+      >
+        Duration
+        <span style={{ width: 72 }}>
+          <NumberInput
+            size="sm"
+            aria-label="Duration"
+            value={tl.duration}
+            step={0.05}
+            precision={2}
+            min={minDur}
+            suffix="s"
+            onCommit={(v) =>
+              props.onCommit((d) => {
+                const t = d.timelines[props.active];
+                t.duration = clampTimelineDuration(t, v);
+              })
+            }
+          />
+        </span>
+      </label>
 
       <Transport
         time={props.time}
@@ -190,15 +203,11 @@ function Toolbar(props: Props) {
         onPause={props.onPause}
       />
 
-      <label
-        style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-dim, #9099a8)" }}
-        title="Loop the preview playback here in the editor"
-      >
-        <input type="checkbox" checked={props.loop} onChange={props.onLoopToggle} />
-        Loop
-      </label>
+      <span title="Loop the preview playback here in the editor">
+        <Checkbox checked={props.loop} onChange={() => props.onLoopToggle()} label="Loop" />
+      </span>
 
-      <select
+      <Select
         value=""
         onChange={(e) => {
           const v = e.target.value as AnimationPreset | "";
@@ -207,12 +216,13 @@ function Toolbar(props: Props) {
           props.onCommit(applyAnimationPreset(props.selectedLayerId, props.active, v));
         }}
         disabled={!props.selectedLayerId}
+        aria-label={props.active === "in" ? "Animate in" : "Animate out"}
         title={
           props.selectedLayerId
             ? `Replace ${layerName ?? "the layer"}'s ${props.active} animation with a preset`
             : "Select a layer first"
         }
-        style={{ ...selectStyle, opacity: props.selectedLayerId ? 1 : 0.5 }}
+        style={{ width: "auto", opacity: props.selectedLayerId ? 1 : 0.5 }}
       >
         <option value="">{props.active === "in" ? "Animate in…" : "Animate out…"}</option>
         {ANIMATION_PRESETS.map((p) => (
@@ -220,46 +230,37 @@ function Toolbar(props: Props) {
             {p.label}
           </option>
         ))}
-      </select>
+      </Select>
 
       {/* Property picker: select-as-action. The select is reset to "" on each
           change so the user can add the same property after deleting it. */}
-      <select
+      <Select
         value=""
         onChange={(e) => {
           const v = e.target.value as TrackProperty | "";
+          e.currentTarget.value = "";
           if (!v) return;
           addTrack(v);
-          e.currentTarget.value = "";
         }}
         disabled={!props.selectedLayerId}
-        title={
-          props.selectedLayerId
-            ? `Add a track for ${layerName ?? props.selectedLayerId}`
-            : "Select a layer first"
-        }
-        style={{
-          ...selectStyle,
-          opacity: props.selectedLayerId ? 1 : 0.5,
-        }}
+        aria-label="Add track"
+        title={props.selectedLayerId ? `Add a track to ${layerName ?? "the layer"}` : "Select a layer first"}
+        style={{ width: "auto", opacity: props.selectedLayerId ? 1 : 0.5 }}
       >
         <option value="">
-          {props.selectedLayerId ? `+ Track on ${layerName ?? "…"}` : "+ Track (select layer)"}
+          {props.selectedLayerId ? `+ Track on ${layerName ?? "…"}` : "+ Track (select a layer)"}
         </option>
         {ALL_PROPERTIES.map((p) => {
           const used = usedForLayer.has(p);
           return (
             <option key={p} value={p} disabled={used}>
-              {p}
+              {TRACK_PROPERTY_LABELS[p].label}
               {used ? " (added)" : ""}
             </option>
           );
         })}
-      </select>
+      </Select>
 
-      <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim, #9099a8)" }}>
-        t = {props.time.toFixed(2)}s · {tl.tracks.length} track(s)
-      </span>
     </div>
   );
 }
@@ -280,216 +281,68 @@ function Transport({
   onPause: () => void;
 }) {
   return (
-    <div style={{ display: "flex", gap: 2 }}>
-      <TransportBtn title="Jump to start" onClick={() => onSeek(0)}>⏮</TransportBtn>
-      <TransportBtn
+    <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+      <IconButton aria-label="Jump to start" title="Jump to start" onClick={() => onSeek(0)}>
+        <SkipBack size={14} />
+      </IconButton>
+      <IconButton
+        aria-label="Step back one frame"
         title="Step back (1/30s)"
         onClick={() => onSeek(Math.max(0, time - STEP_SECONDS))}
       >
-        ◄
-      </TransportBtn>
-      <button
-        type="button"
-        onClick={playing ? onPause : onPlay}
+        <ChevronLeft size={14} />
+      </IconButton>
+      <IconButton
         aria-label={playing ? "Pause (Space)" : "Play (Space)"}
         title={playing ? "Pause (Space)" : "Play (Space)"}
-        style={playBtn(playing)}
+        onClick={playing ? onPause : onPlay}
+        style={playing ? undefined : { background: colors.brandFill, border: `1px solid ${colors.brandFill}`, color: "#fff" }}
       >
-        {playing ? "⏸" : "▶"}
-      </button>
-      <TransportBtn
+        {playing ? <Pause size={14} /> : <Play size={14} />}
+      </IconButton>
+      <IconButton
+        aria-label="Step forward one frame"
         title="Step forward (1/30s)"
         onClick={() => onSeek(Math.min(duration, time + STEP_SECONDS))}
       >
-        ►
-      </TransportBtn>
-      <TransportBtn title="Jump to end" onClick={() => onSeek(duration)}>⏭</TransportBtn>
+        <ChevronRight size={14} />
+      </IconButton>
+      <IconButton aria-label="Jump to end" title="Jump to end" onClick={() => onSeek(duration)}>
+        <SkipForward size={14} />
+      </IconButton>
+      <span style={{ minWidth: 44, textAlign: "right", fontVariantNumeric: "tabular-nums", color: colors.text }}>
+        {fmtTime(time)}
+      </span>
     </div>
   );
 }
 
-function TransportBtn({
-  children,
-  onClick,
-  title,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  title: string;
-}) {
+function fmtTime(t: number): string {
+  return `${t.toFixed(2)}s`;
+}
+
+function MissingOutWarnings({ entries }: { entries: { layerId: string; name: string }[] }) {
+  if (entries.length === 0) return <div />;
   return (
-    <button
-      onClick={onClick}
-      title={title}
+    <div
+      role="status"
       style={{
-        width: 28,
-        height: 24,
-        background: "var(--panel, #14161a)",
-        color: "var(--text, #e9eaee)",
-        border: "1px solid var(--border, #2a2e36)",
-        borderRadius: 3,
-        fontSize: 12,
-        cursor: "pointer",
+        padding: "4px 10px",
+        borderBottom: `1px solid ${colors.border}`,
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        flexDirection: "column",
+        gap: 2,
       }}
     >
-      {children}
-    </button>
-  );
-}
-
-function NumberSpinner({
-  label,
-  value,
-  step,
-  min,
-  title,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  step: number;
-  min?: number;
-  title?: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label
-      style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-dim, #9099a8)" }}
-      title={title}
-    >
-      {label}
-      <input
-        type="number"
-        value={value}
-        step={step}
-        min={min}
-        onChange={(e) => {
-          const v = parseFloat(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        style={{
-          width: 60,
-          padding: "2px 4px",
-          background: "var(--panel, #14161a)",
-          border: "1px solid var(--border, #2a2e36)",
-          color: "var(--text, #e9eaee)",
-          borderRadius: 3,
-          fontSize: 11,
-        }}
-      />
-    </label>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-
-/**
- * Track list (left rail). Iterates `tracks` in the same order TrackLanes does
- * so each row visually aligns with its lane. Each row shows the layer name +
- * property and has a ✕ delete button that removes the whole track.
- */
-function TrackList({
-  tracks,
-  template,
-  activeTimeline,
-  selectedLayerId,
-  onSelectLayer,
-  onCommit,
-}: {
-  tracks: Track[];
-  template: Template;
-  activeTimeline: "in" | "out";
-  selectedLayerId: string | null;
-  onSelectLayer: (id: string | null) => void;
-  onCommit: (recipe: (d: Draft<Template>) => void) => void;
-}) {
-  function deleteTrack(layerId: string, property: TrackProperty) {
-    onCommit((d) => {
-      const tl = d.timelines[activeTimeline];
-      tl.tracks = tl.tracks.filter((t) => !(t.layerId === layerId && t.property === property));
-    });
-  }
-
-  return (
-    <div style={{ borderRight: "1px solid var(--border, #2a2e36)", overflow: "auto", paddingTop: 18 }}>
-      {tracks.length === 0 && (
-        <p
-          style={{
-            fontSize: 11,
-            color: "var(--text-dim, #9099a8)",
-            padding: 12,
-            margin: 0,
-            lineHeight: 1.5,
-          }}
+      {entries.map((e) => (
+        <div
+          key={e.layerId}
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: fontSize.sm, color: colors.warn }}
         >
-          No tracks. Select a layer and use <strong>+ Track</strong> in the toolbar to add one.
-        </p>
-      )}
-      {tracks.map((track) => {
-        const layer = findLayer(template.layers, track.layerId);
-        const layerName = layer?.name ?? track.layerId;
-        const isSel = track.layerId === selectedLayerId;
-        return (
-          <div
-            key={`${track.layerId}::${track.property}`}
-            onClick={() => onSelectLayer(track.layerId)}
-            style={{
-              height: TRACK_HEIGHT,
-              padding: "0 8px 0 10px",
-              fontSize: 12,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              borderBottom: "1px solid #1a1c20",
-              background: isSel ? "rgba(74,222,128,0.08)" : "transparent",
-              borderLeft: isSel ? "2px solid #4ade80" : "2px solid transparent",
-              cursor: "default",
-            }}
-          >
-            <span
-              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}
-              title={`${track.layerId} · ${track.property}`}
-            >
-              {layerName}
-            </span>
-            <span style={{ fontSize: 10, color: "var(--accent-2, #ffb13a)", fontFamily: "ui-monospace, monospace" }}>
-              {track.property}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteTrack(track.layerId, track.property as TrackProperty);
-              }}
-              type="button"
-              title="Delete track"
-              aria-label={`Delete ${track.property} track of ${layerName}`}
-              style={{
-                width: 24,
-                height: 24,
-                flexShrink: 0,
-                background: "transparent",
-                color: "var(--text-dim, #9099a8)",
-                border: "1px solid var(--border, #2a2e36)",
-                borderRadius: 3,
-                cursor: "pointer",
-                fontSize: 11,
-                lineHeight: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              ×
-            </button>
-          </div>
-        );
-      })}
+          <AlertTriangle size={12} aria-hidden />
+          {missingOutMessage(e.name)}
+        </div>
+      ))}
     </div>
   );
 }
@@ -499,64 +352,59 @@ function TrackList({
 /** `pushed`: history was snapshotted (on the first move, so a click only selects). */
 type DragKf = { trackKey: string; index: number; startX: number; startT: number; pxPerSec: number; pushed: boolean };
 
-function TrackLanes({
-  tracks,
-  duration,
-  selectedLayerId,
-  time,
-  setTime,
-  playing,
-  onPause,
-  selectedKeyframe,
-  onSelectKeyframe,
-  activeTimeline,
-  onCommit,
-  onLive,
-  onPushHistory,
-}: {
-  tracks: Track[];
-  duration: number;
-  selectedLayerId: string | null;
-  time: number;
-  setTime: (t: number) => void;
-  playing: boolean;
-  onPause: () => void;
-  selectedKeyframe: { trackKey: string; index: number } | null;
-  onSelectKeyframe: (k: { trackKey: string; index: number } | null) => void;
-  activeTimeline: "in" | "out";
-  onCommit: (recipe: (d: Draft<Template>) => void) => void;
-  onLive: (recipe: (d: Draft<Template>) => void) => void;
-  onPushHistory: () => void;
-}) {
+/**
+ * Track headers (left) and lanes (right) in one vertical scroller, so rows
+ * always line up. Tracks are grouped under a collapsible layer header.
+ */
+function TrackArea(props: Props & { tracks: Track[]; duration: number }) {
+  const { tracks, duration } = props;
+  const activeTimeline = props.active;
+  const groups = groupTracksByLayer(props.template.layers, tracks);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const laneRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragKf | null>(null);
-  const scrubDragRef = useRef<boolean>(false);
+  const [laneW, setLaneW] = useState(0);
 
-  function setTimeFromClientX(clientX: number): void {
+  useLayoutEffect(() => {
+    const el = laneRef.current;
+    if (!el) return;
+    setLaneW(el.clientWidth);
+    const ro = new ResizeObserver(() => setLaneW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  function toggle(layerId: string) {
+    setCollapsed((s) => {
+      const n = new Set(s);
+      if (n.has(layerId)) n.delete(layerId);
+      else n.add(layerId);
+      return n;
+    });
+  }
+
+  function deleteTrack(layerId: string, property: string) {
+    if (props.selectedKeyframe?.trackKey === `${layerId}::${property}`) props.setSelectedKeyframe(null);
+    props.onCommit((d) => {
+      const tl = d.timelines[activeTimeline];
+      tl.tracks = tl.tracks.filter((t) => !(t.layerId === layerId && t.property === property));
+    });
+  }
+
+  function timeAtClientX(clientX: number): number {
     const r = (laneRef.current as HTMLElement).getBoundingClientRect();
-    const t = clamp(((clientX - r.left) / r.width) * duration, 0, duration);
-    setTime(t);
+    return xToTime(clientX - r.left, duration, r.width);
   }
 
   function startScrubDrag(e: React.PointerEvent) {
-    // Don't call setPointerCapture here — capturing the pointer on the
-    // container redirects pointer events and disrupts the browser's normal
-    // click / dblclick dispatch to the lane rows. We use document-level
-    // pointer listeners instead so the drag continues even if the cursor
-    // leaves the timeline area, without disturbing click/dblclick targeting.
-    // We also avoid e.preventDefault() for the same reason; userSelect:none
-    // already prevents text selection during drag.
+    // Document-level listeners (not pointer capture) so click/dblclick
+    // targeting on the lane rows keeps working while the drag continues
+    // outside the timeline. userSelect:none prevents text selection.
     e.stopPropagation();
-    if (playing) onPause();
-    scrubDragRef.current = true;
-    setTimeFromClientX(e.clientX);
-
-    const move = (ev: PointerEvent) => {
-      if (!scrubDragRef.current) return;
-      setTimeFromClientX(ev.clientX);
-    };
+    if (props.playing) props.onPause();
+    props.setTime(timeAtClientX(e.clientX));
+    const move = (ev: PointerEvent) => props.setTime(timeAtClientX(ev.clientX));
     const end = () => {
-      scrubDragRef.current = false;
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", end);
       document.removeEventListener("pointercancel", end);
@@ -568,181 +416,303 @@ function TrackLanes({
 
   function startKfDrag(e: React.PointerEvent, trackKey: string, index: number, startT: number) {
     e.preventDefault();
-    e.stopPropagation(); // prevents the container scrub-drag from also starting
+    e.stopPropagation(); // prevents the scrub-drag from also starting
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    onSelectKeyframe({ trackKey, index });
+    props.setSelectedKeyframe({ trackKey, index });
     const r = (laneRef.current as HTMLElement).getBoundingClientRect();
     dragRef.current = {
       trackKey,
       index,
       startX: e.clientX,
       startT,
-      pxPerSec: r.width / duration,
+      pxPerSec: Math.max(1, r.width - 2 * TRACK_PAD) / duration,
       pushed: false,
     };
   }
-
-  function onContainerPointerDown(e: React.PointerEvent) {
-    // Keyframe diamonds stop propagation on their own pointerdown, so any
-    // pointerdown reaching here is on the axis or empty lane area — treat
-    // as scrub.
-    startScrubDrag(e);
-  }
-  function onContainerPointerMove(e: React.PointerEvent) {
-    // Only handles keyframe drag — scrub is handled by document listeners.
+  function onLanePointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return;
     const d = dragRef.current;
-    const dx = e.clientX - d.startX;
-    const newT = clamp(d.startT + dx / d.pxPerSec, 0, duration);
+    const newT = clamp(d.startT + (e.clientX - d.startX) / d.pxPerSec, 0, duration);
     if (!d.pushed) {
       if (newT === d.startT) return;
       d.pushed = true;
-      onPushHistory();
+      props.onPushHistory();
     }
-    onLive((draft) => {
-      const t = trackByKey(draft.timelines[activeTimeline].tracks, d.trackKey);
-      if (!t) return;
-      const kf = t.keyframes[d.index];
+    // Only `t` of the dragged keyframe changes; everything else is left as stored.
+    props.onLive((draft) => {
+      const kf = trackByKey(draft.timelines[activeTimeline].tracks, d.trackKey)?.keyframes[d.index];
       if (kf) kf.t = newT;
     });
   }
-  function onContainerPointerUp(e: React.PointerEvent) {
+  function onLanePointerUp(e: React.PointerEvent) {
     if (!dragRef.current) return;
     (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
     dragRef.current = null;
-    // Don't sort — gsap-timeline.ts sorts internally and sorting here
+    // Don't sort: gsap-timeline.ts sorts internally and sorting here
     // would invalidate selectedKeyframe.index.
   }
 
   function addKeyframeAt(track: Track, t: number) {
-    const trackKey = `${track.layerId}::${track.property}`;
-    onCommit((draft) => {
+    const trackKey = keyOf(track);
+    props.onCommit((draft) => {
       const found = trackByKey(draft.timelines[activeTimeline].tracks, trackKey);
       if (!found) return;
       const before = [...found.keyframes].reverse().find((k) => k.t < t);
-      const fallback: Keyframe = { t, value: before?.value ?? 0, easing: "power2.out" };
-      found.keyframes.push(fallback);
+      found.keyframes.push({ t, value: before?.value ?? 0, easing: "power2.out" });
     });
   }
 
-  return (
-    <div
-      ref={laneRef}
-      style={{
-        position: "relative",
-        overflow: "auto",
-        cursor: scrubDragRef.current ? "grabbing" : "default",
-        userSelect: "none",
-      }}
-      onPointerDown={onContainerPointerDown}
-      onPointerMove={onContainerPointerMove}
-      onPointerUp={onContainerPointerUp}
-      onPointerCancel={onContainerPointerUp}
-    >
-      {/* Time axis — clickable; container scrub-drag also handles it. */}
-      <div
-        style={{
-          position: "sticky",
-          top: 0,
-          height: 18,
-          background: "var(--panel-2, #1c1f25)",
-          borderBottom: "1px solid var(--border, #2a2e36)",
-          fontSize: 10,
-          color: "var(--text-dim, #9099a8)",
-          cursor: "ew-resize",
-        }}
-      >
-        {Array.from({ length: Math.ceil(duration) + 1 }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              position: "absolute",
-              left: `${(i / duration) * 100}%`,
-              fontSize: 10,
-              top: 4,
-              transform: "translateX(2px)",
-            }}
-          >
-            {i.toFixed(1)}s
-          </div>
-        ))}
-      </div>
+  const ticks = rulerTicks(duration, Math.max(0, laneW - 2 * TRACK_PAD));
+  const x = (t: number) => timeToX(t, duration, laneW);
 
-      {/* Lanes — same iteration order as TrackList so rows align. */}
-      {tracks.map((track) => {
-        const trackKey = `${track.layerId}::${track.property}`;
-        const isSel = track.layerId === selectedLayerId;
-        return (
+  // Rows shared by both columns, so heights match by construction.
+  type Row =
+    | { kind: "group"; group: TrackGroup; open: boolean }
+    | { kind: "track"; group: TrackGroup; track: Track; last: boolean };
+  const rows: Row[] = [];
+  for (const g of groups) {
+    const open = !collapsed.has(g.layerId);
+    rows.push({ kind: "group", group: g, open });
+    if (open) g.tracks.forEach((e, i) => rows.push({ kind: "track", group: g, track: e.track, last: i === g.tracks.length - 1 }));
+  }
+
+  return (
+    <div style={{ overflowY: "auto", overflowX: "hidden", minHeight: 0, position: "relative" }}>
+      <div style={{ display: "flex", minHeight: "100%" }}>
+        {/* Headers */}
+        <div style={{ width: HEADER_WIDTH, flexShrink: 0, borderRight: `1px solid ${colors.border}` }}>
           <div
-            key={trackKey}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              const t = ((e.clientX - r.left) / r.width) * duration;
-              addKeyframeAt(track, clamp(t, 0, duration));
-            }}
             style={{
-              position: "relative",
-              height: TRACK_HEIGHT,
-              borderBottom: "1px solid #1a1c20",
-              background: isSel ? "rgba(74,222,128,0.05)" : "transparent",
-              cursor: "crosshair",
+              position: "sticky",
+              top: 0,
+              zIndex: 2,
+              height: RULER_HEIGHT,
+              background: colors.surface2,
+              borderBottom: `1px solid ${colors.border}`,
+            }}
+          />
+          {tracks.length === 0 && (
+            <p style={{ fontSize: fontSize.xs, color: colors.textDim, padding: "8px 10px", margin: 0, lineHeight: 1.5 }}>
+              No tracks. Select a layer, then use <strong>+ Track</strong> or <strong>Animate {props.active}…</strong>.
+            </p>
+          )}
+          {rows.map((row) => {
+            const isSel = row.group.layerId === props.selectedLayerId;
+            if (row.kind === "group") {
+              return (
+                <button
+                  key={`g:${row.group.layerId}`}
+                  type="button"
+                  onClick={() => toggle(row.group.layerId)}
+                  aria-expanded={row.open}
+                  aria-label={`${row.open ? "Collapse" : "Expand"} ${row.group.name} tracks`}
+                  style={{
+                    ...rowBase(),
+                    width: "100%",
+                    border: "none",
+                    borderBottom: `1px solid ${colors.border}`,
+                    borderLeft: `2px solid ${isSel ? colors.accent : "transparent"}`,
+                    background: isSel ? colors.brandSubtle : colors.surface2,
+                    color: colors.text,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                  }}
+                >
+                  {row.open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                  <span style={ellipsis}>{row.group.name}</span>
+                  <span style={{ marginLeft: "auto", fontWeight: 400, color: colors.textMuted }}>
+                    {row.group.tracks.length}
+                  </span>
+                </button>
+              );
+            }
+            const meta = TRACK_PROPERTY_LABELS[row.track.property];
+            return (
+              <div
+                key={keyOf(row.track)}
+                style={{
+                  ...rowBase(),
+                  paddingLeft: 28,
+                  borderBottom: `1px solid ${row.last ? colors.border : colors.surface2}`,
+                  borderLeft: `2px solid ${isSel ? colors.accent : "transparent"}`,
+                  background: isSel ? colors.brandSubtle : "transparent",
+                }}
+              >
+                <span style={{ ...ellipsis, flex: 1 }}>{meta.label}</span>
+                {meta.unit && <span style={{ color: colors.textMuted }}>{meta.unit}</span>}
+                <IconButton
+                  size={24}
+                  aria-label={`Delete ${meta.label} track of ${row.group.name}`}
+                  title="Delete track"
+                  onClick={() => deleteTrack(row.track.layerId, row.track.property)}
+                  style={{ border: "none" }}
+                >
+                  <X size={12} />
+                </IconButton>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Lanes */}
+        <div
+          ref={laneRef}
+          style={{ flex: 1, minWidth: 0, position: "relative", userSelect: "none" }}
+          onPointerDown={startScrubDrag}
+          onPointerMove={onLanePointerMove}
+          onPointerUp={onLanePointerUp}
+          onPointerCancel={onLanePointerUp}
+        >
+          <div
+            aria-hidden
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 2,
+              height: RULER_HEIGHT,
+              background: colors.surface2,
+              borderBottom: `1px solid ${colors.border}`,
+              cursor: "ew-resize",
+              overflow: "hidden",
             }}
           >
-            {track.keyframes.map((kf, j) => {
-              const left = (kf.t / duration) * 100;
-              const isThisSelected =
-                selectedKeyframe?.trackKey === trackKey && selectedKeyframe.index === j;
-              return (
-                <div
-                  key={j}
-                  title={`${track.property}=${kf.value} @ ${kf.t.toFixed(2)}s — drag to move, dbl-click track to add, Del to remove`}
-                  onPointerDown={(e) => startKfDrag(e, trackKey, j, kf.t)}
+            {ticks.minor.map((t) => (
+              <div
+                key={`m${t}`}
+                style={{ position: "absolute", left: x(t), bottom: 0, height: 4, borderLeft: `1px solid ${colors.borderStrong}` }}
+              />
+            ))}
+            {ticks.labels.map((l) => (
+              <div key={`l${l.t}`} style={{ position: "absolute", left: x(l.t), top: 0, bottom: 0 }}>
+                <div style={{ position: "absolute", bottom: 0, height: 8, borderLeft: `1px solid ${colors.textMuted}` }} />
+                <span
                   style={{
                     position: "absolute",
-                    left: `${left}%`,
-                    top: TRACK_HEIGHT / 2 - 6,
-                    width: 12,
-                    height: 12,
-                    background: isThisSelected ? "#4ade80" : "#ffb13a",
-                    transform: "rotate(45deg) translateX(-6px)",
-                    borderRadius: 1,
-                    cursor: "grab",
-                    boxShadow: isThisSelected ? "0 0 0 1px #fff inset" : "none",
+                    top: 2,
+                    // Labels near the right edge sit left of their tick so they aren't clipped.
+                    ...(x(l.t) > laneW - 36 ? { right: 3 } : { left: 3 }),
+                    fontSize: fontSize["2xs"],
+                    color: colors.textDim,
+                    whiteSpace: "nowrap",
+                    fontVariantNumeric: "tabular-nums",
                   }}
-                />
-              );
-            })}
+                >
+                  {l.text}
+                </span>
+              </div>
+            ))}
           </div>
-        );
-      })}
 
-      {/* Scrub head: visual indicator only — clicks are handled by the
-          container's pointerdown so dragging anywhere on the timeline scrubs. */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          bottom: 0,
-          left: `${(time / duration) * 100}%`,
-          width: 0,
-          borderLeft: "1px solid #4ade80",
-          pointerEvents: "none",
-          boxShadow: "0 0 6px rgba(74,222,128,0.6)",
-        }}
-      >
-        {/* Triangular head + grab affordance at the top of the axis. */}
-        <div
-          style={{
-            position: "absolute",
-            top: 2,
-            left: -6,
-            width: 12,
-            height: 12,
-            background: "#4ade80",
-            clipPath: "polygon(0 0, 100% 0, 50% 100%)",
-          }}
-        />
+          {rows.map((row) => {
+            const isSel = row.group.layerId === props.selectedLayerId;
+            if (row.kind === "group") {
+              return (
+                <div
+                  key={`g:${row.group.layerId}`}
+                  style={{
+                    position: "relative",
+                    height: TRACK_HEIGHT,
+                    boxSizing: "border-box",
+                    borderBottom: `1px solid ${colors.border}`,
+                    background: isSel ? colors.brandSubtle : colors.surface2,
+                  }}
+                >
+                  {/* Collapsed: a read-only summary of every keyframe in the group. */}
+                  {!row.open &&
+                    row.group.tracks.flatMap(({ track }) =>
+                      track.keyframes.map((kf, j) => (
+                        <div
+                          key={`${keyOf(track)}:${j}`}
+                          style={{
+                            ...diamondStyle(false),
+                            position: "absolute",
+                            left: x(kf.t) - DIAMOND / 2,
+                            top: TRACK_HEIGHT / 2 - DIAMOND / 2,
+                            opacity: 0.6,
+                            pointerEvents: "none",
+                          }}
+                        />
+                      )),
+                    )}
+                </div>
+              );
+            }
+            const track = row.track;
+            const trackKey = keyOf(track);
+            const meta = TRACK_PROPERTY_LABELS[track.property];
+            return (
+              <div
+                key={trackKey}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  addKeyframeAt(track, timeAtClientX(e.clientX));
+                }}
+                style={{
+                  position: "relative",
+                  height: TRACK_HEIGHT,
+                  boxSizing: "border-box",
+                  borderBottom: `1px solid ${row.last ? colors.border : colors.surface2}`,
+                  background: isSel ? colors.brandSubtle : "transparent",
+                  cursor: "crosshair",
+                }}
+              >
+                {track.keyframes.map((kf, j) => {
+                  const on = props.selectedKeyframe?.trackKey === trackKey && props.selectedKeyframe.index === j;
+                  return (
+                    // 14×24 hit area around the small visible diamond.
+                    <div
+                      key={j}
+                      title={`${meta.label} ${String(kf.value)}${meta.unit} at ${kf.t.toFixed(2)}s: drag to move, double-click the track to add, Delete to remove`}
+                      onPointerDown={(e) => startKfDrag(e, trackKey, j, kf.t)}
+                      style={{
+                        position: "absolute",
+                        left: x(kf.t) - 7,
+                        top: 0,
+                        width: 14,
+                        height: TRACK_HEIGHT,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "grab",
+                        zIndex: on ? 1 : 0,
+                      }}
+                    >
+                      <div style={diamondStyle(on)} />
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* Playhead: visual only; the lane's pointerdown scrubs. */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: x(props.time),
+              width: 0,
+              borderLeft: `1px solid ${colors.text}`,
+              pointerEvents: "none",
+              zIndex: 3,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: RULER_HEIGHT - 8,
+                left: -5,
+                width: 10,
+                height: 8,
+                background: colors.text,
+                clipPath: "polygon(0 0, 100% 0, 50% 100%)",
+              }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -750,117 +720,175 @@ function TrackLanes({
 
 // ──────────────────────────────────────────────────────────────────────────
 
-function KeyframeInspector({
-  template,
-  activeTimeline,
-  selected,
-  onCommit,
-  onDeleteSelected,
-}: {
-  template: Template;
-  activeTimeline: "in" | "out";
-  selected: { trackKey: string; index: number } | null;
-  onCommit: (recipe: (d: Draft<Template>) => void) => void;
-  onDeleteSelected: () => void;
-}) {
-  const [showEasing, setShowEasing] = useState(true);
-  if (!selected) {
-    return (
-      <div
-        style={{
-          padding: 12,
-          fontSize: 11,
-          color: "var(--text-dim, #9099a8)",
-          borderLeft: "1px solid var(--border, #2a2e36)",
-          overflow: "auto",
-        }}
-      >
-        Select a keyframe (or double-click a track to add).
-      </div>
+/**
+ * The selected keyframe as one row: time, value (with unit), easing, then
+ * "Edit curve" (bezier editor in a popover) and delete.
+ */
+function KeyframeRow(props: Props) {
+  const active = props.active;
+  const sel = props.selectedKeyframe;
+  const track = sel ? trackByKey(props.template.timelines[active].tracks, sel.trackKey) : null;
+  const kf = sel && track ? track.keyframes[sel.index] : undefined;
+  // Fixed position (the timeline cell clips overflow); opens upward when there's no room below.
+  const [curvePos, setCurvePos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const curveOpen = curvePos !== null;
+  const setCurveOpen = (open: boolean) => {
+    if (!open) return setCurvePos(null);
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - CURVE_POPOVER_W - 8));
+    setCurvePos(
+      window.innerHeight - r.bottom >= CURVE_POPOVER_H + 12
+        ? { left, top: r.bottom + 6 }
+        : { left, bottom: window.innerHeight - r.top + 6 },
     );
-  }
-  const track = trackByKey(template.timelines[activeTimeline].tracks, selected.trackKey);
-  const kf = track?.keyframes[selected.index];
-  if (!track || !kf) return null;
+  };
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLSpanElement | null>(null);
 
+  useEffect(() => {
+    if (!curveOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setCurveOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Close only the popover; the designer's own Escape (deselect) shouldn't also fire.
+      e.stopPropagation();
+      setCurveOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [curveOpen]);
+
+  useEffect(() => {
+    if (!kf) setCurveOpen(false);
+  }, [kf]);
+
+  if (!sel || !track || !kf) {
+    return <span style={{ color: colors.textMuted }}>Select a keyframe, or double-click a track to add one</span>;
+  }
+  const meta = TRACK_PROPERTY_LABELS[track.property];
+
+  // Writes only the given keys; the rest of the keyframe (and any unknown keys) stays as stored.
   function patch(p: Partial<Keyframe>) {
-    onCommit((d) => {
-      const t = trackByKey(d.timelines[activeTimeline].tracks, selected!.trackKey);
-      if (!t) return;
-      const k = t.keyframes[selected!.index];
-      if (!k) return;
-      Object.assign(k, p);
+    props.onCommit((d) => {
+      const k = trackByKey(d.timelines[active].tracks, sel!.trackKey)?.keyframes[sel!.index];
+      if (k) Object.assign(k, p);
     });
   }
+  function remove() {
+    props.onCommit((d) => {
+      trackByKey(d.timelines[active].tracks, sel!.trackKey)?.keyframes.splice(sel!.index, 1);
+    });
+    props.setSelectedKeyframe(null);
+  }
+
+  const easing = kf.easing as EasingSpec;
+  const isCustom = Array.isArray(easing);
+  const named = typeof easing === "string" ? easing : "";
+  const known = (EASING_PRESETS as readonly string[]).includes(named);
+  const valueStep = track.property === "rotation" || meta.unit === "px" ? 1 : 0.01;
 
   return (
-    <div
-      style={{
-        padding: 10,
-        borderLeft: "1px solid var(--border, #2a2e36)",
-        overflow: "auto",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-        <strong style={{ fontSize: 12 }}>Keyframe</strong>
-        <span style={{ marginLeft: 8, color: "var(--text-dim, #9099a8)", fontSize: 10 }}>
-          {track.property}
-        </span>
-        <button onClick={onDeleteSelected} style={{ marginLeft: "auto", ...delBtn }}>
-          Delete
-        </button>
-      </div>
-      <Row label="t (s)">
-        <input
-          type="number"
-          step={0.01}
+    <>
+      <span style={{ color: colors.text, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.label} keyframe</span>
+      <span style={{ width: 72 }}>
+        <NumberInput
+          size="sm"
+          aria-label="Keyframe time"
           value={kf.t}
-          onChange={(e) => {
-            const v = parseFloat(e.target.value);
-            if (Number.isFinite(v)) patch({ t: v });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          style={inputStyle}
+          step={0.01}
+          precision={2}
+          min={0}
+          suffix="s"
+          onCommit={(v) => patch({ t: v })}
         />
-      </Row>
-      <Row label="value">
-        <input
-          value={String(kf.value)}
-          onChange={(e) => {
-            const num = parseFloat(e.target.value);
-            patch({ value: Number.isFinite(num) ? num : e.target.value });
-          }}
-          style={inputStyle}
-        />
-      </Row>
-      <button
-        onClick={() => setShowEasing((s) => !s)}
-        style={{
-          ...miniBtn,
-          width: "100%",
-          marginTop: 8,
-          marginBottom: 6,
+      </span>
+      <span style={{ width: 84 }}>
+        {typeof kf.value === "number" ? (
+          <NumberInput
+            size="sm"
+            aria-label={`${meta.label} value`}
+            value={kf.value}
+            step={valueStep}
+            suffix={meta.unit || undefined}
+            onCommit={(v) => patch({ value: v })}
+          />
+        ) : (
+          <Input
+            aria-label={`${meta.label} value`}
+            value={kf.value}
+            onChange={(e) => {
+              const num = parseFloat(e.target.value);
+              patch({ value: Number.isFinite(num) ? num : e.target.value });
+            }}
+          />
+        )}
+      </span>
+      <Select
+        aria-label="Easing"
+        value={isCustom ? "__custom" : named}
+        onChange={(e) => {
+          if (e.target.value !== "__custom") patch({ easing: e.target.value });
         }}
+        style={{ width: 120 }}
       >
-        {showEasing ? "Hide" : "Show"} easing
-      </button>
-      {showEasing && (
-        <EasingPicker value={kf.easing as EasingSpec} onChange={(e) => patch({ easing: e })} />
-      )}
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div
-      style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 6, alignItems: "center", marginBottom: 6 }}
-    >
-      <label style={{ fontSize: 11, color: "var(--text-dim, #9099a8)" }}>{label}</label>
-      {children}
-    </div>
+        {isCustom && <option value="__custom">Custom curve</option>}
+        {!isCustom && !known && <option value={named}>{named}</option>}
+        {EASING_PRESETS.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </Select>
+      <span ref={btnRef} style={{ position: "relative", display: "inline-flex" }}>
+        <IconButton
+          aria-label="Edit curve"
+          title="Edit curve"
+          aria-expanded={curveOpen}
+          onClick={() => setCurveOpen(!curveOpen)}
+          style={curveOpen ? { border: `1px solid ${colors.accent}`, color: colors.brandText } : undefined}
+        >
+          <Spline size={14} />
+        </IconButton>
+        {curvePos && (
+          <div
+            ref={popRef}
+            role="dialog"
+            aria-label="Easing curve"
+            style={{
+              position: "fixed",
+              ...curvePos,
+              zIndex: 50,
+              width: CURVE_POPOVER_W,
+              boxSizing: "border-box",
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
+              borderRadius: radius.lg,
+              boxShadow: shadow.modal,
+              padding: 6,
+            }}
+          >
+            <EasingPicker value={easing} onChange={(e) => patch({ easing: e })} />
+          </div>
+        )}
+      </span>
+      <IconButton
+        tone="danger"
+        aria-label={`Delete ${meta.label} keyframe at ${kf.t.toFixed(2)}s`}
+        title="Delete keyframe (Delete)"
+        onClick={remove}
+      >
+        <Trash2 size={14} />
+      </IconButton>
+    </>
   );
 }
 
@@ -911,7 +939,7 @@ function initialKeyframesFor(
 
 function trackByKey(tracks: Track[] | Draft<Track>[], key: string): Draft<Track> | null {
   for (const t of tracks) {
-    if (`${t.layerId}::${t.property}` === key) return t as Draft<Track>;
+    if (keyOf(t) === key) return t as Draft<Track>;
   }
   return null;
 }
@@ -920,50 +948,34 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "4px 6px",
-  background: "var(--panel-2, #1c1f25)",
-  border: "1px solid var(--border, #2a2e36)",
-  color: "var(--text, #e9eaee)",
-  borderRadius: 3,
-  fontSize: 12,
-  outline: "none",
-};
-const selectStyle: React.CSSProperties = {
-  padding: "4px 8px",
-  background: "var(--panel, #14161a)",
-  border: "1px solid var(--border, #2a2e36)",
-  color: "var(--text, #e9eaee)",
-  borderRadius: 3,
-  fontSize: 12,
-};
-const miniBtn: React.CSSProperties = {
-  padding: "4px 8px",
-  background: "var(--panel, #14161a)",
-  color: "var(--text, #e9eaee)",
-  border: "1px solid var(--border, #2a2e36)",
-  borderRadius: 3,
-  fontSize: 11,
-  cursor: "pointer",
-};
-const delBtn: React.CSSProperties = {
-  padding: "2px 6px",
-  background: "transparent",
-  color: "var(--red, #f87171)",
-  border: "1px solid var(--red, #f87171)",
-  borderRadius: 3,
-  fontSize: 11,
-  cursor: "pointer",
-};
-function playBtn(playing: boolean): React.CSSProperties {
+/** "1s", "0.6s": no trailing zeros. */
+function fmtSec(s: number): string {
+  return `${Number(s.toFixed(2))}s`;
+}
+
+function rowBase(): React.CSSProperties {
   return {
-    padding: "4px 12px",
-    background: playing ? "var(--panel-2, #1c1f25)" : "var(--accent, #ff3a3a)",
-    color: "#fff",
-    border: "1px solid var(--border, #2a2e36)",
-    borderRadius: 3,
-    fontSize: 12,
-    cursor: "pointer",
+    height: TRACK_HEIGHT,
+    boxSizing: "border-box",
+    padding: "0 4px 0 8px",
+    fontSize: fontSize.sm,
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    borderBottom: `1px solid ${colors.border}`,
+    color: colors.text,
+  };
+}
+
+const ellipsis: React.CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 };
+
+function diamondStyle(on: boolean): React.CSSProperties {
+  return {
+    width: DIAMOND,
+    height: DIAMOND,
+    transform: "rotate(45deg)",
+    borderRadius: 1,
+    background: on ? colors.accent : colors.textDim,
+    boxShadow: on ? `0 0 0 1px ${colors.text}` : "none",
   };
 }
