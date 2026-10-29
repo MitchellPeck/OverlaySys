@@ -23,12 +23,19 @@ const subscribe = (fn: () => void) => {
 };
 const EMPTY: ToastEntry[] = [];
 
-export function toast(o: ToastOptions): void {
-  queue.push(o);
+/** Show a toast; returns its id (for `dismissToast`). */
+export function toast(o: ToastOptions): string {
+  const id = queue.push(o);
   notify();
+  return id;
 }
 
-export function useToast(): (o: ToastOptions) => void {
+/** Dismiss a toast by the id `toast()` returned (no-op when already gone). */
+export function dismissToast(id: string): void {
+  dismiss(id);
+}
+
+export function useToast(): (o: ToastOptions) => string {
   return toast;
 }
 
@@ -52,6 +59,7 @@ export function ToastHost() {
   useEffect(() => {
     if (list.length === 0) return;
     const next = Math.min(...list.map((t) => t.expiresAt));
+    if (next === Infinity) return; // only persistent toasts: nothing to expire
     const timer = setTimeout(
       () => {
         queue.expire();

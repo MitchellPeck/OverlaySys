@@ -70,4 +70,28 @@ describe("createToastQueue", () => {
     q.push({ message: "x" });
     expect(q.list()).not.toBe(before);
   });
+
+  it("persistent toasts (durationMs null) never expire and can be dismissed by id", () => {
+    const c = clock();
+    const q = createToastQueue(c.now);
+    const id = q.push({ message: "Server restarting", durationMs: null });
+    c.set(10 * 60_000);
+    q.expire();
+    expect(q.list().map((e) => e.id)).toEqual([id]);
+    q.dismiss(id);
+    expect(q.list()).toHaveLength(0);
+  });
+  it("non-persistent toasts never evict a persistent one", () => {
+    const c = clock();
+    const q = createToastQueue(c.now);
+    const p = q.push({ message: "Persistent", durationMs: null });
+    for (const m of ["a", "b", "c", "d"]) {
+      c.set(c.now() + 2000);
+      q.push({ message: m });
+    }
+    const list = q.list();
+    expect(list).toHaveLength(3);
+    expect(list[0]!.id).toBe(p);
+    expect(list.map((e) => e.message)).toEqual(["Persistent", "c", "d"]);
+  });
 });

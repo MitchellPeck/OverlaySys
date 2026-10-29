@@ -7,7 +7,8 @@ export type ToastOptions = {
   message: string;
   tone?: ToastTone;
   action?: { label: string; onClick(): void };
-  durationMs?: number;
+  /** ms until auto-dismiss; `null` = persistent (stays until dismissed by id, never evicted by non-persistent toasts). */
+  durationMs?: number | null;
 };
 
 export type ToastEntry = {
@@ -25,6 +26,7 @@ const DEFAULT_MS = 4000;
 const LONG_MS = 8000;
 
 export function toastDuration(o: ToastOptions): number {
+  if (o.durationMs === null) return Infinity;
   if (o.durationMs !== undefined) return o.durationMs;
   return o.tone === "error" || o.action ? LONG_MS : DEFAULT_MS;
 }
@@ -38,6 +40,16 @@ export type ToastQueue = {
   /** Oldest first. The reference changes only when the entries do. */
   list(): ToastEntry[];
 };
+
+/** Keep at most TOAST_MAX: drop the oldest non-persistent first, then the oldest. */
+function capEntries(list: ToastEntry[]): ToastEntry[] {
+  const out = [...list];
+  while (out.length > TOAST_MAX) {
+    const i = out.findIndex((e) => e.expiresAt !== Infinity);
+    out.splice(i === -1 ? 0 : i, 1);
+  }
+  return out;
+}
 
 export function createToastQueue(now: () => number): ToastQueue {
   let entries: ToastEntry[] = [];
@@ -59,7 +71,7 @@ export function createToastQueue(now: () => number): ToastQueue {
         createdAt: t,
         expiresAt: t + toastDuration(o),
       };
-      entries = [...entries, entry].slice(-TOAST_MAX);
+      entries = capEntries([...entries, entry]);
       return entry.id;
     },
     dismiss(id) {

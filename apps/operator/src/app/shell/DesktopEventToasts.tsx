@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { toast, type ToastTone } from "@overlaysys/ui";
+import { dismissToast, toast, type ToastTone } from "@overlaysys/ui";
 import { getDesktopApi } from "@/lib/desktop";
 import { describeDesktopEvent, type Tone } from "./shellStatus";
 
 const TONE: Record<Tone, ToastTone> = { good: "ok", warn: "warn", bad: "error", dim: "info" };
-/** Toasts have no "stay until dismissed"; sticky notices get a long duration. */
-const STICKY_MS = 120_000;
 
 /**
  * Toasts for what the desktop host did on the operator's behalf: restarted a
@@ -19,9 +17,18 @@ export function DesktopEventToasts(): null {
   useEffect(() => {
     const api = getDesktopApi();
     if (!api?.onDesktopEvent) return;
+    // Ids of "server is down" notices; a restart supersedes them.
+    let serverDown: string[] = [];
     return api.onDesktopEvent((ev) => {
       const t = describeDesktopEvent(ev);
-      toast({ message: t.text, tone: TONE[t.tone], ...(t.sticky ? { durationMs: STICKY_MS } : {}) });
+      const isDown = ev.kind === "server-restarting" || ev.kind === "server-failed";
+      if (ev.kind === "server-restarted") {
+        serverDown.forEach(dismissToast);
+        serverDown = [];
+      }
+      // Sticky notices (and "server is down") stay until dismissed or superseded.
+      const id = toast({ message: t.text, tone: TONE[t.tone], ...(t.sticky || isDown ? { durationMs: null } : {}) });
+      if (isDown) serverDown.push(id);
     });
   }, []);
   return null;

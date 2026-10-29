@@ -30,7 +30,6 @@ export function StatusBar() {
       <SyncStatusPill />
       <SttDot />
       <ServerDot />
-      {/* [P2b.20] reserved: P2b.20 adds its own marked block here. */}
     </div>
   );
 }

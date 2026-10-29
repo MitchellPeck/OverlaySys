@@ -28,7 +28,7 @@ export { Menu, useContextMenu } from "./Menu";
 export { type MenuItem, isContextMenuKey } from "./menuModel";
 export { roundTo, formatNumber } from "./numberDraft";
 export { Dialog, DialogHost, useConfirm, usePrompt, confirm, prompt, chooseAction, alertDialog, type ConfirmOptions, type PromptOptions, type ChooseActionOptions, type AlertOptions } from "./Dialog";
-export { ToastHost, toast, useToast, type ToastOptions, type ToastTone } from "./Toast";
+export { ToastHost, toast, dismissToast, useToast, type ToastOptions, type ToastTone } from "./Toast";
 export { SaveBar, type SaveBarProps } from "./SaveBar";
 export { saveBarState, type SaveBarState, type SaveBarStatus } from "./saveBarState";
 export { OfflineState } from "./OfflineState";
