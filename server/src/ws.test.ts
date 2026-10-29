@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { _settleWritesForTest } from "./storage";
 import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
 import { handleConnection } from "./ws";
@@ -34,7 +35,7 @@ afterAll(async () => {
   // (removing it under an in-flight write would reject with ENOENT).
   // Only sockets a test didn't already close, so no close handler runs twice.
   for (const s of sockets) if (!s.closed) s.emit("close");
-  await new Promise((r) => setTimeout(r, 300));
+  await _settleWritesForTest();
   await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   if (prevDataDir === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
   else process.env["OVERLAYSYS_DATA_DIR"] = prevDataDir;

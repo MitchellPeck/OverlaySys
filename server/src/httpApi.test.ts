@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { _settleWritesForTest } from "./storage";
 import Fastify, { type FastifyInstance } from "fastify";
 import { promises as fs } from "node:fs";
 import os from "node:os";
@@ -22,7 +23,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await app.close();
-  await new Promise((r) => setTimeout(r, 200));
+  await _settleWritesForTest();
   await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   if (prev === undefined) delete process.env["OVERLAYSYS_DATA_DIR"];
   else process.env["OVERLAYSYS_DATA_DIR"] = prev;

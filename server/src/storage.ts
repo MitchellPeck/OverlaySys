@@ -75,6 +75,29 @@ const CHANNEL_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "channels",
 const SONG_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "songs", "fixtures");
 const HOTCARD_FIXTURES_DIR = (): string => path.join(fixturesRoot(), "hotcards", "fixtures");
 
+// In-flight atomic writes, tracked so tests can wait for them to finish
+// before removing a temp data dir (see _settleWritesForTest). No behaviour
+// change for production callers: the returned promise is the write itself.
+const inflightWrites = new Set<Promise<void>>();
+function trackedWrite(file: string, content: string): Promise<void> {
+  const p = writeAtomic(file, content);
+  inflightWrites.add(p);
+  const done = (): void => {
+    inflightWrites.delete(p);
+  };
+  p.then(done, done);
+  return p;
+}
+
+/** @internal Resolves once every atomic write started so far has settled (errors ignored). */
+export async function _settleWritesForTest(): Promise<void> {
+  // Yield a macrotask between sweeps so writes queued behind pending awaits get registered.
+  do {
+    await Promise.allSettled([...inflightWrites]);
+    await new Promise((r) => setImmediate(r));
+  } while (inflightWrites.size > 0);
+}
+
 async function ensureDir(p: string): Promise<void> {
   await fs.mkdir(p, { recursive: true });
 }
@@ -110,7 +133,7 @@ async function copyMissingFixtures(srcDir: string, dstDir: string): Promise<void
     if (exists) continue;
     const src = path.join(srcDir, e.name);
     const content = await fs.readFile(src, "utf8");
-    await writeAtomic(dst, content);
+    await trackedWrite(dst, content);
     console.log(`[storage] seeded ${path.relative(REPO_ROOT, dst)} from fixture`);
   }
 }
@@ -149,7 +172,7 @@ async function ensureDefaultProject(): Promise<void> {
     createdAt: now,
     updatedAt: now,
   };
-  await writeAtomic(file, JSON.stringify(project, null, 2));
+  await trackedWrite(file, JSON.stringify(project, null, 2));
 }
 
 export async function loadAllTemplates(): Promise<Template[]> {
@@ -175,7 +198,7 @@ export async function saveTemplate(template: Template): Promise<void> {
   // time, which on bundle imports with dozens of complex templates can
   // turn a 10s save into a 30s+ save and trip the operator's per-item
   // ack timeout. Trust the type system here.
-  await writeAtomic(file, JSON.stringify(template, null, 2));
+  await trackedWrite(file, JSON.stringify(template, null, 2));
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
@@ -208,7 +231,7 @@ export async function saveShow(show: Show): Promise<void> {
   await ensureDir(SHOWS_DIR());
   const file = path.join(SHOWS_DIR(), `${show.id}.json`);
   // Trust the WS-layer validation — see saveTemplate for why.
-  await writeAtomic(file, JSON.stringify(show, null, 2));
+  await trackedWrite(file, JSON.stringify(show, null, 2));
 }
 
 export async function deleteShow(id: string): Promise<boolean> {
@@ -241,7 +264,7 @@ export async function saveChannelConfig(config: ChannelConfig): Promise<void> {
   await ensureDir(CHANNELS_DIR());
   const file = path.join(CHANNELS_DIR(), `${config.id}.json`);
   const parsed = ChannelConfigSchema.parse(config);
-  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+  await trackedWrite(file, JSON.stringify(parsed, null, 2));
 }
 
 export async function deleteChannelConfig(id: string): Promise<boolean> {
@@ -273,7 +296,7 @@ export async function loadSong(id: string): Promise<Song | null> {
 export async function saveSong(song: Song): Promise<void> {
   await ensureDir(SONGS_DIR());
   const file = path.join(SONGS_DIR(), `${song.id}.json`);
-  await writeAtomic(file, JSON.stringify(song, null, 2));
+  await trackedWrite(file, JSON.stringify(song, null, 2));
 }
 
 export async function deleteSong(id: string): Promise<boolean> {
@@ -305,7 +328,7 @@ export async function loadHotcard(id: string): Promise<Hotcard | null> {
 export async function saveHotcard(hotcard: Hotcard): Promise<void> {
   await ensureDir(HOTCARDS_DIR());
   const file = path.join(HOTCARDS_DIR(), `${hotcard.id}.json`);
-  await writeAtomic(file, JSON.stringify(hotcard, null, 2));
+  await trackedWrite(file, JSON.stringify(hotcard, null, 2));
 }
 
 export async function deleteHotcard(id: string): Promise<boolean> {
@@ -341,7 +364,7 @@ export async function saveStageLayout(layout: StageLayout): Promise<void> {
   if (!STAGE_LAYOUT_ID_PATTERN.test(layout.id)) throw new Error(`Unsafe stage layout id: ${JSON.stringify(layout.id)}`);
   await ensureDir(STAGE_LAYOUTS_DIR());
   const file = path.join(STAGE_LAYOUTS_DIR(), `${layout.id}.json`);
-  await writeAtomic(file, JSON.stringify(layout, null, 2));
+  await trackedWrite(file, JSON.stringify(layout, null, 2));
 }
 
 // Projects ─────────────────────────────────────────────────────────────────────
@@ -364,7 +387,7 @@ export async function saveProject(project: Project): Promise<void> {
   await ensureDir(PROJECTS_DIR());
   const file = path.join(PROJECTS_DIR(), `${project.id}.json`);
   const parsed = ProjectSchema.parse(project);
-  await writeAtomic(file, JSON.stringify(parsed, null, 2));
+  await trackedWrite(file, JSON.stringify(parsed, null, 2));
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
@@ -424,7 +447,7 @@ export async function loadSttConfig(): Promise<SttSpawnerConfig> {
 export async function saveSttConfig(config: SttSpawnerConfig): Promise<void> {
   await ensureDir(STT_DIR());
   const parsed = SttSpawnerConfigSchema.parse(config);
-  await writeAtomic(STT_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
+  await trackedWrite(STT_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
 }
 
 // Planning Center config ─────────────────────────────────────────────────────
@@ -442,5 +465,5 @@ export async function loadPcoConfig(): Promise<PcoConfig> {
 export async function savePcoConfig(config: PcoConfig): Promise<void> {
   await ensureDir(PCO_DIR());
   const parsed = PcoConfigSchema.parse(config);
-  await writeAtomic(PCO_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
+  await trackedWrite(PCO_CONFIG_FILE(), JSON.stringify(parsed, null, 2));
 }
