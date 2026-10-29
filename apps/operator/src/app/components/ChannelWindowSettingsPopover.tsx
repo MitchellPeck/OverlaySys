@@ -10,6 +10,8 @@ import type {
 import { Button, Checkbox, Select, colors, radius } from "@overlaysys/ui";
 import { getDesktopApi } from "@/lib/desktop";
 import { POPOVER_W, popoverPosition } from "@/lib/popoverPosition";
+import { applyOutputChoice, outputChoiceValue } from "@/lib/decklinkOutputChoice";
+import { SIGNAL_FORMATS } from "@overlaysys/core";
 
 const DEFAULT_PREFS: ChannelWindowPrefs = {
   autoOpen: false,
@@ -86,6 +88,19 @@ export function ChannelWindowSettingsPopover({
   const [dirty, setDirty] = useState(false);
   const [audioDevices, setAudioDevices] = useState<{ deviceId: string; label: string }[]>([]);
   const [savedAudio, setSavedAudio] = useState<ChannelWindowPrefs["audioOutput"]>(undefined);
+  const [savedOutput, setSavedOutput] = useState<string>("");
+  const [savedFormat, setSavedFormat] = useState<string | undefined>(undefined);
+  // Blackmagic devices the configured ffmpeg sees; null while loading.
+  const [deckLinks, setDeckLinks] = useState<string[] | null>(null);
+  const [deckLinkError, setDeckLinkError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!api?.decklinkListDevices) return;
+    void api.decklinkListDevices().then((r) => {
+      setDeckLinks(r.ok ? r.devices : []);
+      setDeckLinkError(r.ok ? null : r.message);
+    });
+  }, [api]);
 
   useEffect(() => {
     if (!api) return;
@@ -120,6 +135,8 @@ export function ChannelWindowSettingsPopover({
       const existing = f.channels[channelId];
       if (existing) setPrefs(existing);
       setSavedAudio(existing?.audioOutput);
+      setSavedOutput(existing ? outputChoiceValue(existing) : "display:");
+      setSavedFormat(existing?.decklink?.format);
     })();
   }, [api, channelId]);
 
@@ -148,11 +165,17 @@ export function ChannelWindowSettingsPopover({
     // from the server's last reported position.
     const audioChanged =
       (savedAudio?.deviceId ?? "") !== (prefs.audioOutput?.deviceId ?? "");
-    if (audioChanged) {
+    // Switching between a display and a Blackmagic device (or its format)
+    // also needs the output reopened.
+    const outputChanged =
+      savedOutput !== outputChoiceValue(prefs) || savedFormat !== prefs.decklink?.format;
+    if (audioChanged || outputChanged) {
       const open = await api.listChannelWindows();
       if (open.includes(channelId)) await api.reopenChannelOnConfiguredDisplay(channelId);
     }
     setSavedAudio(prefs.audioOutput);
+    setSavedOutput(outputChoiceValue(prefs));
+    setSavedFormat(prefs.decklink?.format);
     setDirty(false);
     onSaved?.();
     onClose();
@@ -187,29 +210,70 @@ export function ChannelWindowSettingsPopover({
       </div>
 
       <div style={{ marginBottom: 8 }}>
-        <div style={{ color: colors.textDim, marginBottom: 4 }}>Display</div>
+        <div style={{ color: colors.textDim, marginBottom: 4 }}>Output</div>
         <Select
-          value={prefs.displayId ?? ""}
-          onChange={(e) =>
-            update("displayId", e.target.value === "" ? undefined : Number(e.target.value))
-          }
+          value={outputChoiceValue(prefs)}
+          onChange={(e) => {
+            setPrefs((p) => applyOutputChoice(p, e.target.value));
+            setDirty(true);
+          }}
         >
-          <option value="">(none — open on primary)</option>
-          {displays.map((d, i) => (
-            <option key={d.id} value={d.id}>
-              {i + 1}. {d.label || `Display ${i + 1}`} ({d.bounds.width}×{d.bounds.height}
-              {d.internal ? ", internal" : ""})
-            </option>
-          ))}
-          {cachedConfigured && (
-            <option value={cachedConfigured.id}>
-              {cachedConfigured.label} (not attached)
-            </option>
+          <optgroup label="Displays">
+            <option value="display:">(none — open on primary)</option>
+            {displays.map((d, i) => (
+              <option key={d.id} value={`display:${d.id}`}>
+                {i + 1}. {d.label || `Display ${i + 1}`} ({d.bounds.width}×{d.bounds.height}
+                {d.internal ? ", internal" : ""})
+              </option>
+            ))}
+            {cachedConfigured && (
+              <option value={`display:${cachedConfigured.id}`}>
+                {cachedConfigured.label} (not attached)
+              </option>
+            )}
+          </optgroup>
+          {(!!deckLinks?.length || !!prefs.decklink) && (
+            <optgroup label="Blackmagic">
+              {(deckLinks ?? []).map((name) => (
+                <option key={name} value={`decklink:${name}`}>
+                  {name}
+                </option>
+              ))}
+              {prefs.decklink && !(deckLinks ?? []).includes(prefs.decklink.device.name) && (
+                <option value={`decklink:${prefs.decklink.device.name}`}>
+                  {prefs.decklink.device.name} {deckLinks === null ? "" : "(not connected)"}
+                </option>
+              )}
+            </optgroup>
           )}
         </Select>
-        <Button size="sm" variant="ghost" onClick={() => api.identifyDisplays()} style={{ marginTop: 4 }}>
-          Identify displays
-        </Button>
+        {deckLinkError && prefs.decklink && (
+          <div style={{ color: colors.textDim, marginTop: 4 }}>{deckLinkError}</div>
+        )}
+        {prefs.decklink && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ color: colors.textDim, marginBottom: 4 }}>Signal format</div>
+            <Select
+              value={prefs.decklink.format}
+              onChange={(e) => {
+                const format = e.target.value;
+                setPrefs((p) => (p.decklink ? { ...p, decklink: { ...p.decklink, format } } : p));
+                setDirty(true);
+              }}
+            >
+              {SIGNAL_FORMATS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
+        {!prefs.decklink && (
+          <Button size="sm" variant="ghost" onClick={() => api.identifyDisplays()} style={{ marginTop: 4 }}>
+            Identify displays
+          </Button>
+        )}
       </div>
 
       <div style={{ marginBottom: 8 }}>
@@ -238,7 +302,8 @@ export function ChannelWindowSettingsPopover({
         </Select>
       </div>
 
-      {(
+      {!prefs.decklink &&
+        (
         [
           ["fullscreen", "Fullscreen"],
           ["frameless", "Frameless"],

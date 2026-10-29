@@ -20,6 +20,8 @@ export function DesktopEventToasts(): null {
     // Ids of "server is down" notices; a restart supersedes them.
     let serverDown: string[] = [];
     return api.onDesktopEvent((ev) => {
+      // Starting/stopped are the operator's own actions; only news gets a toast.
+      if (ev.kind === "decklink-status" && (ev.status.state === "starting" || ev.status.state === "stopped")) return;
       const t = describeDesktopEvent(ev);
       const isDown = ev.kind === "server-restarting" || ev.kind === "server-failed";
       if (ev.kind === "server-restarted") {

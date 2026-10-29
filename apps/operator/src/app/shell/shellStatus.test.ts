@@ -20,6 +20,19 @@ describe("shouldShowDisconnected", () => {
 });
 
 describe("describeDesktopEvent", () => {
+  it("explains Blackmagic output status in plain words", () => {
+    const ev = (status: never) => ({ kind: "decklink-status" as const, channelId: "stage", device: "UltraStudio", status });
+    const on = describeDesktopEvent(ev({ state: "running" } as never));
+    expect(on).toEqual({ tone: "good", text: "“UltraStudio” is on air for stage.", sticky: false });
+    const busy = describeDesktopEvent(ev({ state: "restarting", code: "device-busy", attempt: 1, delayMs: 1000 } as never));
+    expect(busy.tone).toBe("warn");
+    expect(busy.text).toBe("“UltraStudio” is in use by another program (Narthex TV, or a leftover ffmpeg). Restarting.");
+    const missing = describeDesktopEvent(ev({ state: "failed", code: "ffmpeg-not-found" } as never));
+    expect(missing.tone).toBe("bad");
+    expect(missing.sticky).toBe(true);
+    expect(missing.text).toContain("Settings → Connection");
+  });
+
   it("makes give-ups and display losses sticky", () => {
     expect(describeDesktopEvent({ kind: "window-reload-gave-up", target: "program", reason: "x" }).sticky).toBe(true);
     expect(describeDesktopEvent({ kind: "output-hidden", channelId: "program", reason: "display disconnected" }).sticky).toBe(true);

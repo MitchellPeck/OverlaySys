@@ -2,6 +2,7 @@
 // banner, desktop toasts, sync pill, first-run checklist). Kept free of React
 // and the DOM so they're unit-testable.
 
+import { deckLinkErrorText } from "@overlaysys/core";
 import type { DesktopEvent } from "@/lib/desktop";
 import type { SyncStatusSnapshot } from "@/lib/useSyncStatus";
 
@@ -59,6 +60,13 @@ export function describeDesktopEvent(ev: DesktopEvent): DesktopToast {
         text: `${targetLabel(ev.target)} keeps crashing (${ev.reason}). Close and reopen it from Settings → Channels.`,
         sticky: true,
       };
+    case "decklink-status": {
+      const s = ev.status;
+      if (s.state === "running") return { tone: "good", text: `“${ev.device}” is on air for ${ev.channelId}.`, sticky: false };
+      if (s.state === "restarting") return { tone: "warn", text: `${deckLinkErrorText(s.code, ev.device)} Restarting.`, sticky: false };
+      if (s.state === "failed") return { tone: "bad", text: deckLinkErrorText(s.code, ev.device), sticky: true };
+      return { tone: "dim", text: `“${ev.device}” ${s.state === "starting" ? "is starting" : "stopped"}.`, sticky: false };
+    }
     case "output-hidden":
       return {
         tone: "warn",

@@ -9,6 +9,7 @@ import { getDesktopApi, type DesktopDiagnostics } from "@/lib/desktop";
 import { httpBase } from "@/lib/pcoClient";
 import { getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
+import { BlackmagicPanel } from "./BlackmagicPanel";
 
 interface NetworkInfo {
   port: number;
@@ -167,6 +168,8 @@ export default function ConnectionPage() {
             </div>
           </Panel>
         )}
+
+        <BlackmagicPanel />
       </PageBody>
     </>
   );
