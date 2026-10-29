@@ -64,9 +64,6 @@ export function LanStageLinks({ channelId, rendererBase }: { channelId: string; 
           {info?.port ?? 4000}.
         </div>
       )}
-      <div style={{ marginTop: 4 }}>
-        Devices must be on the same network. On macOS, allow incoming connections for OverlaySys if asked.
-      </div>
     </div>
   );
 }
@@ -98,8 +95,8 @@ function LanLink({ url }: { url: string }) {
 
   return (
     <div style={{ marginBottom: 6 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <code ref={textRef} style={{ fontFamily: "ui-monospace, monospace", color: colors.accent2 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <code ref={textRef} style={{ fontFamily: "ui-monospace, monospace", color: colors.accent, overflowWrap: "anywhere" }}>
           {url}
         </code>
         <Button size="sm" onClick={copy}>{copied ? "Copied" : "Copy URL"}</Button>
