@@ -313,6 +313,25 @@ export function presetDefinitions(
     feedbacks: [{ feedbackId: "scripture_active", options: { channel: "program" }, style: { bgcolor: 0x00aa00 } }],
   };
 
+  // [P3.21]
+  presets["slides_prev"] = {
+    type: "button",
+    category: "Slides",
+    name: "Slides previous",
+    style: { text: "◀ SLIDE", size: "14", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "slides_advance", options: { channel: "program", delta: -1 } }], up: [] }],
+    feedbacks: [],
+  };
+  presets["slides_next"] = {
+    type: "button",
+    category: "Slides",
+    name: "Slides next",
+    style: { text: "SLIDE ▶", size: "14", color: white, bgcolor: dark },
+    steps: [{ down: [{ actionId: "slides_advance", options: { channel: "program", delta: 1 } }], up: [] }],
+    feedbacks: [{ feedbackId: "slides_on_air", options: { channel: "program" }, style: { bgcolor: 0xe5484d } }],
+  };
+  // [/P3.21]
+
   presets["cursor_prev"] = {
     type: "button",
     category: "Rundown",

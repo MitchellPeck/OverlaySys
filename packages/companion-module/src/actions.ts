@@ -74,7 +74,12 @@ export type ActionId =
   | "stage_timer_adjust"
   | "panic"
   | "create_countdown"
-  | "cursor_prev";
+  | "cursor_prev"
+  // [P3.21]
+  | "slides_advance"
+  | "slides_blank"
+  | "slides_end";
+  // [/P3.21]
 
 const TIMER_MESSAGE_FOR_ACTION = {
   stage_timer_start: "timer_start",
@@ -488,6 +493,17 @@ export function dispatchAction(
     case "scripture_end":
       messages.push({ type: "scripture_end", channel: str("channel") });
       break;
+    // [P3.21]
+    case "slides_advance":
+      messages.push({ type: "slides_advance", channel: str("channel"), delta: num("delta", 1) < 0 ? -1 : 1 });
+      break;
+    case "slides_blank":
+      messages.push({ type: "slides_blank", channel: str("channel") });
+      break;
+    case "slides_end":
+      messages.push({ type: "slides_end", channel: str("channel") });
+      break;
+    // [/P3.21]
     case "cursor_advance":
       localEvents.push({
         type: "local_cursor_advance",
@@ -1142,6 +1158,23 @@ export function actionDefinitions(
       options: [channelDropdown(state)],
       callback: wrap("scripture_end"),
     },
+    // [P3.21]
+    slides_advance: {
+      name: "Slides: next / previous slide",
+      options: [channelDropdown(state), deltaInput],
+      callback: wrap("slides_advance"),
+    },
+    slides_blank: {
+      name: "Slides: blank",
+      options: [channelDropdown(state)],
+      callback: wrap("slides_blank"),
+    },
+    slides_end: {
+      name: "Slides: end",
+      options: [channelDropdown(state)],
+      callback: wrap("slides_end"),
+    },
+    // [/P3.21]
     take_row_song_aware: {
       name: "Rundown: take row (song-aware: songs take a part, other rows take normally)",
       options: [

@@ -44,7 +44,10 @@ export type FeedbackId =
   | "video_remaining_below"
   | "video_errored"
   | "output_offline"
-  | "stt_silent";
+  | "stt_silent"
+  // [P3.21]
+  | "slides_on_air";
+  // [/P3.21]
 
 export type FeedbackOptions = Record<
   string,
@@ -236,6 +239,14 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
     description: "True when the chosen channel shows a scripture slide.",
     options: [{ id: "channel", type: "channel" }],
   },
+  // [P3.21]
+  {
+    id: "slides_on_air",
+    name: "Slides: on air",
+    description: "True when the chosen channel has a slides session.",
+    options: [{ id: "channel", type: "channel" }],
+  },
+  // [/P3.21]
   {
     id: "scripture_queued",
     name: "Scripture: queued (intro taken)",
@@ -454,6 +465,10 @@ export function feedbackPredicate(
       return state.stage?.state.message != null;
     case "scripture_active":
       return Boolean(state.channelStates.get(String(options.channel ?? ""))?.scriptureSession);
+    // [P3.21]
+    case "slides_on_air":
+      return Boolean(state.channelStates.get(String(options.channel ?? ""))?.slidesSession);
+    // [/P3.21]
     case "scripture_queued":
       return Boolean(state.channelStates.get(String(options.channel ?? ""))?.queuedScripture);
     case "scripture_slide_is": {

@@ -101,6 +101,11 @@ export function variableDefinitions(
       { variableId: `${c}_scripture_slide`, name: `${c} scripture slide (n/total)` },
       { variableId: `${c}_scripture_text`, name: `${c} scripture slide text` },
       { variableId: `${c}_scripture_queued_ref`, name: `${c} scripture queued by its intro (reference)` },
+      // [P3.21]
+      { variableId: `${c}_slides_deck`, name: `${c} slides deck title` },
+      { variableId: `${c}_slide_n`, name: `${c} slides current slide (1-based)` },
+      { variableId: `${c}_slide_count`, name: `${c} slides slide count` },
+      // [/P3.21]
       { variableId: `${c}_outputs`, name: `${c} connected output windows (count)` },
       { variableId: `${c}_video_title`, name: `${c} video title` },
       { variableId: `${c}_video_status`, name: `${c} video status (loading/playing/paused/ended/error)` },
@@ -247,6 +252,12 @@ export function projectVariables(
     out[`${c}_scripture_slide`] = scr ? `${scr.slideIdx + 1}/${scr.slideCount}` : "";
     out[`${c}_scripture_text`] = scr?.text ?? "";
     out[`${c}_scripture_queued_ref`] = ch?.queuedScripture?.reference ?? "";
+    // [P3.21]
+    const sl = ch?.slidesSession;
+    out[`${c}_slides_deck`] = sl?.title ?? "";
+    out[`${c}_slide_n`] = sl ? String(sl.slideIdx + 1) : "";
+    out[`${c}_slide_count`] = sl ? String(sl.slideCount) : "";
+    // [/P3.21]
     out[`${c}_outputs`] = state.outputs ? String(state.outputs[c]?.count ?? 0) : "";
   }
   Object.assign(out, videoVariables(state, channels), sttVariables(state));

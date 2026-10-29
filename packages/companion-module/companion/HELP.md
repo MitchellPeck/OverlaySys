@@ -67,6 +67,9 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Scripture: next/previous slide (starts a queued scripture) | `scripture_advance` | Channel, Delta |
 | Scripture: go to slide N (starts a queued scripture) | `scripture_goto` | Channel, Slide (1-based) |
 | Scripture: end (cancels a queued scripture) | `scripture_end` | Channel |
+| Slides: next / previous slide | `slides_advance` | Channel, Delta |
+| Slides: blank | `slides_blank` | Channel |
+| Slides: end | `slides_end` | Channel |
 | Rundown: take row (song-aware: songs take a part, other rows take normally) | `take_row_song_aware` | Row, Row index (1-based; survives show changes), Row, Song part (used only when the row is a song), Take via PVW → PGM, Channel (optional; blank = row/song default), From, To |
 | Cursor: move by N rows | `cursor_advance` | Delta |
 | Cursor: back one row | `cursor_prev` | − |
@@ -130,6 +133,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Song: part on channel (pick from list) | `song_sub_take_on_channel` | Channel, Row, Sub-take | True when the chosen channel is currently showing the chosen sub-take (intro / lyrics / outro) for the chosen song row. Sub-take template ids are resolved through the Song → ShowSong → Row cascade. Lyrics is true while a same-song session is live on the channel; intro/outro are true while the channel's active mount matches the resolved sub-take template. |
 | Song: part on channel (by number) | `song_sub_take_on_channel_by_index` | Channel, Row index (1-based; survives show changes), Sub-take | Same as 'Song sub-take is on channel' but selects the song row from the loaded show by 1-based index — survives show changes. |
 | Scripture: slides live | `scripture_active` | Channel | True when the chosen channel shows a scripture slide. |
+| Slides: on air | `slides_on_air` | Channel | True when the chosen channel has a slides session. |
 | Scripture: queued (intro taken) | `scripture_queued` | Channel | True when the chosen channel has a scripture armed by its intro. Next / go to slide on that channel will start it. |
 | Scripture: slide N live | `scripture_slide_is` | Channel, Slide (1-based) | True when the chosen channel's live scripture is on slide N (1-based). |
 | Speech-to-text: running | `stt_running` | − | True when speech-to-text reports it is running. |
@@ -163,6 +167,9 @@ The tables below are generated from the module's own definitions. Do not edit th
 | `<c>_scripture_slide` | <c> scripture slide (n/total) |
 | `<c>_scripture_text` | <c> scripture slide text |
 | `<c>_scripture_queued_ref` | <c> scripture queued by its intro (reference) |
+| `<c>_slides_deck` | <c> slides deck title |
+| `<c>_slide_n` | <c> slides current slide (1-based) |
+| `<c>_slide_count` | <c> slides slide count |
 | `<c>_outputs` | <c> connected output windows (count) |
 | `<c>_video_title` | <c> video title |
 | `<c>_video_status` | <c> video status (loading/playing/paused/ended/error) |
