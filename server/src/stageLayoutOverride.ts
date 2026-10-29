@@ -97,14 +97,36 @@ export async function resolveFollowed(
   return { followsId, followed };
 }
 
-/** manual > item override > type rule > default, for one stage screen. */
+/**
+ * Whether the followed output is actually showing something. `liveRow` is
+ * sticky (clears leave it), so it alone doesn't mean anything is live.
+ * Queued (armed, not yet on air) songs/scripture don't count.
+ */
+export function followedHasContent(st: ChannelState | null | undefined): boolean {
+  if (!st) return false;
+  return !!(
+    st.songSession ||
+    st.scriptureSession ||
+    st.slidesSession ||
+    st.media ||
+    (st.active && st.active.phase !== "out")
+  );
+}
+
+/**
+ * manual > item override > type rule > default, for one stage screen. When the
+ * followed output has nothing live, the row (and so its item override and type
+ * rule) is ignored and the screen falls back to its default; manual still wins.
+ */
 export function decideLayout(
   cfg: ChannelConfig,
   followed: ChannelState | null,
   show: Show | null,
 ): { layoutId: string | undefined; reason: StageLayoutReason } {
   const row =
-    show && followed?.liveRow ? show.rows.find((r) => r.id === followed.liveRow!.rowId) : undefined;
+    show && followed?.liveRow && followedHasContent(followed)
+      ? show.rows.find((r) => r.id === followed.liveRow!.rowId)
+      : undefined;
   const rowOverride = (row as { stageLayouts?: Record<string, string> } | undefined)?.stageLayouts?.[cfg.id];
   return resolveStageLayout({
     manual: getManualStageLayout(cfg.id),
