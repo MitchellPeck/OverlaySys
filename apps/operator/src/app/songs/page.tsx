@@ -308,7 +308,7 @@ export default function SongsPage() {
     },
     // [/P3.20]
     { separator: true },
-    { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void copyText(r.id) },
+    { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void copyText(r.id).then((ok) => toast(ok ? { tone: "ok", message: "Id copied" } : { tone: "error", message: "Couldn’t copy the id" })) },
     { separator: true },
     {
       id: "delete",
