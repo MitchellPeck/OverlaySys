@@ -519,6 +519,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
         projectId: z.string(),
         templateId: z.string(),
         hotkey: HotkeySchema.nullable().optional(),
+        channelHint: z.string().optional(),
       }),
     ),
   }),

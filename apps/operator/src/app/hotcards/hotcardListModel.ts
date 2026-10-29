@@ -19,6 +19,24 @@ function byKey(a: HotcardMeta, b: HotcardMeta): number {
   return byName(a, b);
 }
 
+/** Output column text: the channel's name, "Program" when unset, "Unknown output" for a dangling id. */
+export function outputLabel(hint: string | undefined, channels: readonly { id: string; name: string }[]): string {
+  if (!hint || hint === "program" || hint === "preview") return "Program";
+  return channels.find((c) => c.id === hint)?.name ?? "Unknown output";
+}
+
+/** Keep the card's F-key on a move unless the target project already uses it. */
+export function moveHotkey(
+  card: Pick<HotcardMeta, "id" | "hotkey">,
+  targetProjectId: string,
+  all: readonly Pick<HotcardMeta, "id" | "projectId" | "hotkey">[],
+): { hotkey: HotcardMeta["hotkey"]; droppedFrom: NonNullable<HotcardMeta["hotkey"]> | null } {
+  const key = card.hotkey ?? null;
+  if (!key) return { hotkey: null, droppedFrom: null };
+  const clash = all.some((o) => o.id !== card.id && o.projectId === targetProjectId && o.hotkey === key);
+  return clash ? { hotkey: null, droppedFrom: key } : { hotkey: key, droppedFrom: null };
+}
+
 export const hotcardSorts = [
   { id: "key-asc", label: "F-key", compare: byKey },
   { id: "name-asc", label: "Name", compare: byName },

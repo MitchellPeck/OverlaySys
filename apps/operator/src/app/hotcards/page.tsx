@@ -10,11 +10,10 @@ import { getClient, useWs } from "@/lib/useWs";
 import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { listLoadState } from "@/lib/listLoadState";
 import { useStore } from "@/lib/store";
-import { useDialog } from "@/lib/dialog";
 import { exportFileName } from "@/lib/exportName";
 import { downloadJson } from "@/lib/download";
 import { isCloudMode } from "@/lib/mode";
-import { hotcardSorts } from "./hotcardListModel";
+import { hotcardSorts, moveHotkey, outputLabel } from "./hotcardListModel";
 import {
   deleteHotcardCloud,
   getHotcardCloud,
@@ -32,25 +31,17 @@ export default function HotcardsIndexPage() {
   const templates = useStore((s) => s.templates);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const projects = useStore((s) => s.projects);
-  const { alert } = useDialog();
-  const hotcards = allHotcards.filter((h) => h.projectId === currentProjectId);
-  const conflicts = hotkeyConflicts(hotcards, currentProjectId);
+  const hotcards = useMemo(() => allHotcards.filter((h) => h.projectId === currentProjectId), [allHotcards, currentProjectId]);
+  const channelConfigs = useStore((s) => s.channelConfigs);
+  const conflicts = useMemo(() => hotkeyConflicts(hotcards, currentProjectId), [hotcards, currentProjectId]);
   const cloud = isCloudMode();
   const hotcardsLoaded = useStore((s) => s.hotcardsLoaded);
   const load = listLoadState({ cloud, conn, loaded: hotcardsLoaded });
   const disabled = !cloud && conn !== "open";
 
-  async function showError(action: string, err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
+  function showError(action: string, err: unknown) {
     console.warn(`[hotcards] cloud ${action} failed`, err);
-    await alert({
-      title: `Cloud ${action} failed`,
-      message: (
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
-          {message}
-        </pre>
-      ),
-    });
+    toast({ message: `Cloud ${action} failed: ${ackErrorText(err)}`, tone: "error" });
   }
 
   useEffect(() => {
@@ -80,7 +71,7 @@ export default function HotcardsIndexPage() {
         await saveHotcardCloud(copy);
         await refreshHotcardMetasCloud();
       } catch (err) {
-        await showError("duplicate", err);
+        showError("duplicate", err);
       }
       return;
     }
@@ -98,7 +89,7 @@ export default function HotcardsIndexPage() {
         const h = await getHotcardCloud(id);
         if (h) downloadJson(exportFileName("hotcard", h), h);
       } catch (err) {
-        await showError("export", err);
+        showError("export", err);
       }
       return;
     }
@@ -108,21 +99,25 @@ export default function HotcardsIndexPage() {
       return;
     }
     if (conn !== "open") return;
-    send({ type: "get_hotcard", hotcardId: id });
-    const start = Date.now();
-    const tick = () => {
-      const c = useStore.getState().hotcardCache[id];
-      if (c) { downloadJson(exportFileName("hotcard", c), c); return; }
-      if (Date.now() - start > 2000) return;
-      setTimeout(tick, 50);
-    };
-    setTimeout(tick, 50);
+    try {
+      const c = await requestOne(getClient(), { type: "get_hotcard", hotcardId: id }, (m) =>
+        m.type === "hotcard" && m.hotcard.id === id ? m.hotcard : undefined,
+      );
+      downloadJson(exportFileName("hotcard", c), c);
+    } catch (err) {
+      toast({ message: `Not exported: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
   async function deleteHotcard(h: HotcardMeta): Promise<void> {
     if (cloud) {
-      await deleteHotcardCloud(h.id);
-      await refreshHotcardMetasCloud();
+      try {
+        await deleteHotcardCloud(h.id);
+        await refreshHotcardMetasCloud();
+      } catch (err) {
+        console.warn("[hotcards] cloud delete failed", err);
+        toast({ message: `Not deleted: ${ackErrorText(err)}`, tone: "error" });
+      }
       return;
     }
     try {
@@ -132,12 +127,12 @@ export default function HotcardsIndexPage() {
     }
   }
 
-  /** Throws when the move did not happen. `hotkey` is applied in local mode only (a moved card drops its F-key, which would likely clash). */
-  async function moveToProject(id: string, nextProjectId: string, hotkey: HotcardMeta["hotkey"] = null): Promise<void> {
+  /** Throws when the move did not happen. `hotkey` is the F-key the card carries into the target project. */
+  async function moveToProject(id: string, nextProjectId: string, hotkey: HotcardMeta["hotkey"]): Promise<void> {
     if (cloud) {
       const src = await getHotcardCloud(id);
       if (!src) throw new Error("Hotcard not found.");
-      await saveHotcardCloud({ ...src, projectId: nextProjectId });
+      await saveHotcardCloud({ ...src, projectId: nextProjectId, hotkey });
       await refreshHotcardMetasCloud();
       return;
     }
@@ -153,8 +148,6 @@ export default function HotcardsIndexPage() {
       { op: "save_hotcard", id },
     );
   }
-
-  const templateName = (h: HotcardMeta) => templates.find((t) => t.id === h.templateId)?.name;
 
   const columns: Column<HotcardMeta>[] = useMemo(
     () => [
@@ -183,7 +176,7 @@ export default function HotcardsIndexPage() {
         id: "output",
         label: "Output",
         width: "140px",
-        render: (h) => (h as HotcardMeta & { channelHint?: string }).channelHint || "Program",
+        render: (h) => outputLabel(h.channelHint, channelConfigs),
       },
       {
         id: "template",
@@ -192,7 +185,7 @@ export default function HotcardsIndexPage() {
         render: (h) => templates.find((t) => t.id === h.templateId)?.name ?? <span style={{ color: colors.warn }}>Missing template</span>,
       },
     ],
-    [conflicts, templates],
+    [conflicts, templates, channelConfigs],
   );
 
   function newHotcard() {
@@ -211,8 +204,9 @@ export default function HotcardsIndexPage() {
 
   async function moveWithUndo(h: HotcardMeta, target: { id: string; name: string }) {
     const from = projects.find((p) => p.id === h.projectId);
+    const { hotkey, droppedFrom } = moveHotkey(h, target.id, allHotcards);
     try {
-      await moveToProject(h.id, target.id);
+      await moveToProject(h.id, target.id, hotkey);
     } catch (err) {
       toast({ message: `Not moved: ${ackErrorText(err)}`, tone: "error" });
       return;
@@ -225,7 +219,7 @@ export default function HotcardsIndexPage() {
       }
     };
     toast({
-      message: `Moved to ${target.name}`,
+      message: droppedFrom ? `Moved to ${target.name}. ${droppedFrom} was removed: already used in ${target.name}` : `Moved to ${target.name}`,
       tone: "ok",
       action: from ? { label: "Undo", onClick: () => void undo() } : undefined,
     });
@@ -253,7 +247,7 @@ export default function HotcardsIndexPage() {
     }
     items.push(
       { separator: true },
-      { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void navigator.clipboard?.writeText(h.id) },
+      { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => { void navigator.clipboard?.writeText(h.id); toast({ message: "Id copied", tone: "ok" }); } },
       { id: "delete", label: "Delete", icon: <Trash2 size={14} />, danger: true, disabled: offline, onSelect: () => void removeHotcard(h) },
     );
     return items;

@@ -57,7 +57,7 @@ export const HotcardSchema = z.preprocess(
 );
 export type Hotcard = z.infer<typeof HotcardSchema>;
 
-export type HotcardMeta = Pick<Hotcard, "id" | "name" | "templateId" | "projectId" | "hotkey">;
+export type HotcardMeta = Pick<Hotcard, "id" | "name" | "templateId" | "projectId" | "hotkey" | "channelHint">;
 
 type Keyed = Pick<HotcardMeta, "id" | "projectId" | "hotkey">;
 

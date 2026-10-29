@@ -310,7 +310,7 @@ export async function listHotcardMetasCloud(): Promise<HotcardMeta[]> {
   const { data, error } = await withOptionalColumn(missingColumns, "hotcards.hotkey", (include) =>
     client
       .from("hotcards")
-      .select(include ? "id, name, project_id, template_id, hotkey" : "id, name, project_id, template_id")
+      .select(include ? "id, name, project_id, template_id, channel_hint, hotkey" : "id, name, project_id, template_id, channel_hint")
       .order("name", { ascending: true }),
   );
   if (error) throw error;
@@ -319,6 +319,7 @@ export async function listHotcardMetasCloud(): Promise<HotcardMeta[]> {
     name: string;
     project_id: string;
     template_id: string;
+    channel_hint?: string | null;
     hotkey?: string | null;
   }[];
   return rows.map((row) => {
@@ -328,6 +329,7 @@ export async function listHotcardMetasCloud(): Promise<HotcardMeta[]> {
       name: row.name,
       projectId: row.project_id,
       templateId: row.template_id,
+      ...(row.channel_hint ? { channelHint: row.channel_hint } : {}),
       ...(hotkey !== undefined ? { hotkey } : {}),
     };
   });

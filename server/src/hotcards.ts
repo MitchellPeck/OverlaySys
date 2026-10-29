@@ -58,6 +58,7 @@ export async function listHotcardMetas(): Promise<HotcardMeta[]> {
     projectId: h.projectId,
     templateId: h.templateId,
     hotkey: h.hotkey,
+    ...(h.channelHint ? { channelHint: h.channelHint } : {}),
   }));
 }
 
