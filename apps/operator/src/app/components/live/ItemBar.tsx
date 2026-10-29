@@ -15,7 +15,6 @@ import { onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
 import { editedFieldKeys, effectiveRowData, graphicRowMessage } from "@/lib/rowData";
 import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import { hotcardFireMessage } from "@/lib/shortcutGuards";
-import { templateHasVisibleText } from "@/lib/textOverflow";
 import { slidesRowTakeMessages } from "@/lib/slidesRowView";
 import { useTakeFeedback } from "../../hooks/useTakeFeedback";
 import { SongTakeStrip } from "../SongTakeStrip";
@@ -61,9 +60,14 @@ export function ItemBar({ row, hotcardId = null, quickTake = false, onQuickTakeC
     title = v.title;
     detail = v.detail;
     length = v.lengthSec;
+    if (row.kind === "video") {
+      const end = (row as { endAction?: string }).endAction === "clear" ? "clears" : "holds";
+      detail = [detail, `At end: ${end}`].filter(Boolean).join(" · ");
+    }
     if (row.kind === "graphic") {
       const t = templateCache[(row as GraphicRow).templateId];
-      if (t && !templateHasVisibleText(t)) {
+      // Only a template with no layers at all: image/video-only templates (logos) are fine.
+      if (t && (t.layers ?? []).length === 0) {
         noText = true;
         warning = `Template "${t.name}" has no text layers`;
       }
@@ -162,8 +166,8 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
               if (noText) {
                 const name = templateCache[g.templateId]?.name ?? "This template";
                 const ok = await confirm({
-                  title: "Take a graphic with no text?",
-                  message: `Template "${name}" has no text layers, so none of this item's fields will show.`,
+                  title: "Take a graphic with no layers?",
+                  message: `Template "${name}" has no layers, so nothing will show.`,
                   confirmLabel: "Take",
                 });
                 if (!ok) return null;
@@ -183,18 +187,14 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
       return (
         <>
           <CueTake cue={() => ({ type: "song_take", channel: songCueChannel(r, show, caches), showId: show.id, songRowId: r.id })} />
-          <StripSlot>
-            <SongTakeStrip show={show} row={r} channel={channel} liveSession={songSessions[channel] ?? null} />
-          </StripSlot>
+          <SongTakeStrip show={show} row={r} channel={channel} liveSession={songSessions[channel] ?? null} />
         </>
       );
     }
     case "scripture": {
       const r = row as Extract<RowLike, { kind: "scripture" }>;
       return (
-        <StripSlot>
-          <ScriptureTakeStrip show={show} row={r} channel={r.channelHint ?? "program"} />
-        </StripSlot>
+        <ScriptureTakeStrip show={show} row={r} channel={r.channelHint ?? "program"} />
       );
     }
     case "video": {
@@ -211,11 +211,6 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
     default:
       return null;
   }
-}
-
-/** SongTakeStrip / ScriptureTakeStrip carry a bottom margin for the old stacked layout; keep them on the bar's line. */
-function StripSlot({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: "flex", marginBottom: -12 }}>{children}</div>;
 }
 
 function HotcardControls({ hotcardId }: { hotcardId: string }) {

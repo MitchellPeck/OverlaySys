@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { colors, radius, useToast } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
+import { useStore } from "@/lib/store";
 import { thumbActivate, thumbsFor, type ThumbCtx, type ThumbSpec } from "@/lib/thumbClick";
 import type { RowLike } from "@/lib/rowLike";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
@@ -37,6 +38,7 @@ const stateWord = (s: ThumbSpec["state"], blanked: boolean) =>
 export function ThumbStrip({ row, ctx }: { row: RowLike; ctx: ThumbCtx }) {
   const { send } = useWs();
   const toast = useToast();
+  const disconnected = useStore((s) => s.conn) !== "open";
   const gridRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const specs = thumbsFor(row, ctx);
@@ -81,6 +83,7 @@ export function ThumbStrip({ row, ctx }: { row: RowLike; ctx: ThumbCtx }) {
             row={row}
             width={inner}
             measure={row.kind === "graphic" && i === 0}
+            disabled={disconnected}
             onActivate={() => activate(i)}
             refCb={(el) => {
               if (el) cardRefs.current.set(s.key, el);
@@ -98,6 +101,7 @@ function ThumbCard({
   row,
   width,
   measure,
+  disabled,
   onActivate,
   refCb,
 }: {
@@ -105,6 +109,7 @@ function ThumbCard({
   row: RowLike;
   width: number;
   measure: boolean;
+  disabled: boolean;
   onActivate(): void;
   refCb(el: HTMLButtonElement | null): void;
 }) {
@@ -121,6 +126,8 @@ function ThumbCard({
         aria-label={`${label}, ${stateWord(spec.state, spec.blanked)}`}
         onMouseDown={keepFocus}
         onClick={onActivate}
+        disabled={disabled}
+        title={disabled ? "Reconnect to take" : undefined}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         style={{
@@ -130,7 +137,8 @@ function ThumbCard({
           border: `${BORDER}px solid ${border}`,
           borderRadius: radius.md,
           background: colors.surface,
-          cursor: "pointer",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.6 : undefined,
           position: "relative",
           overflow: "hidden",
         }}

@@ -39,7 +39,7 @@ export function ScriptureTakeStrip({ show, row, channel }: Props) {
   }
 
   return (
-    <div role="toolbar" aria-label="Scripture controls" style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+    <div role="toolbar" aria-label="Scripture controls" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {showIntro && (
         <Button
           size="md"

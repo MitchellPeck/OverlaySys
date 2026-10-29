@@ -91,9 +91,12 @@ export function SongLiveBar({ channel, session }: Props) {
       >
         {session.blanked ? "Unblank" : "Blank"}
       </Button>
-      <Button size="sm" variant="danger" onMouseDown={keepFocus} onClick={endSong}>
-        End song (Esc Esc)
-      </Button>
+      {/* Esc Esc only ends a program session; a song cued on PVW is cleared with Clear PVW. */}
+      {channel === "program" && (
+        <Button size="sm" variant="danger" onMouseDown={keepFocus} onClick={endSong}>
+          End song (Esc Esc)
+        </Button>
+      )}
       <span title="When on, high-confidence STT matches advance the slide on their own" style={{ flexShrink: 0 }} onMouseDown={keepFocus}>
         <Switch
           checked={session.trustMode}

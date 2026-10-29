@@ -119,7 +119,7 @@ export function SongTakeStrip({
   // keeps the UI behavior simple and consistent.)
   if (!song) {
     return (
-      <div style={{ marginBottom: 12 }}>
+      <div>
         <div
           style={{
             padding: "8px 12px",
@@ -207,7 +207,6 @@ export function SongTakeStrip({
       aria-label="Song take strip"
       style={{
         display: "flex",
-        marginBottom: 12,
         // Make the strip read as a single connected button bar — each segment
         // overlaps the previous one's right border via a -1 marginLeft, and
         // corner radii apply only to the outermost edges.

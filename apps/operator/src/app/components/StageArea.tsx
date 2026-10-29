@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { Button, colors, space } from "@overlaysys/ui";
+import { useEffect, useState } from "react";
+import { Button, colors, radius, space } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { useWs } from "@/lib/useWs";
+import { hotcardFireMessage } from "@/lib/shortcutGuards";
+import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { rowView } from "@/lib/rowView";
 import { thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
 import type { RowLike } from "@/lib/rowLike";
@@ -64,6 +67,11 @@ export function StageArea() {
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
         {pinned && ctx && <PinnedBar rowId={pinned} ctx={ctx} onShow={() => setQuickTake(false)} />}
         <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: space[3] }}>
+          {mode.kind === "song-live" && (
+            <div style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted }}>
+              {mode.channel === "program" ? "Song mode · PGM" : "Song mode · PVW (cued)"}
+            </div>
+          )}
           {songBar && mode.kind === "song-live" && <SongLiveBar channel={mode.channel} session={mode.session} />}
           {quickTake ? (
             <TakePanel />
@@ -72,6 +80,8 @@ export function StageArea() {
               <SlidesNotice row={row} ctx={ctx} />
               <ThumbStrip row={row} ctx={ctx} />
             </>
+          ) : sel.kind === "hotcard" ? (
+            <HotcardPreview key={sel.hotcardId} hotcardId={sel.hotcardId} />
           ) : null}
         </div>
       </div>
@@ -137,6 +147,62 @@ function SlidesNotice({ row, ctx }: { row: RowLike; ctx: ThumbCtx }) {
   return (
     <div role="status" style={{ fontSize: 12, color: colors.warn }}>
       {notice}
+    </div>
+  );
+}
+
+const HOTCARD_CARD_W = 300;
+
+/**
+ * The selected hotcard as one thumbnail with its field values. A click cues
+ * it to preview (never program, whatever the card's hint: D7a).
+ */
+function HotcardPreview({ hotcardId }: { hotcardId: string }) {
+  const { send } = useWs();
+  const h = useStore((s) => s.hotcardCache[hotcardId]);
+  const fields = useStore((s) => (h ? s.templateCache[h.templateId]?.fields : undefined));
+  const disconnected = useStore((s) => s.conn) !== "open";
+  useEffect(() => {
+    if (!h && !disconnected) send({ type: "get_hotcard", hotcardId });
+  }, [h, disconnected, hotcardId, send]);
+  if (!h) return <p style={{ fontSize: 12, color: colors.textDim, margin: 0 }}>Loading hotcard…</p>;
+  const entries: [string, string][] = fields
+    ? fields.filter((f) => h.data[f.key] !== undefined).map((f) => [f.label, h.data[f.key]!])
+    : Object.entries(h.data);
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: space[4], alignItems: "flex-start" }}>
+      <button
+        type="button"
+        aria-label={`${h.name}, cue to preview`}
+        title={disconnected ? "Reconnect to take" : "Cue to preview"}
+        disabled={disconnected}
+        onMouseDown={keepFocus}
+        onClick={() => send(hotcardFireMessage(h, "cue"))}
+        style={{
+          padding: 0,
+          border: `2px solid ${colors.border}`,
+          borderRadius: radius.md,
+          background: colors.bg,
+          overflow: "hidden",
+          cursor: disconnected ? "not-allowed" : "pointer",
+          opacity: disconnected ? 0.6 : undefined,
+          flexShrink: 0,
+        }}
+      >
+        <TemplateThumbnail templateId={h.templateId} data={h.data} width={HOTCARD_CARD_W} label={`${h.name} preview`} />
+      </button>
+      {entries.length > 0 && (
+        <dl style={{ flex: "1 1 240px", minWidth: 0, margin: 0, display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "4px 12px", alignContent: "start", fontSize: 12 }}>
+          {entries.map(([label, value], i) => (
+            <div key={i} style={{ display: "contents" }}>
+              <dt style={{ color: colors.textDim }}>{label}</dt>
+              <dd style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={value}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }
