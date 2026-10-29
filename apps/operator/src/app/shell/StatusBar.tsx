@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient, reconnectNow, useWs } from "@/lib/useWs";
@@ -124,7 +125,10 @@ function SttDot() {
   const status = useStore((s) => s.sttSpawnerStatus);
   const config = useStore((s) => s.sttSpawnerConfig);
   const [copied, setCopied] = useState(false);
-  if (!status) return null;
+  // [P2b.20]
+  const onSttSettings = usePathname() === "/settings/stt";
+  if (!status || onSttSettings) return null;
+  // [/P2b.20]
   const tone = STT_TONES[status.state] ?? "dim";
   const running = status.state === "running" || status.state === "starting";
   const lastError = status.lastError ?? null;
