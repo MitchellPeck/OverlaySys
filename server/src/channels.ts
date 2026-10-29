@@ -114,6 +114,11 @@ export function getState(channel: string): ChannelState {
   return getOrInit(channel);
 }
 
+/** Row source of the take that currently owns the channel's `active` (null: unsourced, e.g. a hotcard). */
+export function getActiveSource(channel: string): RowSource | null {
+  return activeSource.get(channel) ?? null;
+}
+
 export function setLiveRow(channel: string, source: RowSource): void {
   const s = getOrInit(channel);
   s.liveRow = source;

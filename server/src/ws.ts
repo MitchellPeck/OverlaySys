@@ -19,6 +19,7 @@ import {
   resolveSongChannel,
 } from "@overlaysys/core";
 import * as channels from "./channels";
+import { createItemEndTracker } from "./itemEnd";
 import * as templates from "./templates";
 import { isDraftTemplateId, isProtectedTemplateId } from "@overlaysys/core";
 import * as shows from "./shows";
@@ -121,6 +122,12 @@ songSession.onMatch((channel, result, hypothesis, meta) => {
 // Any channel change can alter what a confidence monitor shows (a timer on
 // another channel, the followed channel's take), so rebuild every feed.
 channels.onAnyChange(() => stageFeedHub.invalidateAll());
+
+// An item cleared or ended (not merely animating out) takes its countdown with it.
+const itemEnds = createItemEndTracker(channels.getState, channels.getActiveSource, (channel, rowId) => {
+  void timers.onRowEnded(channel, rowId).catch((err) => console.warn("[timers] onRowEnded failed", err));
+});
+channels.onAnyChange((channel) => itemEnds.onChange(channel));
 
 // Cueing a row to preview must not switch the pastor's notes; only rows that
 // actually go to air do.

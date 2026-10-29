@@ -164,3 +164,21 @@ export async function onRowTaken(
     now,
   );
 }
+
+/**
+ * A row stopped being on air (cleared, ended or replaced — not a graphic
+ * animating out on its own; see itemEnd.ts). If it is the row the current-item
+ * countdown was started for, and on a channel a stage monitor follows, the
+ * countdown goes with it. PCO-driven and manual timers are never touched.
+ */
+export async function onRowEnded(
+  channel: string,
+  rowId: string,
+  followedChannels: Promise<Set<string>> = stageFollowedChannels(),
+  now: number = Date.now(),
+): Promise<void> {
+  if (!(await followedChannels).has(channel)) return;
+  const current = timers.find((t) => t.id === CURRENT_ITEM_TIMER_ID);
+  if (!current || current.source !== "item" || current.rowId !== rowId) return;
+  dispatchTimers({ type: "clearItem", source: "item" }, now);
+}

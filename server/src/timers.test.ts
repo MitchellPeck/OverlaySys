@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ShowSchema, StageSettingsSchema, type ChannelConfig, type Show } from "@overlaysys/core";
+import { CURRENT_ITEM_TIMER_ID, ShowSchema, StageSettingsSchema, type ChannelConfig, type Show } from "@overlaysys/core";
 import * as channelConfigs from "./channelConfigs";
 import * as shows from "./shows";
 import * as stageSettings from "./stageSettings";
@@ -10,6 +10,7 @@ import {
   createTimer,
   dispatchTimers,
   getTimers,
+  onRowEnded,
   onRowTaken,
   setItemTimerDriver,
   subscribeTimers,
@@ -213,5 +214,36 @@ describe("timers engine", () => {
     expect(second).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith("[timers] listener failed", expect.any(Error));
     warn.mockRestore();
+  });
+});
+
+describe("onRowEnded clears the item countdown", () => {
+  function startItem(rowId: string) {
+    dispatchTimers({ type: "setItem", label: "Sermon", anchor: Date.now() + 60_000, durationMs: 60_000, overtime: true, source: "item", rowId });
+  }
+
+  it("clears the countdown when its row is cleared or ended on a followed channel", async () => {
+    startItem("r1");
+    await onRowEnded("program", "r1");
+    expect(getTimers().some((t) => t.id === CURRENT_ITEM_TIMER_ID)).toBe(false);
+  });
+
+  it("leaves it when a different row ends", async () => {
+    startItem("r1");
+    await onRowEnded("program", "r9");
+    expect(getTimers().some((t) => t.id === CURRENT_ITEM_TIMER_ID)).toBe(true);
+  });
+
+  it("leaves it when the row ends on a channel no stage monitor follows", async () => {
+    useConfigs({ id: "program", name: "Program" }, { id: "lt", name: "LT" });
+    startItem("r1");
+    await onRowEnded("lt", "r1");
+    expect(getTimers().some((t) => t.id === CURRENT_ITEM_TIMER_ID)).toBe(true);
+  });
+
+  it("never touches a PCO-driven countdown", async () => {
+    dispatchTimers({ type: "setItem", label: "PCO", anchor: Date.now() + 60_000, durationMs: 60_000, overtime: true, source: "pco", rowId: "r1" });
+    await onRowEnded("program", "r1");
+    expect(getTimers().some((t) => t.id === CURRENT_ITEM_TIMER_ID)).toBe(true);
   });
 });
