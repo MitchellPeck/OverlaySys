@@ -1,4 +1,4 @@
-import { assetRewrites } from "./src/lib/devProxy.ts";
+import { assetRewrites, devProxyEnabled } from "./src/lib/devProxy.mjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -26,10 +26,11 @@ const nextConfig = {
   trailingSlash: process.env.NEXT_BUILD_STATIC === "1",
   // Disable next/image optimization — the static export can't run it.
   images: { unoptimized: true },
-  // Dev/non-static: fonts and posters are served by the server, not Next.
-  async rewrites() {
-    return assetRewrites(process.env);
-  },
+  // Local dev only: fonts and posters are served by the server, not Next.
+  // Defined only when active so static/cloud builds neither warn nor proxy.
+  ...(devProxyEnabled(process.env)
+    ? { async rewrites() { return assetRewrites(process.env); } }
+    : {}),
   // Keep the dev "N" badge off the media transport.
   devIndicators: { position: "top-right" },
 };

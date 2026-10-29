@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetRewrites } from "./devProxy";
+import { assetRewrites, devProxyEnabled } from "./devProxy.mjs";
 
 describe("assetRewrites", () => {
   it("proxies /assets to the local server by default", () => {
@@ -14,5 +14,10 @@ describe("assetRewrites", () => {
   });
   it("never proxies in static builds", () => {
     expect(assetRewrites({ NEXT_BUILD_STATIC: "1" })).toEqual([]);
+  });
+  it("never proxies in production or cloud builds", () => {
+    expect(assetRewrites({ NODE_ENV: "production" })).toEqual([]);
+    expect(assetRewrites({ NEXT_PUBLIC_OVERLAYSYS_CLOUD_MODE: "1" })).toEqual([]);
+    expect(devProxyEnabled({ NODE_ENV: "development" })).toBe(true);
   });
 });
