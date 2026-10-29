@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Show } from "@overlaysys/core";
-import { escArmText, rowFireMessages, sectionKeyAction, sectionKeyFor, sectionMissingText } from "./liveKeys";
+import {
+  escArmText,
+  escDecision,
+  escTarget,
+  keysLabel,
+  keysOtherShow,
+  rowFireMessages,
+  sectionKeyAction,
+  sectionKeyFor,
+  sectionMissingText,
+  spaceAction,
+} from "./liveKeys";
 
 const show = {
   id: "show-1",
@@ -78,5 +89,61 @@ describe("escArmText", () => {
   it("names what the second press does", () => {
     expect(escArmText("song")).toBe("Press Esc again to end song");
     expect(escArmText("other")).toBe("Press Esc again to clear program");
+  });
+});
+
+describe("escTarget", () => {
+  const pgm = (o: object) => ({ program: { channel: "program", active: null, ...o } }) as unknown as Record<string, ChannelState>;
+  it("a program song: end song", () => expect(escTarget(pgm({}), true)).toBe("song"));
+  it("program content (graphic, scripture, slides, video): clear", () => {
+    expect(escTarget(pgm({ active: { templateId: "t", data: {}, phase: "on", takenAt: 1 } }), false)).toBe("clear");
+    expect(escTarget(pgm({ slidesSession: { rowId: "s" } }), false)).toBe("clear");
+    expect(escTarget(pgm({ media: { rowId: "v" } }), false)).toBe("clear");
+  });
+  it("empty program: nothing to arm", () => {
+    expect(escTarget(pgm({}), false)).toBeNull();
+    expect(escTarget({}, false)).toBeNull();
+  });
+});
+
+describe("escDecision (Esc Esc keeps its promise)", () => {
+  it("first press arms with what it will do", () => expect(escDecision(1000, null, "clear")).toEqual({ arm: "clear" }));
+  it("second press in the window does the promised action", () =>
+    expect(escDecision(1300, { at: 1000, mode: "song" }, "song")).toEqual({ act: "song" }));
+  it("state changed in the window: never acts on something different, re-arms instead", () => {
+    expect(escDecision(1300, { at: 1000, mode: "song" }, "clear")).toEqual({ arm: "clear" });
+    expect(escDecision(1300, { at: 1000, mode: "clear" }, "song")).toEqual({ arm: "song" });
+  });
+  it("nothing on program: disarm, no toast", () => {
+    expect(escDecision(1000, null, null)).toEqual({ disarm: true });
+    expect(escDecision(1300, { at: 1000, mode: "clear" }, null)).toEqual({ disarm: true });
+  });
+  it("too late: arms again", () => expect(escDecision(2000, { at: 1000, mode: "clear" }, "clear")).toEqual({ arm: "clear" }));
+});
+
+describe("spaceAction", () => {
+  it("rundown mode: the rundown handles Space", () => expect(spaceAction("rundown", false)).toBe("rundown"));
+  it("song / scripture / slides advance", () => {
+    for (const m of ["song", "scripture", "slides"] as const) expect(spaceAction(m, false)).toBe("advance");
+  });
+  it("a selected video playing over a scripture or slides session wins (pause / play)", () => {
+    expect(spaceAction("scripture", true)).toBe("rundown");
+    expect(spaceAction("slides", true)).toBe("rundown");
+  });
+  it("song mode keeps advancing (as before)", () => expect(spaceAction("song", true)).toBe("advance"));
+});
+
+describe("keysLabel", () => {
+  it("names the mode, and flags a session taken from another show", () => {
+    expect(keysLabel("song", false)).toBe("Keys: Song");
+    expect(keysLabel("song", true)).toBe("Keys: Song (other show)");
+    expect(keysLabel("rundown", true)).toBe("Keys: Rundown");
+  });
+  it("keysOtherShow: program's liveRow from another show while a session drives the keys", () => {
+    const st = (showId: string) => ({ program: { channel: "program", active: null, liveRow: { showId, rowId: "r" } } }) as unknown as Record<string, ChannelState>;
+    expect(keysOtherShow("song", st("other"), "show-1")).toBe(true);
+    expect(keysOtherShow("song", st("show-1"), "show-1")).toBe(false);
+    expect(keysOtherShow("rundown", st("other"), "show-1")).toBe(false);
+    expect(keysOtherShow("song", st("other"), null)).toBe(false);
   });
 });

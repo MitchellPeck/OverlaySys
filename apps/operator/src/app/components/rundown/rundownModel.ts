@@ -36,6 +36,33 @@ export function slidesTakeable(view: Pick<SlidesRowView, "missingDeck" | "slides
 }
 
 /**
+ * Whether a row can be cued / taken: the rule behind the rundown's Cue and
+ * Take buttons, and the Enter / Space keys (so a key never fires a row whose
+ * button is hidden). Unsupported views and unknown kinds never fire; video
+ * has no Cue; scripture needs slides; slides need `slidesTakeable`.
+ */
+export function rowCanFire(
+  row: RowLike,
+  action: "cue" | "take",
+  o: { supported: boolean; slidesView?: Pick<SlidesRowView, "missingDeck" | "slides"> | null },
+): boolean {
+  if (!o.supported) return false;
+  if (action === "cue" && row.kind === "video") return false;
+  switch (row.kind) {
+    case "graphic":
+    case "song":
+    case "video":
+      return true;
+    case "scripture":
+      return ((row as { slides?: unknown[] }).slides ?? []).length > 0;
+    case "slides":
+      return slidesTakeable(o.slidesView ?? null);
+    default:
+      return false;
+  }
+}
+
+/**
  * What double-clicking a Live row does (D4): Cue by default (Cue never
  * reaches program); Take only with the "Double-click takes to program"
  * setting on. Never a re-take of a row already on program (a song would

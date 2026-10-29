@@ -3,6 +3,7 @@ import type { Show } from "@overlaysys/core";
 import type { AirState } from "../../../lib/rowAirState";
 import {
   doubleClickAction,
+  rowCanFire,
   dropHalf,
   headerLine,
   liveRowState,
@@ -128,6 +129,31 @@ describe("doubleClickAction (D4)", () => {
     expect(doubleClickAction({ ...base, takes: true, air: "program" })).toBeNull());
   it("a row that can't be taken does nothing", () =>
     expect(doubleClickAction({ ...base, takes: true, canTake: false })).toBeNull());
+});
+
+describe("rowCanFire (keys and buttons agree)", () => {
+  const ok = { supported: true };
+  const sv = (o: object) => ({ title: "D", detail: "", slides: [{}], missingDeck: false, missingSlides: 0, licensing: null, ...o }) as never;
+  it("graphic / song / video take when supported; never when unsupported", () => {
+    expect(rowCanFire(row("g"), "take", ok)).toBe(true);
+    expect(rowCanFire({ kind: "song", id: "s" } as never, "take", ok)).toBe(true);
+    expect(rowCanFire(row("g"), "take", { supported: false })).toBe(false);
+  });
+  it("video has no cue", () => {
+    expect(rowCanFire({ kind: "video", id: "v" } as never, "take", ok)).toBe(true);
+    expect(rowCanFire({ kind: "video", id: "v" } as never, "cue", ok)).toBe(false);
+  });
+  it("scripture needs slides", () => {
+    expect(rowCanFire({ kind: "scripture", id: "x", slides: [] } as never, "cue", ok)).toBe(false);
+    expect(rowCanFire({ kind: "scripture", id: "x", slides: [{}] } as never, "take", ok)).toBe(true);
+  });
+  it("slides need a loaded deck with slides", () => {
+    const s = { kind: "slides", id: "s" } as never;
+    expect(rowCanFire(s, "take", { supported: true, slidesView: sv({}) })).toBe(true);
+    expect(rowCanFire(s, "cue", { supported: true, slidesView: sv({ missingDeck: true, slides: [] }) })).toBe(false);
+    expect(rowCanFire(s, "take", { supported: true, slidesView: null })).toBe(false);
+  });
+  it("unknown kinds never fire", () => expect(rowCanFire({ kind: "mystery", id: "m" } as never, "take", ok)).toBe(false));
 });
 
 describe("slidesTakeable", () => {

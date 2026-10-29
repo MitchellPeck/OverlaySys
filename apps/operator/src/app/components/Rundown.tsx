@@ -15,7 +15,7 @@ import { slidesRowViewFor } from "@/lib/slidesRowView";
 import { rowFireMessages } from "@/lib/liveKeys";
 import { requestedDecks } from "@/lib/deckRequests";
 import { RundownList } from "./rundown/RundownList";
-import { doubleClickAction, slidesTakeable, takeableNextRowId } from "./rundown/rundownModel";
+import { doubleClickAction, rowCanFire, takeableNextRowId } from "./rundown/rundownModel";
 import { useLivePrefs } from "../hooks/useLivePrefs";
 import { useWarnRowIds } from "./live/overflowStore";
 
@@ -84,29 +84,18 @@ export function Rundown() {
       if (row.kind === "graphic" && editedFieldKeys(row, overrides).length > 0) edited.add(row.id);
     }
     const byId = new Map(rows.map((r) => [r.id, r]));
-    const canTake = (id: string): boolean => {
+    // One rule for the buttons, nextRowId and the Enter / Space keys (rowCanFire).
+    const canFire = (id: string, action: "cue" | "take"): boolean => {
       const row = byId.get(id);
-      if (!row || !views[id]?.supported) return false;
-      switch (row.kind) {
-        case "graphic":
-        case "song":
-        case "video":
-          return true;
-        case "scripture":
-          return row.slides.length > 0;
-        case "slides": {
-          // Never a missing deck, nor one still loading (nextRowId must not pick it).
-          const id = row.deckId;
-          return slidesTakeable(slidesRowViewFor(row, id ? (deckNotFound[id] ? null : deckCache[id]) : null));
-        }
-        default:
-          return false;
-      }
+      if (!row) return false;
+      // Never a missing deck, nor one still loading (nextRowId must not pick it).
+      const deckId = row.kind === "slides" ? row.deckId : undefined;
+      const slidesView =
+        row.kind === "slides" ? slidesRowViewFor(row, deckId ? (deckNotFound[deckId] ? null : deckCache[deckId]) : null) : null;
+      return rowCanFire(row, action, { supported: !!views[id]?.supported, slidesView });
     };
-    const canCue = (id: string): boolean => {
-      const row = byId.get(id);
-      return !!row && row.kind !== "video" && canTake(id);
-    };
+    const canTake = (id: string) => canFire(id, "take");
+    const canCue = (id: string) => canFire(id, "cue");
     const next = takeableNextRowId(rows, air, selectedRowId, canTake);
     return { byId, air, edited, canTake, canCue, next };
   }, [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions, caches, selectedRowId]);

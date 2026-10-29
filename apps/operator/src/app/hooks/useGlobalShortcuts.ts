@@ -6,12 +6,23 @@ import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { onAirMediaFor } from "@/lib/mediaTake";
 import { pvwTakeMessages } from "@/lib/onAir";
-import { escArmText, rowFireMessages, sectionKeyAction, sectionKeyFor } from "@/lib/liveKeys";
+import {
+  escArmText,
+  escDecision,
+  escTarget,
+  rowFireMessages,
+  sectionKeyAction,
+  sectionKeyFor,
+  spaceAction,
+  type EscArm,
+} from "@/lib/liveKeys";
+import { rowView } from "@/lib/rowView";
+import { slidesRowViewFor } from "@/lib/slidesRowView";
+import { rowCanFire } from "../components/rundown/rundownModel";
 import {
   advanceMessage,
   blankMessage,
   escapeMessages,
-  escPress,
   hasCommandModifier,
   keyMode,
   hotcardForEvent,
@@ -56,8 +67,8 @@ import {
  */
 export function useGlobalShortcuts(): void {
   useEffect(() => {
-    // Esc Esc: when the last (arming) press happened, and its toast.
-    let lastEscAt: number | null = null;
+    // Esc Esc: the arming press (when, and what it promised), and its toast.
+    let escArmed: EscArm = null;
     let armToast: string | null = null;
     function onKey(e: KeyboardEvent) {
       const dialogOpen = !!document.querySelector('[role="dialog"], [aria-modal="true"], dialog[open]');
@@ -86,7 +97,9 @@ export function useGlobalShortcuts(): void {
       // What Space / Shift+Space and B drive: a program song, scripture or
       // slides session, else the rundown (D2; shown as the Keys badge).
       const mode = keyMode(store);
-      if (mode !== "rundown" && e.code === "Space" && !hasCommandModifier(e)) {
+      const selRow = store.show?.rows.find((r) => r.id === store.selectedRowId);
+      const selVideoOnAir = selRow?.kind === "video" && !!onAirMediaFor(selRow, store.channelStates);
+      if (e.code === "Space" && !hasCommandModifier(e) && spaceAction(mode, selVideoOnAir) === "advance") {
         e.preventDefault();
         const m = advanceMessage(mode, e.shiftKey ? -1 : 1);
         if (m) send(m);
@@ -101,21 +114,23 @@ export function useGlobalShortcuts(): void {
 
       // Esc is a panic key with a safety catch (D3): the first press only
       // arms and says what the second will do; a second press within 600 ms
-      // ends the program song (song mode) or clears program.
+      // does exactly that (end the program song, or clear program), and only
+      // if it is still what program needs. Empty program: nothing, no toast.
       if (e.code === "Escape" && !hasCommandModifier(e)) {
         e.preventDefault();
-        const song = songKeyChannel(store.songSessions) !== null;
-        const now = Date.now();
-        if (escPress(now, lastEscAt) === "arm") {
-          lastEscAt = now;
-          if (armToast) dismissToast(armToast);
-          armToast = toast({ message: escArmText(song ? "song" : "other"), tone: "warn", durationMs: 1500 });
-          return;
-        }
-        lastEscAt = null;
+        const target = escTarget(store.channelStates, songKeyChannel(store.songSessions) !== null);
+        const d = escDecision(Date.now(), escArmed, target);
         if (armToast) dismissToast(armToast);
         armToast = null;
-        for (const m of song ? songEscapeMessages() : escapeMessages()) send(m);
+        if ("disarm" in d) {
+          escArmed = null;
+        } else if ("arm" in d) {
+          escArmed = { at: Date.now(), mode: d.arm };
+          armToast = toast({ message: escArmText(d.arm === "song" ? "song" : "other"), tone: "warn", durationMs: 1500 });
+        } else {
+          escArmed = null;
+          for (const m of d.act === "song" ? songEscapeMessages() : escapeMessages()) send(m);
+        }
         return;
       }
 
@@ -144,6 +159,26 @@ export function useGlobalShortcuts(): void {
             channelStates: store.channelStates,
           }
         : null;
+      // Keys fire only where the rundown shows the button (rowCanFire).
+      const canFire = (action: "cue" | "take"): boolean => {
+        if (!row || !show) return false;
+        const view = rowView(row, {
+          show,
+          songs: store.songs,
+          songCache: store.songCache,
+          templates: store.templates,
+          templateCache: store.templateCache,
+          overrides: store.rowDataOverrides,
+          deckCache: store.deckCache,
+          deckNotFound: store.deckNotFound,
+        });
+        const deckId = row.kind === "slides" ? row.deckId : undefined;
+        const slidesView =
+          row.kind === "slides"
+            ? slidesRowViewFor(row, deckId ? (store.deckNotFound[deckId] ? null : store.deckCache[deckId]) : null)
+            : null;
+        return rowCanFire(row, action, { supported: view.supported, slidesView });
+      };
 
       if (e.code === "ArrowDown") {
         e.preventDefault();
@@ -161,7 +196,7 @@ export function useGlobalShortcuts(): void {
         // Cue the selection: always preview, never program (D7a).
         e.preventDefault();
         if (row && fireCtx) {
-          for (const m of rowFireMessages(row, "cue", fireCtx)) send(m);
+          if (canFire("cue")) for (const m of rowFireMessages(row, "cue", fireCtx)) send(m);
         } else if (hotcard) {
           send(hotcardFireMessage(hotcard, "cue"));
         }
@@ -180,7 +215,7 @@ export function useGlobalShortcuts(): void {
           }
         }
         if (row && fireCtx) {
-          for (const m of rowFireMessages(row, "take", fireCtx)) send(m);
+          if (canFire("take")) for (const m of rowFireMessages(row, "take", fireCtx)) send(m);
         } else if (hotcard) {
           send(hotcardFireMessage(hotcard, "take"));
         }
