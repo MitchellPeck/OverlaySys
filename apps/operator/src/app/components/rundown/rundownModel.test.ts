@@ -1,0 +1,117 @@
+import { describe, expect, it } from "vitest";
+import type { Show } from "@overlaysys/core";
+import type { AirState } from "../../../lib/rowAirState";
+import {
+  dropHalf,
+  headerLine,
+  liveRowState,
+  liveRowSurface,
+  nudgeTarget,
+  takeableNextRowId,
+} from "./rundownModel";
+
+const row = (id: string, sectionId?: string, lengthSec?: number) =>
+  ({ kind: "graphic", id, templateId: "t", data: {}, sectionId, lengthSec }) as never;
+const showWith = (o: object): Show =>
+  ({ id: "s", name: "Sunday", projectId: "p", songs: [], rows: [], ...o }) as unknown as Show;
+
+describe("takeableNextRowId", () => {
+  const rows = [row("r1"), row("r2"), row("r3"), row("r4")];
+  const air = (o: Record<string, AirState>) => o;
+  it("keeps liveNext's answer when that row can be taken", () => {
+    expect(takeableNextRowId(rows, air({ r1: "program" }), "r1", () => true)).toBe("r2");
+  });
+  it("skips a row that can't be taken to the next takeable one", () => {
+    expect(takeableNextRowId(rows, air({ r1: "program" }), "r1", (id) => id !== "r2")).toBe("r3");
+  });
+  it("skips an unsupported selection too", () => {
+    expect(takeableNextRowId(rows, air({}), "r2", (id) => id === "r4")).toBe("r4");
+  });
+  it("never offers a row already on program", () => {
+    expect(takeableNextRowId(rows, air({ r3: "program" }), "r2", (id) => id === "r3")).toBe(null);
+  });
+  it("is null when nothing after can be taken", () => {
+    expect(takeableNextRowId(rows, air({ r1: "program" }), "r1", () => false)).toBe(null);
+  });
+});
+
+describe("liveRowState", () => {
+  const base = { air: null as AirState, isNext: false, selected: false, canCue: true };
+  it("offers Take only on the next row", () => {
+    expect(liveRowState({ ...base, isNext: true }).showTake).toBe(true);
+    expect(liveRowState({ ...base, selected: true }).showTake).toBe(false);
+  });
+  it("offers Cue on the selected row when it isn't on air", () => {
+    expect(liveRowState({ ...base, selected: true }).showCue).toBe(true);
+    expect(liveRowState({ ...base, selected: true, air: "program" }).showCue).toBe(false);
+    expect(liveRowState({ ...base, selected: true, air: "preview" }).showCue).toBe(false);
+    expect(liveRowState({ ...base, selected: true, canCue: false }).showCue).toBe(false);
+    expect(liveRowState({ ...base, selected: false }).showCue).toBe(false);
+  });
+  it("marks on air, cued and other-show", () => {
+    expect(liveRowState({ ...base, air: "program" }).chip).toBe("onair");
+    expect(liveRowState({ ...base, air: "preview" }).chip).toBe("cued");
+    const other = liveRowState({ ...base, air: "other-show" });
+    expect(other.chip).toBe(null);
+    expect(other.otherShow).toBe(true);
+    expect(other.tooltip).toBe("On air in another show");
+  });
+  it("a row on program is never next", () => {
+    expect(liveRowState({ ...base, air: "program", isNext: true }).showTake).toBe(false);
+  });
+});
+
+describe("liveRowSurface", () => {
+  it("on air: red inset and tint", () => {
+    expect(liveRowSurface({ air: "program", next: false, selected: false })).toEqual({
+      boxShadow: "inset 3px 0 0 var(--onair)",
+      background: "rgba(229,72,77,0.10)",
+    });
+  });
+  it("next: green inset; selected: control background", () => {
+    expect(liveRowSurface({ air: null, next: true, selected: true })).toEqual({
+      boxShadow: "inset 3px 0 0 var(--ok)",
+      background: "var(--control)",
+    });
+  });
+  it("plain row has no inset", () => {
+    expect(liveRowSurface({ air: null, next: false, selected: false })).toEqual({
+      boxShadow: "none",
+      background: "transparent",
+    });
+  });
+});
+
+describe("dropHalf", () => {
+  it("splits at the middle", () => {
+    expect(dropHalf(5, 40)).toBe("before");
+    expect(dropHalf(25, 40)).toBe("after");
+  });
+});
+
+describe("headerLine", () => {
+  it("names the show, counts items and totals the length", () => {
+    expect(headerLine(showWith({ rows: [row("a", undefined, 60), row("b", undefined, 90)] }))).toBe(
+      "Sunday · 2 items · Total 2:30",
+    );
+  });
+  it("one item, no lengths", () => {
+    expect(headerLine(showWith({ rows: [row("a")] }))).toBe("Sunday · 1 item");
+  });
+});
+
+describe("nudgeTarget", () => {
+  const show = showWith({
+    sections: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
+    rows: [row("1", "a"), row("2", "a"), row("3", "b")],
+  });
+  it("moves within a section", () => {
+    expect(nudgeTarget(show, "2", -1)).toEqual({ toSectionId: "a", toIndex: 0 });
+  });
+  it("crosses into the next section", () => {
+    expect(nudgeTarget(show, "2", 1)).toEqual({ toSectionId: "b", toIndex: 0 });
+  });
+  it("is null at the very top", () => {
+    expect(nudgeTarget(show, "1", -1)).toBe(null);
+  });
+});

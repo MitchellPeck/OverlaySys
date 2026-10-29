@@ -1,24 +1,30 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Field } from "@overlaysys/core";
-import { resolveArrangement } from "@overlaysys/core";
-import { Button, IconButton, Modal, colors, radius } from "@overlaysys/ui";
-import { songTakeChannel } from "@/lib/songChannel";
-import { BookOpen, Film, Image, Music, Pencil, Type } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { Button, OfflineState, colors } from "@overlaysys/ui";
+import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { videoRowTakeMessage, onAirMediaFor, formatClock } from "@/lib/mediaTake";
-import { resolveAssetUrl } from "@/lib/uploadAsset";
-import { VideoThumb } from "./VideoThumb";
+import { useConnection } from "@/lib/useConnection";
+import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 import { rowAirState, type AirState } from "@/lib/rowAirState";
-import { editedFieldKeys, effectiveRowData, graphicRowMessage, withEffectiveData } from "@/lib/rowData";
-import { arrangementSummary } from "@/app/shows/edit/ArrangementModal";
+import { editedFieldKeys, graphicRowMessage, withEffectiveData } from "@/lib/rowData";
+import { rowView, type RowView } from "@/lib/rowView";
+import { liveGroups } from "@/lib/liveNext";
+import { slidesRowTakeMessages } from "@/lib/slidesRowView";
+import { requestedDecks } from "@/lib/deckRequests";
+import { RundownList } from "./rundown/RundownList";
+import { takeableNextRowId } from "./rundown/rundownModel";
 
-type ImagePreview = { src: string; label: string };
+type Row = NonNullable<ReturnType<typeof useStore.getState>["show"]>["rows"][number];
 
+/** Live's rundown: computes air state and the next row, and wires Take / Cue to the per-kind messages. */
 export function Rundown() {
   const { send } = useWs();
+  const router = useRouter();
+  const { connected, retry } = useConnection();
   const show = useStore((s) => s.show);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
@@ -30,508 +36,175 @@ export function Rundown() {
   const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
   const overrides = useStore((s) => s.rowDataOverrides);
-  const [preview, setPreview] = useState<ImagePreview | null>(null);
+  const deckCache = useStore((s) => s.deckCache);
+  const deckNotFound = useStore((s) => s.deckNotFound);
 
   useEffect(() => {
     if (!show || conn !== "open") return;
     const seen = new Set<string>();
     for (const r of show.rows) {
-      if (r.kind === "scripture") {
-        // Scripture rows don't use a single templateId for lookup here;
-        // they dispatch per-slide via ScriptureTakeStrip in the stage area.
+      if (r.kind === "slides") {
+        // Slides rows need their deck for the row view (title, missing slides).
+        const id = r.deckId;
+        if (id && !deckCache[id] && !deckNotFound[id] && !requestedDecks.has(id)) {
+          requestedDecks.add(id);
+          send({ type: "get_deck", deckId: id });
+        }
         continue;
       }
-      if (r.kind === "video") continue;
-      // [P3.8] placeholder until slides rows have operator UI
-      if (r.kind === "slides") continue;
+      // Scripture rows dispatch per slide via ScriptureTakeStrip; video has no template.
+      if (r.kind === "scripture" || r.kind === "video") continue;
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);
-      if (!templateCache[id]) {
-        send({ type: "get_template", templateId: id });
-      }
+      if (!templateCache[id]) send({ type: "get_template", templateId: id });
     }
-  }, [show, templateCache, conn, send]);
+  }, [show, templateCache, deckCache, deckNotFound, conn, send]);
 
-  if (!show) {
-    return (
-      <p style={{ color: colors.textDim, padding: 12, margin: 0 }}>
-        No show loaded. Pick one from the top bar.
-      </p>
-    );
-  }
+  const caches = useMemo(() => ({ songCache, templateCache }), [songCache, templateCache]);
 
-  const caches = { songCache, templateCache };
-  const disconnected = conn !== "open";
-
-  return (
-    <div>
-      <div
-        role="listbox"
-        aria-label="Rundown"
-        tabIndex={0}
-        aria-activedescendant={selectedRowId ? rowDomId(selectedRowId) : undefined}
-        style={{ display: "flex", flexDirection: "column", gap: 2, padding: 6 }}
-      >
-        {show.rows.map((row, i) => {
-          const selected = row.id === selectedRowId;
-          const songChannel = row.kind === "song" ? songTakeChannel(row, show, caches) : undefined;
-          const air = rowAirState(withEffectiveData(row, overrides), channelStates, songSessions, {
-            showId: show.id,
-            rows: show.rows,
-            ...(songChannel ? { songChannel } : {}),
-          });
-          if (row.kind === "song") {
-            const song = songs.find((s) => s.id === row.songId);
-            const cachedSong = songCache[row.songId];
-            const showSong = show.songs.find((s) => s.songId === row.songId);
-            const channel = songChannel ?? "program";
-            return (
-              <RundownItem
-                key={row.id}
-                id={row.id}
-                index={i + 1}
-                icon={<Music size={14} />}
-                title={song?.title ?? row.songId}
-                typeLabel="song"
-                detail={
-                  cachedSong
-                    ? arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)
-                    : (row.arrangement ?? showSong?.arrangement ?? []).join(" · ") || "Default arrangement"
-                }
-                selected={selected}
-                air={air}
-                onClick={() => setSelectedRow(row.id)}
-                onDoubleClick={() => {
-                  setSelectedRow(row.id);
-                  send({
-                    type: "song_take_pvw_to_pgm",
-                    showId: show.id,
-                    songRowId: row.id,
-                    fromChannel: "preview",
-                    toChannel: channel,
-                  });
-                }}
-                actions={
-                  <RowAction
-                    label="Take"
-                    disabled={disconnected}
-                    onAct={() => {
-                      setSelectedRow(row.id);
-                      send({ type: "song_take", channel, showId: show.id, songRowId: row.id });
-                    }}
-                  />
-                }
-              />
-            );
-          }
-          if (row.kind === "scripture") {
-            const channel = row.channelHint ?? "program";
-            // Like the other rows, double-click takes: the first slide, or the
-            // next one when this scripture is already live on its channel.
-            const takeScripture = () => {
-              setSelectedRow(row.id);
-              if (row.slides.length === 0) return;
-              const live = useStore.getState().channelStates[channel]?.scriptureSession;
-              const slideIdx = live?.rowId === row.id ? Math.min(live.slideIdx + 1, row.slides.length - 1) : 0;
-              send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx, channel });
-            };
-            return (
-              <RundownItem
-                key={row.id}
-                id={row.id}
-                index={i + 1}
-                icon={<BookOpen size={14} />}
-                title={row.reference}
-                typeLabel="scripture"
-                detail={row.translation}
-                selected={selected}
-                air={air}
-                onClick={() => setSelectedRow(row.id)}
-                onDoubleClick={takeScripture}
-                actions={<RowAction label="Take" disabled={disconnected || row.slides.length === 0} onAct={takeScripture} />}
-              />
-            );
-          }
-          if (row.kind === "video") {
-            const takeVideo = () => {
-              setSelectedRow(row.id);
-              if (onAirMediaFor(row, useStore.getState().channelStates)) return;
-              send(videoRowTakeMessage(row, show?.id));
-            };
-            return (
-              <RundownItem
-                key={row.id}
-                id={row.id}
-                index={i + 1}
-                icon={<Film size={14} />}
-                thumbnail={<VideoThumb assetUrl={row.assetUrl} />}
-                title={row.label || "Video"}
-                typeLabel="video"
-                detail={`${row.durationSec ? `${formatClock(row.durationSec)} · ` : ""}${row.endAction === "clear" ? "clears at end" : "holds at end"}`}
-                selected={selected}
-                air={air}
-                onClick={() => setSelectedRow(row.id)}
-                onDoubleClick={takeVideo}
-                actions={<RowAction label="Take" disabled={disconnected || air === "program"} onAct={takeVideo} />}
-              />
-            );
-          }
-          // [P3.8] placeholder until slides rows have operator UI
-          if (row.kind === "slides") return null;
-          const tplMeta = templates.find((t) => t.id === row.templateId);
-          const tpl = templateCache[row.templateId] ?? null;
-          return (
-            <RundownItem
-              key={row.id}
-              id={row.id}
-              index={i + 1}
-              icon={<Type size={14} />}
-              title={
-                editedFieldKeys(row, overrides).length > 0 ? (
-                  <>
-                    {tplMeta?.name ?? row.templateId}{" "}
-                    <span title="Edited for this session" style={{ display: "inline-flex", verticalAlign: "-1px" }}>
-                      <Pencil size={12} color={colors.warn} aria-label="Edited for this session" />
-                    </span>
-                  </>
-                ) : (
-                  tplMeta?.name ?? row.templateId
-                )
-              }
-              typeLabel="graphic"
-              detail={<DataSummary data={effectiveRowData(row, overrides)} fields={tpl?.fields ?? null} onPreviewImage={setPreview} />}
-              selected={selected}
-              air={air}
-              onClick={() => setSelectedRow(row.id)}
-              onDoubleClick={() => {
-                setSelectedRow(row.id);
-                send(graphicRowMessage(row, "take", overrides, show?.id));
-              }}
-              actions={
-                <>
-                  <RowAction
-                    label="Cue"
-                    disabled={disconnected}
-                    onAct={() => {
-                      setSelectedRow(row.id);
-                      send(graphicRowMessage(row, "cue", useStore.getState().rowDataOverrides, show.id));
-                    }}
-                  />
-                  <RowAction
-                    label="Take"
-                    disabled={disconnected}
-                    onAct={() => {
-                      setSelectedRow(row.id);
-                      send(graphicRowMessage(row, "take", useStore.getState().rowDataOverrides, show.id));
-                    }}
-                  />
-                </>
-              }
-            />
-          );
-        })}
-      </div>
-
-      {preview && <ImagePreviewModal preview={preview} onClose={() => setPreview(null)} />}
-    </div>
-  );
-}
-
-function ImagePreviewModal({
-  preview,
-  onClose,
-}: {
-  preview: ImagePreview;
-  onClose: () => void;
-}) {
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      onCancel={onClose}
-      captureKeys
-      size="lg"
-      bodyStyle={{ padding: 0 }}
-      containerStyle={{
-        background: colors.panel,
-        maxWidth: "90vw",
-        maxHeight: "90vh",
-      }}
-    >
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        <header style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <strong style={{ fontSize: 13 }}>{preview.label}</strong>
-          <span
-            style={{
-              fontSize: 10,
-              color: colors.textDim,
-              fontFamily: "ui-monospace, monospace",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: 360,
-            }}
-            title={preview.src}
-          >
-            {preview.src.startsWith("data:")
-              ? `(data url, ${(preview.src.length / 1024).toFixed(0)} kB)`
-              : preview.src}
-          </span>
-          <IconButton onClick={onClose} style={{ marginLeft: "auto" }} title="Close">
-            ×
-          </IconButton>
-        </header>
-        <div
-          style={{
-            background:
-              "linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%) 0 0 / 16px 16px, var(--bg)",
-            padding: 8,
-            borderRadius: radius.md,
-            overflow: "auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={resolveAssetUrl(preview.src)}
-            alt={preview.label}
-            style={{ maxWidth: "80vw", maxHeight: "75vh", display: "block" }}
-          />
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function DataSummary({
-  data,
-  fields,
-  onPreviewImage,
-}: {
-  data: Record<string, string>;
-  fields: Field[] | null;
-  onPreviewImage: (p: ImagePreview) => void;
-}) {
-  const entries = Object.entries(data);
-  if (entries.length === 0) {
-    return <span style={{ color: colors.textDim }}>—</span>;
-  }
-  if (!fields) {
-    return (
-      <span style={{ color: colors.textDim }}>
-        {entries.map(([k, v]) => `${k}: ${truncate(v)}`).join(" · ")}
-      </span>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
-      {fields.map((f) => {
-        const v = data[f.key];
-        if (v === undefined) return null;
-        return (
-          <span key={f.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span style={{ color: colors.textDim, fontSize: 11 }}>{f.label}:</span>
-            {renderFieldValue(f, v, onPreviewImage)}
-          </span>
-        );
-      })}
-      {entries
-        .filter(([k]) => !fields.some((f) => f.key === k))
-        .map(([k, v]) => (
-          <span key={k} style={{ color: colors.accent2, fontSize: 11 }}>
-            {k}*: {truncate(v)}
-          </span>
-        ))}
-    </div>
-  );
-}
-
-function renderFieldValue(
-  field: Field,
-  value: string,
-  onPreviewImage: (p: ImagePreview) => void,
-): React.ReactNode {
-  switch (field.type) {
-    case "color":
-      return (
-        <>
-          <span
-            style={{
-              display: "inline-block",
-              width: 12,
-              height: 12,
-              // 2px radius is a deliberate small swatch — not the standard token.
-              borderRadius: 2,
-              background: value || "transparent",
-              border: `1px solid ${colors.border}`,
-              verticalAlign: "middle",
-            }}
-            title={value}
-          />
-          <span style={{ fontSize: 11, color: colors.text, fontFamily: "ui-monospace, monospace" }}>
-            {value}
-          </span>
-        </>
-      );
-    case "image":
-      if (!value) {
-        return <span style={{ fontSize: 11, color: colors.textDim, fontStyle: "italic" }}>(empty)</span>;
+  const model = useMemo(() => {
+    if (!show) return null;
+    const rows = liveGroups(show).flatMap((g) => g.rows) as Row[];
+    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache };
+    const air: Record<string, AirState> = {};
+    const views: Record<string, RowView> = {};
+    const edited = new Set<string>();
+    for (const row of rows) {
+      const songChannel = row.kind === "song" ? songTakeChannel(row, show, caches) : undefined;
+      air[row.id] = rowAirState(withEffectiveData(row, overrides), channelStates, songSessions, {
+        showId: show.id,
+        rows: show.rows,
+        ...(songChannel ? { songChannel } : {}),
+      });
+      views[row.id] = rowView(row, ctx);
+      if (row.kind === "graphic" && editedFieldKeys(row, overrides).length > 0) edited.add(row.id);
+    }
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const canTake = (id: string): boolean => {
+      const row = byId.get(id);
+      if (!row || !views[id]?.supported) return false;
+      switch (row.kind) {
+        case "graphic":
+        case "song":
+        case "video":
+          return true;
+        case "scripture":
+          return row.slides.length > 0;
+        case "slides":
+          return slidesRowTakeMessages(show.id, row, "take") !== null;
+        default:
+          return false;
       }
-      return (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onPreviewImage({ src: value, label: field.label });
-          }}
-          title={value.startsWith("data:") ? "(inline data URL)" : value}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "2px 6px",
-            background: colors.panel2,
-            border: `1px solid ${colors.border}`,
-            borderRadius: radius.sm,
-            color: colors.accent2,
-            fontSize: 11,
-            cursor: "pointer",
-            fontStyle: "normal",
-          }}
-        >
-          <Image size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> view image
-        </button>
-      );
-    case "number":
-    case "text":
-    default:
-      return <span style={{ fontSize: 12 }}>{truncate(value)}</span>;
-  }
-}
+    };
+    const canCue = (id: string): boolean => {
+      const row = byId.get(id);
+      return !!row && row.kind !== "video" && canTake(id);
+    };
+    const next = takeableNextRowId(rows, air, selectedRowId, canTake);
+    return { byId, air, edited, canCue, next };
+  }, [show, songs, songCache, templates, templateCache, overrides, deckCache, channelStates, songSessions, caches, selectedRowId]);
 
-function truncate(s: string, max = 40): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
-}
-
-const rowDomId = (rowId: string) => `rundown-row-${rowId}`;
-
-/**
- * A hover/selection action on a rundown row. Keeps its clicks off the row
- * (no select-then-double-click), and gives the keyboard back to the show
- * shortcuts afterwards. Not tabbable: the listbox is the keyboard path.
- */
-function RowAction({ label, disabled, onAct }: { label: string; disabled: boolean; onAct: () => void }) {
-  return (
-    <Button
-      size="sm"
-      variant={label === "Take" ? "onair" : "ghost"}
-      tabIndex={-1}
-      disabled={disabled}
-      title={disabled ? undefined : label}
-      onClick={(e) => {
-        e.stopPropagation();
-        onAct();
-        e.currentTarget.blur();
-      }}
-      onDoubleClick={(e) => e.stopPropagation()}
-      style={{ padding: "2px 8px", fontSize: 11 }}
-    >
-      {label}
-    </Button>
-  );
-}
-
-function RundownItem({
-  id,
-  index,
-  icon,
-  title,
-  typeLabel,
-  detail,
-  selected,
-  air,
-  thumbnail,
-  actions,
-  onClick,
-  onDoubleClick,
-}: {
-  id: string;
-  actions?: React.ReactNode;
-  index: number;
-  icon: React.ReactNode;
-  thumbnail?: React.ReactNode;
-  title: React.ReactNode;
-  typeLabel: string;
-  detail?: React.ReactNode;
-  selected: boolean;
-  air: AirState;
-  onClick: () => void;
-  onDoubleClick?: () => void;
-}) {
-  const bar = air === "program" ? colors.onair : air === "preview" ? colors.ok : "transparent";
-  const tint =
-    air === "program" ? "rgba(255,51,65,0.12)" : air === "preview" ? "rgba(16,185,129,0.10)" : "transparent";
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [hovered, setHovered] = useState(false);
-  // Keep the keyboard selection in view as ↑/↓ moves it.
-  useEffect(() => {
-    if (selected) ref.current?.scrollIntoView?.({ block: "nearest" });
-  }, [selected]);
-  // globals.css's .row-actions rule targets role="listitem"; options manage
-  // their own visibility: on hover, and on the selected (keyboard) row.
-  const showActions = hovered || selected;
-  return (
-    <div
-      ref={ref}
-      id={rowDomId(id)}
-      role="option"
-      aria-selected={selected}
-      tabIndex={-1}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        padding: "7px 8px",
-        borderRadius: radius.md,
-        cursor: "pointer",
-        background: tint,
-        boxShadow: `inset 3px 0 0 ${bar}`,
-        outline: selected ? `1px solid ${colors.brand}` : "none",
-        outlineOffset: -1,
-      }}
-    >
-      <span style={{ width: 18, textAlign: "right", color: colors.textMuted, fontSize: 11, paddingTop: 1 }}>{index}</span>
-      <span style={{ color: colors.textDim, paddingTop: 1 }}>{icon}</span>
-      {thumbnail}
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ color: colors.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {title}
-        </div>
-        {detail && <div style={{ fontSize: 11, color: colors.textDim, marginTop: 2 }}>{detail}</div>}
+  if (!show || !model) {
+    if (!connected) return <OfflineState noun="shows" onRetry={retry} compact />;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: 24 }}>
+        <p style={{ color: colors.textDim, fontSize: 13, margin: 0 }}>Pick a show to start</p>
+        <Button size="sm" variant="secondary" onClick={() => router.push("/shows")}>
+          Shows
+        </Button>
       </div>
-      {actions && (
-        <span
-          style={{
-            display: "flex",
-            gap: 4,
-            flexShrink: 0,
-            opacity: showActions ? 1 : 0,
-            pointerEvents: showActions ? "auto" : "none",
-            transition: "opacity 120ms",
-          }}
-        >
-          {actions}
-        </span>
-      )}
-      <span style={{ fontSize: 10, color: colors.textMuted, paddingTop: 2 }}>{typeLabel}</span>
-    </div>
+    );
+  }
+
+  const sendAll = (msgs: ClientMessage[] | null) => {
+    for (const m of msgs ?? []) send(m);
+  };
+
+  /** Take or cue one row with its kind's message. */
+  const fire = (rowId: string, action: "take" | "cue") => {
+    const row = model.byId.get(rowId);
+    if (!row) return;
+    setSelectedRow(row.id);
+    const st = useStore.getState();
+    switch (row.kind) {
+      case "graphic":
+        send(graphicRowMessage(row, action, st.rowDataOverrides, show.id));
+        return;
+      case "song": {
+        const channel = action === "take" ? songTakeChannel(row, show, caches) : songCueChannel(row, show, caches);
+        send({ type: "song_take", channel, showId: show.id, songRowId: row.id });
+        return;
+      }
+      case "scripture": {
+        if (row.slides.length === 0) return;
+        if (action === "cue") {
+          send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx: 0, channel: "preview" });
+          return;
+        }
+        // The first slide, or the next one when this scripture is already live on its channel.
+        const channel = row.channelHint ?? "program";
+        const live = st.channelStates[channel]?.scriptureSession;
+        const slideIdx = live?.rowId === row.id ? Math.min(live.slideIdx + 1, row.slides.length - 1) : 0;
+        send({ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx, channel });
+        return;
+      }
+      case "video":
+        if (action === "cue") return; // video has no Cue
+        if (onAirMediaFor(row, st.channelStates)) return;
+        send(videoRowTakeMessage(row, show.id));
+        return;
+      case "slides":
+        sendAll(slidesRowTakeMessages(show.id, row, action));
+        return;
+    }
+  };
+
+  // Double-click keeps today's behaviour (take); Task 16 makes it a setting (D4).
+  const onDoubleClick = (rowId: string) => {
+    const row = model.byId.get(rowId);
+    if (!row) return;
+    if (!connected) {
+      setSelectedRow(rowId);
+      return;
+    }
+    if (row.kind === "song") {
+      setSelectedRow(row.id);
+      send({
+        type: "song_take_pvw_to_pgm",
+        showId: show.id,
+        songRowId: row.id,
+        fromChannel: "preview",
+        toChannel: songTakeChannel(row, show, caches),
+      });
+      return;
+    }
+    fire(rowId, "take");
+  };
+
+  const list = (
+    <RundownList
+      show={show}
+      mode="live"
+      selectedRowId={selectedRowId}
+      onSelect={(id) => setSelectedRow(id)}
+      air={model.air}
+      nextRowId={model.next}
+      onTake={(id) => fire(id, "take")}
+      onCue={(id) => fire(id, "cue")}
+      onDoubleClick={onDoubleClick}
+      canCue={model.canCue}
+      actionBlocked={connected ? null : "Not connected"}
+      editedRowIds={model.edited}
+    />
   );
+
+  if (!connected) {
+    return (
+      <OfflineState variant="stale" onRetry={retry}>
+        <div style={{ opacity: 0.55 }}>{list}</div>
+      </OfflineState>
+    );
+  }
+  return list;
 }
