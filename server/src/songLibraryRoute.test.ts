@@ -34,7 +34,7 @@ describe("buildSongLibrary", () => {
     expect(a.lyrics).toContain("hello\nworld");
     expect(lib.songs.find((s) => s.id === "b")!.usedIn).toBe(0);
     expect(lib.deleted).toEqual([
-      { id: "gone", title: "GONE", author: undefined, ccliNumber: undefined, deletedAt: "2026-10-02T00:00:00.000Z" },
+      { id: "gone", title: "GONE", author: undefined, ccliNumber: undefined, deletedAt: "2026-10-02T00:00:00.000Z", customFields: {} },
     ]);
   });
 });

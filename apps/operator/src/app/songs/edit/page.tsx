@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
-import { type Song } from "@overlaysys/core";
+import { convertedDeckId, type Song } from "@overlaysys/core";
 import { Button, IconButton, SaveBar, colors, useContextMenu, useToast, type MenuItem } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
@@ -25,6 +25,9 @@ import { PasteLyricsModal } from "../PasteLyricsModal";
 import { parsePastedLyrics, type SongPatch } from "../pasteLyrics";
 import { parseSongImportJson } from "../songImport";
 import { fetchSongLibrary, restoreDeletedSong } from "../libraryClient";
+// [P3.20]
+import { ConvertToDeckDialog } from "@/app/slides/ConvertToDeckDialog";
+// [/P3.20]
 import { SongDraftEditor } from "./SongDraftEditor";
 import { decideIncomingSong, sameSongContent } from "./songDraftOps";
 import { isSongNotFound } from "./songEditorModel";
@@ -67,6 +70,9 @@ function SongEditorPageInner() {
   const [saving, setSaving] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(wantPaste);
   const [notFound, setNotFound] = useState(false);
+  // [P3.20]
+  const [convertOpen, setConvertOpen] = useState(false);
+  // [/P3.20]
   /** Bumped to re-request the song (after a restore). */
   const [reloadKey, setReloadKey] = useState(0);
   const { alert, dialog } = useDialog();
@@ -264,7 +270,6 @@ function SongEditorPageInner() {
     });
   }
 
-  // P3.20 adds "Convert to slide deck…" to this list in a marked block.
   const moreItems: MenuItem[] = [
     {
       id: "export",
@@ -276,6 +281,20 @@ function SongEditorPageInner() {
       label: "Import from file…",
       onSelect: () => fileInput.current?.click(),
     },
+    // [P3.20]
+    {
+      id: "convert-to-deck",
+      label: "Convert to slide deck…",
+      disabled: cloud
+        ? "Not available in cloud mode"
+        : offline
+          ? "Not connected"
+          : dirty
+            ? "Save your changes first"
+            : false,
+      onSelect: () => setConvertOpen(true),
+    },
+    // [/P3.20]
   ];
 
   return (
@@ -349,6 +368,12 @@ function SongEditorPageInner() {
       </div>
       {more.menu}
       {dialog}
+      {/* [P3.20] converts the saved copy; the menu item is disabled while dirty */}
+      <ConvertToDeckDialog
+        song={convertOpen ? (baseline ?? draft) : null}
+        onClose={() => setConvertOpen(false)}
+      />
+      {/* [/P3.20] */}
     </>
   );
 }
@@ -370,7 +395,11 @@ function SongNotFound({
   onRestored(): void;
 }) {
   const toast = useToast();
-  const [deleted, setDeleted] = useState<{ id: string; title: string } | null>(null);
+  const [deleted, setDeleted] = useState<{ id: string; title: string; deckId: string | null } | null>(null);
+  // [P3.20] the deck this song was converted to
+  const decks = useStore((s) => s.decks);
+  const router = useRouter();
+  // [/P3.20]
   const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
@@ -378,7 +407,7 @@ function SongNotFound({
     let alive = true;
     fetchSongLibrary().then((lib) => {
       const row = lib?.deleted.find((d) => d.id === id);
-      if (alive && row) setDeleted({ id: row.id, title: row.title });
+      if (alive && row) setDeleted({ id: row.id, title: row.title, deckId: convertedDeckId({ customFields: row.customFields ?? {} }) });
     }).catch((err) => console.warn("[songs/edit] recently-deleted lookup failed", err));
     return () => {
       alive = false;
@@ -401,15 +430,33 @@ function SongNotFound({
 
   return (
     <div role="alert" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
-      <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>{"This song doesn't exist (it may have been deleted)."}</h2>
-      {deleted && (
+      <h2 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+        {deleted?.deckId
+          ? `This song was converted to the deck “${decks.find((d) => d.id === deleted.deckId)?.name ?? deleted.deckId}”`
+          : "This song doesn't exist (it may have been deleted)."}
+      </h2>
+      {deleted && !deleted.deckId && (
         <p style={{ margin: 0, fontSize: 13, color: colors.textDim }}>
           “{deleted.title}” is in Recently deleted.
         </p>
       )}
+      {/* [P3.20] */}
+      {deleted?.deckId && (
+        <p style={{ margin: 0, fontSize: 13, color: colors.textDim }}>
+          Restoring the song brings it back alongside the deck.
+        </p>
+      )}
+      {/* [/P3.20] */}
       <div style={{ display: "flex", gap: 8 }}>
+        {/* [P3.20] */}
+        {deleted?.deckId && (
+          <Button variant="primary" size="sm" onClick={() => router.push(`/slides/edit?id=${encodeURIComponent(deleted.deckId!)}`)}>
+            Open deck
+          </Button>
+        )}
+        {/* [/P3.20] */}
         {deleted && (
-          <Button variant="primary" size="sm" onClick={restore} disabled={restoring}>
+          <Button variant={deleted.deckId ? "secondary" : "primary"} size="sm" onClick={restore} disabled={restoring}>
             Restore
           </Button>
         )}

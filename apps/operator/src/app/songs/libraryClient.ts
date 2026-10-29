@@ -11,6 +11,7 @@ export interface DeletedSongRow {
   author?: string;
   ccliNumber?: string;
   deletedAt?: string;
+  customFields?: Record<string, string>; // [P3.20]
 }
 
 export interface SongLibrary {

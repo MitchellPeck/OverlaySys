@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
-import { Copy, CopyPlus, Download, FolderOpen, Trash2 } from "lucide-react";
+import { Copy, CopyPlus, Download, FolderOpen, Layers, Trash2 } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -37,6 +37,9 @@ import {
 } from "@/lib/cloudData";
 import { ImportFromFileModal } from "./ImportFromFileModal";
 import { CcliReportModal } from "./CcliReportModal";
+// [P3.20]
+import { ConvertToDeckDialog } from "../slides/ConvertToDeckDialog";
+// [/P3.20]
 import { addedAt, mergeLibrary, songSearchText, songSorts, type LibraryRow } from "./librarySearch";
 import { fetchSongLibrary, restoreDeletedSong, type DeletedSongRow, type SongLibrary } from "./libraryClient";
 
@@ -63,6 +66,9 @@ export default function SongsPage() {
   const [ccliOpen, setCcliOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [library, setLibrary] = useState<SongLibrary | null>(null);
+  // [P3.20]
+  const [convertSong, setConvertSong] = useState<Song | null>(null);
+  // [/P3.20]
   const cloud = isCloudMode();
   const disabled = !connected;
   const load = listLoadState({ cloud, conn, loaded: songsLoaded });
@@ -248,6 +254,18 @@ export default function SongsPage() {
     }
   }
 
+  // [P3.20]
+  async function startConvert(row: LibraryRow) {
+    try {
+      const song = await loadSong(row.id);
+      if (song) setConvertSong(song);
+      else toast({ tone: "error", message: `Couldn't convert “${titleOf(row)}”: song not found.` });
+    } catch (err) {
+      toast({ tone: "error", message: `Couldn't convert “${titleOf(row)}”: ${ackErrorText(err)}` });
+    }
+  }
+  // [/P3.20]
+
   function openSong(r: LibraryRow) {
     router.push(`/songs/edit?id=${encodeURIComponent(r.id)}`);
   }
@@ -280,6 +298,15 @@ export default function SongsPage() {
       disabled: disabled ? OFFLINE_REASON : false,
       onSelect: () => void exportSong(r),
     },
+    // [P3.20]
+    {
+      id: "convert-to-deck",
+      label: "Convert to slide deck…",
+      icon: <Layers size={14} />,
+      disabled: cloud ? "Not available in cloud mode" : disabled ? OFFLINE_REASON : false,
+      onSelect: () => void startConvert(r),
+    },
+    // [/P3.20]
     { separator: true },
     { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void copyText(r.id) },
     { separator: true },
@@ -350,6 +377,9 @@ export default function SongsPage() {
         />
       )}
       {ccliOpen && <CcliReportModal onClose={() => setCcliOpen(false)} />}
+      {/* [P3.20] */}
+      <ConvertToDeckDialog song={convertSong} onClose={() => setConvertSong(null)} />
+      {/* [/P3.20] */}
       {trashOpen && (
         <Dialog
           open

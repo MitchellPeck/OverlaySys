@@ -43,6 +43,9 @@ export interface DeletedSong {
   author?: string;
   ccliNumber?: string;
   deletedAt?: string;
+  // [P3.20] lets the editor say "converted to deck …" for a tombstoned song
+  customFields?: Record<string, string>;
+  // [/P3.20]
 }
 
 export interface SongLibraryResponse {
@@ -104,6 +107,7 @@ export function buildSongLibrary(
       author: s.author,
       ccliNumber: s.ccliNumber,
       deletedAt: s.deletedAt,
+      customFields: s.customFields,
     })),
   };
 }
