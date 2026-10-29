@@ -311,7 +311,7 @@ async function pushTokensToServer(tokens: {
   registryOrgId: string | null;
 }): Promise<void> {
   if (!tokens.registryOrgId) return; // no org → nothing to scope sync to
-  await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
+  const res = await fetch(`http://${serverHost}:${serverPort}/api/cloud/tokens`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -320,6 +320,14 @@ async function pushTokensToServer(tokens: {
       orgId: tokens.registryOrgId,
     }),
   });
+  // The server answers non-2xx when it couldn't apply the session (no
+  // Supabase env, or setSession refused the token). Throw so callers log the
+  // reason; the operator's sync pill shows it from /api/cloud/sync.
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    const reason = typeof body?.error === "string" ? body.error : `HTTP ${res.status}`;
+    throw new Error(`server did not apply cloud tokens: ${reason}`);
+  }
 }
 
 /** Clear the server's cloud session — companion to `pushTokensToServer`. */
@@ -685,7 +693,11 @@ function scheduleServerRespawn(reason: string): void {
 async function rePushTokensAfterRespawn(): Promise<void> {
   try {
     const cloud = await loadCloudTokens();
-    if (cloud) await pushTokensToServer(cloud).catch(() => undefined);
+    if (cloud) {
+      await pushTokensToServer(cloud).catch((err) =>
+        console.warn("[desktop] re-forwarding cloud tokens after server restart failed", err),
+      );
+    }
   } catch {
     /* best-effort */
   }

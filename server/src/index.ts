@@ -49,12 +49,7 @@ import {
   securityContext,
   tokenEnabled,
 } from "./security";
-import {
-  clearCloudTokens,
-  getCloudSyncStatus,
-  runSyncNow,
-  setCloudTokens,
-} from "./cloudSync";
+import { registerCloudRoutes } from "./cloudRoutes";
 
 // Source-run only (the packaged host sets OVERLAYSYS_DATA_DIR and passes
 // its own env): pick up apps/desktop/.env so cloud sync has credentials
@@ -226,33 +221,7 @@ app.get("/api/projects", async () => {
 // apps-portal's Supabase. Status endpoint lets the operator UI surface
 // "last synced at" and any recent errors.
 
-interface SetTokensBody {
-  accessToken?: string;
-  refreshToken?: string;
-  orgId?: string;
-}
-app.post<{ Body: SetTokensBody }>("/api/cloud/tokens", async (req, reply) => {
-  const { accessToken, refreshToken, orgId } = req.body ?? {};
-  if (!accessToken || !refreshToken || !orgId) {
-    return reply
-      .status(400)
-      .send({ error: "accessToken, refreshToken, and orgId are required" });
-  }
-  const ok = await setCloudTokens({ accessToken, refreshToken, orgId });
-  return { ok };
-});
-
-app.delete("/api/cloud/tokens", async () => {
-  await clearCloudTokens();
-  return { ok: true };
-});
-
-app.get("/api/cloud/sync", async () => getCloudSyncStatus());
-
-app.post("/api/cloud/sync", async () => {
-  const result = await runSyncNow();
-  return result ?? { skipped: true };
-});
+registerCloudRoutes(app);
 
 // Bind, falling back to an OS-assigned port if the preferred one (4000) is
 // already taken — a stale/leftover server on 4000 must degrade to "runs on
