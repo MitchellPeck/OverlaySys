@@ -22,6 +22,8 @@ import {
   refreshTemplateMetasCloud,
   saveHotcardCloud,
 } from "@/lib/cloudData";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 
 export default function HotcardsIndexPage() {
   const router = useRouter();
@@ -254,30 +256,33 @@ export default function HotcardsIndexPage() {
   };
 
   return (
-    <LibraryList<HotcardMeta>
-      items={hotcards}
-      getId={(h) => h.id}
-      primary={(h) => h.name || "Untitled hotcard"}
-      kind={() => "graphic"}
-      columns={columns}
-      searchText={(h) => `${h.name} ${templates.find((t) => t.id === h.templateId)?.name ?? ""}`}
-      sorts={hotcardSorts}
-      defaultSort="key-asc"
-      menuItems={menuItems}
-      onOpen={(h) => router.push(`/hotcards/edit?id=${encodeURIComponent(h.id)}`)}
-      primaryAction={{
-        label: "New hotcard",
-        onClick: newHotcard,
-        disabledReason: disabled ? "Not connected to the server" : undefined,
-      }}
-      storageKey="hotcards"
-      emptyState={{
-        title: "No hotcards in this project",
-        body: "Hotcards are reusable graphics you can take from the Live page with Cue / Take or F1–F12.",
-        action: { label: "New hotcard", onClick: newHotcard },
-      }}
-      loading={load.loading}
-      error={load.error ? "Not connected to the server" : null}
-    />
+    <PageBody variant="list">
+      <PageChrome title="Hotcards" />
+      <LibraryList<HotcardMeta>
+        items={hotcards}
+        getId={(h) => h.id}
+        primary={(h) => h.name || "Untitled hotcard"}
+        kind={() => "graphic"}
+        columns={columns}
+        searchText={(h) => `${h.name} ${templates.find((t) => t.id === h.templateId)?.name ?? ""}`}
+        sorts={hotcardSorts}
+        defaultSort="key-asc"
+        menuItems={menuItems}
+        onOpen={(h) => router.push(`/hotcards/edit?id=${encodeURIComponent(h.id)}`)}
+        primaryAction={{
+          label: "New hotcard",
+          onClick: newHotcard,
+          disabledReason: disabled ? "Not connected to the server" : undefined,
+        }}
+        storageKey="hotcards"
+        emptyState={{
+          title: "No hotcards in this project",
+          body: "Hotcards are reusable graphics you can take from the Live page with Cue / Take or F1–F12.",
+          action: { label: "New hotcard", onClick: newHotcard },
+        }}
+        loading={load.loading}
+        error={load.error ? "Not connected to the server" : null}
+      />
+    </PageBody>
   );
 }

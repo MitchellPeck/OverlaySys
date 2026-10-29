@@ -24,6 +24,8 @@ import {
   refreshShowMetasCloud,
   saveShowCloud,
 } from "@/lib/cloudData";
+import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 
 export default function ShowsIndexPage() {
   const router = useRouter();
@@ -286,31 +288,34 @@ export default function ShowsIndexPage() {
   };
 
   return (
-    <LibraryList<ShowMeta>
-      items={showMetas}
-      getId={(s) => s.id}
-      primary={(s) => s.name || "Untitled show"}
-      secondary={(s) => plural(s.rowCount, "item")}
-      columns={columns}
-      searchText={(s) => s.name}
-      sorts={showSorts}
-      defaultSort="date-desc"
-      filters={filters}
-      menuItems={menuItems}
-      onOpen={(s) => router.push(`/shows/edit?id=${encodeURIComponent(s.id)}`)}
-      primaryAction={{
-        label: "New show",
-        onClick: () => void newShow(),
-        disabledReason: disabled ? "Not connected to the server" : undefined,
-      }}
-      storageKey="shows"
-      emptyState={{
-        title: "No shows yet",
-        body: "A show is the rundown for one service. Create one here, or import a plan from Planning Center.",
-        action: { label: "New show", onClick: () => void newShow() },
-      }}
-      loading={load.loading}
-      error={loadFailed ? (cloud ? "Couldn't load shows" : "Not connected to the server") : null}
-    />
+    <PageBody variant="list">
+      <PageChrome title="Shows" />
+      <LibraryList<ShowMeta>
+        items={showMetas}
+        getId={(s) => s.id}
+        primary={(s) => s.name || "Untitled show"}
+        secondary={(s) => plural(s.rowCount, "item")}
+        columns={columns}
+        searchText={(s) => s.name}
+        sorts={showSorts}
+        defaultSort="date-desc"
+        filters={filters}
+        menuItems={menuItems}
+        onOpen={(s) => router.push(`/shows/edit?id=${encodeURIComponent(s.id)}`)}
+        primaryAction={{
+          label: "New show",
+          onClick: () => void newShow(),
+          disabledReason: disabled ? "Not connected to the server" : undefined,
+        }}
+        storageKey="shows"
+        emptyState={{
+          title: "No shows yet",
+          body: "A show is the rundown for one service. Create one here, or import a plan from Planning Center.",
+          action: { label: "New show", onClick: () => void newShow() },
+        }}
+        loading={load.loading}
+        error={loadFailed ? (cloud ? "Couldn't load shows" : "Not connected to the server") : null}
+      />
+    </PageBody>
   );
 }
