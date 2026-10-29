@@ -61,6 +61,11 @@ export default function StageSettingsPage() {
                 {draft.error}
               </div>
             ) : null}
+            {draft.changedElsewhere ? (
+              <div style={{ color: colors.textDim, fontSize: 12 }}>
+                Changed elsewhere. Saving will overwrite those changes.
+              </div>
+            ) : null}
             <Panel title="Message presets">
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <p style={hint}>Tap one on Live to show it on every stage monitor.</p>
