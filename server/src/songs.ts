@@ -37,15 +37,26 @@ export async function listDeletedSongs(): Promise<Song[]> {
 }
 
 /**
+ * The library's "Added" date is `createdAt ?? updatedAt`. Songs saved before
+ * `createdAt` existed have only `updatedAt`, which delete and restore move, so
+ * pin it as `createdAt` first: trashing and restoring a song never makes it
+ * look newly added.
+ */
+function pinAddedDate(s: Song): Song {
+  return s.createdAt || !s.updatedAt ? s : { ...s, createdAt: s.updatedAt };
+}
+
+/**
  * Bring a tombstoned song back. A fresh write (stampWrite clears deletedAt
  * and moves updatedAt forward) so the sync engine propagates the restore.
- * Returns null when the id is unknown or the song isn't deleted.
+ * `createdAt` is kept as is (see pinAddedDate). Returns null when the id is
+ * unknown or the song isn't deleted.
  */
 export async function restoreSong(id: string): Promise<Song | null> {
   await ensureLoaded();
   const current = REGISTRY.get(id);
   if (!current || isLive(current)) return null;
-  const restored = stampWrite(current);
+  const restored = stampWrite(pinAddedDate(current));
   await storage.saveSong(restored);
   REGISTRY.set(id, restored);
   return restored;
@@ -89,7 +100,7 @@ export async function deleteSong(id: string): Promise<boolean> {
   await ensureLoaded();
   const current = REGISTRY.get(id);
   if (!current || !isLive(current)) return false;
-  const dead = tombstone(current);
+  const dead = tombstone(pinAddedDate(current));
   await storage.saveSong(dead);
   REGISTRY.set(id, dead);
   return true;
