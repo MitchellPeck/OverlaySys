@@ -219,3 +219,29 @@ describe("updateDisplayCache", () => {
     expect(next).toEqual([fingerprintDisplay(builtIn)]);
   });
 });
+
+describe("Blackmagic prefs survive a save and load", () => {
+  it("keeps a channel's device output and the ffmpeg path", () => {
+    savePrefs(file, {
+      version: 1,
+      displays: [],
+      decklinkFfmpegPath: "~/bin/ff",
+      channels: {
+        stage: {
+          autoOpen: true,
+          fullscreen: false,
+          frameless: false,
+          alwaysOnTop: false,
+          transparent: false,
+          decklink: { device: { name: "UltraStudio Express Monitor 3G" }, format: "1080p59.94" },
+        },
+      },
+    });
+    const back = loadPrefs(file);
+    expect(back.decklinkFfmpegPath).toBe("~/bin/ff");
+    expect(back.channels.stage!.decklink).toEqual({
+      device: { name: "UltraStudio Express Monitor 3G" },
+      format: "1080p59.94",
+    });
+  });
+});

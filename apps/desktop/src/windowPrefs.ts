@@ -44,9 +44,16 @@ const WindowPrefsFileSchema = z.object({
         alwaysOnTop: z.boolean().default(false),
         transparent: z.boolean().default(false),
         audioOutput: z.object({ deviceId: z.string(), label: z.string() }).optional(),
+        decklink: z
+          .object({
+            device: z.object({ name: z.string().min(1) }),
+            format: z.string().default("1080p59.94"),
+          })
+          .optional(),
       }),
     )
     .default({}),
+  decklinkFfmpegPath: z.string().optional(),
 });
 
 const DEFAULTS: WindowPrefsFile = {

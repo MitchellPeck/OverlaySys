@@ -6,13 +6,8 @@
 import { BrowserWindow } from "electron";
 import { execFile, spawn } from "node:child_process";
 import os from "node:os";
-import {
-  deckLinkErrorText,
-  findFormat,
-  type DeckLinkErrorCode,
-  type DeckLinkOutputPref,
-  type DeckLinkStatus,
-} from "@overlaysys/core";
+import type { DeckLinkErrorCode, DeckLinkOutputPref, DeckLinkStatus } from "@overlaysys/core";
+import { deckLinkErrorText, findFormat } from "./shared";
 import type { DesktopEvent } from "../supervisor";
 import { checkDevice, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
 import { frameFromImage } from "./frame";
