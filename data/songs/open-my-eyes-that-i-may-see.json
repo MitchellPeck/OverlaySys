@@ -153,5 +153,6 @@
   "defaultOutroFieldMap": {
     "text": "copyright"
   },
-  "defaultChannel": "program"
+  "defaultChannel": "program",
+  "updatedAt": "2026-10-29T13:21:18.349Z"
 }
