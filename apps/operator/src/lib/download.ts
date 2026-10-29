@@ -18,3 +18,15 @@ export function downloadJson(filename: string, value: unknown): void {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+/** Trigger a browser download of plain text (e.g. an example CSV). */
+export function downloadText(filename: string, text: string, mime = "text/plain"): void {
+  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}

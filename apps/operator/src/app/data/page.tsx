@@ -10,7 +10,7 @@ export default function DataPage() {
   return (
     <>
       <PageChrome title="Data" />
-      <PageBody maxWidth={1100} style={{ height: "100%" }}>
+      <PageBody variant="wide">
         <ExportBundle />
         <ImportPreview />
         <CsvRundownImport />

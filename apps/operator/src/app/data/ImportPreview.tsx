@@ -2,6 +2,7 @@
 
 import { Check, TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { v4 as uuid } from "uuid";
 import {
   detectImport,
   type Bundle,
@@ -12,9 +13,10 @@ import {
   type Song,
   type Template,
 } from "@overlaysys/core";
-import { Button, Panel, colors } from "@overlaysys/ui";
+import { Button, FileDrop, Panel, SegmentedControl, Select, colors, useConfirm, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { findLikelySongDuplicate, setAllConflicts, type LikelyDuplicate } from "./bundleDuplicates";
+import { findLikelySongDuplicate, setAllFlagged, type LikelyDuplicate } from "./bundleDuplicates";
+import { planImport, summarizePlan, type ImportDecision } from "./planImport";
 import { defaultServerUrl } from "@/lib/wsClient";
 import { isCloudMode } from "@/lib/mode";
 import {
@@ -28,25 +30,29 @@ import {
 
 /**
  * Bundle import UI. Reads a bundle (or single-entity) JSON file, shows a
- * preview with Replace/Skip decisions per existing-id conflict, then posts
- * the whole filtered bundle to `POST /api/import` in a single request.
+ * plan with a decision per item (import, replace, copy, skip) and a target
+ * project for shows and hotcards, then posts the whole filtered bundle to
+ * `POST /api/import` in a single request.
  *
  * The server handles all of the asset-lift / URL-rewrite / fan-out save
  * work — see `server/src/importRoute.ts`. Keeping that logic server-side
  * avoids the half-dozen failure modes the previous WS-based loop hit.
  */
 
-type Decision = "save" | "skip";
 type ItemKind = "song" | "template" | "show" | "hotcard";
 
 interface ItemRow {
   kind: ItemKind;
   id: string;
-  label: string;
-  conflict: boolean;
-  decision: Decision;
+  name: string;
+  /** An existing item with the same id; importing replaces it. */
+  conflict?: { name: string; updatedAt?: string };
   /** Songs only: an existing song under another id that this probably duplicates. */
   likelyDuplicate?: LikelyDuplicate;
+  /** Project the item came from (shows and hotcards). */
+  project?: string;
+  decision: ImportDecision;
+  targetProject: string;
 }
 
 interface PreviewState {
@@ -77,92 +83,104 @@ interface ImportResult {
   errors: { kind: string; id: string; message: string }[];
 }
 
+const KIND_LABEL: Record<ItemKind, string> = { song: "Song", template: "Design", show: "Show", hotcard: "Hotcard" };
+
+function formatEdited(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 export function ImportPreview() {
   const songMetas = useStore((s) => s.songs);
   const showMetas = useStore((s) => s.showMetas);
   const templates = useStore((s) => s.templates);
   const hotcardMetas = useStore((s) => s.hotcards);
+  const projects = useStore((s) => s.projects);
+  const currentProjectId = useStore((s) => s.currentProjectId);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   const [parseError, setParseError] = useState<string | null>(null);
-  const [filename, setFilename] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  function existingIds() {
-    return {
-      songs: new Set(songMetas.map((s) => s.id)),
-      templates: new Set(templates.map((t) => t.id)),
-      shows: new Set(showMetas.map((s) => s.id)),
-      hotcards: new Set(hotcardMetas.map((h) => h.id)),
-    };
-  }
-
   function buildPreview(
     songs: Song[],
-    templates: Template[],
+    tpls: Template[],
     shows: Show[],
     hotcards: Hotcard[],
     assets: BundleAsset[],
     project?: Project,
   ): PreviewState {
-    const ex = existingIds();
-    const rows: ItemRow[] = [
-      ...songs.map<ItemRow>((s) => {
-        const conflict = ex.songs.has(s.id);
-        const dup = conflict ? null : findLikelySongDuplicate(s, songMetas);
+    const exSongs = new Map(songMetas.map((s) => [s.id, s]));
+    const exTemplates = new Map(templates.map((t) => [t.id, t]));
+    const exShows = new Map(showMetas.map((s) => [s.id, s]));
+    const exHotcards = new Map(hotcardMetas.map((h) => [h.id, h]));
+    const known = new Set(projects.map((p) => p.id));
+    if (project) known.add(project.id);
+    const fromProject = (id: string | undefined) => (id && known.has(id) ? id : undefined);
+
+    const rows = [
+      ...songs.map((s) => {
+        const hit = exSongs.get(s.id);
+        const dup = hit ? null : findLikelySongDuplicate(s, songMetas);
         return {
-          kind: "song",
+          kind: "song" as const,
           id: s.id,
-          label: s.title || s.id,
-          conflict,
-          decision: conflict ? "skip" : "save",
+          name: s.title || "Untitled song",
+          ...(hit ? { conflict: { name: hit.title, ...(hit.updatedAt ? { updatedAt: hit.updatedAt } : {}) } } : {}),
           ...(dup ? { likelyDuplicate: dup } : {}),
         };
       }),
-      ...templates.map<ItemRow>((t) => ({
-        kind: "template",
-        id: t.id,
-        label: t.name || t.id,
-        conflict: ex.templates.has(t.id),
-        decision: ex.templates.has(t.id) ? "skip" : "save",
-      })),
-      ...hotcards.map<ItemRow>((h) => ({
-        kind: "hotcard",
-        id: h.id,
-        label: h.name || h.id,
-        conflict: ex.hotcards.has(h.id),
-        decision: ex.hotcards.has(h.id) ? "skip" : "save",
-      })),
-      ...shows.map<ItemRow>((sh) => ({
-        kind: "show",
-        id: sh.id,
-        label: sh.name || sh.id,
-        conflict: ex.shows.has(sh.id),
-        decision: ex.shows.has(sh.id) ? "skip" : "save",
-      })),
+      ...tpls.map((t) => {
+        const hit = exTemplates.get(t.id);
+        return {
+          kind: "template" as const,
+          id: t.id,
+          name: t.name || "Untitled design",
+          ...(hit ? { conflict: { name: hit.name, ...(hit.updatedAt ? { updatedAt: hit.updatedAt } : {}) } } : {}),
+        };
+      }),
+      ...hotcards.map((h) => {
+        const hit = exHotcards.get(h.id);
+        const proj = fromProject(h.projectId);
+        return {
+          kind: "hotcard" as const,
+          id: h.id,
+          name: h.name || "Untitled hotcard",
+          ...(hit ? { conflict: { name: hit.name } } : {}),
+          ...(proj ? { project: proj } : {}),
+        };
+      }),
+      ...shows.map((sh) => {
+        const hit = exShows.get(sh.id);
+        const proj = fromProject(sh.projectId);
+        return {
+          kind: "show" as const,
+          id: sh.id,
+          name: sh.name || "Untitled show",
+          ...(hit ? { conflict: { name: hit.name, ...(hit.updatedAt ? { updatedAt: hit.updatedAt } : {}) } } : {}),
+          ...(proj ? { project: proj } : {}),
+        };
+      }),
     ];
-    return {
-      songs,
-      templates,
-      shows,
-      hotcards,
-      assets,
-      rows,
-      ...(project ? { project } : {}),
-    };
+    const planned = planImport(rows, { currentProject: currentProjectId }).rows as ItemRow[];
+    return { songs, templates: tpls, shows, hotcards, assets, rows: planned, ...(project ? { project } : {}) };
   }
 
-  async function readFile(file: File) {
-    setFilename(file.name);
+  async function readFile(f: File) {
+    setFile(f);
     setParseError(null);
     setPreview(null);
     setResult(null);
     setImportError(null);
     let text: string;
     try {
-      text = await file.text();
+      text = await f.text();
     } catch (err) {
       setParseError(`could not read file: ${String(err)}`);
       return;
@@ -181,9 +199,7 @@ export function ImportPreview() {
     }
     if (detected.kind === "bundle") {
       const b: Bundle = detected.bundle;
-      setPreview(
-        buildPreview(b.songs, b.templates, b.shows, b.hotcards, b.assets, b.project),
-      );
+      setPreview(buildPreview(b.songs, b.templates, b.shows, b.hotcards, b.assets, b.project));
     } else if (detected.kind === "song") {
       setPreview(buildPreview([detected.song], [], [], [], []));
     } else if (detected.kind === "template") {
@@ -195,62 +211,76 @@ export function ImportPreview() {
     }
   }
 
-  function setAllDecisions(decision: Decision) {
-    setPreview((p) => (p ? { ...p, rows: setAllConflicts(p.rows, decision) } : p));
+  function setAll(decision: ImportDecision) {
+    setPreview((p) => (p ? { ...p, rows: setAllFlagged(p.rows, decision) } : p));
   }
 
-  function setDecision(idx: number, decision: Decision) {
+  function patchRow(idx: number, patch: Partial<ItemRow>) {
     setPreview((p) => {
-      if (!p) return p;
+      if (!p || !p.rows[idx]) return p;
       const rows = p.rows.slice();
-      const row = rows[idx];
-      if (!row) return p;
-      rows[idx] = { ...row, decision };
+      rows[idx] = { ...rows[idx]!, ...patch };
       return { ...p, rows };
     });
   }
 
   async function applyImport() {
     if (!preview || busy) return;
+    const replaced = preview.rows.filter((r) => r.decision === "replace").length;
+    if (replaced > 0) {
+      const ok = await confirm({
+        title: "Replace existing items?",
+        message: `${replaced} existing item${replaced === 1 ? "" : "s"} will be overwritten with the versions in this file.`,
+        confirmLabel: `Replace ${replaced}`,
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     setImportError(null);
     setResult(null);
 
-    // Filter by per-row decision; assets are always included (sha-named
-    // files are idempotent on the server side).
-    const savedTemplateIds = new Set(
-      preview.rows.filter((r) => r.kind === "template" && r.decision === "save").map((r) => r.id),
-    );
-    const savedSongIds = new Set(
-      preview.rows.filter((r) => r.kind === "song" && r.decision === "save").map((r) => r.id),
-    );
-    const savedHotcardIds = new Set(
-      preview.rows.filter((r) => r.kind === "hotcard" && r.decision === "save").map((r) => r.id),
-    );
-    const savedShowIds = new Set(
-      preview.rows.filter((r) => r.kind === "show" && r.decision === "save").map((r) => r.id),
-    );
+    const by = (kind: ItemKind) => new Map(preview.rows.filter((r) => r.kind === kind && r.decision !== "skip").map((r) => [r.id, r]));
+    const songRows = by("song");
+    const templateRows = by("template");
+    const hotcardRows = by("hotcard");
+    const showRows = by("show");
 
+    // Copies get a fresh id and a "(copy)" name; shows and hotcards also move to their target project.
     const body = {
-      templates: preview.templates.filter((t) => savedTemplateIds.has(t.id)),
-      songs: preview.songs.filter((s) => savedSongIds.has(s.id)),
-      hotcards: preview.hotcards.filter((h) => savedHotcardIds.has(h.id)),
-      shows: preview.shows.filter((s) => savedShowIds.has(s.id)),
+      templates: preview.templates.filter((t) => templateRows.has(t.id)),
+      songs: preview.songs.flatMap((s) => {
+        const r = songRows.get(s.id);
+        if (!r) return [];
+        return [r.decision === "copy" ? { ...s, id: `song-${uuid().slice(0, 8)}`, title: `${s.title} (copy)` } : s];
+      }),
+      hotcards: preview.hotcards.flatMap((h) => {
+        const r = hotcardRows.get(h.id);
+        if (!r) return [];
+        const moved = { ...h, projectId: r.targetProject };
+        return [r.decision === "copy" ? { ...moved, id: `hotcard-${uuid().slice(0, 8)}`, name: `${h.name} (copy)` } : moved];
+      }),
+      shows: preview.shows.flatMap((sh) => {
+        const r = showRows.get(sh.id);
+        if (!r) return [];
+        const moved = { ...sh, projectId: r.targetProject };
+        return [r.decision === "copy" ? { ...moved, id: `show-${uuid().slice(0, 8)}`, name: `${sh.name} (copy)` } : moved];
+      }),
       assets: preview.assets,
     };
 
     try {
       if (isCloudMode()) {
-        // Reconstruct the Bundle envelope applyBundleCloud expects.
-        // The preview UI strips the `format`/`version` shell when it parses
-        // an incoming bundle, so we synthesize a fresh one here. Any
-        // `project` descriptor the source bundle carried is preserved on
-        // the preview state and forwarded so shows/hotcards land scoped.
-        const result = await applyBundleCloud({
+        // Forward the source project descriptor only when everything lands in it;
+        // otherwise it would override the per-item target projects.
+        const landsInSource =
+          preview.project &&
+          [...body.shows, ...body.hotcards].every((x) => x.projectId === preview.project!.id);
+        const res = await applyBundleCloud({
           format: "overlaysys-bundle",
           version: 1,
           exportedAt: new Date().toISOString(),
-          ...(preview.project ? { project: preview.project } : {}),
+          ...(landsInSource && preview.project ? { project: preview.project } : {}),
           templates: body.templates,
           songs: body.songs,
           hotcards: body.hotcards,
@@ -268,11 +298,7 @@ export function ImportPreview() {
           refreshShowMetasCloud(),
           refreshHotcardMetasCloud(),
         ]).catch(() => {});
-        setResult({
-          ok: result.errors.length === 0,
-          counts: result.counts,
-          errors: result.errors,
-        });
+        finish({ ok: res.errors.length === 0, counts: res.counts, errors: res.errors });
       } else {
         const res = await fetch(`${httpBase()}/api/import`, {
           method: "POST",
@@ -283,8 +309,7 @@ export function ImportPreview() {
           const text = await res.text().catch(() => "");
           throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
         }
-        const data = (await res.json()) as ImportResult;
-        setResult(data);
+        finish((await res.json()) as ImportResult);
       }
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
@@ -293,189 +318,163 @@ export function ImportPreview() {
     }
   }
 
+  function finish(r: ImportResult) {
+    setResult(r);
+    if (r.ok) toast({ tone: "ok", message: "Import finished" });
+  }
+
   function dismissResult() {
     setResult(null);
     setImportError(null);
     setPreview(null);
-    setFilename(null);
+    setFile(null);
   }
 
-  function onDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) readFile(file);
-  }
-
-  const saveCount = preview?.rows.filter((r) => r.decision === "save").length ?? 0;
-  const conflictCount = preview?.rows.filter((r) => r.conflict).length ?? 0;
-  const duplicateCount = preview?.rows.filter((r) => r.likelyDuplicate).length ?? 0;
-  const skipCount = preview?.rows.filter((r) => r.decision === "skip").length ?? 0;
+  const rows = preview?.rows ?? [];
+  const conflictCount = rows.filter((r) => r.conflict).length;
+  const duplicateCount = rows.filter((r) => r.likelyDuplicate).length;
+  const doingCount = rows.filter((r) => r.decision !== "skip").length;
+  const summary = summarizePlan(rows);
 
   return (
-    <Panel title="Import" padding="md" style={{ marginBottom: 24 }}>
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-        style={{ padding: 12, border: `1px dashed ${colors.border}`, borderRadius: 4, marginBottom: 8 }}
-      >
-        <input
-          type="file"
-          accept=".json"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) readFile(f);
-          }}
-          style={{ marginRight: 8 }}
-        />
-        <span style={{ fontSize: 12, color: colors.textDim }}>
-          or drop a <code>.json</code> / <code>.bundle.json</code> file here
-        </span>
-        {filename && (
-          <span style={{ marginLeft: 8, fontSize: 12 }}>
-            Loaded: <code>{filename}</code>
-          </span>
-        )}
-      </div>
+    <Panel title="Import bundle" padding="md">
+      <FileDrop
+        accept=".json"
+        hint={
+          <>
+            Drop a bundle, show, song, design or hotcard file (.json). Items already in your library are
+            flagged before anything is saved.
+          </>
+        }
+        file={file}
+        onFile={(f) => void readFile(f)}
+        onClear={dismissResult}
+      />
 
       {parseError && (
-        <p style={{ color: colors.errorText, fontSize: 12 }}>Parse failed: {parseError}</p>
+        <p role="alert" style={{ color: colors.errorText, fontSize: 12 }}>
+          Could not read this file: {parseError}
+        </p>
       )}
 
       {preview && !result && (
-        <>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
           {(conflictCount > 0 || duplicateCount > 0) && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 12 }}>
-              {conflictCount > 0 && (
-                <>
-                  <span style={{ color: colors.textDim }}>
-                    {conflictCount} item{conflictCount === 1 ? "" : "s"} already exist{conflictCount === 1 ? "s" : ""}:
-                  </span>
-                  <Button size="sm" onClick={() => setAllDecisions("save")}>Replace all</Button>
-                  <Button size="sm" onClick={() => setAllDecisions("skip")}>Skip all</Button>
-                </>
-              )}
-              {duplicateCount > 0 && (
-                <span style={{ color: colors.warn }}>
-                  <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {duplicateCount} song
-                  {duplicateCount === 1 ? " looks" : "s look"} like {duplicateCount === 1 ? "a song" : "songs"} you
-                  already have
-                </span>
-              )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+              <span style={{ color: colors.warn }}>
+                <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} />{" "}
+                {conflictCount > 0 && `${conflictCount} already exist${conflictCount === 1 ? "s" : ""}`}
+                {conflictCount > 0 && duplicateCount > 0 && ", "}
+                {duplicateCount > 0 &&
+                  `${duplicateCount} song${duplicateCount === 1 ? " looks" : "s look"} like ${duplicateCount === 1 ? "one" : "ones"} you have`}
+              </span>
+              <Button size="sm" onClick={() => setAll("replace")}>Replace all</Button>
+              <Button size="sm" onClick={() => setAll("skip")}>Skip all</Button>
+              <Button size="sm" onClick={() => setAll("copy")}>Import all as copies</Button>
             </div>
           )}
-          <div
-            style={{
-              maxHeight: 320,
-              overflowY: "auto",
-              border: `1px solid ${colors.border}`,
-              borderRadius: 4,
-              padding: 6,
-              marginBottom: 8,
-            }}
-          >
-            {preview.rows.length === 0 ? (
-              <p style={{ fontSize: 12, color: colors.textDim }}>
-                The file contained no entities.
-              </p>
+
+          <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${colors.border}`, borderRadius: 4 }}>
+            {rows.length === 0 ? (
+              <p style={{ fontSize: 12, color: colors.textDim, padding: 8, margin: 0 }}>This file has nothing to import.</p>
             ) : (
-              preview.rows.map((row, idx) => (
-                <div
-                  key={`${row.kind}:${row.id}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "4px 6px",
-                    fontSize: 13,
-                    borderBottom: `1px solid ${colors.border}`,
-                  }}
-                >
-                  <span
-                    style={{
-                      minWidth: 80,
-                      fontSize: 11,
-                      color: colors.textDim,
-                      fontFamily: "ui-monospace, monospace",
-                    }}
-                  >
-                    {row.kind}
-                  </span>
-                  <span style={{ fontWeight: 600 }}>{row.label}</span>
-                  <code style={{ fontSize: 10, color: colors.textDim }}>{row.id}</code>
-                  {row.likelyDuplicate && (
-                    <span style={{ color: colors.warn, fontSize: 11 }}>
-                      possible duplicate of <strong>{row.likelyDuplicate.title || row.likelyDuplicate.id}</strong>
-                      {row.likelyDuplicate.reason === "ccli" ? " (same CCLI #)" : " (same title)"}
-                    </span>
-                  )}
-                  <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                    {row.conflict ? (
-                      <>
-                        <span style={{ color: colors.warn, fontSize: 11 }}><TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> exists</span>
-                        <label style={{ fontSize: 11 }}>
-                          <input
-                            type="radio"
-                            name={`decision-${idx}`}
-                            checked={row.decision === "save"}
-                            onChange={() => setDecision(idx, "save")}
-                          />{" "}
-                          Replace
-                        </label>
-                        <label style={{ fontSize: 11 }}>
-                          <input
-                            type="radio"
-                            name={`decision-${idx}`}
-                            checked={row.decision === "skip"}
-                            onChange={() => setDecision(idx, "skip")}
-                          />{" "}
-                          Skip
-                        </label>
-                      </>
-                    ) : row.likelyDuplicate ? (
-                      <>
-                        <label style={{ fontSize: 11 }}>
-                          <input
-                            type="radio"
-                            name={`decision-${idx}`}
-                            checked={row.decision === "save"}
-                            onChange={() => setDecision(idx, "save")}
-                          />{" "}
-                          Import anyway
-                        </label>
-                        <label style={{ fontSize: 11 }}>
-                          <input
-                            type="radio"
-                            name={`decision-${idx}`}
-                            checked={row.decision === "skip"}
-                            onChange={() => setDecision(idx, "skip")}
-                          />{" "}
-                          Skip
-                        </label>
-                      </>
-                    ) : (
-                      <span style={{ color: colors.green, fontSize: 11 }}>new</span>
-                    )}
-                  </span>
-                </div>
-              ))
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ textAlign: "left", color: colors.textDim }}>
+                    <th style={{ padding: "6px 8px", width: 80 }}>Type</th>
+                    <th style={{ padding: "6px 8px" }}>Name</th>
+                    <th style={{ padding: "6px 8px", width: 230 }}>Project</th>
+                    <th style={{ padding: "6px 8px", width: 260 }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, idx) => {
+                    const options: { value: ImportDecision; label: string }[] = row.conflict
+                      ? [
+                          { value: "replace", label: "Replace" },
+                          ...(row.kind !== "template" ? [{ value: "copy" as const, label: "Copy" }] : []),
+                          { value: "skip", label: "Skip" },
+                        ]
+                      : [
+                          { value: "import", label: row.likelyDuplicate ? "Import anyway" : "Import" },
+                          ...(row.likelyDuplicate && row.kind !== "template" ? [{ value: "copy" as const, label: "Copy" }] : []),
+                          { value: "skip", label: "Skip" },
+                        ];
+                    const edited = formatEdited(row.conflict?.updatedAt);
+                    const perProject = row.kind === "show" || row.kind === "hotcard";
+                    return (
+                      <tr key={`${row.kind}:${row.id}`} style={{ borderTop: `1px solid ${colors.border}`, verticalAlign: "top" }}>
+                        <td style={{ padding: "6px 8px", color: colors.textDim }}>{KIND_LABEL[row.kind]}</td>
+                        <td style={{ padding: "6px 8px" }}>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</div>
+                          {row.conflict && (
+                            <div style={{ color: colors.warn, fontSize: 11 }}>
+                              Replaces: {row.conflict.name || row.name}
+                              {edited && ` · edited ${edited}`}
+                            </div>
+                          )}
+                          {row.likelyDuplicate && (
+                            <div style={{ color: colors.warn, fontSize: 11 }}>
+                              Possible duplicate of {row.likelyDuplicate.title || "a song in your library"}
+                              {row.likelyDuplicate.reason === "ccli" ? " (same CCLI #)" : " (same title)"}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "6px 8px" }}>
+                          {perProject ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ color: colors.textDim, whiteSpace: "nowrap" }}>
+                                Put into:
+                              </span>
+                              <Select
+                                aria-label={`Project for ${row.name}`}
+                                value={row.targetProject}
+                                onChange={(e) => patchRow(idx, { targetProject: e.target.value })}
+                                style={{ minWidth: 120 }}
+                              >
+                                {projects.map((p) => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </Select>
+                            </div>
+                          ) : (
+                            <span style={{ color: colors.textDim }}>Library</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "6px 8px" }}>
+                          <SegmentedControl<ImportDecision>
+                            size="sm"
+                            aria-label={`What to do with ${row.name}`}
+                            value={row.decision}
+                            options={options}
+                            onChange={(d) => patchRow(idx, { decision: d })}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
+
           {preview.assets.length > 0 && (
-            <p style={{ fontSize: 12, color: colors.textDim, marginBottom: 8 }}>
-              Bundle includes <strong>{preview.assets.length}</strong> binary asset(s) — they'll be restored to <code>data/assets/</code>.
+            <p style={{ fontSize: 12, color: colors.textDim, margin: 0 }}>
+              This file includes {preview.assets.length} media file{preview.assets.length === 1 ? "" : "s"}; they will be restored with it.
             </p>
           )}
-          <Button
-            onClick={applyImport}
-            disabled={(saveCount === 0 && preview.assets.length === 0) || busy}
-            variant="primary"
-            size="sm"
-          >
-            {busy
-              ? "Importing…"
-              : `Save ${saveCount} item(s)${skipCount > 0 ? `, skip ${skipCount}` : ""}${preview.assets.length > 0 ? ` + ${preview.assets.length} asset(s)` : ""}`}
-          </Button>
-        </>
+
+          <div>
+            <Button
+              onClick={() => void applyImport()}
+              disabled={(doingCount === 0 && preview.assets.length === 0) || busy}
+              variant="primary"
+              size="sm"
+            >
+              {busy ? "Importing…" : summary}
+            </Button>
+          </div>
+        </div>
       )}
 
       {importError && (
@@ -490,9 +489,11 @@ export function ImportPreview() {
           }}
         >
           <strong>Import failed:</strong> {importError}
-          <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
-            Close
-          </Button>
+          <div>
+            <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
+              Close
+            </Button>
+          </div>
         </div>
       )}
 
@@ -508,25 +509,33 @@ export function ImportPreview() {
           }}
         >
           <strong>
-            {result.ok ? <><Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Imported</> : "Imported with errors"}: {result.counts.templates}{" "}
-            template(s), {result.counts.songs} song(s), {result.counts.hotcards} hotcard(s),{" "}
-            {result.counts.shows} show(s), {result.counts.assets} asset(s)
+            {result.ok ? (
+              <>
+                <Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Imported
+              </>
+            ) : (
+              "Imported with errors"
+            )}
+            : {result.counts.shows} show{result.counts.shows === 1 ? "" : "s"}, {result.counts.songs} song
+            {result.counts.songs === 1 ? "" : "s"}, {result.counts.templates} design
+            {result.counts.templates === 1 ? "" : "s"}, {result.counts.hotcards} hotcard
+            {result.counts.hotcards === 1 ? "" : "s"}, {result.counts.assets} media file
+            {result.counts.assets === 1 ? "" : "s"}
           </strong>
           {result.errors.length > 0 && (
             <ul style={{ margin: "4px 0 0", paddingLeft: 16, color: colors.errorText }}>
               {result.errors.map((e, i) => (
                 <li key={i}>
-                  <code>
-                    {e.kind}:{e.id}
-                  </code>{" "}
-                  {e.message}
+                  {e.kind}: {e.message}
                 </li>
               ))}
             </ul>
           )}
-          <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
-            Close
-          </Button>
+          <div>
+            <Button onClick={dismissResult} variant="secondary" size="sm" style={{ marginTop: 8 }}>
+              Close
+            </Button>
+          </div>
         </div>
       )}
     </Panel>

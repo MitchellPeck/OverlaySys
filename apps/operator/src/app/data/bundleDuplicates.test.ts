@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findLikelySongDuplicate, setAllConflicts } from "./bundleDuplicates";
+import { findLikelySongDuplicate, setAllFlagged } from "./bundleDuplicates";
 
 const library = [
   { id: "grace", title: "Amazing Grace", ccliNumber: "22025" },
@@ -25,13 +25,20 @@ describe("findLikelySongDuplicate", () => {
   });
 });
 
-describe("setAllConflicts", () => {
-  it("only changes conflicting rows", () => {
-    const rows = [
-      { id: "a", conflict: true, decision: "skip" as const },
-      { id: "b", conflict: false, decision: "save" as const },
-    ];
-    expect(setAllConflicts(rows, "save").map((r) => r.decision)).toEqual(["save", "save"]);
-    expect(setAllConflicts(rows, "skip").map((r) => r.decision)).toEqual(["skip", "save"]);
+describe("setAllFlagged", () => {
+  const rows = [
+    { id: "a", kind: "song", conflict: { name: "A" }, decision: "skip" as const },
+    { id: "b", kind: "song", decision: "import" as const },
+    { id: "c", kind: "song", likelyDuplicate: true, decision: "skip" as const },
+    { id: "d", kind: "template", conflict: { name: "D" }, decision: "replace" as const },
+  ];
+  it("replace-all replaces conflicts and imports likely duplicates, leaving others alone", () => {
+    expect(setAllFlagged(rows, "replace").map((r) => r.decision)).toEqual(["replace", "import", "import", "replace"]);
+  });
+  it("skip-all skips conflicts and duplicates", () => {
+    expect(setAllFlagged(rows, "skip").map((r) => r.decision)).toEqual(["skip", "import", "skip", "skip"]);
+  });
+  it("copy-all copies flagged rows except templates", () => {
+    expect(setAllFlagged(rows, "copy").map((r) => r.decision)).toEqual(["copy", "import", "copy", "skip"]);
   });
 });

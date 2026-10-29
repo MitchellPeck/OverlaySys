@@ -1,4 +1,5 @@
 import type { SongMeta } from "@overlaysys/core";
+import type { ImportDecision } from "./planImport";
 
 export interface LikelyDuplicate {
   id: string;
@@ -38,12 +39,19 @@ export function findLikelySongDuplicate(
   return null;
 }
 
-export type BulkDecision = "save" | "skip";
-
-/** Apply one decision to every row that conflicts with an existing id. */
-export function setAllConflicts<R extends { conflict: boolean; decision: BulkDecision }>(
-  rows: readonly R[],
-  decision: BulkDecision,
-): R[] {
-  return rows.map((r) => (r.conflict && r.decision !== decision ? { ...r, decision } : r));
+/**
+ * Apply one bulk decision to every row that conflicts with an existing id or
+ * looks like a duplicate. "Replace all" imports likely duplicates (they have
+ * nothing to replace); templates can't be copied, so they skip that bulk.
+ */
+export function setAllFlagged<
+  R extends { kind?: string; conflict?: unknown; likelyDuplicate?: unknown; decision: ImportDecision },
+>(rows: readonly R[], decision: ImportDecision): R[] {
+  return rows.map((r) => {
+    if (!r.conflict && !r.likelyDuplicate) return r;
+    let next = decision;
+    if (decision === "replace" && !r.conflict) next = "import";
+    if (decision === "copy" && r.kind === "template") next = "skip";
+    return r.decision === next ? r : { ...r, decision: next };
+  });
 }

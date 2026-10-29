@@ -20,7 +20,7 @@ import type { Field, GraphicRow, TemplateMeta } from "@overlaysys/core";
  */
 
 export interface CsvSkippedRow {
-  /** 1-based data row number (the header is row 0), as a spreadsheet user sees it minus one. */
+  /** 1-based spreadsheet line number; the header is line 1. */
   line: number;
   reason: string;
 }
@@ -61,13 +61,15 @@ export function recordsToRows(
   templates: readonly TemplateMeta[],
   fieldsFor: (templateId: string) => readonly Field[] | undefined = () => undefined,
   makeId: () => string = uuid,
+  /** Spreadsheet line of each record (from `parseCsvText`); defaults to header + 1 + index. */
+  lines?: readonly number[],
 ): CsvImportPreview {
   const rows: GraphicRow[] = [];
   const skipped: CsvSkippedRow[] = [];
   const unmatched: Record<string, Set<string>> = {};
 
   records.forEach((rec, i) => {
-    const line = i + 1;
+    const line = lines?.[i] ?? i + 2;
     if (!rec || typeof rec !== "object") {
       skipped.push({ line, reason: "unreadable row" });
       return;
@@ -113,13 +115,82 @@ export function recordsToRows(
   return { rows, skipped, unmatchedColumns };
 }
 
-/** Parse CSV text into header-keyed records. */
-export function parseCsvText(text: string): { records: Record<string, string>[]; errors: string[] } {
-  const result = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
-  return {
-    records: result.data,
-    errors: result.errors.map((e) => (e.row !== undefined ? `row ${e.row + 1}: ${e.message}` : e.message)),
-  };
+export interface CsvParseError {
+  /** 1-based spreadsheet line; the header is line 1. */
+  line: number;
+  message: string;
+}
+
+export interface ParseCsvOptions {
+  /** Header columns that must be present (case-insensitive); each missing one is one error on line 1. */
+  required?: readonly string[];
+  /** When given, header columns outside this list are dropped and reported once as warnings. */
+  known?: readonly string[];
+  /** Keep columns outside `known` instead of dropping them. */
+  keepUnknown?: boolean;
+}
+
+export interface ParsedCsv {
+  records: Record<string, string>[];
+  /** Spreadsheet line of each record (blank lines are skipped but still counted). */
+  lines: number[];
+  errors: CsvParseError[];
+  /** Non-fatal notes, e.g. a dropped unknown column. */
+  warnings: CsvParseError[];
+}
+
+/** Example file offered for download from the CSV importer. */
+export const EXAMPLE_CSV = [
+  "title,subtitle,template,length",
+  "Welcome,Good morning,Lower Third,10",
+  "Announcements,This week,Full Title,30",
+  "",
+].join("\n");
+
+/** Parse CSV text into header-keyed records with spreadsheet line numbers. */
+export function parseCsvText(text: string, opts: ParseCsvOptions = {}): ParsedCsv {
+  const result = Papa.parse<string[]>(text, { header: false, skipEmptyLines: false });
+  const errors: CsvParseError[] = [];
+  const warnings: CsvParseError[] = [];
+  const rows = result.data;
+  const header = (rows[0] ?? []).map((h) => String(h ?? "").trim());
+  if (rows.length === 0 || header.every((h) => !h)) return { records: [], lines: [], errors, warnings };
+
+  const have = new Set(header.map((h) => h.toLowerCase()));
+  for (const name of opts.required ?? []) {
+    if (!have.has(name.toLowerCase())) errors.push({ line: 1, message: `Missing column: ${name}` });
+  }
+  if (errors.length > 0) return { records: [], lines: [], errors, warnings };
+
+  const known = opts.known ? new Set(opts.known.map((k) => k.toLowerCase())) : null;
+  const drop = new Set<number>();
+  if (known && !opts.keepUnknown) {
+    header.forEach((h, i) => {
+      if (h && !known.has(h.toLowerCase())) {
+        drop.add(i);
+        warnings.push({ line: 1, message: `Ignored column: ${h}` });
+      }
+    });
+  }
+
+  for (const e of result.errors) {
+    if (e.row !== undefined && e.row > 0) errors.push({ line: e.row + 1, message: e.message });
+  }
+
+  const records: Record<string, string>[] = [];
+  const lines: number[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r] ?? [];
+    if (cells.every((c) => String(c ?? "").trim() === "")) continue;
+    const rec: Record<string, string> = {};
+    header.forEach((h, i) => {
+      if (!h || drop.has(i)) return;
+      rec[h] = String(cells[i] ?? "");
+    });
+    records.push(rec);
+    lines.push(r + 1);
+  }
+  return { records, lines, errors, warnings };
 }
 
 /** Back-compat: parse a file with the id-only template convention. */

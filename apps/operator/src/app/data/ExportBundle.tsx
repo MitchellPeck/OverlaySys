@@ -12,7 +12,7 @@ import {
   type Song,
   type Template,
 } from "@overlaysys/core";
-import { Button, Field, Input, Inline, Panel, colors } from "@overlaysys/ui";
+import { Button, Checkbox, Field, Input, Panel, SegmentedControl, colors, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { downloadJson } from "@/lib/download";
@@ -29,7 +29,7 @@ import {
   refreshTemplateMetasCloud,
 } from "@/lib/cloudData";
 
-type Tab = "songs" | "shows" | "hotcards" | "templates";
+type Tab = "shows" | "songs" | "templates" | "hotcards";
 
 export function ExportBundle() {
   const { send } = useWs();
@@ -43,7 +43,10 @@ export function ExportBundle() {
   const templateCache = useStore((s) => s.templateCache);
   const hotcardCache = useStore((s) => s.hotcardCache);
 
-  const [tab, setTab] = useState<Tab>("songs");
+  const toast = useToast();
+  const projects = useStore((s) => s.projects);
+  const currentProjectId = useStore((s) => s.currentProjectId);
+  const [tab, setTab] = useState<Tab>("shows");
   const [includeDeps, setIncludeDeps] = useState(true);
   const [includeAssets, setIncludeAssets] = useState(true);
   const [bundleName, setBundleName] = useState("");
@@ -263,10 +266,17 @@ export function ExportBundle() {
         return;
       }
     }
+    // The bundle's project: that of the first selected show or hotcard, else the current one.
+    const firstProjectId =
+      showMetas.find((m) => selectedShows.has(m.id))?.projectId ??
+      hotcardsList.find((h) => selectedHotcards.has(h.id))?.projectId ??
+      currentProjectId;
+    const project = projects.find((p) => p.id === firstProjectId);
     const bundle = {
       format: "overlaysys-bundle" as const,
       version: 1 as const,
       exportedAt: new Date().toISOString(),
+      ...(project ? { project } : {}),
       ...(bundleName.trim() ? { name: bundleName.trim() } : {}),
       songs: preview.songs,
       templates: preview.templates,
@@ -276,171 +286,140 @@ export function ExportBundle() {
     };
     downloadJson(filename, bundle);
     setDownloading(false);
+    toast({ tone: "ok", message: `Downloaded ${filename}` });
   }
 
+  const projectName = (id: string | undefined) =>
+    id ? (projects.find((p) => p.id === id)?.name ?? "Other project") : undefined;
+
+  const lists: Record<
+    Tab,
+    { label: string; items: { id: string; label: string; sub?: string }[]; selected: Set<string>; set: (s: Set<string>) => void }
+  > = {
+    shows: {
+      label: "Shows",
+      items: showMetas.map((s) => ({ id: s.id, label: s.name || "Untitled show", sub: projectName(s.projectId) })),
+      selected: selectedShows,
+      set: setSelectedShows,
+    },
+    songs: {
+      label: "Songs",
+      items: songsList.map((s) => ({ id: s.id, label: s.title || "Untitled song" })),
+      selected: selectedSongs,
+      set: setSelectedSongs,
+    },
+    templates: {
+      label: "Designs",
+      items: templates.map((t) => ({ id: t.id, label: t.name || "Untitled design" })),
+      selected: selectedTemplates,
+      set: setSelectedTemplates,
+    },
+    hotcards: {
+      label: "Hotcards",
+      items: hotcardsList.map((h) => ({ id: h.id, label: h.name || "Untitled hotcard", sub: projectName(h.projectId) })),
+      selected: selectedHotcards,
+      set: setSelectedHotcards,
+    },
+  };
+  const active = lists[tab];
+  const allSelected = active.items.length > 0 && active.items.every((it) => active.selected.has(it.id));
+
   return (
-    <Panel title="Export bundle" padding="md" style={{ marginBottom: 24 }}>
-      <Field label="Bundle name" layout="inline" labelWidth={120}>
-        <Input
-          value={bundleName}
-          onChange={(e) => setBundleName(e.target.value)}
-          placeholder="(optional)"
-          style={{ maxWidth: 320 }}
-        />
-      </Field>
+    <Panel title="Export bundle" padding="md">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Field label="Bundle name" layout="inline" labelWidth={120}>
+          <Input
+            value={bundleName}
+            onChange={(e) => setBundleName(e.target.value)}
+            placeholder="(optional)"
+            style={{ maxWidth: 320 }}
+          />
+        </Field>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 4 }}>
-        <input
-          type="checkbox"
-          checked={includeDeps}
-          onChange={(e) => setIncludeDeps(e.target.checked)}
-        />
-        Include referenced dependencies
-      </label>
-
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, marginBottom: 8 }}>
-        <input
-          type="checkbox"
+        <Checkbox checked={includeDeps} onChange={setIncludeDeps} label="Include referenced dependencies" />
+        <Checkbox
           checked={includeAssets}
-          onChange={(e) => setIncludeAssets(e.target.checked)}
+          onChange={setIncludeAssets}
+          label="Include binary assets (videos, fonts, images); embeds bytes as base64"
         />
-        Include binary assets (videos, fonts, images) — embeds bytes as base64
-      </label>
 
-      <Inline gap={1} style={{ marginBottom: 8 }}>
-        {(["songs", "shows", "hotcards", "templates"] as const).map((t) => (
-          <Button
-            key={t}
-            size="sm"
-            variant={tab === t ? "primary" : "secondary"}
-            onClick={() => setTab(t)}
-          >
-            {t} (
-            {t === "songs"
-              ? songsList.length
-              : t === "shows"
-              ? showMetas.length
-              : t === "hotcards"
-              ? hotcardsList.length
-              : templates.length}
-            )
-          </Button>
-        ))}
-      </Inline>
+        <SegmentedControl<Tab>
+          aria-label="What to export"
+          value={tab}
+          onChange={setTab}
+          options={(Object.keys(lists) as Tab[]).map((t) => ({
+            value: t,
+            label: `${lists[t].label} \u00b7 ${lists[t].selected.size} selected`,
+          }))}
+        />
 
-      <div
-        style={{
-          maxHeight: 240,
-          overflowY: "auto",
-          border: `1px solid ${colors.border}`,
-          borderRadius: 4,
-          padding: 6,
-          marginBottom: 8,
-        }}
-      >
-        {tab === "songs" && songsList.map((s) => (
-          <CheckRow
-            key={s.id}
-            id={s.id}
-            label={s.title || s.id}
-            checked={selectedSongs.has(s.id)}
-            onToggle={() => setSelectedSongs((cur) => toggle(cur, s.id))}
-          />
-        ))}
-        {tab === "shows" && showMetas.map((s) => (
-          <CheckRow
-            key={s.id}
-            id={s.id}
-            label={s.name || s.id}
-            checked={selectedShows.has(s.id)}
-            onToggle={() => setSelectedShows((cur) => toggle(cur, s.id))}
-          />
-        ))}
-        {tab === "hotcards" && hotcardsList.map((h) => (
-          <CheckRow
-            key={h.id}
-            id={h.id}
-            label={h.name || h.id}
-            checked={selectedHotcards.has(h.id)}
-            onToggle={() => setSelectedHotcards((cur) => toggle(cur, h.id))}
-          />
-        ))}
-        {tab === "templates" && templates.map((t) => (
-          <CheckRow
-            key={t.id}
-            id={t.id}
-            label={t.name || t.id}
-            checked={selectedTemplates.has(t.id)}
-            onToggle={() => setSelectedTemplates((cur) => toggle(cur, t.id))}
-          />
-        ))}
-      </div>
-
-      {preview && (preview.missing.length > 0) && (
-        <div
-          style={{
-            padding: 8,
-            background: "rgba(245, 158, 11, 0.1)",
-            border: `1px solid ${colors.warn}`,
-            borderRadius: 4,
-            marginBottom: 8,
-            fontSize: 12,
-          }}
-        >
-          <strong><TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {preview.missing.length} reference(s) not found locally</strong>
-          <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
-            {preview.missing.map((m, i) => (
-              <li key={i}>
-                <code>{m.kind}:{m.id}</code> referenced by <code>{m.referencedBy}</code> — will be omitted
-              </li>
+        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 4 }}>
+          <div style={{ padding: "6px 10px", borderBottom: `1px solid ${colors.border}` }}>
+            <Checkbox
+              checked={allSelected}
+              disabled={active.items.length === 0}
+              onChange={(on) => active.set(on ? new Set(active.items.map((it) => it.id)) : new Set())}
+              label={`Select all ${active.label.toLowerCase()}`}
+            />
+          </div>
+          <div style={{ maxHeight: 240, overflowY: "auto", padding: 6 }}>
+            {active.items.length === 0 && (
+              <p style={{ fontSize: 12, color: colors.textDim, margin: 6 }}>Nothing here yet.</p>
+            )}
+            {active.items.map((it) => (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px", fontSize: 13 }}>
+                <Checkbox
+                  checked={active.selected.has(it.id)}
+                  onChange={() => active.set(toggle(active.selected, it.id))}
+                  aria-label={`Export ${it.label}`}
+                />
+                <span style={{ fontWeight: 600 }}>{it.label}</span>
+                {it.sub && <span style={{ marginLeft: "auto", fontSize: 11, color: colors.textDim }}>{it.sub}</span>}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
-      )}
 
-      {preview && (
-        <p style={{ fontSize: 12, color: colors.textDim }}>
-          Will export: <strong>{preview.songs.length}</strong> song(s),{" "}
-          <strong>{preview.templates.length}</strong> template(s),{" "}
-          <strong>{preview.shows.length}</strong> show(s),{" "}
-          <strong>{preview.hotcards.length}</strong> hotcard(s)
-          {includeAssets && referencedAssets.size > 0 ? (
-            <>
-              {", "}
-              <strong>{referencedAssets.size}</strong> asset(s)
-            </>
-          ) : null}
-          .
-        </p>
-      )}
+        {preview && preview.missing.length > 0 && (
+          <div
+            style={{
+              padding: 8,
+              background: "rgba(245, 158, 11, 0.1)",
+              border: `1px solid ${colors.warn}`,
+              borderRadius: 4,
+              fontSize: 12,
+            }}
+          >
+            <strong>
+              <TriangleAlert size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> {preview.missing.length}{" "}
+              reference{preview.missing.length === 1 ? "" : "s"} not found locally; they will be left out
+            </strong>
+          </div>
+        )}
 
-      {downloadError && (
-        <p style={{ color: colors.errorText, fontSize: 12 }}>{downloadError}</p>
-      )}
+        {preview && (
+          <p style={{ fontSize: 12, color: colors.textDim, margin: 0 }}>
+            Will export {preview.shows.length} show{preview.shows.length === 1 ? "" : "s"}, {preview.songs.length}{" "}
+            song{preview.songs.length === 1 ? "" : "s"}, {preview.templates.length} design
+            {preview.templates.length === 1 ? "" : "s"}, {preview.hotcards.length} hotcard
+            {preview.hotcards.length === 1 ? "" : "s"}
+            {includeAssets && referencedAssets.size > 0
+              ? `, ${referencedAssets.size} asset${referencedAssets.size === 1 ? "" : "s"}`
+              : ""}
+            .
+          </p>
+        )}
 
-      <Button
-        onClick={downloadBundle}
-        disabled={!hasSelection || downloading}
-        variant="primary"
-        size="sm"
-      >
-        {downloading ? "Bundling…" : "Download bundle"}
-      </Button>
+        {downloadError && <p role="alert" style={{ color: colors.errorText, fontSize: 12, margin: 0 }}>{downloadError}</p>}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Button onClick={downloadBundle} disabled={!hasSelection || downloading} variant="primary" size="sm">
+            {downloading ? "Bundling…" : "Download bundle"}
+          </Button>
+          {!hasSelection && <span style={{ fontSize: 12, color: colors.textDim }}>Pick at least one item</span>}
+        </div>
+      </div>
     </Panel>
-  );
-}
-
-function CheckRow({
-  id, label, checked, onToggle,
-}: {
-  id: string; label: string; checked: boolean; onToggle: () => void;
-}) {
-  return (
-    <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px", fontSize: 13, cursor: "pointer" }}>
-      <input type="checkbox" checked={checked} onChange={onToggle} />
-      <span style={{ fontWeight: 600 }}>{label}</span>
-      <code style={{ marginLeft: "auto", fontSize: 10, color: colors.textDim }}>{id}</code>
-    </label>
   );
 }
 

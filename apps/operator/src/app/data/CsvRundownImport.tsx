@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import type { Show } from "@overlaysys/core";
-import { Button, Field, Input, Panel, colors } from "@overlaysys/ui";
+import { Button, Field, FileDrop, Input, Panel, colors, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { httpBase } from "@/lib/pcoClient";
 import { applyBundleCloud, getTemplateCloud, refreshShowMetasCloud } from "@/lib/cloudData";
-import { parseCsvText, recordsToRows } from "@/lib/csv";
+import { EXAMPLE_CSV, parseCsvText, recordsToRows, type CsvParseError } from "@/lib/csv";
+import { downloadText } from "@/lib/download";
 
 /**
  * CSV → new show of graphic rows. The first row is a header: a `template`
@@ -26,19 +27,22 @@ export function CsvRundownImport() {
   const setTemplate = useStore((s) => s.setTemplate);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const conn = useStore((s) => s.conn);
+  const projects = useStore((s) => s.projects);
+  const toast = useToast();
   const cloud = isCloudMode();
 
-  const [filename, setFilename] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [lines, setLines] = useState<number[]>([]);
   const [records, setRecords] = useState<Record<string, string>[] | null>(null);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
+  const [parseErrors, setParseErrors] = useState<CsvParseError[]>([]);
   const [showName, setShowName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdShowId, setCreatedShowId] = useState<string | null>(null);
 
   const preview = useMemo(
-    () => (records ? recordsToRows(records, templates, (id) => templateCache[id]?.fields) : null),
-    [records, templates, templateCache],
+    () => (records ? recordsToRows(records, templates, (id) => templateCache[id]?.fields, undefined, lines) : null),
+    [records, lines, templates, templateCache],
   );
 
   // Fetch full templates used by the CSV so field labels can be matched.
@@ -57,14 +61,24 @@ export function CsvRundownImport() {
     }
   }, [preview, templateCache, cloud, conn, send, setTemplate]);
 
-  async function readFile(file: File) {
-    setFilename(file.name);
+  async function readFile(f: File) {
+    setFile(f);
     setError(null);
     setCreatedShowId(null);
-    const { records: recs, errors } = parseCsvText(await file.text());
-    setRecords(recs);
-    setParseErrors(errors);
-    setShowName(file.name.replace(/\.[^.]+$/, ""));
+    const parsed = parseCsvText(await f.text(), { required: ["template"] });
+    setRecords(parsed.records);
+    setLines(parsed.lines);
+    setParseErrors([...parsed.errors, ...parsed.warnings]);
+    setShowName(f.name.replace(/\.[^.]+$/, ""));
+  }
+
+  function clearFile() {
+    setFile(null);
+    setRecords(null);
+    setLines([]);
+    setParseErrors([]);
+    setCreatedShowId(null);
+    setError(null);
   }
 
   async function createShow() {
@@ -105,6 +119,7 @@ export function CsvRundownImport() {
         if (body.errors?.length) throw new Error(body.errors.map((e) => e.message).join("; "));
       }
       setCreatedShowId(show.id);
+      toast({ tone: "ok", message: `Created ${show.name}` });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -112,29 +127,33 @@ export function CsvRundownImport() {
     }
   }
 
-  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? id;
+  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? "Unknown template";
+  const projectLabel = projects.find((p) => p.id === currentProjectId)?.name ?? "the current project";
 
   return (
     <Panel title="Import rundown from CSV" padding="md" style={{ marginBottom: 24 }}>
-      <p style={{ fontSize: 12, color: colors.textDim, marginTop: 0 }}>
-        One row per graphic. Columns: <code>template</code> (template name or id), optional{" "}
-        <code>notes</code>, and one column per template field (field name or key). Creates a new show.
-      </p>
-      <input
-        type="file"
+      <FileDrop
         accept=".csv,text/csv"
-        aria-label="CSV file"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void readFile(f);
-        }}
+        hint={
+          <>
+            Creates a show in {projectLabel}. One row per graphic: a <code>template</code> column (design name),
+            optional <code>notes</code>, and one column per field.{" "}
+            <Button size="sm" variant="ghost" onClick={() => downloadText("example-rundown.csv", EXAMPLE_CSV, "text/csv")}>
+              Download example
+            </Button>
+          </>
+        }
+        file={file}
+        onFile={(f) => void readFile(f)}
+        onClear={clearFile}
       />
-      {filename && <span style={{ marginLeft: 8, fontSize: 12 }}>Loaded: <code>{filename}</code></span>}
 
       {parseErrors.length > 0 && (
-        <ul style={{ fontSize: 12, color: colors.warn, margin: "8px 0", paddingLeft: 16 }}>
-          {parseErrors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
-          {parseErrors.length > 5 && <li>…and {parseErrors.length - 5} more</li>}
+        <ul role="alert" style={{ fontSize: 12, color: colors.warn, margin: "8px 0", paddingLeft: 16 }}>
+          {parseErrors.slice(0, 8).map((e, i) => (
+            <li key={i}>Line {e.line}: {e.message}</li>
+          ))}
+          {parseErrors.length > 8 && <li>…and {parseErrors.length - 8} more</li>}
         </ul>
       )}
 
@@ -182,7 +201,7 @@ export function CsvRundownImport() {
               Skipping {preview.skipped.length} row{preview.skipped.length === 1 ? "" : "s"}:
               <ul style={{ margin: "4px 0 0", paddingLeft: 16 }}>
                 {preview.skipped.slice(0, 10).map((s) => (
-                  <li key={s.line}>row {s.line}: {s.reason}</li>
+                  <li key={s.line}>Line {s.line}: {s.reason}</li>
                 ))}
                 {preview.skipped.length > 10 && <li>…and {preview.skipped.length - 10} more</li>}
               </ul>
