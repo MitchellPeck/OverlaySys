@@ -11,6 +11,9 @@ import { getStageSettings } from "@/lib/stageSettingsClient";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { showHasPcoItems, stagePreviewWarnings, stageTargetNames } from "@/lib/liveDrawerModel";
 
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
 const MAX_MESSAGE = 200;
 /** PCO Live reads as stale once its last successful poll is older than this. */
 const STALE_MS = 35_000;
@@ -21,6 +24,16 @@ export function StagePanel() {
   const stage = useStore((s) => s.stageState);
   const pcoLive = useStore((s) => s.pcoLive);
   const previews = useStore((s) => s.stageLayoutPreviews);
+  // Channels where Stop was pressed but the preview stayed: another console owns it.
+  const [foreign, setForeign] = useState<Set<string>>(new Set());
+  function stopPreview(channel: string): void {
+    send({ type: "stage_layout_preview", channel, layout: null });
+    setTimeout(() => {
+      if (useStore.getState().stageLayoutPreviews.some((p) => p.channel === channel)) {
+        setForeign((cur) => new Set(cur).add(channel));
+      }
+    }, 700);
+  }
   const channelConfigs = useResolvedChannelConfigs();
   const startError = useStore((s) => s.pcoLiveStartError);
   const [presets, setPresets] = useState<string[]>(DEFAULT_MESSAGE_PRESETS);
@@ -86,6 +99,7 @@ export function StagePanel() {
     <div style={{ flexShrink: 0 }}>
       <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span onMouseDown={noFocus} style={{ display: "inline-flex" }}>
           <Switch
             label="Follow PCO Live"
             checked={following}
@@ -96,6 +110,7 @@ export function StagePanel() {
               else send({ type: "pco_live_stop" });
             }}
           />
+          </span>
           {show && !hasPco && !following && (
             <div style={{ fontSize: 12, color: colors.textDim }}>This show has no Planning Center items</div>
           )}
@@ -109,7 +124,7 @@ export function StagePanel() {
           {followingOther && (
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.textDim }}>
               Following PCO Live for another show
-              <Button size="sm" variant="ghost" onClick={() => send({ type: "pco_live_stop" })}>
+              <Button onMouseDown={noFocus} size="sm" variant="ghost" onClick={() => send({ type: "pco_live_stop" })}>
                 Stop
               </Button>
             </div>
@@ -164,22 +179,23 @@ export function StagePanel() {
               </div>
             )}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: -1 })}>
+              <Button onMouseDown={noFocus} disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: -1 })}>
                 <ChevronLeft size={14} aria-hidden /> Prev
               </Button>
-              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: 1 })}>
+              <Button onMouseDown={noFocus} disabled={!canNavigate} onClick={() => send({ type: "notes_point", delta: 1 })}>
                 Next <ChevronRight size={14} aria-hidden />
               </Button>
-              <Button disabled={!canNavigate} title="Scroll up" aria-label="Scroll up" onClick={() => send({ type: "notes_scroll", delta: -0.33 })}>
+              <Button onMouseDown={noFocus} disabled={!canNavigate} title="Scroll up" aria-label="Scroll up" onClick={() => send({ type: "notes_scroll", delta: -0.33 })}>
                 <ArrowUp size={14} aria-hidden />
               </Button>
-              <Button disabled={!canNavigate} title="Scroll down" aria-label="Scroll down" onClick={() => send({ type: "notes_scroll", delta: 0.33 })}>
+              <Button onMouseDown={noFocus} disabled={!canNavigate} title="Scroll down" aria-label="Scroll down" onClick={() => send({ type: "notes_scroll", delta: 0.33 })}>
                 <ArrowDown size={14} aria-hidden />
               </Button>
-              <Button disabled={!canNavigate} onClick={() => send({ type: "notes_reset" })}>
+              <Button onMouseDown={noFocus} disabled={!canNavigate} onClick={() => send({ type: "notes_reset" })}>
                 Top
               </Button>
               <Button
+              onMouseDown={noFocus}
                 disabled={!active}
                 title="Clear the active sermon notes"
                 onClick={() =>
@@ -207,6 +223,7 @@ export function StagePanel() {
             }}
           />
           <Button
+              onMouseDown={noFocus}
             variant="primary"
             disabled={!text.trim()}
             onClick={() => {
@@ -220,7 +237,7 @@ export function StagePanel() {
         {presets.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {presets.map((p) => (
-              <Button key={p} onClick={() => sendMessage(p)} style={{ fontSize: 11 }}>
+              <Button onMouseDown={noFocus} key={p} onClick={() => sendMessage(p)} style={{ fontSize: 11 }}>
                 {p}
               </Button>
             ))}
@@ -244,7 +261,7 @@ export function StagePanel() {
             >
               On stage: {message.text}
             </div>
-            <IconButton size={24} aria-label="Clear stage message" title="Clear stage message" onClick={() => send({ type: "stage_message_clear" })}>
+            <IconButton size={28} onMouseDown={noFocus} aria-label="Clear stage message" title="Clear stage message" onClick={() => send({ type: "stage_message_clear" })}>
               <X size={14} aria-hidden />
             </IconButton>
           </div>
@@ -256,11 +273,19 @@ export function StagePanel() {
           <div
             key={w.channel}
             role="status"
-            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: colors.warn, border: `1px solid ${colors.warn}`, borderRadius: 6, padding: "4px 8px" }}
+            style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 12, color: colors.warn, border: `1px solid ${colors.warn}`, borderRadius: 6, padding: "4px 8px" }}
           >
             <AlertTriangle size={14} aria-hidden style={{ flexShrink: 0 }} />
             <span style={{ flex: 1, minWidth: 0 }}>{w.text}</span>
-            <Button size="sm" onClick={() => send({ type: "stage_layout_preview", channel: w.channel, layout: null })}>
+            {foreign.has(w.channel) ? (
+              <span style={{ fontSize: 11, color: colors.textDim, maxWidth: 110 }}>Started from another console — stop it there.</span>
+            ) : null}
+            <Button
+              onMouseDown={noFocus}
+              size="sm"
+              title="Only the console that started a preview can stop it"
+              onClick={() => stopPreview(w.channel)}
+            >
               Stop preview
             </Button>
           </div>

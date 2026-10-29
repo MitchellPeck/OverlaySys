@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { StageTimerInstance } from "@overlaysys/core";
+import { CURRENT_ITEM_TIMER_ID, type StageTimerInstance } from "@overlaysys/core";
 import {
   hotcardImageValue,
+  uncachedHotcardIds,
+  uncachedTemplateIds,
   orderStageTimers,
   readBool,
   showHasPcoItems,
@@ -69,5 +71,28 @@ describe("stageTargetNames / showHasPcoItems", () => {
     expect(showHasPcoItems([{ kind: "song" }])).toBe(false);
     expect(showHasPcoItems([{ kind: "song" }, { kind: "song", sourceRef: { provider: "pco" } }])).toBe(true);
     expect(showHasPcoItems(undefined)).toBe(false);
+  });
+});
+
+describe("orderStageTimers pins the current item", () => {
+  it("puts the current-item timer first even when not started", () => {
+    const out = orderStageTimers([t("a", 1), t(CURRENT_ITEM_TIMER_ID, null)]);
+    expect(out.map((x) => x.id)).toEqual([CURRENT_ITEM_TIMER_ID, "a"]);
+  });
+});
+
+describe("hotcard hydration", () => {
+  const cards = [
+    { id: "a", projectId: "p" },
+    { id: "b", projectId: "p" },
+    { id: "c", projectId: "other" },
+  ];
+  it("lists only this project's uncached cards", () => {
+    expect(uncachedHotcardIds(cards, "p", { a: {} })).toEqual(["b"]);
+  });
+  it("lists templates of cached cards that are not cached, once each", () => {
+    const hc = { a: { templateId: "t1" }, b: { templateId: "t1" }, c: { templateId: "t9" } };
+    expect(uncachedTemplateIds(cards, "p", hc, {})).toEqual(["t1"]);
+    expect(uncachedTemplateIds(cards, "p", hc, { t1: {} })).toEqual([]);
   });
 });

@@ -19,17 +19,18 @@ export function readBool(storage: ReadableStorage | null, key: string, fallback:
   }
 }
 
-/** Running timers first, then paused, then not started; ties keep their original order. */
+/**
+ * The pinned "current item" timer first, then running, paused and not-started
+ * timers; ties keep their original order.
+ */
 export function orderStageTimers(timers: readonly StageTimerInstance[]): StageTimerInstance[] {
-  const rank = (t: StageTimerInstance): number => (t.anchor == null ? 2 : t.pausedAt != null ? 1 : 0);
+  const rank = (t: StageTimerInstance): number =>
+    t.id === CURRENT_ITEM_TIMER_ID ? -1 : t.anchor == null ? 2 : t.pausedAt != null ? 1 : 0;
   return timers
     .map((t, i) => ({ t, i }))
     .sort((a, b) => rank(a.t) - rank(b.t) || a.i - b.i)
     .map((x) => x.t);
 }
-
-/** True when the timer is the pinned "current item" one. */
-export const isItemTimer = (t: Pick<StageTimerInstance, "id">): boolean => t.id === CURRENT_ITEM_TIMER_ID;
 
 /** Warn-row copy for each active stage layout preview, using channel display names. */
 export function stagePreviewWarnings(
@@ -63,4 +64,29 @@ export function hotcardImageValue(
 /** True when any show row came from Planning Center. */
 export function showHasPcoItems(rows: readonly unknown[] | undefined): boolean {
   return !!rows?.some((r) => !!(r as { sourceRef?: unknown }).sourceRef);
+}
+
+/** Hotcard ids in `projectId` whose full body isn't cached yet. */
+export function uncachedHotcardIds(
+  hotcards: readonly { id: string; projectId: string }[],
+  projectId: string,
+  cache: Readonly<Record<string, unknown>>,
+): string[] {
+  return hotcards.filter((h) => h.projectId === projectId && !cache[h.id]).map((h) => h.id);
+}
+
+/** Template ids used by cached hotcards (of `projectId`) that aren't in the template cache. */
+export function uncachedTemplateIds(
+  hotcards: readonly { id: string; projectId: string }[],
+  projectId: string,
+  hotcardCache: Readonly<Record<string, { templateId: string } | undefined>>,
+  templateCache: Readonly<Record<string, unknown>>,
+): string[] {
+  const out = new Set<string>();
+  for (const h of hotcards) {
+    if (h.projectId !== projectId) continue;
+    const tid = hotcardCache[h.id]?.templateId;
+    if (tid && !templateCache[tid]) out.add(tid);
+  }
+  return [...out];
 }

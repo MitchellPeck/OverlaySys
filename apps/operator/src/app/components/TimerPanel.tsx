@@ -295,6 +295,7 @@ export function TimerPanel() {
 
       <div style={{ ...rowStyle, marginTop: 12 }}>
         <Button
+          onMouseDown={noFocus}
           onClick={() => fire(pvwChannel, "cue")}
           style={{ flex: 1 }}
           disabled={takesDisabled || !templateId}
@@ -303,6 +304,7 @@ export function TimerPanel() {
           Cue
         </Button>
         <Button
+          onMouseDown={noFocus}
           onClick={() => fire(pgmChannel, "take")}
           variant="onair"
           style={{ flex: 1 }}
@@ -312,6 +314,7 @@ export function TimerPanel() {
           Take
         </Button>
         <Button
+          onMouseDown={noFocus}
           onClick={() => clear(pgmChannel)}
           style={{ flex: 1 }}
           disabled={takesDisabled}
@@ -350,7 +353,7 @@ function TimerFieldRow({
         marginBottom: 8,
       }}
     >
-      <Field label={field.label.trim().toLowerCase() === mode ? field.label : `${field.label} (${MODE_NAME[mode] ?? mode})`}>
+      <Field label={field.label.trim().toLowerCase() === mode ? cap(field.label.trim()) : `${cap(field.label.trim())} (${(MODE_NAME[mode] ?? mode).toLowerCase()})`}>
         {mode === "countdown" ? (
           <Input
             value={duration}
@@ -460,6 +463,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-const MODE_NAME: Record<string, string> = { countdown: "countdown", countup: "count up", clock: "clock" };
+const MODE_NAME: Record<string, string> = { countdown: "Countdown", countup: "Count up", clock: "Clock" };
+const cap = (t: string): string => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
 
 const rowStyle: React.CSSProperties = { display: "flex", gap: 8, marginTop: 8 };

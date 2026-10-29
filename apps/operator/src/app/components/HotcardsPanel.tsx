@@ -57,15 +57,6 @@ export function HotcardsPanel() {
     }
   }
 
-  // Hydrate the cache for any meta we don't yet have a full body for. The body
-  // is what we need to fire a take — list_hotcards only carries name+template.
-  useEffect(() => {
-    if (conn !== "open") return;
-    for (const h of hotcards) {
-      if (!hotcardCache[h.id]) send({ type: "get_hotcard", hotcardId: h.id });
-    }
-  }, [hotcards, hotcardCache, conn, send]);
-
   function fire(meta: HotcardMeta, target: "preview" | "program") {
     const full = hotcardCache[meta.id];
     if (!full) {
@@ -147,6 +138,9 @@ export function HotcardsPanel() {
   );
 }
 
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
 function ViewToggleButton({
   active,
   onClick,
@@ -158,6 +152,7 @@ function ViewToggleButton({
 }) {
   return (
     <button
+      onMouseDown={noFocus}
       onClick={onClick}
       style={{
         padding: "2px 8px",
@@ -215,6 +210,7 @@ function GridView({
             key={h.id}
             role="button"
             tabIndex={0}
+            onMouseDown={noFocus}
             onClick={() => onSelect(h.id)}
             onDoubleClick={() => {
               onSelect(h.id);
@@ -269,6 +265,7 @@ function GridView({
             <HotcardThumb id={h.id} />
             <div style={{ display: "flex", gap: 4, marginTop: "auto", paddingTop: 6 }}>
               <Button
+                onMouseDown={noFocus}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSelect(h.id);
@@ -281,6 +278,7 @@ function GridView({
                 Cue
               </Button>
               <Button
+                onMouseDown={noFocus}
                 onClick={(e) => {
                   e.stopPropagation();
                   onSelect(h.id);
@@ -373,6 +371,7 @@ function ListView({
               <td style={{ ...td(), width: 132, textAlign: "right" }}>
                 <div style={{ display: "inline-flex", gap: 4 }}>
                   <Button
+                    onMouseDown={noFocus}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelect(h.id);
@@ -385,6 +384,7 @@ function ListView({
                     Cue
                   </Button>
                   <Button
+                    onMouseDown={noFocus}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelect(h.id);

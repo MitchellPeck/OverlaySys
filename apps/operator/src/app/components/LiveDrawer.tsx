@@ -9,6 +9,9 @@ import { TimersRail } from "./TimersRail";
 import { StagePanel } from "./StagePanel";
 import { HotcardsPanel } from "./HotcardsPanel";
 
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
 type SectionId = "timers" | "stage" | "hotcards";
 
 const SECTIONS: { id: SectionId; title: string; icon: typeof Timer; label: string; body: () => ReactNode }[] = [
@@ -24,7 +27,7 @@ const SECTIONS: { id: SectionId; title: string; icon: typeof Timer; label: strin
  */
 export function LiveDrawer() {
   const { drawerOpen, setDrawerOpen, doubleClickTakes, setDoubleClickTakes } = useLivePrefs();
-  const [open, setOpen] = useState<Record<SectionId, boolean>>({ timers: true, stage: true, hotcards: true });
+  const [open, setOpen] = useState<Record<SectionId, boolean> | null>(null);
   const [pendingScroll, setPendingScroll] = useState<SectionId | null>(null);
   const refs = useRef<Partial<Record<SectionId, HTMLElement | null>>>({});
 
@@ -38,7 +41,7 @@ export function LiveDrawer() {
   }, []);
 
   function setSection(id: SectionId, value: boolean): void {
-    setOpen((cur) => ({ ...cur, [id]: value }));
+    setOpen((cur) => ({ timers: true, stage: true, hotcards: true, ...cur, [id]: value }));
     try {
       window.localStorage.setItem(drawerSectionKey(id), String(value));
     } catch {
@@ -64,6 +67,7 @@ export function LiveDrawer() {
             <IconButton
               key={s.id}
               aria-label={s.label}
+              onMouseDown={noFocus}
               title={s.label}
               onClick={() => {
                 setSection(s.id, true);
@@ -83,12 +87,13 @@ export function LiveDrawer() {
     <aside aria-label="Live drawer" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: colors.surface }}>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
         {SECTIONS.map((s) => {
-          const isOpen = open[s.id];
+          const isOpen = open?.[s.id] ?? false;
           const Chevron = isOpen ? ChevronDown : ChevronRight;
           return (
             <section key={s.id} ref={(el) => { refs.current[s.id] = el; }} style={{ borderBottom: `1px solid ${colors.border}` }}>
               <button
                 type="button"
+                onMouseDown={noFocus}
                 aria-expanded={isOpen}
                 onClick={() => setSection(s.id, !isOpen)}
                 style={{
@@ -117,12 +122,14 @@ export function LiveDrawer() {
         })}
       </div>
       <footer style={{ flexShrink: 0, padding: "6px 8px", borderTop: `1px solid ${colors.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <Switch
-          checked={doubleClickTakes}
-          onChange={setDoubleClickTakes}
-          label="Double-click takes to program"
-        />
-        <IconButton aria-label="Collapse drawer" title="Collapse drawer" size={24} onClick={() => setDrawerOpen(false)}>
+        <span onMouseDown={noFocus}>
+          <Switch
+            checked={doubleClickTakes}
+            onChange={setDoubleClickTakes}
+            label="Double-click takes to program"
+          />
+        </span>
+        <IconButton aria-label="Collapse drawer" title="Collapse drawer" size={28} onMouseDown={noFocus} onClick={() => setDrawerOpen(false)}>
           <ChevronRight size={14} aria-hidden />
         </IconButton>
       </footer>

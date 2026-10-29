@@ -55,6 +55,9 @@ export function StageTimersSection({
   );
 }
 
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
 type Send = ReturnType<typeof useWs>["send"];
 
 function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now: number; send: Send }) {
@@ -80,21 +83,22 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {notStarted && (
-          <Button size="sm" variant="primary" onClick={() => send({ type: "timer_start", id: t.id })}>
+          <Button onMouseDown={noFocus} size="sm" variant="primary" onClick={() => send({ type: "timer_start", id: t.id })}>
             <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Start
           </Button>
         )}
         {running && (
-          <Button size="sm" variant="ghost" onClick={() => send({ type: "timer_pause", id: t.id })}>
+          <Button onMouseDown={noFocus} size="sm" variant="ghost" onClick={() => send({ type: "timer_pause", id: t.id })}>
             <Pause size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pause
           </Button>
         )}
         {paused && (
-          <Button size="sm" variant="primary" onClick={() => send({ type: "timer_resume", id: t.id })}>
+          <Button onMouseDown={noFocus} size="sm" variant="primary" onClick={() => send({ type: "timer_resume", id: t.id })}>
             <Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Resume
           </Button>
         )}
         <Button
+          onMouseDown={noFocus}
           size="sm"
           variant="ghost"
           disabled={pco}
@@ -117,6 +121,7 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
           <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
         <Button
+          onMouseDown={noFocus}
           size="sm"
           variant="ghost"
           disabled={pco}
@@ -126,6 +131,7 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
           −1 min
         </Button>
         <Button
+          onMouseDown={noFocus}
           size="sm"
           variant="ghost"
           disabled={pco}
@@ -135,6 +141,7 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
           +1 min
         </Button>
         <Button
+          onMouseDown={noFocus}
           size="sm"
           variant="ghost"
           onClick={async () => {
@@ -200,11 +207,11 @@ function NewStageTimerForm({ send, onDone }: { send: Send; onDone?: (() => void)
       </div>
       <Switch checked={overtime} onChange={setOvertime} label="Overtime" />
       <div style={{ display: "flex", gap: 6 }}>
-        <Button size="sm" variant="primary" disabled={invalid} onClick={create}>
+        <Button onMouseDown={noFocus} size="sm" variant="primary" disabled={invalid} onClick={create}>
           Create
         </Button>
         {onDone && (
-          <Button size="sm" variant="ghost" onClick={onDone}>
+          <Button onMouseDown={noFocus} size="sm" variant="ghost" onClick={onDone}>
             Cancel
           </Button>
         )}

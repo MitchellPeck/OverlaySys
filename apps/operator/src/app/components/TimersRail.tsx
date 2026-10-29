@@ -8,6 +8,9 @@ import { ActiveTimersPanel } from "./ActiveTimersPanel";
 import { StageTimersSection } from "./StageTimersSection";
 import { TimerPanel } from "./TimerPanel";
 
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
 /** Drawer body for the Timers section: stage timers, then graphic timers on air. */
 export function TimersRail() {
   const [graphicOpen, setGraphicOpen] = useState(false);
@@ -17,6 +20,7 @@ export function TimersRail() {
     <div style={{ display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", gap: 6, padding: "8px 8px 0" }}>
         <Button
+          onMouseDown={noFocus}
           size="sm"
           variant="ghost"
           icon={<Plus size={14} />}
@@ -26,7 +30,7 @@ export function TimersRail() {
           Stage timer
         </Button>
         <span ref={anchorRef} style={{ display: "inline-flex" }}>
-          <Button size="sm" variant="ghost" icon={<Plus size={14} />} onClick={() => setGraphicOpen((v) => !v)}>
+          <Button onMouseDown={noFocus} size="sm" variant="ghost" icon={<Plus size={14} />} onClick={() => setGraphicOpen((v) => !v)}>
             Graphic timer
           </Button>
         </span>

@@ -12,6 +12,7 @@ import { Monitors } from "./components/Monitors";
 import { StageArea } from "./components/StageArea";
 import { LiveDrawer } from "./components/LiveDrawer";
 import { useLivePrefs } from "./hooks/useLivePrefs";
+import { useHotcardHydration } from "./hooks/useHotcardHydration";
 import { DRAWER_COLLAPSED_WIDTH, DRAWER_OPEN_WIDTH } from "@/lib/liveDrawerModel";
 import { ConsoleBottomBar } from "./components/ConsoleBottomBar";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
@@ -65,6 +66,7 @@ function ShowPageLocal() {
   }, []);
 
   useGlobalShortcuts();
+  useHotcardHydration();
   const { drawerOpen } = useLivePrefs();
 
   return (
