@@ -60,6 +60,12 @@ import { PcoItemList } from "./PcoItemList";
 import { PcoItemRow, importAsOf, referenceError, type ItemCfg, type RowKind } from "./PcoItemRow";
 import { PcoImportFooter } from "./PcoImportFooter";
 import { importSummary, type ImportAs } from "./importOptions";
+// [P3.19]
+import { requestOne } from "@/lib/awaitAck";
+import { getClient } from "@/lib/useWs";
+import type { DeckMeta, DeckSuggestion } from "@overlaysys/core";
+import { forgetMapping, initialSlidesChoice, slidesImportConfig } from "./slidesImport";
+// [/P3.19]
 
 type Status = "checking" | "disconnected" | "connected";
 
@@ -87,6 +93,10 @@ export default function PcoPage() {
   const setTemplate = useStore((s) => s.setTemplate);
   const allShowMetas = useStore((s) => s.showMetas);
   const currentProjectId = useStore((s) => s.currentProjectId);
+  // [P3.19]
+  const decks = useStore((s) => s.decks);
+  const [slidesSuggestions, setSlidesSuggestions] = useState<Record<string, DeckSuggestion>>({});
+  // [/P3.19]
   const showMetas = allShowMetas.filter((s) => s.projectId === currentProjectId);
   const { send } = useWs();
   const cloud = isCloudMode();
@@ -359,7 +369,15 @@ export default function PcoPage() {
     setLoadingItems(true);
     setError(null);
     try {
-      const { items: fetched, previews: pv, imported: importedMap } = await getPlanItems(serviceTypeId, id);
+      // [P3.19] Fresh deck list so a remembered deck can be preselected.
+      const [{ items: fetched, previews: pv, imported: importedMap, slidesSuggestions: suggestions }, deckList] =
+        await Promise.all([
+          getPlanItems(serviceTypeId, id),
+          requestOne<DeckMeta[]>(getClient(), { type: "list_decks" }, (m) =>
+            m.type === "deck_list" ? m.decks : undefined,
+          ).catch(() => useStore.getState().decks),
+        ]);
+      // [/P3.19]
       // The operator picked another plan while this one loaded: drop it.
       if (requestId !== planRequestRef.current) return;
       const map: Record<string, ItemPreview> = {};
@@ -372,9 +390,14 @@ export default function PcoPage() {
         const preview = map[it.id];
         const isSong = it.itemType === "song" && !!it.song;
         const guessed = isSong ? null : guessScriptureReference(it.title);
+        // [P3.19]
+        const slides = initialSlidesChoice(suggestions?.[it.id], deckList);
+        // [/P3.19]
         nextCfgs[it.id] = {
           include: true,
-          kind: isSong ? "song" : guessed ? "scripture" : "item",
+          kind: slides ? "slides" : isSong ? "song" : guessed ? "scripture" : "item",
+          ...(slides ? { slidesDeckId: slides.deckId } : {}),
+          slidesRemember: true,
           reference: guessed ?? "",
           translation: "",
           scriptureTemplateId: "",
@@ -395,6 +418,7 @@ export default function PcoPage() {
       setPreviews(map);
       setCfgs(nextCfgs);
       setImported(importedMap ?? {});
+      setSlidesSuggestions(suggestions ?? {}); // [P3.19]
       const plan = plans.find((p) => p.id === id);
       if (plan) setNewName(planLabel(plan));
     } catch (err) {
@@ -449,9 +473,32 @@ export default function PcoPage() {
       return;
     }
     patch(item.id, (c) => ({ ...c, include: true }));
-    if (as === "song") setKind(item, "song");
+    if (as === "slides") setKind(item, "slides"); // [P3.19]
+    else if (as === "song") setKind(item, "song");
     else setKind(item, guessScriptureReference(item.title) ? "scripture" : "item");
   }
+
+  // [P3.19] Forget the remembered deck: drop the mapping and the row reverts
+  // to the kind it would have had without one.
+  async function forgetSlides(item: PcoPlanItem) {
+    const s = slidesSuggestions[item.id];
+    if (s?.mappingId) {
+      try {
+        await forgetMapping(s.mappingId);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+    }
+    setSlidesSuggestions((prev) => {
+      const { [item.id]: _gone, ...rest } = prev;
+      return rest;
+    });
+    const isSong = item.itemType === "song" && !!item.song;
+    setKind(item, isSong ? "song" : guessScriptureReference(item.title) ? "scripture" : "item");
+    patch(item.id, (c) => ({ ...c, slidesDeckId: undefined }));
+  }
+  // [/P3.19]
 
   /** Flip a graphic row between a plain graphic and a scripture reading. */
   function toggleScripture(item: PcoPlanItem) {
@@ -546,6 +593,7 @@ export default function PcoPage() {
     if (targetMode === "existing" && !existingShowId) return false;
     for (const it of items) {
       const c = cfgs[it.id];
+      if (c?.include && c.kind === "slides" && !c.slidesDeckId) return false; // [P3.19]
       if (c?.include && c.kind === "scripture") {
         if (referenceError(c.reference) || !(c.translation || defaultTranslation)) return false;
       }
@@ -594,6 +642,16 @@ export default function PcoPage() {
             templateId: c.lyricTemplateId || undefined,
             ...(draft ? { song: draft } : {}),
           });
+        } else if (c.kind === "slides" && c.slidesDeckId) {
+          // [P3.19]
+          payload.push(
+            slidesImportConfig(
+              it.id,
+              { deckId: c.slidesDeckId, remember: c.slidesRemember ?? true },
+              slidesSuggestions[it.id],
+            ),
+          );
+          // [/P3.19]
         } else if (c.kind === "scripture") {
           payload.push({
             itemId: it.id,
@@ -705,6 +763,13 @@ export default function PcoPage() {
                       translations={translations}
                       scriptureTranslation={effTranslation(cfg)}
                       onImportAs={(as) => setImportAs(item, as)}
+                      // [P3.19]
+                      decks={decks}
+                      slidesSuggestion={slidesSuggestions[item.id]}
+                      onSlidesDeck={(id) => patch(item.id, (c) => ({ ...c, slidesDeckId: id }))}
+                      onSlidesRemember={(v) => patch(item.id, (c) => ({ ...c, slidesRemember: v }))}
+                      onSlidesForget={() => void forgetSlides(item)}
+                      // [/P3.19]
                       onScriptureToggle={() => toggleScripture(item)}
                       onReference={(r) => patch(item.id, (c) => ({ ...c, reference: r }))}
                       onScriptureTranslation={(id) => {

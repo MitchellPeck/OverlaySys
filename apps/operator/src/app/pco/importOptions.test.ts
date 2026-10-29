@@ -3,11 +3,15 @@ import { humaniseItemType, importOptions, importSummary } from "./importOptions"
 
 describe("importOptions", () => {
   it("omits Song when the item has no PCO song", () => {
-    expect(importOptions({ song: undefined }).map((o) => o.value)).toEqual(["graphic", "skip"]);
+    expect(importOptions({ song: undefined }).map((o) => o.value)).toEqual(["graphic", "slides", "skip"]);
   });
   it("offers Song, Graphic and Skip for a song item", () => {
     const song = { id: "s1", title: "T" } as never;
-    expect(importOptions({ song }).map((o) => o.value)).toEqual(["song", "graphic", "skip"]);
+    expect(importOptions({ song }).map((o) => o.value)).toEqual(["song", "graphic", "slides", "skip"]);
+  });
+  it("every item offers Slides", () => {
+    expect(importOptions({ song: undefined }).some((o) => o.value === "slides" && o.label === "Slides")).toBe(true);
+    expect(importOptions({ song: { id: "s1", title: "T" } as never }).some((o) => o.value === "slides")).toBe(true);
   });
 });
 

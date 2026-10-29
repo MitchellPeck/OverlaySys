@@ -4,6 +4,8 @@ import type {
   Field as TemplateField,
   ItemPreview,
   PcoPlanItem,
+  DeckMeta,
+  DeckSuggestion,
   Template,
   TemplateMeta,
 } from "@overlaysys/core";
@@ -11,10 +13,11 @@ import { Button, Checkbox, Field, Input, Pill, Select, Stack, colors } from "@ov
 import { ScriptureRefError, parseReference, type TranslationMeta } from "@overlaysys/scripture";
 import { FieldInput } from "@/lib/FieldInput";
 import { templatesFor, type TemplateUse } from "@/lib/templateRoles";
+import { ImportAsSlides } from "./ImportAsSlides";
 import { humaniseItemType, importOptions, type ImportAs } from "./importOptions";
 
 export type SongAction = "link" | "create";
-export type RowKind = "song" | "item" | "scripture";
+export type RowKind = "song" | "item" | "scripture" | "slides";
 
 export interface ItemCfg {
   include: boolean;
@@ -29,6 +32,10 @@ export interface ItemCfg {
   translation: string;
   /** Scripture kind: "" means "use the default scripture template". */
   scriptureTemplateId: string;
+  // [P3.19] Slides kind: the chosen deck and the "Remember" checkbox.
+  slidesDeckId?: string;
+  slidesRemember?: boolean;
+  // [/P3.19]
   data: Record<string, string>;
   /** Field keys the operator typed into — preserved across template changes. */
   edited: Set<string>;
@@ -37,6 +44,7 @@ export interface ItemCfg {
 /** What the "Import as" select shows for a row. */
 export function importAsOf(cfg: ItemCfg): ImportAs {
   if (!cfg.include) return "skip";
+  if (cfg.kind === "slides") return "slides"; // [P3.19]
   return cfg.kind === "song" ? "song" : "graphic";
 }
 
@@ -114,6 +122,11 @@ export function PcoItemRow({
   onLyricTemplate,
   onGraphicTemplate,
   onFieldChange,
+  decks,
+  slidesSuggestion,
+  onSlidesDeck,
+  onSlidesRemember,
+  onSlidesForget,
 }: {
   item: PcoPlanItem;
   preview: ItemPreview | undefined;
@@ -134,6 +147,13 @@ export function PcoItemRow({
   onLyricTemplate: (id: string) => void;
   onGraphicTemplate: (id: string) => void;
   onFieldChange: (key: string, value: string) => void;
+  // [P3.19]
+  decks: DeckMeta[];
+  slidesSuggestion: DeckSuggestion | undefined;
+  onSlidesDeck: (id: string) => void;
+  onSlidesRemember: (v: boolean) => void;
+  onSlidesForget: () => void;
+  // [/P3.19]
 }) {
   const hasMatch = !!preview?.match;
   const importAs = importAsOf(cfg);
@@ -245,6 +265,22 @@ export function PcoItemRow({
         );
       }
       break;
+    // [P3.19]
+    case "slides":
+      extras = (
+        <ImportAsSlides
+          item={item}
+          decks={decks}
+          deckId={cfg.slidesDeckId ?? ""}
+          remember={cfg.slidesRemember ?? true}
+          suggestion={slidesSuggestion}
+          onDeck={onSlidesDeck}
+          onRemember={onSlidesRemember}
+          onForget={onSlidesForget}
+        />
+      );
+      break;
+    // [/P3.19]
     case "skip":
       break;
   }

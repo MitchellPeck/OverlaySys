@@ -1,6 +1,6 @@
 import type { PcoPlanItem } from "@overlaysys/core";
 
-export type ImportAs = "graphic" | "song" | "skip";
+export type ImportAs = "graphic" | "song" /* [P3.19] */ | "slides" /* [/P3.19] */ | "skip";
 
 export interface ImportOption {
   value: ImportAs;
@@ -15,6 +15,9 @@ export function importOptions(item: Pick<PcoPlanItem, "song">): ImportOption[] {
   const options: ImportOption[] = [];
   if (item.song) options.push({ value: "song", label: "Song" });
   options.push({ value: "graphic", label: "Graphic" });
+  // [P3.19]
+  options.push({ value: "slides", label: "Slides" });
+  // [/P3.19]
   options.push({ value: "skip", label: "Skip" });
   return options;
 }

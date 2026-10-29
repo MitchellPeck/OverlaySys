@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  DeckSuggestion,
   ItemPreview,
   PcoPlan,
   PcoPlanItem,
@@ -48,7 +49,7 @@ export interface ImportTarget {
 
 export interface ImportItemConfig {
   itemId: string;
-  kind: "song" | "graphic" | "scripture";
+  kind: "song" | "graphic" | "scripture" /* [P3.19] */ | "slides" /* [/P3.19] */;
   songAction?: "link" | "create";
   songId?: string;
   song?: Song;
@@ -59,6 +60,10 @@ export interface ImportItemConfig {
   reference?: string;
   translation?: string;
   slideMaxChars?: number;
+  // [P3.19] Slides kind.
+  deckId?: string;
+  remember?: boolean;
+  // [/P3.19]
 }
 
 export interface ImportPlanRequest {
@@ -154,6 +159,10 @@ export async function getPlanItems(
   previews: ItemPreview[];
   /** itemId → shows already holding a row imported from that item. Absent on older servers. */
   imported?: Record<string, { showId: string; showName: string }[]>;
+  // [P3.19]
+  /** itemId → deck to offer for "Import as Slides". Absent on older servers. */
+  slidesSuggestions?: Record<string, DeckSuggestion>;
+  // [/P3.19]
 }> {
   return get(
     `/api/pco/plans/${encodeURIComponent(planId)}/items?serviceTypeId=${encodeURIComponent(serviceTypeId)}`,
