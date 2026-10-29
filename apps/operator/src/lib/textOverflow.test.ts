@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Template } from "@overlaysys/core";
-import { measureTextLayers, overflowSummary, templateHasVisibleText, textFieldLayers } from "./textOverflow";
+import { measureTextLayers, overflowSummary, textFieldLayers } from "./textOverflow";
 
 type Layers = Template["layers"];
 const tf = { x: 0, y: 0, w: 100, h: 20 };
@@ -31,22 +31,9 @@ describe("overflowSummary", () => {
   });
 });
 
-describe("templateHasVisibleText", () => {
-  it("templateHasVisibleText looks inside groups and ignores hidden layers", () => {
-    expect(templateHasVisibleText({ layers: [group([text("t", "a", false)])] })).toBe(false);
-    expect(templateHasVisibleText({ layers: [group([text("t", "a")])] })).toBe(true);
-  });
-
-  it("a hidden group hides its text; no layers means no text", () => {
-    expect(templateHasVisibleText({ layers: [group([text("t", "a")], false)] })).toBe(false);
-    expect(templateHasVisibleText({ layers: [shape] })).toBe(false);
-    expect(templateHasVisibleText({ layers: [] })).toBe(false);
-  });
-});
-
 describe("textFieldLayers", () => {
   it("maps visible field-bound text layers to their field, through groups", () => {
-    const layers: Layers = [text("t1", "name"), text("lit", null), group([text("t2", "title"), text("t3", "hidden", false)])];
+    const layers: Layers = [text("t1", "name"), shape, text("lit", null), group([text("t2", "title"), text("t3", "hidden", false)])];
     expect(textFieldLayers({ layers })).toEqual([
       { layerId: "t1", fieldKey: "name" },
       { layerId: "t2", fieldKey: "title" },

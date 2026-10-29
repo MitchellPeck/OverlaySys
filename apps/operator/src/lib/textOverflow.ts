@@ -59,15 +59,6 @@ function walkVisible(layers: Layer[], visit: (l: Layer) => void): void {
   }
 }
 
-/** True when the template has at least one visible text layer (hidden groups hide their children). */
-export function templateHasVisibleText(t: Pick<Template, "layers">): boolean {
-  let found = false;
-  walkVisible(t.layers ?? [], (l) => {
-    if (l.type === "text") found = true;
-  });
-  return found;
-}
-
 /** Visible text layers bound to a field, in paint order. */
 export function textFieldLayers(t: Pick<Template, "layers">): { layerId: string; fieldKey: string }[] {
   const out: { layerId: string; fieldKey: string }[] = [];

@@ -69,7 +69,7 @@ export function ItemBar({ row, hotcardId = null, quickTake = false, onQuickTakeC
       // Only a template with no layers at all: image/video-only templates (logos) are fine.
       if (t && (t.layers ?? []).length === 0) {
         noText = true;
-        warning = `Template "${t.name}" has no text layers`;
+        warning = "This design has no layers";
       }
     }
     warning ??= v.warning ?? null;
@@ -164,10 +164,10 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
             cue={() => msg("cue")}
             take={async () => {
               if (noText) {
-                const name = templateCache[g.templateId]?.name ?? "This template";
+                const name = templateCache[g.templateId]?.name ?? "Untitled";
                 const ok = await confirm({
                   title: "Take a graphic with no layers?",
-                  message: `Template "${name}" has no layers, so nothing will show.`,
+                  message: `The design "${name}" has no layers, so nothing will show.`,
                   confirmLabel: "Take",
                 });
                 if (!ok) return null;

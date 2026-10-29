@@ -10,6 +10,7 @@ import {
 import { Button, colors, control, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { songLyricsMessage } from "@/lib/songChannel";
 
 type Segment = "intro" | "lyrics" | "outro";
 
@@ -35,7 +36,8 @@ interface SongTakeStripProps {
  *  - Intro / Outro fire a regular `take` against the resolved channel using
  *    {@link resolveIntroTake} / {@link resolveOutroTake} payloads.
  *  - Lyrics either starts a fresh `song_take` or `song_advance`s the existing
- *    session when the same `songId` is live on the channel. The server's
+ *    session when this exact row is live on the channel (songLyricsMessage:
+ *    a reprise row of the live song takes afresh). The server's
  *    session state survives Intro/Outro inserts (the renderer just replaces
  *    visible content), so re-clicking Lyrics mid-session brings the cursor
  *    back at the next slide.
@@ -185,19 +187,10 @@ export function SongTakeStrip({
   }
 
   function takeLyrics() {
-    // Same-song session live → advance the cursor. Otherwise start a fresh
-    // session (server's songSession.start ends any prior session on this
-    // channel before opening the new one).
-    if (liveSession && liveSession.songId === row.songId) {
-      send({ type: "song_advance", channel, delta: 1 });
-    } else {
-      send({
-        type: "song_take",
-        channel,
-        showId: show.id,
-        songRowId: row.id,
-      });
-    }
+    // This exact row live on the channel → advance the cursor. Otherwise
+    // (including a reprise row of the live song) start a fresh session: the
+    // server's songSession.start ends any prior session on this channel.
+    send(songLyricsMessage(row, show, channel, useStore.getState().channelStates, liveSession));
     setLastFired("lyrics");
   }
 
