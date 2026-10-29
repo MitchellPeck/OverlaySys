@@ -17,6 +17,9 @@ import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
  * Channels that mirror another (e.g. an alpha key that mirrors program)
  * aren't selectable here — taking on a mirror is a no-op since the renderer
  * subscribes to the source channel's state.
+ *
+ * Field values are local state: the Live item bar unmounts this panel when
+ * Quick take is toggled off, so the fields start clear next time (WS1.14).
  */
 export function TakePanel() {
   const { send } = useWs();
@@ -127,6 +130,11 @@ export function TakePanel() {
     if (!templateId) return;
     send({ type: "take", channel, templateId, data });
   }
+  /** Cue never reaches program (D7a), whatever the preview pick says. */
+  function cue() {
+    if (pvwChannel === "program") return;
+    take(pvwChannel);
+  }
   function update(channel: string) {
     if (takesDisabled) return;
     send({ type: "update", channel, data });
@@ -186,7 +194,7 @@ export function TakePanel() {
             <ChannelSelect
               value={pvwChannel}
               onChange={setPvwChannel}
-              channels={takeableChannels}
+              channels={takeableChannels.filter((c) => c.id !== "program")}
             />
           </Field>
         </div>
@@ -211,14 +219,14 @@ export function TakePanel() {
       ))}
 
       <div style={{ ...row, marginTop: 12 }}>
-        <Button onClick={() => take(pvwChannel)} size="lg" disabled={takesDisabled} title={disabledTitle}>
-          Cue → {channelLabel(pvwChannel)}
+        <Button onClick={() => cue()} size="lg" disabled={takesDisabled || pvwChannel === "program"} title={disabledTitle ?? `Cue to ${channelLabel(pvwChannel)}`}>
+          Cue
         </Button>
-        <Button onClick={() => take(pgmChannel)} variant="onair" size="lg" disabled={takesDisabled} title={disabledTitle}>
-          Take → {channelLabel(pgmChannel)}
+        <Button onClick={() => take(pgmChannel)} variant="onair" size="lg" disabled={takesDisabled} title={disabledTitle ?? `Take to ${channelLabel(pgmChannel)}`}>
+          Take
         </Button>
-        <Button onClick={() => update(pgmChannel)} size="lg" disabled={takesDisabled} title={disabledTitle}>
-          Update {channelLabel(pgmChannel)}
+        <Button onClick={() => update(pgmChannel)} size="lg" disabled={takesDisabled} title={disabledTitle ?? `Update ${channelLabel(pgmChannel)}`}>
+          Update
         </Button>
       </div>
     </div>

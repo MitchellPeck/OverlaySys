@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { Show, SongSessionSummary } from "@overlaysys/core";
-import { stageModeFor, shortcutHint } from "./stageMode";
+import type { ChannelState, Show, SongSessionSummary } from "@overlaysys/core";
+import { pinnedRowId, regionRowId, stageModeFor, shortcutHint } from "./stageMode";
 
 const show = {
   id: "sh",
@@ -47,11 +47,14 @@ describe("stageModeFor", () => {
     expect(stageModeFor({ ...base, selectedRowId: "g", quickTake: true })).toEqual({ kind: "quick-take" });
   });
 
-  // The Quick take toggle is hidden in song mode, so the selection ignores it.
   it("a live song session overrides everything, program first, and carries the selection", () => {
     expect(
-      stageModeFor({ ...base, selectedRowId: "g", quickTake: true, songSessions: { preview: session } }),
+      stageModeFor({ ...base, selectedRowId: "g", songSessions: { preview: session } }),
     ).toEqual({ kind: "song-live", channel: "preview", session, selection: { kind: "graphic", row: show.rows[0] } });
+    // Quick take is reachable in song mode too (the item bar's far-right toggle).
+    expect(
+      stageModeFor({ ...base, selectedRowId: "g", quickTake: true, songSessions: { preview: session } }),
+    ).toEqual({ kind: "song-live", channel: "preview", session, selection: { kind: "quick-take" } });
     expect(
       stageModeFor({ ...base, songSessions: { program: session, preview: { ...session, songId: "other" } } }),
     ).toEqual({ kind: "song-live", channel: "program", session, selection: { kind: "empty" } });
@@ -133,5 +136,52 @@ describe("shortcutHint", () => {
 
   it("describes Space as play/pause for a video row", () => {
     expect(shortcutHint({ kind: "video", row: show.rows[3] as never })).toContain("Space take / play-pause");
+  });
+});
+
+describe("regionRowId", () => {
+  const two = {
+    id: "sh",
+    rows: [...show.rows, { id: "s2", kind: "song", songId: "wm", lyricTemplateId: "lyr" }],
+  } as unknown as Show;
+
+  it("shows the selected row, even while a song is live", () => {
+    expect(regionRowId(stageModeFor({ ...base, show: two, selectedRowId: "g" }), two)).toBe("g");
+    expect(regionRowId(stageModeFor({ ...base, show: two, selectedRowId: "x", songSessions: { program: session } }), two)).toBe("x");
+  });
+
+  it("with nothing selected under a live song, shows the live song's exact row", () => {
+    const m = stageModeFor({ ...base, show: two, songSessions: { program: session } });
+    expect(regionRowId(m, two, { showId: "sh", rowId: "s2" })).toBe("s2");
+    // liveRow from another show, or missing: the song's first row.
+    expect(regionRowId(m, two, { showId: "other", rowId: "s2" })).toBe("s");
+    expect(regionRowId(m, two)).toBe("s");
+  });
+
+  it("is null for quick take, a hotcard or nothing", () => {
+    expect(regionRowId(stageModeFor({ ...base, quickTake: true, songSessions: { program: session } }), show)).toBeNull();
+    expect(regionRowId(stageModeFor({ ...base, selectedHotcardId: "h1" }), show)).toBeNull();
+    expect(regionRowId(stageModeFor(base), show)).toBeNull();
+  });
+});
+
+describe("pinnedRowId", () => {
+  const st = (p: Partial<ChannelState>) => ({ channel: "program", active: null, ...p }) as ChannelState;
+
+  it("pins the program row when it isn't the one shown", () => {
+    expect(pinnedRowId(show, st({ songSession: session }), "g")).toBe("s");
+    expect(pinnedRowId(show, st({ scriptureSession: { rowId: "x" } as never }), "g")).toBe("x");
+    expect(pinnedRowId(show, st({ slidesSession: { rowId: "v" } as never }), null)).toBe("v");
+  });
+
+  it("media wins over a song under it", () => {
+    expect(pinnedRowId(show, st({ songSession: session, media: { rowId: "v" } as never }), "s")).toBe("v");
+  });
+
+  it("nothing pinned when the shown row is the live one, nothing is live, or the row is from another show", () => {
+    expect(pinnedRowId(show, st({ songSession: session }), "s")).toBeNull();
+    expect(pinnedRowId(show, st({}), "g")).toBeNull();
+    expect(pinnedRowId(show, undefined, "g")).toBeNull();
+    expect(pinnedRowId(show, st({ scriptureSession: { rowId: "gone" } as never }), "g")).toBeNull();
   });
 });

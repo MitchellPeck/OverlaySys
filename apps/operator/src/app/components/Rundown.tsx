@@ -17,6 +17,7 @@ import { slidesRowTakeMessages } from "@/lib/slidesRowView";
 import { requestedDecks } from "@/lib/deckRequests";
 import { RundownList } from "./rundown/RundownList";
 import { takeableNextRowId } from "./rundown/rundownModel";
+import { useWarnRowIds } from "./live/overflowStore";
 
 type Row = NonNullable<ReturnType<typeof useStore.getState>["show"]>["rows"][number];
 
@@ -38,6 +39,7 @@ export function Rundown() {
   const overrides = useStore((s) => s.rowDataOverrides);
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
+  const warnRowIds = useWarnRowIds();
 
   useEffect(() => {
     if (!show || conn !== "open") return;
@@ -196,6 +198,7 @@ export function Rundown() {
       canCue={model.canCue}
       actionBlocked={connected ? null : "Not connected"}
       editedRowIds={model.edited}
+      warnRowIds={warnRowIds}
     />
   );
 
