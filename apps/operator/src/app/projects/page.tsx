@@ -16,6 +16,7 @@ import {
 import { DEFAULT_PROJECT_ID, type Project } from "@overlaysys/core";
 import { getClient, useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
+import { listLoadState } from "@/lib/listLoadState";
 import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
@@ -67,6 +68,9 @@ export default function ProjectsIndexPage() {
   const hotcards = useStore((s) => s.hotcards);
   const { alert } = useDialog();
   const { retry } = useConnection();
+  const projectsLoaded = useStore((s) => s.projectsLoaded);
+  const showsLoaded = useStore((s) => s.showsLoaded);
+  const hotcardsLoaded = useStore((s) => s.hotcardsLoaded);
   const cloud = isCloudMode();
   const disabled = !cloud && conn !== "open";
 
@@ -246,6 +250,8 @@ export default function ProjectsIndexPage() {
   }
 
   const names = projects.map((p) => p.name);
+  // Counts are unknown until both lists arrive, and untrusted while disconnected.
+  const countsKnown = showsLoaded && hotcardsLoaded && (cloud || conn === "open");
   const rows: ProjectRow[] = useMemo(
     () =>
       projects.map((p) => ({
@@ -253,10 +259,11 @@ export default function ProjectsIndexPage() {
         name: p.name || p.id,
         shows: showMetas.filter((s) => s.projectId === p.id).length,
         hotcards: hotcards.filter((h) => h.projectId === p.id).length,
+        countsKnown,
         isCurrent: p.id === currentProjectId,
         isDefault: p.id === DEFAULT_PROJECT_ID,
       })),
-    [projects, showMetas, hotcards, currentProjectId],
+    [projects, showMetas, hotcards, currentProjectId, countsKnown],
   );
   const projectOf = (id: string) => projects.find((p) => p.id === id);
   const currentName = projectOf(currentProjectId)?.name ?? "the current project";
@@ -265,17 +272,20 @@ export default function ProjectsIndexPage() {
     () => unassignedItems(showMetas, hotcards, projects.map((p) => p.id)),
     [showMetas, hotcards, projects],
   );
-  const orphanCount = orphans.shows.length + orphans.hotcards.length;
+  const orphanCount = projectsLoaded && showsLoaded && hotcardsLoaded ? orphans.shows.length + orphans.hotcards.length : 0;
   const [moving, setMoving] = useState(false);
 
   async function moveUnassigned() {
     if (!projectOf(currentProjectId)) return;
     setMoving(true);
     try {
+      let moved = 0;
       for (const s of orphans.shows) {
         if (cloud) {
           const full = await getShowCloud(s.id);
-          if (full) await saveShowCloud({ ...full, projectId: currentProjectId });
+          if (!full) throw new Error("A show couldn't be loaded");
+          await saveShowCloud({ ...full, projectId: currentProjectId });
+          moved++;
         } else {
           const full = await requestOne(
             getClient(),
@@ -287,12 +297,15 @@ export default function ProjectsIndexPage() {
             { type: "save_show", show: { ...full, projectId: currentProjectId } },
             { op: "save_show", id: s.id },
           );
+          moved++;
         }
       }
       for (const h of orphans.hotcards) {
         if (cloud) {
           const full = await getHotcardCloud(h.id);
-          if (full) await saveHotcardCloud({ ...full, projectId: currentProjectId });
+          if (!full) throw new Error("A hotcard couldn't be loaded");
+          await saveHotcardCloud({ ...full, projectId: currentProjectId });
+          moved++;
         } else {
           const full = await requestOne(
             getClient(),
@@ -304,9 +317,10 @@ export default function ProjectsIndexPage() {
             { type: "save_hotcard", hotcard: { ...full, projectId: currentProjectId } },
             { op: "save_hotcard", id: h.id },
           );
+          moved++;
         }
       }
-      toast({ message: `Moved ${orphanCount} items to ${currentName}`, tone: "ok" });
+      toast({ message: `Moved ${moved} items to ${currentName}`, tone: "ok" });
     } catch (err) {
       toast({ message: `Couldn't move items. ${ackErrorText(err)}`, tone: "error" });
     } finally {
@@ -324,9 +338,21 @@ export default function ProjectsIndexPage() {
   async function confirmDelete(row: ProjectRow) {
     const p = projectOf(row.id);
     if (!p) return;
+    // Re-check against the live store: never delete on stale or unloaded counts.
+    const st = useStore.getState();
+    const live = !isCloudMode() ? st.conn === "open" : true;
+    if (!live || !st.showsLoaded || !st.hotcardsLoaded) {
+      toast({ message: "Can't delete yet. Reconnect and let the lists load.", tone: "warn" });
+      return;
+    }
+    const nShows = st.showMetas.filter((s) => s.projectId === row.id).length;
+    const nCards = st.hotcards.filter((h) => h.projectId === row.id).length;
+    const items = nShows + nCards > 0;
     const ok = await confirm({
       title: "Delete project",
-      message: `Delete "${p.name}"? This can't be undone.`,
+      message: items
+        ? `Delete "${p.name}"? Its ${nShows} show${nShows === 1 ? "" : "s"} and ${nCards} hotcard${nCards === 1 ? "" : "s"} will become orphaned and won't appear in any project. Move them first.`
+        : `Delete "${p.name}"? This can't be undone.`,
       confirmLabel: "Delete",
       danger: true,
     });
@@ -343,7 +369,10 @@ export default function ProjectsIndexPage() {
   const actionsFor = (row: ProjectRow): ProjectActions => {
     const p = projectOf(row.id);
     return {
-      makeCurrent: () => setCurrentProjectId(row.id),
+      makeCurrent: () => {
+        setCurrentProjectId(row.id);
+        toast({ message: `${row.name} is now the current project`, tone: "ok" });
+      },
       rename: () => p && void rename(p),
       customFields: () => p && setSchemaEditing(p),
       copyId: () => copyId(row.id),
@@ -390,8 +419,9 @@ export default function ProjectsIndexPage() {
     },
   ];
 
-  const offlineEmpty = !cloud && conn !== "open" && projects.length === 0;
-  const stale = !cloud && conn !== "open" && projects.length > 0;
+  const load = listLoadState({ cloud, conn, loaded: projectsLoaded });
+  const offlineEmpty = load.error && projects.length === 0;
+  const stale = !cloud && conn === "closed" && projects.length > 0;
 
   return (
     <PageBody variant="list">
@@ -441,7 +471,8 @@ export default function ProjectsIndexPage() {
             sorts={projectSorts}
             defaultSort="name-asc"
             menuItems={(r) => projectMenuItems(r, actionsFor(r))}
-            onOpen={(r) => setCurrentProjectId(r.id)}
+            // Rows are inert on click/Enter: the current project scopes Live, so it only changes via "Make current".
+            onOpen={() => {}}
             storageKey="projects"
             primaryAction={{
               label: "New project",
@@ -453,7 +484,7 @@ export default function ProjectsIndexPage() {
               body: "A project groups shows and hotcards.",
               action: { label: "New project", onClick: () => void newProject() },
             }}
-            loading={projects.length === 0 && (cloud || conn === "open")}
+            loading={load.loading}
           />
         </>
       )}

@@ -14,6 +14,7 @@ const row = (o: Partial<ProjectRow> = {}): ProjectRow => ({
   name: "Sunday services",
   shows: 3,
   hotcards: 2,
+  countsKnown: true,
   isCurrent: false,
   isDefault: false,
   ...o,
@@ -39,6 +40,10 @@ describe("projectMenuItems", () => {
   it("disables Delete with a reason when the project has items", () => {
     const d = find(projectMenuItems(row(), actions), "delete");
     expect(d && !("separator" in d) && d.disabled).toBe("Move or delete its shows and hotcards first");
+  });
+  it("disables Delete as Loading… until counts are known", () => {
+    const d = find(projectMenuItems(row({ shows: 0, hotcards: 0, countsKnown: false }), actions), "delete");
+    expect(d && !("separator" in d) && d.disabled).toBe("Loading…");
   });
   it("enables Delete for an empty project", () => {
     const d = find(projectMenuItems(row({ shows: 0, hotcards: 0 }), actions), "delete");

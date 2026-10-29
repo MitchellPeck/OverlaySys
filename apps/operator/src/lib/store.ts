@@ -115,6 +115,10 @@ type StoreState = {
   songs: SongMeta[];
   // [P1.13] true once the first song list has arrived
   songsLoaded: boolean;
+  // [P2b.29] true once each list has been received (an empty list is then "loaded")
+  projectsLoaded: boolean;
+  hotcardsLoaded: boolean;
+  // [/P2b.29]
   // [/P1.13]
   // [P1.12] true once the first show list has arrived
   showsLoaded: boolean;
@@ -250,6 +254,8 @@ export const useStore = create<StoreState>((set) => ({
   songs: [],
   songsLoaded: false, // [P1.13]
   showsLoaded: false, // [P1.12]
+  projectsLoaded: false, // [P2b.29]
+  hotcardsLoaded: false, // [P2b.29]
   songCache: {},
   showCache: {},
   songSessions: {},
@@ -285,7 +291,7 @@ export const useStore = create<StoreState>((set) => ({
   setTemplates: (t) => set({ templates: t, templatesLoaded: true }), // [P1.10]
   setTemplate: (t) =>
     set((cur) => ({ templateCache: { ...cur.templateCache, [t.id]: t } })),
-  setShowMetas: (s) => set({ showMetas: s, showsLoaded: true }), // [P1.12]
+  setShowMetas: (s) => set({ showMetas: s, showsLoaded: true }), // [P1.12] [P2b.29]
   setShow: (s) =>
     set((cur) => {
       // A selected hotcard survives a show (re-)broadcast: auto-selecting row 1
@@ -425,10 +431,10 @@ export const useStore = create<StoreState>((set) => ({
   setStageLayoutPreviews: (p) => set({ stageLayoutPreviews: p }),
   setPcoLive: (m) => set((s) => ({ pcoLive: m, pcoLiveStartError: m?.enabled ? null : s.pcoLiveStartError })),
   setPcoLiveStartError: (e) => set({ pcoLiveStartError: e }),
-  setHotcards: (h) => set({ hotcards: h }),
+  setHotcards: (h) => set({ hotcards: h, hotcardsLoaded: true }), // [P2b.29]
   setHotcard: (h) =>
     set((s) => ({ hotcardCache: { ...s.hotcardCache, [h.id]: h } })),
-  setProjects: (p) => set({ projects: p }),
+  setProjects: (p) => set({ projects: p, projectsLoaded: true }), // [P2b.29]
   setCurrentProjectId: (id) => {
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem("overlaysys:current-project", id);

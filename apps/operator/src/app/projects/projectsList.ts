@@ -5,6 +5,8 @@ export type ProjectRow = {
   name: string;
   shows: number;
   hotcards: number;
+  /** false until both the show and hotcard lists have loaded (and the server is reachable). */
+  countsKnown: boolean;
   isCurrent: boolean;
   isDefault: boolean;
 };
@@ -40,6 +42,7 @@ export function projectSecondary(row: ProjectRow): string {
 
 export function projectDeleteDisabledReason(row: ProjectRow): string | undefined {
   if (row.isDefault) return "The default project can't be deleted";
+  if (!row.countsKnown) return "Loading…";
   if (row.shows + row.hotcards > 0) return "Move or delete its shows and hotcards first";
   return undefined;
 }
