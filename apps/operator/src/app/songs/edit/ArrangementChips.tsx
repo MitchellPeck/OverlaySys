@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Song } from "@overlaysys/core";
 import { IconButton, Tooltip, colors, radius, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { sectionShortLabel } from "@/lib/rowView";
@@ -17,6 +17,16 @@ export function ArrangementChips({ song, onChange }: { song: Song; onChange: Dis
   const ctx = useContextMenu();
   const dragFrom = useRef<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const refocus = useRef<number | null>(null);
+
+  // Chip keys include their position, so a keyboard move remounts: put focus back on the moved chip.
+  useEffect(() => {
+    if (refocus.current === null) return;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-chip-index="${refocus.current}"]`);
+    refocus.current = null;
+    el?.focus();
+  });
 
   const addItems = (): MenuItem[] =>
     song.sections.map((s) => {
@@ -31,7 +41,7 @@ export function ArrangementChips({ song, onChange }: { song: Song; onChange: Dis
   return (
     <section style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>Arrangement</h2>
-      <div role="list" aria-label="Arrangement" style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+      <div ref={listRef} role="list" aria-label="Arrangement" style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
         {arrangement.length === 0 && (
           <span style={{ fontSize: 12, color: colors.textMuted }}>Empty. Add sections with +.</span>
         )}
@@ -85,7 +95,21 @@ export function ArrangementChips({ song, onChange }: { song: Song; onChange: Dis
               }}
             >
               <Tooltip content={line ? `${label} · ${line}` : label}>
-                <span tabIndex={0} aria-label={`${label}, position ${i + 1}`} style={{ outlineOffset: 2 }}>
+                <span
+                  tabIndex={0}
+                  data-chip-index={i}
+                  aria-label={`${label}, position ${i + 1}`}
+                  aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+                  style={{ outlineOffset: 2 }}
+                  onKeyDown={(e) => {
+                    if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+                    e.preventDefault();
+                    const to = e.key === "ArrowLeft" ? i - 1 : i + 1;
+                    if (to < 0 || to >= arrangement.length) return;
+                    refocus.current = to;
+                    onChange((d) => moveArrangementChip(d, i, to));
+                  }}
+                >
                   {short}
                 </span>
               </Tooltip>

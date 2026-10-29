@@ -69,10 +69,18 @@ export function SectionsList({
               aria-selected={selected}
               tabIndex={0}
               title={line ? `${s.label} · ${line}` : s.label}
+              aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
               draggable
               onClick={() => onSelect(s.id)}
               onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;
+                if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                  // Keyboard reorder; the row keeps its key, so focus stays on it.
+                  e.preventDefault();
+                  const to = e.key === "ArrowUp" ? i - 1 : i + 1;
+                  if (to >= 0 && to < song.sections.length) onChange((d) => moveSongSection(d, i, to));
+                  return;
+                }
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelect(s.id);

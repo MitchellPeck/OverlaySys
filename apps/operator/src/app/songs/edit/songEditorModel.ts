@@ -9,11 +9,11 @@ export function songSubtitle(song: Pick<Song, "ccliNumber">): string {
   return ccli ? `Song · CCLI ${ccli}` : "Song";
 }
 
-/** Default-output choices: program-type channels, and stage displays in their own group. Mirrors are never a target. */
+/** Default-output choices: program-type channels, and stage displays in their own group. Mirrors and Preview are never a target. */
 export function outputChannelGroups<C extends Pick<ChannelConfig, "id" | "name" | "mirrorOf"> & { kind?: ChannelConfig["kind"] }>(
   channels: C[],
 ): { program: C[]; stage: C[] } {
-  const usable = channels.filter((c) => !c.mirrorOf);
+  const usable = channels.filter((c) => !c.mirrorOf && c.id !== "preview");
   return {
     program: usable.filter((c) => c.kind !== "stage"),
     stage: usable.filter((c) => c.kind === "stage"),
@@ -23,8 +23,10 @@ export function outputChannelGroups<C extends Pick<ChannelConfig, "id" | "name" 
 /** Key for a new custom field, derived from its label. */
 export function customFieldKey(label: string, takenKeys: string[]): { key: string } | { error: string } {
   if (!label.trim()) return { error: "Enter a label" };
-  const key = slugifyTitle(label);
-  if (takenKeys.some((k) => k.toLowerCase() === key.toLowerCase())) {
+  // snake_case, to match existing schema keys such as `hymn_number`.
+  const key = slugifyTitle(label).replace(/-/g, "_");
+  const norm = (k: string) => k.toLowerCase().replace(/-/g, "_");
+  if (takenKeys.some((k) => norm(k) === key)) {
     return { error: "A field with this name already exists" };
   }
   return { key };

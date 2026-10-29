@@ -94,19 +94,6 @@ function SongEditorPageInner() {
     if (!id) router.replace("/songs");
   }, [id, router]);
 
-  async function showCloudError(action: string, err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.warn(`[songs/edit] cloud ${action} failed`, err);
-    await alert({
-      title: `Cloud ${action} failed`,
-      message: (
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
-          {message}
-        </pre>
-      ),
-    });
-  }
-
   useEffect(() => {
     if (!id) return;
     if (cloud) {
@@ -194,8 +181,8 @@ function SongEditorPageInner() {
         setBaseline(current);
         setSongInStore(current);
       } catch (err) {
+        console.warn("[songs/edit] cloud save failed", err);
         toast({ message: `Not saved: ${ackErrorText(err)}`, tone: "error" });
-        await showCloudError("save", err);
       } finally {
         setSaving(false);
       }
@@ -267,10 +254,13 @@ function SongEditorPageInner() {
       }
       patch = r.patch;
     }
-    applyPaste(patch);
+    // Snapshot for this import's own Undo; the header's "Undo paste" state is left alone.
+    const before = current;
+    const applied = patch;
+    setDraft((d) => (d ? { ...d, ...applied } : d));
     toast({
       message: `Imported ${file.name}`,
-      action: { label: "Undo", onClick: () => undoPaste() },
+      action: { label: "Undo", onClick: () => setDraft(before) },
     });
   }
 
@@ -389,7 +379,7 @@ function SongNotFound({
     fetchSongLibrary().then((lib) => {
       const row = lib?.deleted.find((d) => d.id === id);
       if (alive && row) setDeleted({ id: row.id, title: row.title });
-    });
+    }).catch((err) => console.warn("[songs/edit] recently-deleted lookup failed", err));
     return () => {
       alive = false;
     };

@@ -41,6 +41,7 @@ describe("outputChannelGroups", () => {
       { id: "alpha", name: "Alpha", kind: "graphics", mirrorOf: "program" },
       { id: "stage", name: "Stage", kind: "stage" },
       { id: "lower", name: "Lower", kind: "graphics" },
+      { id: "preview", name: "Preview", kind: "graphics" },
     ] as never);
     expect(g.program.map((c) => c.id)).toEqual(["program", "lower"]);
     expect(g.stage.map((c) => c.id)).toEqual(["stage"]);
@@ -49,7 +50,9 @@ describe("outputChannelGroups", () => {
 
 describe("customFieldKey", () => {
   it("derives the key from the label with slugifyTitle", () =>
-    expect(customFieldKey("Hymn Number", ["author"])).toEqual({ key: "hymn-number" }));
+    expect(customFieldKey("Hymn Number", ["author"])).toEqual({ key: "hymn_number" }));
+  it("treats an existing hymn_number key as a duplicate", () =>
+    expect(customFieldKey("Hymn number", ["hymn_number"])).toEqual({ error: "A field with this name already exists" }));
   it("rejects an empty label", () => expect(customFieldKey("  ", [])).toEqual({ error: "Enter a label" }));
   it("rejects a key that already exists, ignoring case", () =>
     expect(customFieldKey("Hymn number", ["Hymn-Number"])).toEqual({ error: "A field with this name already exists" }));
