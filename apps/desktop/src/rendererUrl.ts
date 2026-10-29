@@ -9,6 +9,8 @@ export function buildRendererChannelUrl(opts: {
   serverPort: number;
   channelId: string;
   audioOutput?: { deviceId: string; label: string };
+  /** How this output names itself in Outputs status (e.g. the Blackmagic device). */
+  label?: string;
 }): string {
   const u = opts.isDev
     ? new URL(opts.devRendererUrl)
@@ -21,5 +23,6 @@ export function buildRendererChannelUrl(opts: {
     u.searchParams.set("audioSinkId", opts.audioOutput.deviceId);
     u.searchParams.set("audioSinkLabel", opts.audioOutput.label);
   }
+  if (opts.label) u.searchParams.set("label", opts.label);
   return u.toString();
 }

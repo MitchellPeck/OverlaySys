@@ -1,3 +1,5 @@
+import type { DeckLinkStatus } from "@overlaysys/core";
+
 // Pure policy helpers for keeping the embedded server and the app's windows
 // alive mid-service. Free of any `electron` import so they stay unit-testable;
 // main.ts wires them to the real child process and BrowserWindows.
@@ -73,4 +75,5 @@ export type DesktopEvent =
   | { kind: "server-failed"; reason: string }
   | { kind: "window-reloaded"; target: string; reason: string }
   | { kind: "window-reload-gave-up"; target: string; reason: string }
-  | { kind: "output-hidden"; channelId: string; reason: string };
+  | { kind: "output-hidden"; channelId: string; reason: string }
+  | { kind: "decklink-status"; channelId: string; device: string; status: DeckLinkStatus };

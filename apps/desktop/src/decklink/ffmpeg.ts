@@ -23,21 +23,27 @@ export function buildOutputArgs(device: string, f: SignalFormat): string[] {
   ];
 }
 
-/** Device names from `ffmpeg -sinks decklink` (lines like `  <name> [<description>]`). */
-export function parseSinks(stdout: string): string[] {
-  const names: string[] = [];
+export type DeckLinkSink = { id: string; name: string };
+
+/**
+ * Devices from `ffmpeg -sinks decklink`. Current ffmpeg prints
+ * `  <id> [<name>] (none)`, e.g. `112:6925c4f0:00000000 [UltraStudio Express
+ * Monitor 3G] (none)`; the id is what will tell identical units apart later.
+ */
+export function parseSinks(stdout: string): DeckLinkSink[] {
+  const sinks: DeckLinkSink[] = [];
   for (const line of stdout.split("\n")) {
     if (!/^\s+\S/.test(line)) continue;
-    const bracket = line.lastIndexOf(" [");
-    const name = (bracket >= 0 ? line.slice(0, bracket) : line).trim();
-    if (name) names.push(name);
+    const m = /^\s+(.+?)\s+\[(.+)\]/.exec(line);
+    if (m) sinks.push({ id: m[1]!.trim(), name: m[2]!.trim() });
+    else sinks.push({ id: line.trim(), name: line.trim() });
   }
-  return names;
+  return sinks;
 }
 
 /** Plain error code for what ffmpeg printed before it exited. */
 export function classifyFfmpegError(stderr: string): DeckLinkErrorCode {
-  if (/Unknown output format|not a suitable output format/i.test(stderr)) return "no-decklink";
+  if (/Unknown (input or )?output format|not a suitable output format/i.test(stderr)) return "no-decklink";
   if (/Could not enable video output/i.test(stderr)) return "device-busy";
   if (/Unsupported video size, framerate or field order/i.test(stderr)) return "format-refused";
   if (/Could not open|No such/i.test(stderr)) return "device-not-found";

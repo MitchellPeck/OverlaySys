@@ -9,6 +9,8 @@ import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
   CachedDisplay,
+  DeckLinkErrorCode,
+  DeckLinkStatus,
 } from "@overlaysys/core";
 
 interface ChannelWindowOptions {
@@ -36,7 +38,14 @@ export type DesktopEvent =
   | { kind: "server-failed"; reason: string }
   | { kind: "window-reloaded"; target: string; reason: string }
   | { kind: "window-reload-gave-up"; target: string; reason: string }
-  | { kind: "output-hidden"; channelId: string; reason: string };
+  | { kind: "output-hidden"; channelId: string; reason: string }
+  | { kind: "decklink-status"; channelId: string; device: string; status: DeckLinkStatus };
+
+/** Mirrors DeckLinkListResult in apps/desktop/src/decklink/host.ts. */
+export type DeckLinkListResult =
+  | { ok: true; ffmpeg: string; devices: string[] }
+  | { ok: false; ffmpeg: string; code: DeckLinkErrorCode; message: string };
+export type DeckLinkCheckResult = DeckLinkListResult & { version?: string };
 
 /** Mirrors DiagnosticsInfo in apps/desktop/src/diagnostics.ts. */
 export interface DesktopDiagnostics {
@@ -78,6 +87,13 @@ interface OverlaysysApi {
     channelId: string,
     prefs: ChannelWindowPrefs,
   ): Promise<WindowPrefsFile>;
+
+  /** Blackmagic output devices the configured ffmpeg can see. */
+  decklinkListDevices?(): Promise<DeckLinkListResult>;
+  /** The configured ffmpeg's version and devices, for Settings → Connection. */
+  decklinkCheck?(): Promise<DeckLinkCheckResult>;
+  /** Save the Blackmagic ffmpeg path (blank = default). Returns the new file. */
+  setDecklinkFfmpegPath?(path: string): Promise<WindowPrefsFile>;
 
   /** In-memory resolution info per open channel (id → result). */
   getChannelWindowResolutions(): Promise<

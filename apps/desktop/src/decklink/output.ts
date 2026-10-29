@@ -25,7 +25,11 @@ const STDERR_KEEP = 4096;
 const NO_RETRY: ReadonlySet<DeckLinkErrorCode> = new Set(["ffmpeg-not-found", "no-decklink"]);
 
 export interface ChildLike {
-  stdin: { write(buf: Buffer, cb: (err?: Error | null) => void): boolean; end?(): void } | null;
+  stdin: {
+    write(buf: Buffer, cb: (err?: Error | null) => void): boolean;
+    end?(): void;
+    on?(event: "error", fn: (err: Error) => void): unknown;
+  } | null;
   stderr: { on(event: "data", fn: (d: Buffer | string) => void): unknown } | null;
   on(event: "exit", fn: (code: number | null, signal: string | null) => void): unknown;
   on(event: "error", fn: (err: NodeJS.ErrnoException) => void): unknown;
@@ -123,6 +127,12 @@ export class DeckLinkOutput {
     return done;
   }
 
+  /** Last resort on process exit: no time to wait, free the card now. */
+  killNow(): void {
+    this.stopping = true;
+    this.child?.kill("SIGKILL");
+  }
+
   private status(s: DeckLinkStatus): void {
     this.o.onStatus(s);
   }
@@ -140,6 +150,12 @@ export class DeckLinkOutput {
       const text = String(d);
       this.o.log(`[decklink] ${this.o.device}: ${text.trimEnd()}`);
       this.stderr = (this.stderr + text).slice(-STDERR_KEEP);
+    });
+    // A dead or missing ffmpeg turns the next write into EPIPE, emitted on
+    // stdin. Unhandled, that would take down the whole desktop app; the exit
+    // (or spawn error) handler below is what restarts the output.
+    child.stdin?.on?.("error", (err) => {
+      this.o.log(`[decklink] ${this.o.device}: pipe closed (${err.message})`);
     });
     child.on("error", (err) => {
       if (this.child !== child) return;

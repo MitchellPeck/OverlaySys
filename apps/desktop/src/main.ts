@@ -73,6 +73,7 @@ import {
   type DesktopEvent,
 } from "./supervisor";
 import { outputsOnRemovedDisplays } from "./displayGuard";
+import { createDeckLinkHost } from "./decklink/host";
 import {
   clampBoundsToWorkAreas,
   loadOperatorBounds,
@@ -298,6 +299,23 @@ function notifyOperator(event: DesktopEvent): void {
   }
 }
 
+// Channels sent to a Blackmagic device instead of a display (decklink/host.ts).
+const deckLink = createDeckLinkHost({
+  rendererUrl: (channelId, label) => rendererChannelUrl(channelId, label),
+  attachAutoReload: (win, target, url) => attachAutoReload(win, target, url),
+  notify: notifyOperator,
+  ffmpegSetting: () => loadPrefs(prefsFilePath()).decklinkFfmpegPath,
+  onOpenChange: (channelId, open) => {
+    updatePowerSaveBlocker();
+    operatorWindow?.webContents.send(
+      open ? "overlaysys:channel-window-opened" : "overlaysys:channel-window-closed",
+      channelId,
+    );
+  },
+});
+/** Set once the cards are released, so before-quit lets the quit through. */
+let deckLinkReleased = false;
+
 /**
  * Forward the user's cloud session to the embedded server. The server
  * holds the tokens in memory, materializes a Supabase client + sync
@@ -436,7 +454,7 @@ function operatorUrl(): string {
   return `http://${serverHost}:${serverPort}/operator/?server=ws://${serverHost}:${serverPort}/ws`;
 }
 
-function rendererChannelUrl(channelId: string): string {
+function rendererChannelUrl(channelId: string, label?: string): string {
   // Audio device is a per-machine pref, read fresh so a reopen picks up changes.
   const audioOutput = loadPrefs(prefsFilePath()).channels[channelId]?.audioOutput;
   return buildRendererChannelUrl({
@@ -446,6 +464,7 @@ function rendererChannelUrl(channelId: string): string {
     serverPort,
     channelId,
     ...(audioOutput ? { audioOutput } : {}),
+    ...(label ? { label } : {}),
   });
 }
 
@@ -900,7 +919,8 @@ function createOperatorWindow(): BrowserWindow {
 let powerSaveId: number | null = null;
 
 function updatePowerSaveBlocker(): void {
-  const anyOpen = [...channelWindows.values()].some((w) => !w.isDestroyed());
+  const anyOpen =
+    [...channelWindows.values()].some((w) => !w.isDestroyed()) || deckLink.openIds().length > 0;
   if (anyOpen && powerSaveId === null) {
     powerSaveId = powerSaveBlocker.start("prevent-display-sleep");
     console.log("[desktop] display sleep blocked (outputs open)");
@@ -1116,6 +1136,18 @@ function openConfiguredChannelWindow(
   overrides: Partial<ChannelWindowOptions> = {},
   forceRecreate = false,
 ): { reused: boolean } {
+  // A Blackmagic output has no display: it never shares a channel with a window.
+  if (prefs.decklink) {
+    const pref = prefs.decklink;
+    const w = channelWindows.get(channelId);
+    if (w && !w.isDestroyed()) w.close();
+    const reused = deckLink.isOpen(channelId) && !forceRecreate;
+    if (forceRecreate) void deckLink.close(channelId).then(() => deckLink.open(channelId, pref));
+    else void deckLink.open(channelId, pref);
+    return { reused };
+  }
+  if (deckLink.isOpen(channelId)) void deckLink.close(channelId);
+
   const file = loadPrefs(prefsFilePath());
   const displays = currentDisplaysSnapshot();
   const primary = screen.getPrimaryDisplay();
@@ -1350,14 +1382,27 @@ function registerIpc(): void {
     },
   );
 
-  ipcMain.handle("overlaysys:close-channel-window", (_event, channelId: string) => {
+  ipcMain.handle("overlaysys:close-channel-window", async (_event, channelId: string) => {
     const w = channelWindows.get(channelId);
     if (w && !w.isDestroyed()) w.close();
+    await deckLink.close(channelId);
   });
 
-  ipcMain.handle("overlaysys:list-channel-windows", () =>
-    Array.from(channelWindows.keys()),
-  );
+  ipcMain.handle("overlaysys:list-channel-windows", () => [
+    ...new Set([...channelWindows.keys(), ...deckLink.openIds()]),
+  ]);
+
+  ipcMain.handle("overlaysys:decklink-list-devices", () => deckLink.listDevices());
+  ipcMain.handle("overlaysys:decklink-check", () => deckLink.check());
+  ipcMain.handle("overlaysys:set-decklink-ffmpeg-path", (_event, ffmpegPath: string): WindowPrefsFile => {
+    if (typeof ffmpegPath !== "string") throw new Error("path required");
+    const file = loadPrefs(prefsFilePath());
+    const trimmed = ffmpegPath.trim();
+    if (trimmed) file.decklinkFfmpegPath = trimmed;
+    else delete file.decklinkFfmpegPath;
+    savePrefs(prefsFilePath(), file);
+    return file;
+  });
 
   ipcMain.handle(
     "overlaysys:set-channel-window-options",
@@ -1755,7 +1800,17 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  // Free the Blackmagic cards before anything else: an ffmpeg left holding
+  // one blocks every later open ("Could not enable video output!").
+  if (!deckLinkReleased && deckLink.openIds().length > 0) {
+    event.preventDefault();
+    void deckLink.stopAll().finally(() => {
+      deckLinkReleased = true;
+      app.quit();
+    });
+    return;
+  }
   appQuitting = true;
   killServer();
   if (powerSaveId !== null && powerSaveBlocker.isStarted(powerSaveId)) {
@@ -1765,5 +1820,6 @@ app.on("before-quit", () => {
 });
 
 process.on("exit", () => {
+  deckLink.killAllNow();
   killServer();
 });

@@ -18,6 +18,10 @@ class FakeChild implements ChildLike {
       return true;
     },
     end: () => {},
+    errorHandlers: [] as ((e: Error) => void)[],
+    on: (ev: "error", fn: (e: Error) => void) => {
+      if (ev === "error") this.stdin.errorHandlers.push(fn);
+    },
   };
   stderr = { on: (_e: "data", fn: (d: Buffer | string) => void) => void this.stderrFns.push(fn) };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,6 +160,19 @@ describe("DeckLinkOutput", () => {
     expect(statuses.at(-1)).toEqual({ state: "stopped" });
     vi.advanceTimersByTime(60_000);
     expect(children).toHaveLength(1);
+  });
+
+  it("handles a pipe error on ffmpeg's stdin instead of crashing the app (EPIPE)", () => {
+    out.start();
+    const c = children[0]!;
+    expect(c.stdin.errorHandlers.length).toBeGreaterThan(0);
+    expect(() => c.stdin.errorHandlers.forEach((h) => h(Object.assign(new Error("write EPIPE"), { code: "EPIPE" })))).not.toThrow();
+  });
+
+  it("killNow() SIGKILLs a live child at once (process exit path)", () => {
+    out.start();
+    out.killNow();
+    expect(children[0]!.signals).toEqual(["SIGKILL"]);
   });
 
   it("a restarted process starts at a frame boundary with a whole frame", () => {

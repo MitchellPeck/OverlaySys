@@ -13,10 +13,14 @@ describe("buildOutputArgs", () => {
 });
 
 describe("parseSinks", () => {
-  it("reads device names", () => {
+  it("reads the id and the name from the real Mac mini output", () => {
     expect(
-      parseSinks("Auto-detected sinks for decklink:\n  UltraStudio Express Monitor 3G [UltraStudio Express Monitor 3G]\n"),
-    ).toEqual(["UltraStudio Express Monitor 3G"]);
+      parseSinks("Auto-detected sinks for decklink:\n  112:6925c4f0:00000000 [UltraStudio Express Monitor 3G] (none)\n"),
+    ).toEqual([{ id: "112:6925c4f0:00000000", name: "UltraStudio Express Monitor 3G" }]);
+  });
+
+  it("falls back to the id when a line has no bracketed name, and ignores the header", () => {
+    expect(parseSinks("Auto-detected sinks for decklink:\n  Some Card\n")).toEqual([{ id: "Some Card", name: "Some Card" }]);
     expect(parseSinks("")).toEqual([]);
   });
 });
@@ -34,6 +38,7 @@ describe("classifyFfmpegError", () => {
     expect(classifyFfmpegError("[decklink] Could not enable video output!")).toBe("device-busy");
     expect(classifyFfmpegError("Unsupported video size, framerate or field order!")).toBe("format-refused");
     expect(classifyFfmpegError("Unknown output format: 'decklink'")).toBe("no-decklink");
+    expect(classifyFfmpegError("Unknown input or output format: decklink")).toBe("no-decklink");
     expect(classifyFfmpegError("something else")).toBe("exited");
   });
 });

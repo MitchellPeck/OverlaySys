@@ -181,10 +181,12 @@ export function updateDisplayCache(
  * Manual opens still use the looser label/bounds matching.
  */
 export function shouldAutoOpen(
-  prefs: Pick<ChannelWindowPrefs, "autoOpen" | "displayId">,
+  prefs: Pick<ChannelWindowPrefs, "autoOpen" | "displayId" | "decklink">,
   matchedBy: MatchedBy,
 ): boolean {
   if (!prefs.autoOpen) return false;
+  // A Blackmagic output doesn't live on a display.
+  if (prefs.decklink) return true;
   return prefs.displayId === undefined || matchedBy === "id";
 }
 
@@ -193,12 +195,12 @@ export function shouldAutoOpen(
  * display (by id) is now connected and that aren't already open.
  */
 export function channelsToOpenOnDisplayChange(
-  channels: Record<string, Pick<ChannelWindowPrefs, "autoOpen" | "displayId">>,
+  channels: Record<string, Pick<ChannelWindowPrefs, "autoOpen" | "displayId" | "decklink">>,
   resolve: (prefs: Pick<ChannelWindowPrefs, "autoOpen" | "displayId">) => MatchedBy,
   isOpen: (channelId: string) => boolean,
 ): string[] {
   return Object.entries(channels)
-    .filter(([id, prefs]) => prefs.autoOpen && prefs.displayId !== undefined && !isOpen(id))
+    .filter(([id, prefs]) => prefs.autoOpen && !prefs.decklink && prefs.displayId !== undefined && !isOpen(id))
     .filter(([, prefs]) => resolve(prefs) === "id")
     .map(([id]) => id);
 }

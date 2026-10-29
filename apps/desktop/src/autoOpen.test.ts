@@ -58,3 +58,21 @@ describe("channelsToOpenOnDisplayChange", () => {
     ).toEqual([]);
   });
 });
+
+describe("Blackmagic outputs and displays", () => {
+  const decklink = { device: { name: "UltraStudio" }, format: "1080p59.94" };
+
+  it("auto-opens a device output whatever displays are connected", () => {
+    expect(shouldAutoOpen({ autoOpen: true, displayId: 7, decklink }, "fallback")).toBe(true);
+    expect(shouldAutoOpen({ autoOpen: false, decklink }, "fallback")).toBe(false);
+  });
+
+  it("never reopens a device output when a display comes back", () => {
+    const ids = channelsToOpenOnDisplayChange(
+      { stage: { autoOpen: true, displayId: 7, decklink }, program: { autoOpen: true, displayId: 7 } },
+      () => "id",
+      () => false,
+    );
+    expect(ids).toEqual(["program"]);
+  });
+});

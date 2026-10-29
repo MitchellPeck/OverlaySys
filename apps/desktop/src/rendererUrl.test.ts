@@ -29,3 +29,10 @@ describe("buildRendererChannelUrl", () => {
     expect(u.searchParams.has("server")).toBe(false);
   });
 });
+
+describe("buildRendererChannelUrl — output label", () => {
+  it("names a device output so Outputs status shows the card", () => {
+    const u = new URL(buildRendererChannelUrl({ ...prod, channelId: "stage", label: "UltraStudio Express Monitor 3G" }));
+    expect(u.searchParams.get("label")).toBe("UltraStudio Express Monitor 3G");
+  });
+});

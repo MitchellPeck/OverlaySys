@@ -11,6 +11,7 @@ import type {
   CachedDisplay,
 } from "@overlaysys/core";
 import type { DesktopEvent } from "./supervisor";
+import type { DeckLinkCheckResult, DeckLinkListResult } from "./decklink/host";
 import type { DiagnosticsInfo } from "./diagnostics";
 
 interface ChannelWindowOptions {
@@ -61,6 +62,13 @@ interface OverlaysysApi {
     channelId: string,
     prefs: ChannelWindowPrefs,
   ): Promise<WindowPrefsFile>;
+
+  /** Blackmagic output devices the configured ffmpeg can see. */
+  decklinkListDevices?(): Promise<DeckLinkListResult>;
+  /** The configured ffmpeg's version and devices, for Settings → Connection. */
+  decklinkCheck?(): Promise<DeckLinkCheckResult>;
+  /** Save the Blackmagic ffmpeg path (blank = default). Returns the new file. */
+  setDecklinkFfmpegPath?(path: string): Promise<WindowPrefsFile>;
 
   /** In-memory resolution info per open channel (id → result). */
   getChannelWindowResolutions(): Promise<
@@ -176,6 +184,9 @@ const api: OverlaysysApi = {
   getChannelWindowPrefs: () => ipcRenderer.invoke("overlaysys:get-channel-window-prefs"),
   setChannelWindowPrefs: (channelId, prefs) =>
     ipcRenderer.invoke("overlaysys:set-channel-window-prefs", channelId, prefs),
+  decklinkListDevices: () => ipcRenderer.invoke("overlaysys:decklink-list-devices"),
+  decklinkCheck: () => ipcRenderer.invoke("overlaysys:decklink-check"),
+  setDecklinkFfmpegPath: (path) => ipcRenderer.invoke("overlaysys:set-decklink-ffmpeg-path", path),
   getChannelWindowResolutions: () =>
     ipcRenderer.invoke("overlaysys:get-channel-window-resolutions"),
   reopenChannelOnConfiguredDisplay: (channelId) =>
