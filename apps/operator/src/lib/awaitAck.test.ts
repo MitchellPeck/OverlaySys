@@ -80,6 +80,25 @@ describe("awaitAck", () => {
     c.emit({ type: "ack", op: "save_show", id: "s1" });
     await p;
   });
+  it("[I5] an op-tagged error of any code rejects with its reason at once", async () => {
+    const c = fake();
+    const p = sendAndAwaitAck(c, { type: "save_deck" } as never, { op: "save_deck", id: "d1" });
+    c.emit({ type: "error", code: "invalid", message: "Duplicate slide id", op: "save_deck", id: "d1" });
+    await expect(p).rejects.toMatchObject({ code: "server_error", message: "Duplicate slide id" });
+    const q = sendAndAwaitAck(c, { type: "delete_template" } as never, { op: "delete_template", id: "t1" });
+    c.emit({ type: "error", code: "protected", message: "built in", op: "delete_template", id: "t1" });
+    await expect(q).rejects.toMatchObject({ message: "built in" });
+  });
+
+  it("[I5] op-tagged errors for another op or id are ignored", async () => {
+    const c = fake();
+    const p = sendAndAwaitAck(c, { type: "save_deck" } as never, { op: "save_deck", id: "d1" });
+    c.emit({ type: "error", code: "invalid", message: "x", op: "save_deck", id: "d2" });
+    c.emit({ type: "error", code: "not_found", message: "d1", op: "get_deck", id: "d1" });
+    c.emit({ type: "ack", op: "save_deck", id: "d1" });
+    await expect(p).resolves.toBeUndefined();
+  });
+
   it("removes listeners and the timer after settle", async () => {
     const c = fake();
     const off = vi.fn();

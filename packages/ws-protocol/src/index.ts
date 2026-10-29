@@ -544,6 +544,13 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("error"),
     code: z.string(),
     message: z.string(),
+    /**
+     * The request this error answers: its message `type` and the entity id it
+     * names (see {@link requestRef}). Lets an ack waiter reject with the reason
+     * instead of timing out. Absent on errors not tied to a request.
+     */
+    op: z.string().optional(),
+    id: z.string().optional(),
   }),
   z.object({ type: z.literal("pong"), t: z.number() }),
   z.object({
@@ -689,6 +696,43 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type PcoLiveStateMessage = Extract<ServerMessage, { type: "pco_live_state" }>;
 
 // ───── Helpers ──────────────────────────────────────────────────────────────
+
+/** Payload keys whose `.id` names the entity a save request is about. */
+const REQUEST_ENTITY_KEYS = ["deck", "template", "layout", "show", "project", "hotcard", "song", "config"] as const;
+/** Id fields that name the entity of a delete/get/duplicate/... request, in priority order. */
+const REQUEST_ID_KEYS = [
+  "deckId",
+  "templateId",
+  "layoutId",
+  "showId",
+  "projectId",
+  "hotcardId",
+  "songId",
+  "channelId",
+  "conversionId",
+  "filename",
+  "jobId",
+] as const;
+
+/**
+ * The `op` / `id` a server error reply to `msg` carries: `op` is the message
+ * type (the same string the server's `ack` uses), `id` the entity the request
+ * names (e.g. `save_deck` → `deck.id`, `delete_template` → `templateId`).
+ */
+export function requestRef(msg: ClientMessage): { op: string; id?: string } {
+  const rec = msg as unknown as Record<string, unknown>;
+  for (const k of REQUEST_ENTITY_KEYS) {
+    const v = rec[k];
+    if (v && typeof v === "object" && typeof (v as { id?: unknown }).id === "string") {
+      return { op: msg.type, id: (v as { id: string }).id };
+    }
+  }
+  for (const k of REQUEST_ID_KEYS) {
+    const v = rec[k];
+    if (typeof v === "string") return { op: msg.type, id: v };
+  }
+  return { op: msg.type };
+}
 
 export function encode(msg: ClientMessage | ServerMessage): string {
   return JSON.stringify(msg);

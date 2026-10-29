@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { SPEAKER_LAYOUT } from "@overlaysys/core";
-import { decodeClient, decodeServer, encode, PROTOCOL_VERSION } from "./index";
+import { decodeClient, decodeServer, encode, PROTOCOL_VERSION, requestRef, ServerMessageSchema } from "./index";
 
 describe("show_list scheduledFor", () => {
   it("decodes a show_list entry carrying scheduledFor", () => {
@@ -154,5 +154,18 @@ describe("stage layout messages", () => {
     );
     if (msg.type !== "stage_layout_previews") throw new Error("wrong type");
     expect(msg.previews[0]!.layoutId).toBe("draft");
+  });
+});
+
+describe("[I5] error op/id and requestRef", () => {
+  it("error replies may carry the request op and id", () => {
+    const m = ServerMessageSchema.parse({ type: "error", code: "invalid", message: "Duplicate slide id", op: "save_deck", id: "d1" });
+    expect(m).toEqual({ type: "error", code: "invalid", message: "Duplicate slide id", op: "save_deck", id: "d1" });
+  });
+  it("requestRef names the entity of save, delete and other requests", () => {
+    expect(requestRef({ type: "save_deck", deck: { id: "d1" } } as never)).toEqual({ op: "save_deck", id: "d1" });
+    expect(requestRef({ type: "delete_template", templateId: "t1" } as never)).toEqual({ op: "delete_template", id: "t1" });
+    expect(requestRef({ type: "save_channel", config: { id: "c1" } } as never)).toEqual({ op: "save_channel", id: "c1" });
+    expect(requestRef({ type: "clear_all_channels" } as never)).toEqual({ op: "clear_all_channels" });
   });
 });

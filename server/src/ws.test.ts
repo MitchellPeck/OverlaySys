@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { _settleWritesForTest } from "./storage";
 import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
-import { handleConnection } from "./ws";
+import { handleConnection, replyTo } from "./ws";
 import * as channels from "./channels";
 import * as shows from "./shows";
 import * as songs from "./songs";
@@ -430,7 +430,7 @@ describe("ws stage layouts", () => {
     );
     const sock = connect();
     await sock.client({ type: "stage_layout_preview", channel: "program", layout });
-    expect(sock.sent).toContainEqual({ type: "error", code: "not_stage_channel", message: "program" });
+    expect(sock.sent).toContainEqual(expect.objectContaining({ type: "error", code: "not_stage_channel", message: "program", op: "stage_layout_preview" }));
     expect(stageFeedHub.listPreviews()).toEqual([]);
   });
 });
@@ -469,6 +469,30 @@ describe("ws delete_template protection", () => {
     expect(spy).not.toHaveBeenCalled();
     expect(sock.sent.some((m) => m.type === "error" && m.code === "protected")).toBe(true);
     spy.mockRestore();
+  });
+
+  it("[I5] the error reply carries the request op and id", async () => {
+    const sock = connect();
+    await sock.client({ type: "delete_template", templateId: "lyric-default" });
+    expect(sock.sent.find((m) => m.type === "error" && m.code === "protected")).toMatchObject({
+      op: "delete_template",
+      id: "lyric-default",
+    });
+  });
+});
+
+describe("[I5] replyTo", () => {
+  it("tags untagged errors with the request ref, leaves other messages and tagged errors alone", () => {
+    const out: ServerMessage[] = [];
+    const reply = replyTo((m) => out.push(m), { type: "save_deck", deck: { id: "d1" } } as never);
+    reply({ type: "error", code: "invalid", message: "Duplicate slide id" });
+    reply({ type: "error", code: "x", message: "y", op: "other", id: "z" });
+    reply({ type: "ack", op: "save_deck", id: "d1" });
+    expect(out).toEqual([
+      { type: "error", code: "invalid", message: "Duplicate slide id", op: "save_deck", id: "d1" },
+      { type: "error", code: "x", message: "y", op: "other", id: "z" },
+      { type: "ack", op: "save_deck", id: "d1" },
+    ]);
   });
 });
 

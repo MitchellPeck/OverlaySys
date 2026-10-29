@@ -31,10 +31,19 @@ export function ackErrorText(e: unknown): string {
   return "Something went wrong.";
 }
 
-/** Server errors carry no op yet, so only count one when it names the saved entity id. not_found is never a save failure. */
-function errorMatches(m: ServerMessage, id?: string): boolean {
-  if (m.type !== "error" || !id) return false;
-  return (m.code === "handler_error" || m.code === "bad_message") && m.message.includes(id);
+/**
+ * Whether a server error answers the awaited request. Errors tagged with the
+ * request's op (any code: invalid, protected, not_found, …) match on op and,
+ * when both sides name one, id. Untagged errors (older servers) only count when
+ * they are handler/bad_message errors naming the entity id.
+ */
+export function errorMatches(m: ServerMessage, match: { op: string; id?: string }): boolean {
+  if (m.type !== "error") return false;
+  if (m.op !== undefined) {
+    return m.op === match.op && (match.id === undefined || m.id === undefined || m.id === match.id);
+  }
+  if (!match.id) return false;
+  return (m.code === "handler_error" || m.code === "bad_message") && m.message.includes(match.id);
 }
 
 /** Send `message` and resolve once `accept` returns a value; reject on timeout, disconnect or server error. */
@@ -91,7 +100,7 @@ export function sendAndAwaitAck(
     message,
     o?.timeoutMs ?? 8000,
     (m) => (m.type === "ack" && m.op === match.op && (match.id === undefined || m.id === match.id) ? true : undefined),
-    (m) => errorMatches(m, match.id),
+    (m) => errorMatches(m, match),
   ).then(() => undefined);
 }
 

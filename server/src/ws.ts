@@ -7,6 +7,7 @@ import {
   ClientMessageSchema,
   PROTOCOL_VERSION,
   encode,
+  requestRef,
   type ClientMessage,
   type ServerMessage,
 } from "@overlaysys/ws-protocol";
@@ -57,6 +58,20 @@ const UNORDERED_TYPES = new Set<string>([
   "stt_list_models",
   "stt_enumerate_capture_devices",
 ]);
+
+/**
+ * Wraps a socket's `send` for the replies to one request: an `error` without
+ * an `op` gets the request's op/id (requestRef), so the operator's
+ * sendAndAwaitAck can reject with the reason (e.g. save_deck "invalid",
+ * delete_template "protected") instead of waiting out its timeout.
+ */
+export function replyTo(send: (m: ServerMessage) => void, request: ClientMessage): (m: ServerMessage) => void {
+  return (m) => {
+    if (m.type !== "error" || m.op !== undefined) return send(m);
+    const ref = requestRef(request);
+    send({ ...m, op: ref.op, ...(ref.id !== undefined ? { id: ref.id } : {}) });
+  };
+}
 
 /**
  * Operations that install software, write files from a URL, or set the
@@ -278,6 +293,7 @@ export function handleConnection(
   function send(msg: ServerMessage): void {
     if (ws.readyState === ws.OPEN) ws.send(encode(msg));
   }
+  const sendRaw = send;
   const offBroadcast = registerSender(send);
 
   liveConnections.add(connId);
@@ -320,6 +336,9 @@ export function handleConnection(
   });
 
   async function handleMessage(parsed: ClientMessage): Promise<void> {
+    // Direct replies to this request: every error is tagged with the
+    // request's op/id so an ack waiter rejects with the reason (I5).
+    const send = replyTo(sendRaw, parsed);
     if (
       !isLocalPeer &&
       (LOCAL_ONLY_TYPES.has(parsed.type) || (parsed.type === "stt_spawner_start" && parsed.config))
