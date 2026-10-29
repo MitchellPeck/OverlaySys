@@ -199,6 +199,18 @@ export function apply(
       return { ...state, loadedShowRowCursor: idx };
     }
 
+    // [P2b.34]
+    case "stage_layout_list":
+      return { ...state, stageLayouts: evt.layouts };
+    case "stage_layout_status":
+      return {
+        ...state,
+        stageLayoutStatus: new Map(
+          evt.screens.map((s) => [s.channel, { layoutId: s.layoutId, reason: s.reason, manual: s.manual }]),
+        ),
+      };
+    // [/P2b.34]
+
     default:
       return state;
   }

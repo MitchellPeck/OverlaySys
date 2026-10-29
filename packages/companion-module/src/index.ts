@@ -100,6 +100,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
           this.connection?.send({ type: "list_songs" });
           this.connection?.send({ type: "list_hotcards" });
           this.connection?.send({ type: "list_channels" });
+          this.connection?.send({ type: "list_stage_layouts" }); // [P2b.34]
           this.connection?.send({ type: "stt_spawner_get_config" });
           // STT suggestions are opt-in (STT confidence / silence variables).
           this.connection?.send({ type: "stt_match_subscribe", on: true });
@@ -278,6 +279,7 @@ function mutatesDropdownSources(evt: ReducerEvent): boolean {
     case "show_list":
     case "hotcard_list":
     case "channel_list":
+    case "stage_layout_list": // [P2b.34]
     case "template_list":
     case "song_list":
     case "show":
@@ -308,6 +310,10 @@ function mutatesRundownVariables(
   switch (evt.type) {
     case "local_load_show":
     case "local_clear_loaded_show":
+    // [P2b.34] stage-layout variables are per stage channel
+    case "channel_list":
+    case "channel":
+    case "stage_layout_list":
       return true;
     case "show":
       return evt.show.id === state.loadedShowId;

@@ -11,7 +11,7 @@ import type {
   StageState,
   StageTimerInstance,
 } from "@overlaysys/core";
-import type { MediaPlayback } from "@overlaysys/core";
+import type { MediaPlayback, StageLayoutMeta } from "@overlaysys/core";
 import type { OutputsState, PcoLiveStateMessage } from "@overlaysys/ws-protocol";
 
 /** Warn threshold for the item-timer variable and feedbacks. */
@@ -78,6 +78,12 @@ export interface CompanionState {
   };
   /** Local time a song session went live on any subscribed channel; null when none is live. */
   songLiveSince: number | null;
+  // [P2b.34]
+  /** Stage layouts, for the "Stage screen: set layout" choices. */
+  stageLayouts: StageLayoutMeta[];
+  /** Per stage channel: which layout is showing and why (stage_layout_status). */
+  stageLayoutStatus: Map<string, { layoutId?: string; reason: string; manual: string | null }>;
+  // [/P2b.34]
 }
 
 export function initialState(): CompanionState {
@@ -108,6 +114,10 @@ export function initialState(): CompanionState {
     serverProtocolVersion: null,
     stt: { confidence: null, lastHypothesis: "", lastMatchAt: null },
     songLiveSince: null,
+    // [P2b.34]
+    stageLayouts: [],
+    stageLayoutStatus: new Map(),
+    // [/P2b.34]
   };
 }
 

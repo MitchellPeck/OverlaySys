@@ -98,6 +98,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Sermon notes: scroll up | `notes_scroll_up` | Amount (viewport fraction) |
 | Sermon notes: scroll to top | `notes_top` | − |
 | Sermon notes: select set (loaded show) | `notes_select` | Notes |
+| Stage screen: set layout | `set_stage_layout` | Stage screen, Layout |
 | Stage: send message | `stage_message_send` | Message |
 | Stage: clear message | `stage_message_clear` | − |
 | Stage timer: start | `stage_timer_start` | Timer |

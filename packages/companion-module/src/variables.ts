@@ -170,6 +170,16 @@ export function variableDefinitions(
     }
   }
 
+  // [P2b.34]
+  for (const c of state?.channels ?? []) {
+    if (c.kind !== "stage") continue;
+    defs.push(
+      { variableId: `${c.id}_stage_layout`, name: `${c.name} stage layout showing` },
+      { variableId: `${c.id}_stage_layout_reason`, name: `${c.name} stage layout reason (manual/item/rule: song/default)` },
+    );
+  }
+  // [/P2b.34]
+
   return defs;
 }
 
@@ -333,6 +343,17 @@ export function projectVariables(
   for (const e of rundownFieldEntries(state)) {
     out[e.id] = e.value;
   }
+
+  // [P2b.34]
+  for (const c of state.channels) {
+    if (c.kind !== "stage") continue;
+    const st = state.stageLayoutStatus.get(c.id);
+    out[`${c.id}_stage_layout`] = st?.layoutId
+      ? (state.stageLayouts.find((l) => l.id === st.layoutId)?.name ?? "")
+      : "";
+    out[`${c.id}_stage_layout_reason`] = st ? st.reason.replace(/^rule:/, "rule: ") : "";
+  }
+  // [/P2b.34]
 
   return out;
 }

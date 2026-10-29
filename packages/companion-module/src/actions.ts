@@ -66,6 +66,7 @@ export type ActionId =
   | "notes_top"
   | "notes_select"
   | "stage_message_send"
+  | "set_stage_layout" // [P2b.34]
   | "stage_message_clear"
   | "stage_timer_start"
   | "stage_timer_pause"
@@ -697,6 +698,11 @@ export function dispatchAction(
       });
       break;
     }
+    // [P2b.34]
+    case "set_stage_layout":
+      messages.push({ type: "set_stage_layout", channel: str("channel"), layoutId: str("layoutId") || null });
+      break;
+    // [/P2b.34]
     case "stage_message_send": {
       // The server rejects messages over 200 chars — cut rather than drop silently.
       const text = str("text").trim().slice(0, 200);
@@ -751,6 +757,15 @@ function channelDropdown(
     choices,
   };
 }
+
+// [P2b.34]
+/** Channel dropdown limited to stage screens. */
+function stageChannelDropdown(state: CompanionState): CompanionInputFieldDropdown {
+  const stage = state.channels.filter((c) => c.kind === "stage").map((c) => ({ id: c.id, label: c.name }));
+  const choices = stage.length ? stage : [{ id: "", label: "No stage screens configured" }];
+  return { id: "channel", type: "dropdown", label: "Stage screen", default: choices[0]?.id ?? "", choices };
+}
+// [/P2b.34]
 
 /** Channel dropdown whose first choice is "use the row / song default". */
 function optionalChannelDropdown(
@@ -1384,6 +1399,25 @@ export function actionDefinitions(
       options: [notesDropdown(state)],
       callback: wrap("notes_select"),
     },
+    // [P2b.34]
+    set_stage_layout: {
+      name: "Stage screen: set layout",
+      options: [
+        stageChannelDropdown(state),
+        {
+          id: "layoutId",
+          type: "dropdown",
+          label: "Layout",
+          default: "",
+          choices: [
+            { id: "", label: "Automatic (rules)" },
+            ...state.stageLayouts.map((l) => ({ id: l.id, label: l.name })),
+          ],
+        },
+      ],
+      callback: wrap("set_stage_layout"),
+    },
+    // [/P2b.34]
     stage_message_send: {
       name: "Stage: send message",
       options: [stageTextInput],
