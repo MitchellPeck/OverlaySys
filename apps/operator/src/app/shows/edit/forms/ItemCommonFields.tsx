@@ -8,6 +8,7 @@ import { formatRowLength, parseRowLength } from "@/lib/rowLength";
 import type { RowLike } from "@/lib/rowLike";
 import { NotesSetPicker } from "../SermonNotesEditor";
 import { ItemPreview } from "../ItemPreview";
+import { StageScreensField } from "./StageScreensField";
 import { cueNoteRows, itemHeading, lengthFieldHint, outputOptions } from "./itemFormModel";
 
 /** A labelled form row: `90px 1fr` grid. */
@@ -55,7 +56,7 @@ export function ItemFormFrame({
 
 const KIND_BARS = ["graphic", "song", "scripture", "video", "slides"];
 
-type CommonRow =RowLike & { channelHint?: string; lengthSec?: number; notes?: string; sermonNotesId?: string };
+type CommonRow =RowLike & { channelHint?: string; lengthSec?: number; notes?: string; sermonNotesId?: string; stageLayouts?: Record<string, string> };
 
 /** Output, Length, Cue note and (graphic/scripture) Sermon notes for any item. */
 export function ItemCommonFields({
@@ -111,6 +112,18 @@ export function ItemCommonFields({
           <NotesSetPicker sets={sets} value={r.sermonNotesId} onChange={(v) => onChange({ sermonNotesId: v })} />
         </FormRow>
       )}
+      {/* [P2a.22] */}
+      <FormRow label="Stage screens">
+        <details open={!!r.stageLayouts && Object.keys(r.stageLayouts).length > 0}>
+          <summary style={{ fontSize: fontSize.sm, color: colors.textDim, cursor: "pointer", paddingTop: 5 }}>
+            Layout per stage screen
+          </summary>
+          <div style={{ marginTop: 6 }}>
+            <StageScreensField value={r.stageLayouts} onChange={(stageLayouts) => onChange({ stageLayouts })} />
+          </div>
+        </details>
+      </FormRow>
+      {/* [/P2a.22] */}
     </>
   );
 }

@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button, IconButton, Input, Select, Switch, colors } from "@overlaysys/ui";
-import { DEFAULT_MESSAGE_PRESETS } from "@overlaysys/core";
+import { BUILT_IN_STAGE_LAYOUTS, DEFAULT_MESSAGE_PRESETS, stageLayoutMeta } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { getStageSettings } from "@/lib/stageSettingsClient";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
+// [P2a.22]
+import { reasonLabel, setStageLayoutMessage, useStageLayoutStatus } from "@/lib/stageLayoutStatus";
+// [/P2a.22]
 import { showHasPcoItems, stageMessageTooLong, stagePreviewWarnings, stageTargetNames } from "@/lib/liveDrawerModel";
 
 /** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
@@ -35,6 +38,13 @@ export function StagePanel() {
     }, 700);
   }
   const channelConfigs = useResolvedChannelConfigs();
+  // [P2a.22]
+  const layoutStatus = useStageLayoutStatus();
+  const layoutMetas = useStore((s) => s.stageLayouts);
+  const layoutList = layoutMetas.length > 0 ? layoutMetas : BUILT_IN_STAGE_LAYOUTS.map(stageLayoutMeta);
+  // Only configured, non-mirror stage screens can take a layout; with none, the control is hidden.
+  const stageScreens = channelConfigs.filter((c) => c.kind === "stage" && !c.mirrorOf);
+  // [/P2a.22]
   const startError = useStore((s) => s.pcoLiveStartError);
   const [presets, setPresets] = useState<string[]>(DEFAULT_MESSAGE_PRESETS);
   const [text, setText] = useState("");
@@ -277,6 +287,44 @@ export function StagePanel() {
         {message && targets.length > 0 && (
           <div style={{ fontSize: 11, color: colors.textDim }}>Showing on {targets.join(", ")}</div>
         )}
+        {/* [P2a.22] */}
+        {stageScreens.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 11, color: colors.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Stage screens</div>
+            {stageScreens.map((c) => {
+              const st = layoutStatus.find((x) => x.channel === c.id);
+              const name = st?.layoutId ? (layoutList.find((l) => l.id === st.layoutId)?.name ?? st.layoutId) : "—";
+              return (
+                <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, minWidth: 0 }}>
+                    <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    <span style={{ color: colors.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{name}</span>
+                    {st && (
+                      <span style={{ fontSize: 10, color: colors.textMuted, border: `1px solid ${colors.border}`, borderRadius: 999, padding: "0 6px", whiteSpace: "nowrap" }}>
+                        {reasonLabel(st.reason)}
+                      </span>
+                    )}
+                  </div>
+                  <Select
+                    aria-label={`Switch layout for ${c.name}`}
+                    title="Switch layout"
+                    value={st?.manual ?? ""}
+                    onChange={(e) => send(setStageLayoutMessage(c.id, e.target.value || null))}
+                  >
+                    <option value="">Automatic</option>
+                    {layoutList.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {st?.manual && <div style={{ fontSize: 11, color: colors.textMuted }}>Until the next item goes live</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* [/P2a.22] */}
         {warnings.map((w) => (
           <div
             key={w.channel}
