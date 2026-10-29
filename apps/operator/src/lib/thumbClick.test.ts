@@ -208,6 +208,32 @@ describe("thumbActivate", () => {
     expect(thumbActivate(songRowA as never, 3, ctx).messages).toEqual([{ type: "song_advance", channel: "program", delta: 1 }]);
   });
 
+  it("reprise (same song twice) after a video take: the other row cues to PVW and isn't shown live", () => {
+    const video = { kind: "video", id: "vid", assetUrl: "/assets/a.mp4" };
+    const reprise = { ...songRowA, id: "rowA2" };
+    const ctx = mkCtx({
+      rows: [songRowA, video, reprise],
+      channelStates: liveState("vid"),
+      songSessions: { program: session("A", arr, { sectionIdx: 1, slideIdx: 0 }) },
+    });
+    for (const row of [songRowA, reprise]) {
+      const msgs = thumbActivate(row as never, 3, ctx).messages;
+      expect(msgs[0]).toEqual({ type: "song_take", channel: "preview", showId: "show1", songRowId: row.id });
+      expect(msgs.every((m) => !("channel" in m) || m.channel === "preview")).toBe(true);
+      expect(thumbsFor(row as never, ctx).some((t) => t.state === "live")).toBe(false);
+    }
+  });
+
+  it("no liveRow: a song's only row advances program; a reprise row cues to PVW", () => {
+    const sess = { program: session("A", arr, { sectionIdx: 1, slideIdx: 0 }) };
+    const alone = mkCtx({ channelStates: { program: {} as unknown as ChannelState }, songSessions: sess });
+    expect(thumbActivate(songRowA as never, 3, alone).messages).toEqual([{ type: "song_advance", channel: "program", delta: 1 }]);
+    const twice = mkCtx({ rows: [songRowA, { ...songRowA, id: "rowA2" }], songSessions: sess });
+    const msgs = thumbActivate(songRowA as never, 3, twice).messages;
+    expect(msgs[0]).toEqual({ type: "song_take", channel: "preview", showId: "show1", songRowId: "rowA" });
+    expect(msgs.every((m) => !("channel" in m) || m.channel === "preview")).toBe(true);
+  });
+
   it("scripture live with liveRow on a video still goes to the slide", () => {
     const row = { kind: "scripture", id: "sc", reference: "R", translation: "kjv", slides: [{ verses: [] }, { verses: [] }], templateId: "st" };
     const ctx = mkCtx({

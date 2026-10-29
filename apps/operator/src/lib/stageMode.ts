@@ -68,14 +68,19 @@ export function selectionOf(mode: StageMode): StageMode {
 
 type RowSource = { showId: string; rowId: string } | undefined;
 
-/** The show row a live song session belongs to: the channel's liveRow when it is this song's, else the first row of that song. */
+/**
+ * The show row a live song session belongs to: the channel's liveRow when it
+ * is this song's, else the song's only row. Null when the song appears in
+ * several rows and the liveRow doesn't say which (never guess).
+ */
 export function liveSongRowId(show: Show | null, session: SongSessionSummary, liveRow?: RowSource): string | null {
   if (!show) return null;
   if (liveRow && liveRow.showId === show.id) {
     const r = show.rows.find((x) => x.id === liveRow.rowId);
     if (r && r.kind === "song" && r.songId === session.songId) return r.id;
   }
-  return show.rows.find((r) => r.kind === "song" && r.songId === session.songId)?.id ?? null;
+  const rows = show.rows.filter((r) => r.kind === "song" && r.songId === session.songId);
+  return rows.length === 1 ? rows[0]!.id : null;
 }
 
 /**
@@ -98,7 +103,8 @@ export function regionRowId(mode: StageMode, show: Show | null, liveRow?: RowSou
 export function programRowId(show: Show | null, program: ChannelState | undefined): string | null {
   if (!show || !program) return null;
   const inShow = (id: string | undefined) => (id && show.rows.some((r) => r.id === id) ? id : null);
-  if (program.media) return inShow(program.media.rowId);
+  const media = program.media ? inShow(program.media.rowId) : null;
+  if (media) return media;
   if (program.songSession) return liveSongRowId(show, program.songSession, program.liveRow);
   if (program.scriptureSession) return inShow(program.scriptureSession.rowId);
   if (program.slidesSession) return inShow(program.slidesSession.rowId);

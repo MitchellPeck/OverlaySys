@@ -119,7 +119,25 @@ describe("rowAirState song context", () => {
     expect(rowAirState(b, states, sessions, ctx)).toBe("program");
   });
 
-  it("falls back to lighting every matching row when liveRow points elsewhere", () => {
+  it("reprise after a video take, or with no liveRow: neither row of the song lights", () => {
+    const a = song("a", "way-maker");
+    const b = song("b", "way-maker");
+    const v = { id: "v", kind: "video" } as unknown as Row;
+    const ctx = { showId: "show1", rows: [a, v, b] };
+    const sessions = { program: session("way-maker") };
+    const onVideo: Record<string, ChannelState> = {
+      program: { channel: "program", active: null, liveRow: { showId: "show1", rowId: "v" } },
+    };
+    const none: Record<string, ChannelState> = { program: { channel: "program", active: null } };
+    for (const st of [onVideo, none]) {
+      expect(rowAirState(a, st, sessions, ctx)).toBeNull();
+      expect(rowAirState(b, st, sessions, ctx)).toBeNull();
+    }
+    // The song's only row still lights with the liveRow on the video.
+    expect(rowAirState(a, onVideo, sessions, { showId: "show1", rows: [a, v] })).toBe("program");
+  });
+
+  it("falls back to lighting the song's only row when liveRow points elsewhere", () => {
     const a = song("a", "way-maker");
     const states: Record<string, ChannelState> = {
       program: { channel: "program", active: null, liveRow: { showId: "other-show", rowId: "x" } },

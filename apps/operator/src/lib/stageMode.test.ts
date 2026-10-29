@@ -153,9 +153,18 @@ describe("regionRowId", () => {
   it("with nothing selected under a live song, shows the live song's exact row", () => {
     const m = stageModeFor({ ...base, show: two, songSessions: { program: session } });
     expect(regionRowId(m, two, { showId: "sh", rowId: "s2" })).toBe("s2");
-    // liveRow from another show, or missing: the song's first row.
-    expect(regionRowId(m, two, { showId: "other", rowId: "s2" })).toBe("s");
-    expect(regionRowId(m, two)).toBe("s");
+    // Reprise with no usable liveRow (another show, missing, or a video row): never guess.
+    expect(regionRowId(m, two, { showId: "other", rowId: "s2" })).toBeNull();
+    expect(regionRowId(m, two)).toBeNull();
+    expect(regionRowId(m, two, { showId: "sh", rowId: "v" })).toBeNull();
+    // The song's only row needs no liveRow.
+    expect(regionRowId(stageModeFor({ ...base, songSessions: { program: session } }), show)).toBe("s");
+  });
+
+  it("the pinned bar never names a reprise row it can't tell apart", () => {
+    const st = { channel: "program", active: null, songSession: session, liveRow: { showId: "sh", rowId: "v" } } as ChannelState;
+    expect(pinnedRowId(two, st, "g")).toBeNull();
+    expect(pinnedRowId(two, { ...st, liveRow: { showId: "sh", rowId: "s2" } }, "g")).toBe("s2");
   });
 
   it("is null for quick take, a hotcard or nothing", () => {

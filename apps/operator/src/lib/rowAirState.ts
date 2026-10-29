@@ -23,17 +23,25 @@ function sameData(a: Record<string, string>, b: Record<string, string>): boolean
   return ak.every((k) => a[k] === b[k]);
 }
 
+/** True when `songId` appears in at most one song row of `rows`. */
+export function songRowIsUnique(rows: ReadonlyArray<{ kind: string; songId?: string }>, songId: string): boolean {
+  return rows.filter((r) => r.kind === "song" && r.songId === songId).length <= 1;
+}
+
 /**
- * When the channel's liveRow is another row of the same song in this show,
- * only that row is the one on air. Without a liveRow to go on (an older
- * server, or a session started elsewhere), every matching row lights.
+ * When the channel's liveRow is a row of this song in this show, only that
+ * row is the one on air. Otherwise (no liveRow, or a sticky liveRow pointing
+ * at a video taken over the lyrics) the row lights only when it is the
+ * song's only row in the show: with a reprise we can't tell which was taken.
  */
 function isTakenSongRow(row: Row & { kind: "song" }, st: ChannelState | undefined, ctx: AirContext | undefined): boolean {
+  if (!ctx?.rows) return true;
   const lr = st?.liveRow;
-  if (!lr || !ctx?.rows || lr.showId !== ctx.showId) return true;
-  const taken = ctx.rows.find((r) => r.id === lr.rowId);
-  if (!taken || taken.kind !== "song" || taken.songId !== row.songId) return true;
-  return taken.id === row.id;
+  if (lr && lr.showId === ctx.showId) {
+    const taken = ctx.rows.find((r) => r.id === lr.rowId);
+    if (taken && taken.kind === "song" && taken.songId === row.songId) return taken.id === row.id;
+  }
+  return songRowIsUnique(ctx.rows, row.songId);
 }
 
 function onChannel(

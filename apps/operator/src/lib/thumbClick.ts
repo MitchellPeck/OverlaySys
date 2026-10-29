@@ -4,7 +4,7 @@ import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { posterPathFor } from "./mediaTake";
 import { effectiveRowData, graphicRowMessage } from "./rowData";
-import { rowAirState, type AirContext } from "./rowAirState";
+import { rowAirState, songRowIsUnique, type AirContext } from "./rowAirState";
 import type { RowLike } from "./rowLike";
 import { sectionShortLabel, type RowViewCtx } from "./rowView";
 import { slideDeltaTo } from "./songNav";
@@ -64,16 +64,23 @@ function placeholder(key: string, text: string): ThumbSpec {
  * Whether the channel's session is this row's. The session itself already
  * matches by song / row id; this rules out a session taken from another show
  * or from another row of the same song. An absent liveRow, or one pointing at
- * a different kind of row (a video over lyrics), still counts as this row.
+ * a different kind of row (a video over lyrics), still counts as this row,
+ * except for a song that appears in more than one row of the show.
  */
 function exactRowOn(ch: string | undefined, row: { id: string; kind: string; songId?: string }, ctx: ThumbCtx): boolean {
   const lr = ch ? ctx.channelStates[ch]?.liveRow : undefined;
-  if (!lr) return true;
+  // A song row with no exact liveRow counts only when it is the song's only
+  // row in the show: with a reprise we can't tell which one was taken.
+  const unique = () => row.kind !== "song" || songRowIsUnique(ctx.show.rows, row.songId ?? "");
+  if (!lr) return unique();
   if (lr.showId !== ctx.show.id) return false;
   if (lr.rowId === row.id) return true;
   const taken = ctx.show.rows.find((r) => r.id === lr.rowId) as { kind?: string; songId?: string } | undefined;
-  if (!taken || taken.kind !== row.kind) return true;
-  return row.kind === "song" ? taken.songId !== row.songId : false;
+  if (row.kind === "song") {
+    if (taken?.kind === "song" && taken.songId === row.songId) return false;
+    return unique();
+  }
+  return !taken || taken.kind !== row.kind;
 }
 
 function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
