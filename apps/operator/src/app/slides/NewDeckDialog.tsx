@@ -1,0 +1,176 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { v4 as uuid } from "uuid";
+import type { Deck, DeckLicensing } from "@overlaysys/core";
+import { Button, Dialog, Input, Select, Tooltip, colors, fontSize, radius } from "@overlaysys/ui";
+import { useStore } from "../../lib/store";
+import { getClient } from "../../lib/useWs";
+import { templatesFor } from "../../lib/templateRoles";
+import { TemplateThumbnail } from "../../lib/thumbnails/TemplateThumbnail";
+import { LicensingField } from "./LicensingField";
+import { buildNewDeck, defaultDeckTemplateId, newDeckBlocker } from "./libraryConfig";
+
+/** Built-in lyric template; used when no template list has loaded. */
+const FALLBACK_TEMPLATE_ID = "lyric-default";
+
+/**
+ * Name, licensing (no default, Q8) and default design for a new deck. Builds a
+ * deck with one empty slide and hands it to `onCreate`, which saves and opens it.
+ */
+export function NewDeckDialog({
+  open,
+  onClose,
+  onCreate,
+  initialName = "",
+}: {
+  open: boolean;
+  onClose(): void;
+  onCreate(deck: Deck): void | Promise<void>;
+  initialName?: string;
+}) {
+  const templates = useStore((s) => s.templates);
+  const templatesLoaded = useStore((s) => s.templatesLoaded);
+  const [name, setName] = useState(initialName);
+  const [licensing, setLicensing] = useState<DeckLicensing | null>(null);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Fresh form every time the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    setName(initialName);
+    setLicensing(null);
+    setTemplateId(null);
+    setBusy(false);
+    if (!useStore.getState().templatesLoaded && getClient().getStatus() === "open") {
+      getClient().send({ type: "list_templates" });
+    }
+  }, [open, initialName]);
+
+  const groups = useMemo(() => templatesFor(templates, "lyric"), [templates]);
+  const chosen = templateId ?? defaultDeckTemplateId(templates) ?? FALLBACK_TEMPLATE_ID;
+  const blocker = newDeckBlocker(name, licensing);
+
+  const create = async () => {
+    if (blocker || !licensing || busy) return;
+    setBusy(true);
+    try {
+      await onCreate(
+        buildNewDeck({
+          name,
+          licensing,
+          templateId: chosen,
+          deckId: `deck-${uuid().slice(0, 8)}`,
+          slideId: `s-${uuid().slice(0, 8)}`,
+          now: new Date().toISOString(),
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createButton = (
+    <Button
+      variant="primary"
+      size="md"
+      disabled={!!blocker || busy}
+      onClick={() => void create()}
+      style={blocker ? { pointerEvents: "none" } : undefined}
+    >
+      {busy ? "Creating…" : "Create"}
+    </Button>
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="New deck"
+      size="sm"
+      onConfirm={() => void create()}
+      footer={
+        <>
+          <Button variant="secondary" size="md" onClick={onClose}>
+            Cancel
+          </Button>
+          {blocker ? (
+            <Tooltip content={blocker} side="top">
+              <span tabIndex={0} style={{ display: "inline-flex", borderRadius: radius.md, outline: "none" }}>
+                {createButton}
+              </span>
+            </Tooltip>
+          ) : (
+            createButton
+          )}
+        </>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label htmlFor="new-deck-name" style={{ fontSize: fontSize.sm, color: colors.textDim }}>
+            Name
+          </label>
+          <Input
+            id="new-deck-name"
+            size="md"
+            autoFocus
+            value={name}
+            placeholder="Deck name"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <LicensingField value={licensing} onChange={setLicensing} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label htmlFor="new-deck-design" style={{ fontSize: fontSize.sm, color: colors.textDim }}>
+            Design
+          </label>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <Select
+              id="new-deck-design"
+              size="md"
+              value={chosen}
+              disabled={!templatesLoaded && templates.length === 0}
+              onChange={(e) => setTemplateId(e.target.value)}
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              {templates.length === 0 ? <option value={chosen}>Default lyric design</option> : null}
+              {groups.suggested.length > 0 ? (
+                <optgroup label="Suggested">
+                  {groups.suggested.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {groups.others.length > 0 ? (
+                <optgroup label="Other designs">
+                  {groups.others.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </Select>
+            <div
+              style={{
+                flexShrink: 0,
+                borderRadius: radius.sm,
+                overflow: "hidden",
+                border: `1px solid ${colors.border}`,
+              }}
+            >
+              <TemplateThumbnail templateId={chosen} data={{}} width={112} />
+            </div>
+          </div>
+          <div style={{ fontSize: fontSize.xs, color: colors.textMuted }}>
+            Each slide can use a different design later.
+          </div>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
