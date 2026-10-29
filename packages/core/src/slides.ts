@@ -97,9 +97,12 @@ export function slidesRowView(
 
 /**
  * The field data a slides-row slide is rendered with (program, preview and
- * every thumbnail): each text field the design declares but the slide doesn't
- * supply is set to "", so the template's sample/default text never shows.
- * Non-text fields (image, colour, …) keep the design's defaults.
+ * every thumbnail). Every field the design declares gets an explicit value, so
+ * a same-design slide advance (a data update, which merges on the server and in
+ * the renderer's mount) never carries a previous slide's value over:
+ * - text fields the slide doesn't supply → "" (the design's sample text never airs);
+ * - non-text fields (image, colour, video, …) the slide doesn't supply → the
+ *   design's own default for that field, or "" when it declares none.
  */
 export function slideAirData(
   data: Record<string, string>,
@@ -107,7 +110,10 @@ export function slideAirData(
 ): Record<string, string> {
   if (!template) return data;
   const out = { ...data };
-  for (const f of template.fields) if (f.type === "text" && out[f.key] === undefined) out[f.key] = "";
+  for (const f of template.fields) {
+    if (out[f.key] !== undefined) continue;
+    out[f.key] = f.type === "text" ? "" : (f.default ?? "");
+  }
   return out;
 }
 

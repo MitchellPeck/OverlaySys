@@ -11,15 +11,25 @@ describe("slideAirData", () => {
     ],
   };
   it("a slide storing only subtitle airs header \"\" (never the sample), keeps its own values", () => {
-    expect(slideAirData({ subtitle: "Line D" }, lowerThird as never)).toEqual({ header: "", subtitle: "Line D" });
+    expect(slideAirData({ subtitle: "Line D" }, lowerThird as never)).toEqual({ header: "", subtitle: "Line D", logo: "/logo.png" });
   });
-  it("keeps explicit values and non-text fields alone; no template → data unchanged", () => {
-    expect(slideAirData({ header: "Line A", extra: "x" }, lowerThird as never)).toEqual({
+  it("keeps explicit values; unsupplied non-text fields get the design default; no template → data unchanged", () => {
+    expect(slideAirData({ header: "Line A", extra: "x", logo: "/mine.png" }, lowerThird as never)).toEqual({
       header: "Line A",
       subtitle: "",
+      logo: "/mine.png",
       extra: "x",
     });
     expect(slideAirData({ text: "Line A" }, null)).toEqual({ text: "Line A" });
+  });
+  it("[I3] emits every declared field: non-text without a default -> empty", () => {
+    const t = { fields: [
+      { key: "text", type: "text", label: "T", default: "Sample" },
+      { key: "bg", type: "image", label: "Bg" },
+      { key: "tint", type: "color", label: "Tint", default: "#112233" },
+      { key: "clip", type: "video", label: "Clip" },
+    ] };
+    expect(slideAirData({}, t as never)).toEqual({ text: "", bg: "", tint: "#112233", clip: "" });
   });
 });
 

@@ -54,6 +54,28 @@ describe("slidesSession", () => {
     expect(channels.getState("program").active!.templateId).toBe("T2");
   });
 
+  it("[I3] a same-design advance never carries the previous slide's image/colour over", () => {
+    const tpl = {
+      id: "T1",
+      fields: [
+        { key: "text", type: "text", label: "Text", default: "Sample text" },
+        { key: "image", type: "image", label: "Image", default: "/design-bg.png" },
+        { key: "tint", type: "color", label: "Tint" },
+      ],
+    } as unknown as Template;
+    const two: ResolvedSlide[] = [
+      { key: "a:0", slideId: "a", position: 0, templateId: "T1", data: { text: "Line A", image: "/own.png", tint: "#ff0000" } },
+      { key: "b:1", slideId: "b", position: 1, templateId: "T1", data: { text: "Line B" } },
+    ];
+    slidesSession.start("program", { ...args({ slides: two }), templates: new Map([["T1", tpl]]) });
+    expect(channels.getState("program").active!.data).toMatchObject({ image: "/own.png", tint: "#ff0000" });
+    const t0 = channels.getState("program").active!.takenAt;
+    slidesSession.advance("program", 1);
+    const a = channels.getState("program").active!;
+    expect(a.takenAt).toBe(t0); // still an update, not a remount
+    expect(a.data).toEqual({ text: "Line B", image: "/design-bg.png", tint: "" });
+  });
+
   it("Space on the last slide arms end-of-deck, a second Space clears", () => {
     slidesSession.start("program", args(), 2);
     slidesSession.advance("program", 1);
