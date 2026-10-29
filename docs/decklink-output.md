@@ -95,3 +95,17 @@ OVERLAYSYS_DECKLINK_RENDER_FPS=30 open -a OverlaySys
 ```
 
 and report the same numbers again.
+
+## Delay on the stage screen
+
+OverlaySys asks ffmpeg to keep only ~0.1 s of frames queued for the card
+(`-preroll 0.1`; ffmpeg's own default buffers about a second). If the picture
+stutters or the log shows `the card stopped taking frames`, raise it a little:
+
+```sh
+OVERLAYSYS_DECKLINK_PREROLL=0.2 open -a OverlaySys
+```
+
+Remaining delay usually comes from the TV: set its picture mode to **Game**
+(or turn off motion smoothing / noise reduction), which can save 50–150 ms.
+The SDI-to-HDMI converter adds about a frame.

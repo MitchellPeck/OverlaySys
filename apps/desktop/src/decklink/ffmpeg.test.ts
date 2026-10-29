@@ -3,12 +3,20 @@ import { findFormat } from "@overlaysys/core";
 import { buildOutputArgs, checkDevice, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
 
 describe("buildOutputArgs", () => {
-  it("builds the Narthex-proven output command, device as one argv element", () => {
+  it("builds the Narthex-proven output command, device as one argv element, with low latency", () => {
     expect(buildOutputArgs(`Studio "A" 3G`, findFormat("1080p59.94"))).toEqual([
       "-hide_banner", "-loglevel", "warning",
+      "-thread_queue_size", "2",
       "-f", "rawvideo", "-pix_fmt", "bgra", "-s", "1920x1080", "-r", "60000/1001", "-i", "pipe:0",
-      "-an", "-c:v", "v210", "-f", "decklink", `Studio "A" 3G`,
+      "-an", "-c:v", "v210", "-preroll", "0.1", "-f", "decklink", `Studio "A" 3G`,
     ]);
+  });
+
+  it("takes a preroll override, ignoring nonsense", () => {
+    const f = findFormat("1080p59.94");
+    expect(buildOutputArgs("D", f, { prerollSec: 0.25 })).toContain("0.25");
+    expect(buildOutputArgs("D", f, { prerollSec: Number.NaN })).toContain("0.1");
+    expect(buildOutputArgs("D", f, { prerollSec: -1 })).toContain("0.1");
   });
 });
 

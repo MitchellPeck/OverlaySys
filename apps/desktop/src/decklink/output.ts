@@ -144,7 +144,11 @@ export class DeckLinkOutput {
     this.inFlight = false;
     this.runningSince = null;
     this.status({ state: "starting" });
-    const child = this.o.spawn(this.o.ffmpeg, buildOutputArgs(this.o.device, this.o.format));
+    const preroll = Number(process.env["OVERLAYSYS_DECKLINK_PREROLL"]);
+    const child = this.o.spawn(
+      this.o.ffmpeg,
+      buildOutputArgs(this.o.device, this.o.format, Number.isFinite(preroll) ? { prerollSec: preroll } : {}),
+    );
     this.child = child;
     child.stderr?.on("data", (d) => {
       const text = String(d);
