@@ -12,6 +12,9 @@ import { dropTarget, type DropPos } from "@/app/shows/edit/showEditOps";
 import { RundownRow, rowDomId } from "./RundownRow";
 import { SectionDivider } from "./SectionDivider";
 import { dropHalf, headerLine, liveRowState, liveRowSurface, nudgeTarget } from "./rundownModel";
+// [P3.16] show editor: load the decks its slides rows point at
+import { useRowDecks } from "@/app/slides/row/useRowDecks";
+// [/P3.16]
 
 export type RundownListProps = {
   show: Show;
@@ -54,6 +57,9 @@ export function RundownList(p: RundownListProps) {
   const storeOverrides = useStore((s) => s.rowDataOverrides);
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
+  // [P3.16] Live loads decks in Rundown.tsx; the show editor does it here.
+  useRowDecks(show, edit);
+  // [/P3.16]
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<DropAt | null>(null);
 

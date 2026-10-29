@@ -34,6 +34,8 @@ describe("slides resolvers", () => {
   it("view: title, detail and missing deck", () => {
     expect(slidesRowView(row(), deck)).toMatchObject({ title: "Gloria", detail: "3 slides", missingDeck: false, licensing: "own" });
     expect(slidesRowView(row({ slideIds: ["a"] }), deck).detail).toBe("1 of 3 slides");
+    // Repeats count once: "n of m" never exceeds the deck size.
+    expect(slidesRowView(row({ slideIds: ["a", "b", "b", "a"] }), deck).detail).toBe("2 of 3 slides");
     expect(slidesRowView(row(), null)).toMatchObject({ title: "Missing deck", detail: "Deck deleted or not synced", slides: [], missingDeck: true });
     expect(slidesRowView(row(), undefined)).toMatchObject({ title: "Slides deck", detail: "Loading…", slides: [], missingDeck: false });
     expect(slidesRowView(row({ deckId: undefined, localSlides: [{ id: "l", data: { text: "Line L" } }], templateId: "rowT" }), null))

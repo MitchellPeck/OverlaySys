@@ -83,7 +83,7 @@ export function slidesRowView(
   const { slides, missingSlides } = resolveSlidesRow(row, d);
   const detail =
     row.slideIds && row.deckId && d
-      ? `${slides.length} of ${source.length} slides`
+      ? `${new Set(slides.map((s) => s.slideId)).size} of ${source.length} slides` // distinct: repeats don't count twice
       : plural(slides.length);
   return {
     title: row.deckId && d ? d.name : "One-off slides",
