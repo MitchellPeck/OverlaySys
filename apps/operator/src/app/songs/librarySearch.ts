@@ -1,13 +1,14 @@
 import type { SongMeta } from "@overlaysys/core";
+import type { SortSpec } from "@overlaysys/ui";
 
 /** A library row: the WS meta plus whatever the HTTP library route adds. */
 export interface LibraryRow extends SongMeta {
   usedIn?: number;
   usedInShows?: string[];
+  /** Local server: latest past service date this song was used (YYYY-MM-DD). */
+  lastUsed?: string;
   lyrics?: string;
 }
-
-export type LibrarySort = "title" | "recent";
 
 /** Lowercase and strip diacritics/punctuation so "Oceans (Where Feet…)" matches "oceans where". */
 export function normalizeForSearch(s: string): string {
@@ -19,32 +20,39 @@ export function normalizeForSearch(s: string): string {
     .trim();
 }
 
-/**
- * Every whitespace-separated term must appear in the title, author, CCLI
- * number or (when loaded) the lyrics.
- */
-export function songMatches(row: LibraryRow, query: string): boolean {
-  const terms = normalizeForSearch(query).split(" ").filter(Boolean);
-  if (terms.length === 0) return true;
-  const hay = normalizeForSearch(
-    [row.title, row.author ?? "", row.ccliNumber ?? "", row.lyrics ?? ""].join(" "),
-  );
-  return terms.every((t) => hay.includes(t));
+/** Haystack for list search: title, author, CCLI number and (when loaded) lyrics. */
+export function songSearchText(row: LibraryRow): string {
+  return [row.title, row.author ?? "", row.ccliNumber ?? "", row.lyrics ?? ""].join(" ");
 }
 
-export function sortLibrary<T extends LibraryRow>(rows: readonly T[], sort: LibrarySort): T[] {
-  const byTitle = (a: T, b: T) =>
-    (a.title || a.id).localeCompare(b.title || b.id, undefined, { sensitivity: "base", numeric: true });
-  const out = rows.slice();
-  if (sort === "title") return out.sort(byTitle);
-  // Recently edited: newest first; songs never stamped sort last, by title.
-  return out.sort((a, b) => {
-    const ua = a.updatedAt ?? "";
-    const ub = b.updatedAt ?? "";
-    if (ua !== ub) return ub.localeCompare(ua);
-    return byTitle(a, b);
-  });
+/** When the song was added; "" when neither stamp exists. */
+export function addedAt(row: LibraryRow): string {
+  return row.createdAt ?? row.updatedAt ?? "";
 }
+
+const byTitle = (a: LibraryRow, b: LibraryRow) =>
+  (a.title || a.id).localeCompare(b.title || b.id, undefined, { sensitivity: "base", numeric: true });
+
+/** Newest first; rows without a value sort last, then by title. */
+function newestFirst(get: (r: LibraryRow) => string) {
+  return (a: LibraryRow, b: LibraryRow) => {
+    const va = get(a);
+    const vb = get(b);
+    if (va !== vb) {
+      if (!va) return 1;
+      if (!vb) return -1;
+      return vb.localeCompare(va);
+    }
+    return byTitle(a, b);
+  };
+}
+
+export const songSorts: SortSpec<LibraryRow>[] = [
+  { id: "added-desc", label: "Date added", compare: newestFirst(addedAt) },
+  { id: "title-asc", label: "Title", compare: byTitle },
+  { id: "edited-desc", label: "Recently edited", compare: newestFirst((r) => r.updatedAt ?? "") },
+  { id: "used-desc", label: "Last used", compare: newestFirst((r) => r.lastUsed ?? "") },
+];
 
 /**
  * Merge HTTP library details into the WS song list, which stays the source
@@ -55,6 +63,6 @@ export function mergeLibrary(metas: readonly SongMeta[], details: readonly Libra
   const byId = new Map(details.map((d) => [d.id, d]));
   return metas.map((m) => {
     const d = byId.get(m.id);
-    return d ? { ...d, ...m, updatedAt: m.updatedAt ?? d.updatedAt } : m;
+    return d ? { ...d, ...m, updatedAt: m.updatedAt ?? d.updatedAt, createdAt: m.createdAt ?? d.createdAt } : m;
   });
 }
