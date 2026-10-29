@@ -94,6 +94,9 @@ const NO_SWITCHER = [
   // [P3.14] decks are global
   "/slides",
   // [/P3.14]
+  // [P1.14] templates and stage layouts are global
+  "/design",
+  // [/P1.14]
   "/settings/channels", "/settings/stt", "/settings/connection", "/account",
 ];
 

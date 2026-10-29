@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { StageLayoutMeta, TemplateMeta } from "@overlaysys/core";
 import {
+  OFFLINE_REASON,
   stageMenuItems,
+  templateMenuItems,
   stageSorts,
   templateColumns,
   templateFilters,
@@ -79,5 +81,27 @@ describe("stage layouts", () => {
   it("usedByLabel", () => {
     expect(usedByLabel([])).toBe("—");
     expect(usedByLabel([{ id: "c1", name: "Stage" }, { id: "c2" }])).toBe("Stage, c2");
+  });
+});
+
+describe("offline menu items", () => {
+  const acts = { open() {}, duplicate() {}, rename() {}, delete() {}, copyId() {}, export() {} };
+  const disabledOf = (items: ReturnType<typeof templateMenuItems>, id: string) => {
+    const i = items.find((x) => "id" in x && x.id === id);
+    return i && "disabled" in i ? i.disabled : false;
+  };
+  it("templates: Duplicate/Rename/Delete disabled with a reason; Open/Export/Copy id stay enabled", () => {
+    const items = templateMenuItems(t({ id: "a" }), acts, OFFLINE_REASON);
+    for (const id of ["duplicate", "rename", "delete"]) expect(disabledOf(items, id), id).toBe(OFFLINE_REASON);
+    for (const id of ["open", "export", "copy-id"]) expect(disabledOf(items, id), id).toBe(false);
+    expect(disabledOf(templateMenuItems(t({ id: "a" }), acts), "delete")).toBe(false);
+  });
+  it("stage layouts: same, and built-in Delete keeps its own reason", () => {
+    const items = stageMenuItems(l({ id: "s" }), acts, OFFLINE_REASON);
+    for (const id of ["duplicate", "rename", "delete"]) expect(disabledOf(items, id), id).toBe(OFFLINE_REASON);
+    expect(disabledOf(items, "open")).toBe(false);
+    expect(disabledOf(stageMenuItems(l({ id: "s", builtIn: true }), acts, OFFLINE_REASON), "delete")).toBe(
+      "Built-in layouts can't be deleted",
+    );
   });
 });

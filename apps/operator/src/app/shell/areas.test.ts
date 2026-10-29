@@ -80,10 +80,10 @@ describe("areas model", () => {
   });
 
   it("shows the project switcher except on editors and per-install settings", () => {
-    for (const p of ["/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit", "/settings/channels", "/settings/stt", "/settings/connection", "/account", "/slides", "/slides/edit"]) {
+    for (const p of ["/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit", "/settings/channels", "/settings/stt", "/settings/connection", "/account", "/slides", "/slides/edit", "/design"]) {
       expect(showsProjectSwitcher(p), p).toBe(false);
     }
-    for (const p of ["/shows", "/", "/settings/scripture", "/songs", "/design"]) {
+    for (const p of ["/shows", "/", "/settings/scripture", "/songs"]) {
       expect(showsProjectSwitcher(p), p).toBe(true);
     }
   });

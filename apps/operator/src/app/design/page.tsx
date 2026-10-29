@@ -32,6 +32,7 @@ import {
   DEFAULT_GRAPHICS_SORT,
   DEFAULT_STAGE_SORT,
   GRAPHICS_STORAGE_KEY,
+  OFFLINE_REASON,
   STAGE_STORAGE_KEY,
   formatSize,
   stageMenuItems,
@@ -117,8 +118,8 @@ function GridThumb({ templateId }: { templateId: string }) {
 }
 
 /** Body from the cache, the cloud, or the server. */
-async function loadTemplate(id: string, cloud: boolean): Promise<Template> {
-  const cached = useStore.getState().templateCache[id];
+async function loadTemplate(id: string, cloud: boolean, fresh = false): Promise<Template> {
+  const cached = fresh ? undefined : useStore.getState().templateCache[id];
   if (cached) return cached;
   if (cloud) {
     const t = await getTemplateCloud(id);
@@ -158,7 +159,7 @@ function GraphicsList() {
   }, [cloud, conn, send]);
 
   const failed = (what: string, e: unknown) => toast({ tone: "error", message: `${what}: ${ackErrorText(e)}` });
-  const columns = useMemo(() => templateColumns(), [templates]);
+  const columns = useMemo(() => templateColumns(), []);
 
   async function persist(t: Template): Promise<void> {
     if (cloud) {
@@ -191,7 +192,7 @@ function GraphicsList() {
       const next = name?.trim();
       if (!next || next === t.name) return;
       try {
-        const body = await loadTemplate(t.id, cloud);
+        const body = await loadTemplate(t.id, cloud, cloud);
         await persist({ ...body, name: next });
       } catch (e) {
         failed("Not renamed", e);
@@ -258,7 +259,7 @@ function GraphicsList() {
         sorts={templateSorts}
         defaultSort={DEFAULT_GRAPHICS_SORT}
         filters={templateFilters}
-        menuItems={(t) => templateMenuItems(t, actions)}
+        menuItems={(t) => templateMenuItems(t, actions, connected ? undefined : OFFLINE_REASON)}
         onOpen={actions.open}
         primaryAction={{
           label: "New template",
@@ -392,7 +393,7 @@ function StageLayoutsList() {
       searchText={(l) => l.name}
       sorts={stageSorts}
       defaultSort={DEFAULT_STAGE_SORT}
-      menuItems={(l) => stageMenuItems(l, actions)}
+      menuItems={(l) => stageMenuItems(l, actions, connected ? undefined : OFFLINE_REASON)}
       onOpen={actions.open}
       primaryAction={{
         label: "New stage layout",

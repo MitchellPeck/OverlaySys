@@ -80,30 +80,35 @@ export type DesignActions<T> = {
   export?(t: T): void;
 };
 
-export function templateMenuItems(t: TemplateMeta, a: DesignActions<TemplateMeta>): MenuItem[] {
+export const OFFLINE_REASON = "Reconnect to edit designs";
+
+/** `offlineReason` disables the actions that need the server (shown as the tooltip). */
+export function templateMenuItems(t: TemplateMeta, a: DesignActions<TemplateMeta>, offlineReason?: string): MenuItem[] {
+  const off = offlineReason ? { disabled: offlineReason } : {};
   return [
     { id: "open", label: "Open", onSelect: () => a.open(t) },
-    { id: "duplicate", label: "Duplicate", onSelect: () => a.duplicate(t) },
-    { id: "rename", label: "Rename…", onSelect: () => a.rename(t) },
+    { id: "duplicate", label: "Duplicate", ...off, onSelect: () => a.duplicate(t) },
+    { id: "rename", label: "Rename…", ...off, onSelect: () => a.rename(t) },
     { id: "export", label: "Export JSON", onSelect: () => a.export?.(t) },
     { id: "copy-id", label: "Copy id", onSelect: () => a.copyId(t) },
     { separator: true },
-    { id: "delete", label: "Delete…", danger: true, onSelect: () => a.delete(t) },
+    { id: "delete", label: "Delete…", danger: true, ...off, onSelect: () => a.delete(t) },
   ];
 }
 
-export function stageMenuItems(l: StageLayoutMeta, a: DesignActions<StageLayoutMeta>): MenuItem[] {
+export function stageMenuItems(l: StageLayoutMeta, a: DesignActions<StageLayoutMeta>, offlineReason?: string): MenuItem[] {
+  const off = offlineReason ? { disabled: offlineReason } : {};
   const items: MenuItem[] = [
     { id: "open", label: l.builtIn ? "View" : "Open", onSelect: () => a.open(l) },
-    { id: "duplicate", label: "Duplicate", onSelect: () => a.duplicate(l) },
+    { id: "duplicate", label: "Duplicate", ...off, onSelect: () => a.duplicate(l) },
   ];
-  if (!l.builtIn) items.push({ id: "rename", label: "Rename…", onSelect: () => a.rename(l) });
+  if (!l.builtIn) items.push({ id: "rename", label: "Rename…", ...off, onSelect: () => a.rename(l) });
   items.push({ id: "copy-id", label: "Copy id", onSelect: () => a.copyId(l) }, { separator: true });
   items.push({
     id: "delete",
     label: "Delete…",
     danger: true,
-    disabled: l.builtIn ? BUILT_IN_DELETE_REASON : false,
+    disabled: l.builtIn ? BUILT_IN_DELETE_REASON : (offlineReason ?? false),
     onSelect: () => a.delete(l),
   });
   return items;
