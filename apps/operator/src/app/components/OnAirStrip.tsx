@@ -1,5 +1,6 @@
 "use client";
 
+import { CLEAR_ALL_CONFIRM } from "@/lib/liveCommands";
 import { Button, colors, useConfirm } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -35,12 +36,7 @@ export function AirControls() {
   async function clearAll() {
     const live = Object.entries(channelStates).filter(([, st]) => channelHasContent(st));
     if (live.length === 0) return;
-    const ok = await confirm({
-      title: "Clear all channels?",
-      message: `Everything on ${live.map(([ch]) => ch).join(", ")} will be cleared.`,
-      confirmLabel: "Clear all",
-      danger: true,
-    });
+    const ok = await confirm({ ...CLEAR_ALL_CONFIRM });
     if (!ok) return;
     for (const [ch, st] of live) for (const m of clearChannelMessages(st, ch)) send(m);
   }

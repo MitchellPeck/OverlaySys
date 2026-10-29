@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Hotcard, HotcardMeta, Show } from "@overlaysys/core";
-import { liveCommands, type LiveCommandState } from "./liveCommands";
+import { CLEAR_ALL_CONFIRM, liveCommands, type LiveCommandState } from "./liveCommands";
 
 const welcome: Hotcard = { id: "h1", name: "Welcome", projectId: "p1", templateId: "l3", data: { title: "Line one" }, channelHint: "program" };
 const other: Hotcard = { id: "h2", name: "Elsewhere", projectId: "p2", templateId: "l3", data: {} };
@@ -40,6 +40,21 @@ const stateWithSongOnPvw = {
 describe("liveCommands", () => {
   it("every on-air command needs confirmation", () =>
     expect(liveCommands(state).every((c) => c.confirm.confirmLabel.length > 0)).toBe(true));
+
+  it("confirms that change program (or any output) are danger; preview-only ones are not", () => {
+    const byId = Object.fromEntries(liveCommands(state).map((c) => [c.id, c.confirm.danger ?? false]));
+    expect(byId["take-pvw"]).toBe(true);
+    expect(byId["clear-program"]).toBe(true);
+    expect(byId["clear-all"]).toBe(true);
+    expect(byId["hotcard-take:h1"]).toBe(true);
+    expect(byId["clear-preview"]).toBe(false);
+    expect(byId["hotcard-cue:h1"]).toBe(false);
+  });
+
+  it("Clear all uses the one shared copy", () => {
+    expect(liveCommands(state).find((c) => c.id === "clear-all")?.confirm).toMatchObject(CLEAR_ALL_CONFIRM);
+    expect(CLEAR_ALL_CONFIRM.title).toBe("Clear all outputs?");
+  });
 
   it("lists hotcards of the current project only", () =>
     expect(liveCommands(state).filter((c) => c.id.startsWith("hotcard-take:")).map((c) => c.label)).toEqual(["Take hotcard Welcome"]));

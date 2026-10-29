@@ -13,10 +13,19 @@ export type PaletteCommand = {
   label: string;
   group: "On air";
   keywords: string[];
-  confirm: { title: string; message: string; confirmLabel: string };
+  /** danger: the confirm changes program (or another output), not just preview. */
+  confirm: { title: string; message: string; confirmLabel: string; danger?: boolean };
   /** Built from the state read when called (after the confirm), never from the listing snapshot. */
   messages(): ClientMessage[];
 };
+
+/** The one Clear all copy: the Live header button and the palette both ask this. */
+export const CLEAR_ALL_CONFIRM = {
+  title: "Clear all outputs?",
+  message: "Everything on every output is cleared.",
+  confirmLabel: "Clear all",
+  danger: true,
+} as const;
 
 export type LiveCommandState = {
   channelStates: Record<string, ChannelState>;
@@ -46,7 +55,7 @@ export function liveCommands(source: LiveCommandState | (() => LiveCommandState)
       label: "Take preview to program",
       group: "On air",
       keywords: ["take", "pvw", "preview", "program", "go"],
-      confirm: { title: "Take preview to program?", message: "What's on preview goes to program.", confirmLabel: "Take" },
+      confirm: { title: "Take preview to program?", message: "What's on preview goes to program.", confirmLabel: "Take", danger: true },
       messages: () => {
         const now = get();
         return pvwTakeMessages(now.channelStates.preview, now.show?.id ?? null);
@@ -57,7 +66,7 @@ export function liveCommands(source: LiveCommandState | (() => LiveCommandState)
       label: "Clear program",
       group: "On air",
       keywords: ["clear", "pgm", "program", "off air"],
-      confirm: { title: "Clear program?", message: "Everything on program, including video, is cleared.", confirmLabel: "Clear program" },
+      confirm: { title: "Clear program?", message: "Everything on program, including video, is cleared.", confirmLabel: "Clear program", danger: true },
       messages: () => clearChannelMessages(get().channelStates.program, "program"),
     },
     {
@@ -73,7 +82,7 @@ export function liveCommands(source: LiveCommandState | (() => LiveCommandState)
       label: "Clear all outputs",
       group: "On air",
       keywords: ["clear", "all", "outputs", "panic"],
-      confirm: { title: "Clear all outputs?", message: "Everything on every output is cleared.", confirmLabel: "Clear all" },
+      confirm: { ...CLEAR_ALL_CONFIRM },
       messages: () =>
         Object.entries(get().channelStates)
           .filter(([, st]) => channelHasContent(st))
@@ -107,7 +116,7 @@ export function liveCommands(source: LiveCommandState | (() => LiveCommandState)
         label: `Take hotcard ${meta.name}`,
         group: "On air",
         keywords: ["take", ...keywords],
-        confirm: { title: `Take ${meta.name}?`, message: `${meta.name} goes on air.`, confirmLabel: "Take" },
+        confirm: { title: `Take ${meta.name}?`, message: `${meta.name} goes on air.`, confirmLabel: "Take", danger: true },
         messages: () => {
           const card = freshCard(meta.id);
           return card ? [hotcardFireMessage(card, "take")] : [];
