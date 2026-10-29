@@ -8,7 +8,7 @@ import { isCloudMode } from "@/lib/mode";
 import type { RowLike } from "@/lib/rowLike";
 import { slidesRowViewFor, useDeckFor } from "@/lib/slidesRowView";
 import { DeckPicker } from "@/app/slides/row/DeckPicker";
-import { SlidesRowInspector } from "@/app/slides/row/SlidesRowInspector";
+import { SlidesRowInspector, textFieldKeys } from "@/app/slides/row/SlidesRowInspector";
 import { defaultDeckTemplateId } from "@/app/slides/libraryConfig";
 import { ItemCommonFields, ItemFormFrame } from "./ItemCommonFields";
 import { patchRow } from "./itemFormModel";
@@ -57,15 +57,11 @@ export function SlidesAddFlow({
       open={open}
       onClose={onClose}
       onPick={(deckId) => onAdd(newSlidesRow(uuid(), deckId) as RowLike)}
-      onOneOff={() =>
-        onAdd(
-          newOneOffSlidesRow(
-            uuid(),
-            defaultDeckTemplateId(templates) ?? FALLBACK_TEMPLATE_ID,
-            `s-${uuid().slice(0, 8)}`,
-          ) as RowLike,
-        )
-      }
+      onOneOff={() => {
+        const templateId = defaultDeckTemplateId(templates) ?? FALLBACK_TEMPLATE_ID;
+        // Seed "" per text field so the new, empty slide airs blank (not the design's sample text).
+        onAdd(newOneOffSlidesRow(uuid(), templateId, `s-${uuid().slice(0, 8)}`, textFieldKeys(templateId)) as RowLike);
+      }}
     />
   );
 }

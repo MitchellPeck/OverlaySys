@@ -9,6 +9,7 @@ import {
   newOneOffSlidesRow,
   newSlidesRow,
   removeAt,
+  removeLocalSlide,
   rowSlideIds,
   setDeck,
   setFieldOverride,
@@ -27,7 +28,7 @@ const deck = {
   createdAt: "x",
   slides: [
     { id: "a", data: { text: "Line A" }, label: "Response 1" },
-    { id: "b", templateId: "slideT", data: { text: "Line B" } },
+    { id: "b", templateId: "slideT", data: { text: "Line B" }, futureSlideKey: "keep" },
     { id: "c", data: { text: "Line C" } },
   ],
 } as Deck;
@@ -46,6 +47,12 @@ describe("slidesRowOps", () => {
       templateId: "t",
       localSlides: [{ id: "s1", data: {} }],
     });
+  });
+
+  it("newOneOffSlidesRow seeds \"\" for each text field so the design's sample text never airs", () => {
+    expect(newOneOffSlidesRow("r1", "t", "s1", ["header", "subtitle"]).localSlides).toEqual([
+      { id: "s1", data: { header: "", subtitle: "" } },
+    ]);
   });
 
   it("rowSlideIds is the subset when set, else deck order", () => {
@@ -119,7 +126,7 @@ describe("slidesRowOps", () => {
       sourceRef,
       templateId: "deckT",
       localSlides: [
-        { id: "n1", templateId: "slideT", data: { text: "Line B" } },
+        { id: "n1", templateId: "slideT", data: { text: "Line B" }, futureSlideKey: "keep" },
         { id: "n2", label: "Response 1", data: { text: "Line A2" } },
         { id: "n3", label: "Response 1", data: { text: "Line A2" } },
       ],
@@ -148,5 +155,27 @@ describe("slidesRowOps", () => {
     const a = setLocalSlideField(one, "s1", "text", "Hello");
     expect(a.localSlides).toEqual([{ id: "s1", data: { text: "Hello" } }]);
     expect(setLocalSlideField(a, "s1", "text", undefined).localSlides).toEqual([{ id: "s1", data: {} }]);
+  });
+
+  it("setLocalSlideField keeps a cleared field as \"\" (airs blank, not sample text)", () => {
+    const a = setLocalSlideField(newOneOffSlidesRow("r", "t", "s1", ["text"]), "s1", "text", "Hello");
+    expect(setLocalSlideField(a, "s1", "text", "").localSlides).toEqual([{ id: "s1", data: { text: "" } }]);
+  });
+
+  it("setFieldOverride keeps an explicit \"\" override", () => {
+    expect(setFieldOverride(row(), "a", "text", "").fieldOverrides).toEqual({ a: { text: "" } });
+  });
+
+  it("addLocalSlide seeds \"\" for each text field", () => {
+    const one = newOneOffSlidesRow("r", "t", "s1", ["text"]);
+    expect(addLocalSlide(one, "s2", ["text"]).localSlides?.[1]).toEqual({ id: "s2", data: { text: "" } });
+  });
+
+  it("removeLocalSlide deletes the slide and its subset positions; unknown keys kept", () => {
+    const one = { ...addLocalSlide(newOneOffSlidesRow("r", "t", "s1"), "s2"), slideIds: ["s1", "s2", "s1"], extra: "keep" };
+    const out = removeLocalSlide(one, "s1");
+    expect(out.localSlides).toEqual([{ id: "s2", data: {} }]);
+    expect(out.slideIds).toEqual(["s2"]);
+    expect(out.extra).toBe("keep");
   });
 });

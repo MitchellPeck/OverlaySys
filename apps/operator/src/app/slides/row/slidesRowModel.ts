@@ -52,21 +52,53 @@ export function slideCaption(slide: Pick<DeckSlide, "label" | "data"> | null, in
   return `Slide ${index + 1}`;
 }
 
-/** "Deck default (<name>)" option label for the design select. */
-export function deckDefaultLabel(templateName: string | undefined): string {
-  return `Deck default (${templateName ?? "Missing template"})`;
+/** "Deck default (<name>)"; plain "Deck default" while the template list loads (no "Missing template" flash). */
+export function deckDefaultLabel(templateName: string | undefined, templatesLoaded = true): string {
+  if (templateName) return `Deck default (${templateName})`;
+  return templatesLoaded ? "Deck default (Missing template)" : "Deck default";
 }
 
-/** The "Detach to this show" confirm. */
-export function detachConfirm(deckName: string): { title: string; message: string; confirmLabel: string } {
+/** The "Detach to this show" confirm; CCLI decks also warn that usage stops being reported. */
+export function detachConfirm(
+  deckName: string,
+  ccli = false,
+): { title: string; message: string; confirmLabel: string } {
+  const base = `This show gets its own copy of the slides. Later edits to "${deckName}" won't change it.`;
   return {
     title: "Detach from deck?",
-    message: `This show gets its own copy of the slides. Later edits to "${deckName}" won't change it.`,
+    message: ccli ? `${base} CCLI usage won't be reported for this row after detaching.` : base,
     confirmLabel: "Detach",
   };
 }
 
-/** The value a text-field edit stores: undefined (no override) when it matches the deck's text. */
+/**
+ * The value a text-field edit stores: undefined (no override) when it matches
+ * the deck's text. Clearing a field the deck never set stores "" so the
+ * design's sample text can't air.
+ */
 export function overrideValue(next: string, deckValue: string | undefined): string | undefined {
-  return next === (deckValue ?? "") ? undefined : next;
+  if (deckValue === undefined) return next;
+  return next === deckValue ? undefined : next;
+}
+
+/** A slide's non-empty stored values the design has no field for, in data order. */
+export function unshownValues(data: Record<string, string>, fieldKeys: string[]): { key: string; value: string }[] {
+  const shown = new Set(fieldKeys);
+  return Object.entries(data)
+    .filter(([k, v]) => !shown.has(k) && v.trim() !== "")
+    .map(([key, value]) => ({ key, value }));
+}
+
+/** True when the slides have text and the design's text keys share none of the keys it is stored under. */
+export function designMissesSlideText(fieldKeys: string[], slides: Pick<DeckSlide, "data">[]): boolean {
+  const used = new Set<string>();
+  for (const s of slides) for (const [k, v] of Object.entries(s.data)) if (v.trim() !== "") used.add(k);
+  if (used.size === 0) return false;
+  return !fieldKeys.some((k) => used.has(k));
+}
+
+/** How many of the row's playing slides keep their own design (the row's design doesn't apply to them). */
+export function ownDesignCount(row: SlidesRowFields, deck: Pick<Deck, "slides">): number {
+  const byId = new Map(deck.slides.map((s) => [s.id, s] as const));
+  return rowSlideIds(row, deck).filter((id) => !!byId.get(id)?.templateId).length;
 }

@@ -27,9 +27,18 @@ export function newSlidesRow(id: string, deckId: string): SlidesRowFields {
   return { kind: "slides", id, deckId };
 }
 
-/** A one-off row (no deck) with one empty slide in `templateId`. */
-export function newOneOffSlidesRow(id: string, templateId: string, slideId: string): SlidesRowFields {
-  return { kind: "slides", id, templateId, localSlides: [{ id: slideId, data: {} }] };
+/** `""` for each key: an empty slide airs blank, never the design's sample text. */
+const blankData = (fieldKeys: string[]): Record<string, string> =>
+  Object.fromEntries(fieldKeys.map((k) => [k, ""]));
+
+/** A one-off row (no deck) with one empty slide in `templateId`; `fieldKeys` are seeded with "". */
+export function newOneOffSlidesRow(
+  id: string,
+  templateId: string,
+  slideId: string,
+  fieldKeys: string[] = [],
+): SlidesRowFields {
+  return { kind: "slides", id, templateId, localSlides: [{ id: slideId, data: blankData(fieldKeys) }] };
 }
 
 /** The row's slide ids in play order: its subset when set, else the deck's order. */
@@ -106,7 +115,9 @@ export function detachSlidesRow<R extends SlidesRowFields>(row: R, deck: Deck, n
   const byId = new Map(deck.slides.map((s) => [s.id, s] as const));
   const localSlides: DeckSlide[] = resolveSlidesRow(row, deck).slides.map((r) => {
     const src = byId.get(r.slideId);
-    const s: DeckSlide = { id: newId(), data: { ...r.data } };
+    // Spread: a deck slide's unknown keys travel with it. Label comes from the resolved slide.
+    const { label: _label, ...rest } = src ?? ({} as Partial<DeckSlide>);
+    const s: DeckSlide = { ...rest, id: newId(), data: { ...r.data } };
     if (src?.templateId) s.templateId = src.templateId;
     if (r.label !== undefined) s.label = r.label;
     return s;
@@ -121,12 +132,20 @@ export function detachSlidesRow<R extends SlidesRowFields>(row: R, deck: Deck, n
 }
 
 /** One-off rows: appends an empty local slide (and to the subset when one is set). */
-export function addLocalSlide<R extends SlidesRowFields>(row: R, slideId: string): R {
-  const localSlides = [...(row.localSlides ?? []), { id: slideId, data: {} }];
+export function addLocalSlide<R extends SlidesRowFields>(row: R, slideId: string, fieldKeys: string[] = []): R {
+  const localSlides = [...(row.localSlides ?? []), { id: slideId, data: blankData(fieldKeys) }];
   return patch(row, { localSlides, slideIds: row.slideIds ? [...row.slideIds, slideId] : undefined });
 }
 
-/** One-off rows: edits a local slide's text; undefined removes the key. */
+/** One-off rows: deletes a local slide (and every position of it in the subset). */
+export function removeLocalSlide<R extends SlidesRowFields>(row: R, slideId: string): R {
+  return patch(row, {
+    localSlides: (row.localSlides ?? []).filter((s) => s.id !== slideId),
+    slideIds: row.slideIds ? row.slideIds.filter((id) => id !== slideId) : undefined,
+  });
+}
+
+/** One-off rows: edits a local slide's text. "" is kept (airs blank); only undefined removes the key. */
 export function setLocalSlideField<R extends SlidesRowFields>(
   row: R,
   slideId: string,

@@ -3,12 +3,48 @@ import type { Deck, DeckMeta, SlidesRowFields } from "@overlaysys/core";
 import {
   deckDefaultLabel,
   deckPickerList,
+  designMissesSlideText,
   detachConfirm,
   overrideValue,
+  ownDesignCount,
   slideCaption,
   slideCountText,
   slideListEntries,
+  unshownValues,
 } from "./slidesRowModel";
+
+describe("fix round 1 helpers", () => {
+  it("deckDefaultLabel: no Missing-template flash while loading", () => {
+    expect(deckDefaultLabel(undefined, false)).toBe("Deck default");
+    expect(deckDefaultLabel(undefined, true)).toBe("Deck default (Missing template)");
+  });
+  it("detachConfirm warns about CCLI reporting for CCLI decks", () => {
+    expect(detachConfirm("Gloria", true).message).toBe(
+      'This show gets its own copy of the slides. Later edits to "Gloria" won\'t change it. CCLI usage won\'t be reported for this row after detaching.',
+    );
+  });
+  it("overrideValue keeps \"\" when the deck never set the field", () => {
+    expect(overrideValue("", undefined)).toBe("");
+    expect(overrideValue("", "x")).toBe("");
+    expect(overrideValue("x", "x")).toBeUndefined();
+  });
+  it("unshownValues lists non-empty values the design has no field for", () => {
+    expect(unshownValues({ text: "Line A", header: "", note: " " }, ["header", "subtitle"])).toEqual([
+      { key: "text", value: "Line A" },
+    ]);
+  });
+  it("designMissesSlideText when no text key is shared", () => {
+    const slides: { data: Record<string, string> }[] = [{ data: { text: "Line A" } }, { data: { title: "" } }];
+    expect(designMissesSlideText(["header", "subtitle"], slides)).toBe(true);
+    expect(designMissesSlideText(["text"], slides)).toBe(false);
+    expect(designMissesSlideText(["header"], [{ data: {} }])).toBe(false);
+  });
+  it("ownDesignCount counts playing slides with their own design", () => {
+    const d = { slides: [{ id: "a", data: {} }, { id: "b", templateId: "t", data: {} }] };
+    expect(ownDesignCount({ kind: "slides", id: "r", deckId: "d" }, d)).toBe(1);
+    expect(ownDesignCount({ kind: "slides", id: "r", deckId: "d", slideIds: ["a"] }, d)).toBe(0);
+  });
+});
 
 const meta = (id: string, name: string, p: Partial<DeckMeta> = {}): DeckMeta => ({
   id,
@@ -90,7 +126,6 @@ describe("copy helpers", () => {
   });
   it("overrideValue drops edits equal to the deck text", () => {
     expect(overrideValue("x", "x")).toBeUndefined();
-    expect(overrideValue("", undefined)).toBeUndefined();
     expect(overrideValue("y", "x")).toBe("y");
   });
 });

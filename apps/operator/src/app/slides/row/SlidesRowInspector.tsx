@@ -10,6 +10,7 @@ import {
   detachSlidesRow,
   moveAt,
   removeAt,
+  removeLocalSlide,
   resolveSlideTemplateId,
   setDeck,
   setFieldOverride,
@@ -34,14 +35,23 @@ import { TemplateSelect } from "@/app/shows/edit/TemplateSelect";
 import { DeckPicker } from "./DeckPicker";
 import {
   deckDefaultLabel,
+  designMissesSlideText,
   detachConfirm,
   overrideValue,
+  ownDesignCount,
   slideCaption,
   slideCountText,
   slideListEntries,
+  unshownValues,
 } from "./slidesRowModel";
 
 const newSlideId = () => `s-${uuid().slice(0, 8)}`;
+
+/** Text field keys of a cached template ("text" when it isn't loaded), for seeding "" into new slides. */
+export function textFieldKeys(templateId: string | undefined): string[] {
+  const t = templateId ? useStore.getState().templateCache[templateId] ?? null : null;
+  return slideFieldsFor(t).map((f) => f.key);
+}
 
 /**
  * Inspector for a slides row in the show editor: the deck, this week's slides
@@ -87,7 +97,7 @@ export function SlidesRowInspector({ row, onChange }: { row: SlidesRow; onChange
 
   const detach = async () => {
     if (!deck) return;
-    if (!(await confirm(detachConfirm(deck.name)))) return;
+    if (!(await confirm(detachConfirm(deck.name, deck.licensing.kind === "ccli")))) return;
     onChange(detachSlidesRow(rowRef.current, deck, newSlideId));
   };
 
@@ -118,7 +128,9 @@ export function SlidesRowInspector({ row, onChange }: { row: SlidesRow; onChange
         />
       )}
 
-      {(oneOff || deck) && <DesignRow row={row} deck={deck ?? null} oneOff={oneOff} onChange={onChange} />}
+      {(oneOff || deck) && source && (
+        <DesignRow row={row} deck={deck ?? null} source={source} oneOff={oneOff} onChange={onChange} />
+      )}
 
       {source && (
         <SlideText row={row} source={source} deck={deck ?? null} oneOff={oneOff} position={selected} onChange={onChange} />
@@ -267,25 +279,69 @@ function SlidesList({
                 <span aria-hidden style={{ color: colors.textMuted, display: "flex", cursor: isIn ? "grab" : "default", visibility: isIn ? "visible" : "hidden" }}>
                   <GripVertical size={14} />
                 </span>
-                <span onClick={(ev) => ev.stopPropagation()}>
-                  <Checkbox
-                    checked={isIn}
-                    aria-label={isIn ? `Leave out ${caption}` : `Include ${caption}`}
-                    // Unticking the last slide would leave the row empty.
-                    disabled={isIn && inCount <= 1}
-                    onChange={() => (isIn ? onChange(removeAt(row, source, pos)) : include(e.slideId))}
-                  />
-                </span>
+                {oneOff && isIn && e.slide ? (
+                  // One-off slides have no deck to come back from: delete, don't untick.
+                  <RowAction
+                    label={`Delete ${caption}`}
+                    title={source.slides.length <= 1 ? "A slides item keeps at least one slide" : "Delete slide"}
+                    disabled={source.slides.length <= 1}
+                    onClick={() => {
+                      onChange(removeLocalSlide(row, e.slideId));
+                      onSelect(0);
+                    }}
+                  >
+                    <X size={13} />
+                  </RowAction>
+                ) : (
+                  <span onClick={(ev) => ev.stopPropagation()}>
+                    <Checkbox
+                      checked={isIn}
+                      aria-label={isIn ? `Leave out ${caption}` : `Include ${caption}`}
+                      // Unticking the last slide would leave the row empty.
+                      disabled={isIn && inCount <= 1}
+                      onChange={() => (isIn ? onChange(removeAt(row, source, pos)) : include(e.slideId))}
+                    />
+                  </span>
+                )}
                 <span style={{ width: 22, color: colors.textMuted, fontSize: fontSize.xs, textAlign: "right" }}>
                   {isIn ? `${pos + 1}.` : ""}
                 </span>
-                <span
+                <button
+                  type="button"
+                  // Focusable caption: Enter/Space selects; Alt+↑/↓ moves the slide.
+                  disabled={!isIn || !e.slide}
+                  aria-current={sel || undefined}
+                  title={isIn && e.slide ? "Select · Alt+↑/↓ to move" : undefined}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    if (isIn && e.slide) onSelect(pos);
+                  }}
+                  onKeyDown={(ev) => {
+                    if (!isIn || !ev.altKey || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
+                    ev.preventDefault();
+                    const to = pos + (ev.key === "ArrowUp" ? -1 : 1);
+                    if (to < 0 || to >= inCount) return;
+                    onChange(moveAt(row, source, pos, to));
+                    onSelect(to);
+                    // Keep focus on the moved slide's caption after re-render.
+                    const list = ev.currentTarget.closest("ol");
+                    requestAnimationFrame(() =>
+                      (list?.querySelectorAll("li")[to]?.querySelector("button[data-caption]") as HTMLElement | null)?.focus(),
+                    );
+                  }}
+                  data-caption=""
                   style={{
                     flex: 1,
                     minWidth: 0,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    textAlign: "left",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    font: "inherit",
+                    cursor: "inherit",
                     color: e.slide ? colors.text : colors.warn,
                   }}
                 >
@@ -294,14 +350,20 @@ function SlidesList({
                   {isIn && e.slide && hasOverride(row, e.slideId) && !oneOff && (
                     <span style={{ marginLeft: 6, color: colors.textMuted, fontSize: fontSize.xs }}>edited</span>
                   )}
-                </span>
+                </button>
                 {isIn && e.slide && (
                   <RowAction label={`Repeat ${caption}`} title="Repeat" onClick={() => onChange(addRepeat(row, source, pos))}>
                     <Repeat2 size={13} /> Repeat
                   </RowAction>
                 )}
                 {isIn && !e.slide && (
-                  <RowAction label="Remove missing slide" title="Remove" onClick={() => onChange(removeAt(row, source, pos))}>
+                  <RowAction
+                    label="Remove missing slide"
+                    // Removing the only entry would leave a row that plays nothing.
+                    title={inCount <= 1 ? "Include another slide first, or delete this item" : "Remove"}
+                    disabled={inCount <= 1}
+                    onClick={() => onChange(removeAt(row, source, pos))}
+                  >
                     <X size={13} /> Remove
                   </RowAction>
                 )}
@@ -315,7 +377,7 @@ function SlidesList({
               variant="secondary"
               size="sm"
               onClick={() => {
-                onChange(addLocalSlide(row, newSlideId()));
+                onChange(addLocalSlide(row, newSlideId(), textFieldKeys(row.templateId)));
                 onSelect(inCount);
               }}
             >
@@ -330,12 +392,25 @@ function SlidesList({
 
 const hasOverride = (row: SlidesRow, slideId: string) => !!row.fieldOverrides?.[slideId];
 
-function RowAction({ label, title, onClick, children }: { label: string; title: string; onClick(): void; children: ReactNode }) {
+function RowAction({
+  label,
+  title,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  title: string;
+  onClick(): void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
   return (
     <button
       type="button"
       aria-label={label}
       title={title}
+      disabled={disabled}
       onClick={(ev) => {
         ev.stopPropagation();
         onClick();
@@ -350,7 +425,8 @@ function RowAction({ label, title, onClick, children }: { label: string; title: 
         borderRadius: radius.sm,
         color: colors.textDim,
         fontSize: fontSize.xs,
-        cursor: "pointer",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.4 : 1,
       }}
     >
       {children}
@@ -365,26 +441,51 @@ function RowAction({ label, title, onClick, children }: { label: string; title: 
 function DesignRow({
   row,
   deck,
+  source,
   oneOff,
   onChange,
 }: {
   row: SlidesRow;
   deck: Deck | null;
+  source: Pick<Deck, "slides">;
   oneOff: boolean;
   onChange(row: SlidesRow): void;
 }) {
   const metas = useStore((s) => s.templates);
+  const templatesLoaded = useStore((s) => s.templatesLoaded);
   const deckDefault = deck ? metas.find((t) => t.id === deck.defaultTemplateId)?.name : undefined;
+  const own = ownDesignCount(row, source);
   return (
     <FormRow label={oneOff ? "Design" : "Design for this week"}>
-      <TemplateSelect
-        label={oneOff ? "Design" : "Design for this week"}
-        use="lyric"
-        value={row.templateId ?? ""}
-        emptyLabel={oneOff ? undefined : deckDefaultLabel(deckDefault)}
-        onChange={(id) => onChange(setRowTemplate(row, id || undefined))}
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <TemplateSelect
+          label={oneOff ? "Design" : "Design for this week"}
+          use="lyric"
+          value={row.templateId ?? ""}
+          emptyLabel={oneOff ? undefined : deckDefaultLabel(deckDefault, templatesLoaded)}
+          onChange={(id) => onChange(setRowTemplate(row, id || undefined))}
+        />
+        {own > 0 && (
+          <span style={{ fontSize: fontSize.xs, color: colors.textMuted }}>
+            {own === 1 ? "1 slide uses its own design" : `${own} slides use their own design`}
+          </span>
+        )}
+        {row.templateId && <DesignTextWarning templateId={row.templateId} source={source} />}
+      </div>
     </FormRow>
+  );
+}
+
+/** Warns when the chosen design has no field for any key the slides store their text under. */
+function DesignTextWarning({ templateId, source }: { templateId: string; source: Pick<Deck, "slides"> }) {
+  const { template } = useTemplateBody(templateId);
+  if (!template) return null;
+  const keys = slideFieldsFor(template).map((f) => f.key);
+  if (!designMissesSlideText(keys, source.slides)) return null;
+  return (
+    <span role="status" style={{ fontSize: fontSize.xs, color: colors.warn }}>
+      This design doesn&apos;t show the slides&apos; text. Pick another design, or copy the text into its fields below.
+    </span>
   );
 }
 
@@ -448,9 +549,17 @@ function SlideTextView({
   const label = oneOff ? "Text" : "Text for this week";
 
   const set = (key: string, value: string) => {
-    if (oneOff) onChange(setLocalSlideField(row, slide.id, key, value === "" ? undefined : value));
+    // "" is stored, never deleted: a missing key would air the design's sample text.
+    if (oneOff) onChange(setLocalSlideField(row, slide.id, key, value));
     else onChange(setFieldOverride(row, slide.id, key, overrideValue(value, slide.data[key])));
   };
+
+  // Text stored under keys this design has no field for (only once the design has loaded).
+  const unshownAll = template ? unshownValues(data, fields.map((f) => f.key)) : [];
+  const copyTarget = fields.find((f) => f.multiline) ?? fields[0];
+  // Once copied, the text is shown; stop warning.
+  const copied = !!copyTarget && data[copyTarget.key] === unshownAll.map((u) => u.value).join("\n");
+  const unshown = copied ? [] : unshownAll;
 
   return (
     <FormRow label={label}>
@@ -502,6 +611,41 @@ function SlideTextView({
             </div>
           );
         })}
+        {unshown.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              padding: 8,
+              border: `1px solid ${colors.border}`,
+              borderRadius: radius.md,
+            }}
+          >
+            <span role="status" style={{ fontSize: fontSize.xs, color: colors.warn }}>
+              This design doesn&apos;t show this slide&apos;s text
+            </span>
+            {unshown.map((u) => (
+              <div key={u.key} style={{ fontSize: fontSize.xs, color: colors.textDim, whiteSpace: "pre-wrap" }}>
+                <span style={{ color: colors.textMuted }}>{u.key}: </span>
+                {u.value}
+              </div>
+            ))}
+            {copyTarget && (
+              <div>
+                <LinkButton
+                  onClick={() => {
+                    const text = unshown.map((u) => u.value).join("\n");
+                    if (oneOff) onChange(setLocalSlideField(row, slide.id, copyTarget.key, text));
+                    else onChange(setFieldOverride(row, slide.id, copyTarget.key, text));
+                  }}
+                >
+                  Copy into {copyTarget.label}
+                </LinkButton>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </FormRow>
   );
