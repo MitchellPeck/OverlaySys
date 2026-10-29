@@ -135,6 +135,7 @@ type StoreState = {
   stageState: StageStateMessage | null;
   stageTimers: StageTimerInstance[];
   stageLayouts: StageLayoutMeta[];
+  stageLayoutsLoaded: boolean; // [P1.14]
   /** Server-held preview-on-monitor overrides, one per stage channel. */
   stageLayoutPreviews: { channel: string; layoutId: string }[];
   pcoLive: PcoLiveStateMessage | null;
@@ -268,6 +269,7 @@ export const useStore = create<StoreState>((set) => ({
   stageState: null,
   stageTimers: [],
   stageLayouts: [],
+  stageLayoutsLoaded: false, // [P1.14]
   stageLayoutPreviews: [],
   pcoLive: null,
   pcoLiveStartError: null,
@@ -431,7 +433,7 @@ export const useStore = create<StoreState>((set) => ({
   setSttListeners: (listeners) => set({ sttListeners: listeners }),
   setStageState: (m) => set({ stageState: m }),
   setStageTimers: (t) => set({ stageTimers: t }),
-  setStageLayouts: (l) => set({ stageLayouts: l }),
+  setStageLayouts: (l) => set({ stageLayouts: l, stageLayoutsLoaded: true }), // [P1.14]
   setStageLayoutPreviews: (p) => set({ stageLayoutPreviews: p }),
   setPcoLive: (m) => set((s) => ({ pcoLive: m, pcoLiveStartError: m?.enabled ? null : s.pcoLiveStartError })),
   setPcoLiveStartError: (e) => set({ pcoLiveStartError: e }),
