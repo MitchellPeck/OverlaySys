@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import type { Show } from "@overlaysys/core";
+import type { ChannelState, Show } from "@overlaysys/core";
 import { useStore } from "./store";
 
 const show = (id: string, rowIds: string[] = ["r1", "r2"]): Show =>
@@ -60,5 +60,64 @@ describe("adoptRequestedShow", () => {
   it("leaves a same-id broadcast to the ws handler", () => {
     useStore.getState().setShow(show("a"));
     expect(useStore.getState().adoptRequestedShow(show("a"))).toBe(false);
+  });
+});
+
+describe("selection follows a row taken elsewhere (e.g. Companion)", () => {
+  const live = (channel: string, rowId: string, showId = "a"): ChannelState => ({
+    channel,
+    active: { templateId: "l3", data: {}, phase: "in", takenAt: 1 },
+    liveRow: { showId, rowId },
+  });
+  const idle = (channel: string): ChannelState => ({ channel, active: null });
+
+  beforeEach(() => useStore.setState({ channelStates: {} }));
+
+  it("moves the selection to the row newly taken to program", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2", "r3"]));
+    useStore.getState().setChannelState(idle("program"));
+    useStore.getState().setChannelState(live("program", "r3"));
+    expect(useStore.getState().selectedRowId).toBe("r3");
+  });
+
+  it("follows a take to a routed output, but not a cue to preview", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2", "r3"]));
+    useStore.getState().setChannelState(idle("preview"));
+    useStore.getState().setChannelState(live("preview", "r2"));
+    expect(useStore.getState().selectedRowId).toBe("r1");
+    useStore.getState().setChannelState(idle("lower"));
+    useStore.getState().setChannelState(live("lower", "r3"));
+    expect(useStore.getState().selectedRowId).toBe("r3");
+  });
+
+  it("leaves the selection alone when the live row didn't change (song/slide advance)", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2", "r3"]));
+    useStore.getState().setChannelState(idle("program"));
+    useStore.getState().setChannelState(live("program", "r2"));
+    useStore.getState().setSelectedRow("r3");
+    useStore.getState().setChannelState({ ...live("program", "r2"), active: { templateId: "l3", data: {}, phase: "in", takenAt: 2 } });
+    expect(useStore.getState().selectedRowId).toBe("r3");
+  });
+
+  it("ignores the first state heard for a channel (app load, reconnect of a new tab)", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2", "r3"]));
+    useStore.getState().setChannelState(live("program", "r3"));
+    expect(useStore.getState().selectedRowId).toBe("r1");
+  });
+
+  it("ignores a row from another show", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2"]));
+    useStore.getState().setChannelState(idle("program"));
+    useStore.getState().setChannelState(live("program", "r2", "b"));
+    expect(useStore.getState().selectedRowId).toBe("r1");
+  });
+
+  it("takes over from a selected hotcard", () => {
+    useStore.getState().setShow(show("a", ["r1", "r2"]));
+    useStore.getState().setSelectedHotcard("h1");
+    useStore.getState().setChannelState(idle("program"));
+    useStore.getState().setChannelState(live("program", "r2"));
+    expect(useStore.getState().selectedRowId).toBe("r2");
+    expect(useStore.getState().selectedHotcardId).toBeNull();
   });
 });

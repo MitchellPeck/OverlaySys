@@ -232,6 +232,26 @@ function pruneOverrides(
   return next;
 }
 
+/**
+ * When a channel's liveRow moves to a different row of the open show (a take
+ * from Companion, another operator, or this one), select that row. liveRow
+ * only changes on a sourced take, so song/slide/scripture advances, hotcards
+ * and clears leave the selection alone. Preview cues don't count as on air,
+ * and the first state heard for a channel (app load) never moves it.
+ */
+function followTakenRow(
+  cur: Pick<StoreState, "channelStates" | "show">,
+  s: ChannelState,
+): Partial<Pick<StoreState, "selectedRowId" | "selectedHotcardId">> {
+  if (s.channel === "preview" || !s.liveRow || !cur.show) return {};
+  const prev = cur.channelStates[s.channel];
+  if (!prev) return {};
+  const lr = s.liveRow;
+  if (prev.liveRow?.showId === lr.showId && prev.liveRow.rowId === lr.rowId) return {};
+  if (lr.showId !== cur.show.id || !cur.show.rows.some((r) => r.id === lr.rowId)) return {};
+  return { selectedRowId: lr.rowId, selectedHotcardId: null };
+}
+
 export const useStore = create<StoreState>((set) => ({
   conn: "connecting",
   serverTimeOffsetMs: 0,
@@ -356,6 +376,8 @@ export const useStore = create<StoreState>((set) => ({
       selectedHotcardId: id,
       selectedRowId: id != null ? null : s.selectedRowId,
     })),
+  // A row taken from anywhere (Companion, another operator) moves the
+  // selection to it; see followTakenRow.
   setChannelState: (s) =>
     set((cur) => ({
       channelStates: { ...cur.channelStates, [s.channel]: s },
@@ -371,6 +393,7 @@ export const useStore = create<StoreState>((set) => ({
             prev.playback.updatedAt !== s.media.playback.updatedAt);
         return fresh ? { ...cur.mediaHeardAt, [s.channel]: Date.now() } : cur.mediaHeardAt;
       })(),
+      ...followTakenRow(cur, s),
     })),
   applyMediaPlayback: (channel, takenAt, playback) =>
     set((cur) => {
