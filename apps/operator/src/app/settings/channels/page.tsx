@@ -24,6 +24,7 @@ import { PageChrome } from "@/app/shell/PageChrome";
 import { ChannelCard } from "./ChannelCard";
 import { NewChannelDialog } from "./NewChannelDialog";
 import { channelConfigEqual, deleteImpact, draftAfterSave, sortChannels } from "./channelDraft";
+import { channelHasContent } from "@/lib/onAir";
 
 /**
  * Resolve the renderer base URL for "open channel" links. Electron exposes the
@@ -162,6 +163,9 @@ export default function ChannelsPage() {
             const { [c.id]: _gone, ...rest } = d;
             return rest;
           });
+        } else {
+          // The kept edits now start from what we just saved.
+          setEditBase((d) => ({ ...d, [c.id]: draft }));
         }
       } catch (e) {
         failed++;
@@ -196,7 +200,7 @@ export default function ChannelsPage() {
   }
 
   async function remove(c: ChannelConfig) {
-    const impact = deleteImpact(c.id, sorted, !!channelStates[c.id]?.active);
+    const impact = deleteImpact(c.id, sorted, channelHasContent(channelStates[c.id]));
     if (impact.blocked) {
       toast({ tone: "error", message: impact.blocked });
       return;
