@@ -137,6 +137,25 @@ describe("rowAirState song context", () => {
     expect(rowAirState(a, onVideo, sessions, { showId: "show1", rows: [a, v] })).toBe("program");
   });
 
+  it("a session that names its row lights exactly that row, even with a video's liveRow", () => {
+    const a = song("a", "way-maker");
+    const b = song("b", "way-maker");
+    const v = { id: "v", kind: "video" } as unknown as Row;
+    const ctx = { showId: "show1", rows: [a, v, b] };
+    const sessions = { program: { ...session("way-maker"), rowId: "b", showId: "show1" } };
+    const onVideo: Record<string, ChannelState> = {
+      program: { channel: "program", active: null, liveRow: { showId: "show1", rowId: "v" } },
+    };
+    expect(rowAirState(a, onVideo, sessions, ctx)).toBeNull();
+    expect(rowAirState(b, onVideo, sessions, ctx)).toBe("program");
+    // Even when liveRow disagrees (stale), the session's own row wins.
+    const stale: Record<string, ChannelState> = {
+      program: { channel: "program", active: null, liveRow: { showId: "show1", rowId: "a" } },
+    };
+    expect(rowAirState(a, stale, sessions, ctx)).toBeNull();
+    expect(rowAirState(b, stale, sessions, ctx)).toBe("program");
+  });
+
   it("falls back to lighting the song's only row when liveRow points elsewhere", () => {
     const a = song("a", "way-maker");
     const states: Record<string, ChannelState> = {

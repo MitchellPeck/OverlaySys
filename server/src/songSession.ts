@@ -12,11 +12,14 @@ interface StartArgs {
   lyricTemplateId: string;
   arrangement: string[];
   trustMode: boolean;
+  /** The rundown row this session plays; published on the summary (exact-row rule). */
+  row?: { showId: string; rowId: string };
 }
 
 interface InternalSession {
   channel: string;
   song: Song;
+  row?: { showId: string; rowId: string };
   lyricTemplateId: string;
   arrangement: string[];
   cursor: { sectionIdx: number; slideIdx: number };
@@ -89,6 +92,7 @@ function summarize(s: InternalSession): SongSessionSummary {
     blanked: s.blanked,
     trustMode: s.trustMode,
     startedAt: s.startedAt,
+    ...(s.row ? { rowId: s.row.rowId, showId: s.row.showId } : {}),
   };
 }
 
@@ -151,6 +155,7 @@ export function start(
   const internal: InternalSession = {
     channel,
     song: args.song,
+    row: args.row,
     lyricTemplateId: args.lyricTemplateId,
     arrangement: args.arrangement.slice(),
     cursor: { ...cursor },
@@ -193,6 +198,7 @@ export function promoteTo(
   const internal: InternalSession = {
     channel: toChannel,
     song: args.song,
+    row: args.row,
     lyricTemplateId: args.lyricTemplateId,
     arrangement: reuseFromSource ? src.arrangement.slice() : args.arrangement.slice(),
     cursor: reuseFromSource ? { ...src.cursor } : { sectionIdx: 0, slideIdx: 0 },

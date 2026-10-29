@@ -29,13 +29,37 @@ export function songRowIsUnique(rows: ReadonlyArray<{ kind: string; songId?: str
 }
 
 /**
- * When the channel's liveRow is a row of this song in this show, only that
+ * The song session's own verdict on whether it plays `rowId` of `showId`:
+ * true / false when the summary names its row (servers since the exact-row
+ * fix), undefined when it doesn't (fall back to liveRow). A session naming
+ * another show's row is false for every row of this show.
+ */
+export function sessionPlaysRow(
+  session: Pick<SongSessionSummary, "rowId" | "showId"> | null | undefined,
+  rowId: string,
+  showId: string | undefined,
+): boolean | undefined {
+  if (!session?.rowId || !showId) return undefined;
+  if (session.showId && session.showId !== showId) return false;
+  return session.rowId === rowId;
+}
+
+/**
+ * When the session names its row, that decides. Otherwise:
+ * when the channel's liveRow is a row of this song in this show, only that
  * row is the one on air. Otherwise (no liveRow, or a sticky liveRow pointing
  * at a video taken over the lyrics) the row lights only when it is the
  * song's only row in the show: with a reprise we can't tell which was taken.
  */
-function isTakenSongRow(row: Row & { kind: "song" }, st: ChannelState | undefined, ctx: AirContext | undefined): boolean {
+function isTakenSongRow(
+  row: Row & { kind: "song" },
+  st: ChannelState | undefined,
+  ctx: AirContext | undefined,
+  session: SongSessionSummary | null | undefined,
+): boolean {
   if (!ctx?.rows) return true;
+  const named = sessionPlaysRow(session, row.id, ctx.showId);
+  if (named !== undefined) return named;
   const lr = st?.liveRow;
   if (lr && lr.showId === ctx.showId) {
     const taken = ctx.rows.find((r) => r.id === lr.rowId);
@@ -59,7 +83,7 @@ function onChannel(
     }
     case "song":
       return (
-        (songSessions[ch]?.songId === row.songId && isTakenSongRow(row, st, ctx)) ||
+        (songSessions[ch]?.songId === row.songId && isTakenSongRow(row, st, ctx, songSessions[ch])) ||
         st?.active?.subTakeContext?.songRowId === row.id
       );
     case "video": {

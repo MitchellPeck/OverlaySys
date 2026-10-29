@@ -8,7 +8,7 @@ import {
   type Template,
 } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
-import { songRowIsUnique } from "./rowAirState";
+import { sessionPlaysRow, songRowIsUnique } from "./rowAirState";
 
 type Caches = {
   songCache: Record<string, Song>;
@@ -56,6 +56,8 @@ export function songLyricsMessage(
   const take: ClientMessage = { type: "song_take", channel, showId: show.id, songRowId: row.id };
   const advance: ClientMessage = { type: "song_advance", channel, delta: 1 };
   if (!session || session.songId !== row.songId) return take;
+  const named = sessionPlaysRow(session, row.id, show.id);
+  if (named !== undefined) return named ? advance : take;
   const lr = channelStates[channel]?.liveRow;
   if (lr && lr.showId !== show.id) return take;
   if (lr) {

@@ -67,6 +67,17 @@ describe("songLyricsMessage", () => {
     expect(songLyricsMessage(rowA, mk([rowA]), "program", st("a", "other"), sess)).toEqual(take(rowA));
   });
 
+  it("a session naming its row decides: reprise after a video advances only its own row", () => {
+    const show = mk([rowA, video, rowB]);
+    const named = { songId: "s1", rowId: "b", showId: "sh" } as never;
+    expect(songLyricsMessage(rowB, show, "program", st("v"), named)).toEqual(adv);
+    expect(songLyricsMessage(rowA, show, "program", st("v"), named)).toEqual(take(rowA));
+    // liveRow pointing at the other row does not override the session's own row.
+    expect(songLyricsMessage(rowA, show, "program", st("a"), named)).toEqual(take(rowA));
+    // Another show's session never advances.
+    expect(songLyricsMessage(rowB, show, "program", st(), { songId: "s1", rowId: "b", showId: "other" } as never)).toEqual(take(rowB));
+  });
+
   it("no session, or another song: takes", () => {
     expect(songLyricsMessage(rowA, mk([rowA]), "program", st("a"), null)).toEqual(take(rowA));
     expect(songLyricsMessage(rowA, mk([rowA]), "program", st("a"), { songId: "x" } as never)).toEqual(take(rowA));

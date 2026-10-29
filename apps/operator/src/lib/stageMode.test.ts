@@ -161,6 +161,16 @@ describe("regionRowId", () => {
     expect(regionRowId(stageModeFor({ ...base, songSessions: { program: session } }), show)).toBe("s");
   });
 
+  it("a session naming its row shows that row even when liveRow is on a video", () => {
+    const named = { ...session, rowId: "s2", showId: "sh" };
+    const m = stageModeFor({ ...base, show: two, songSessions: { program: named } });
+    expect(regionRowId(m, two, { showId: "sh", rowId: "v" })).toBe("s2");
+    expect(regionRowId(m, two, { showId: "sh", rowId: "s" })).toBe("s2");
+    // A session from another show names none of this show's rows.
+    const other = stageModeFor({ ...base, show: two, songSessions: { program: { ...named, showId: "other" } } });
+    expect(regionRowId(other, two)).toBeNull();
+  });
+
   it("the pinned bar never names a reprise row it can't tell apart", () => {
     const st = { channel: "program", active: null, songSession: session, liveRow: { showId: "sh", rowId: "v" } } as ChannelState;
     expect(pinnedRowId(two, st, "g")).toBeNull();

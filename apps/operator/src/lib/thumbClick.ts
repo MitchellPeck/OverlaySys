@@ -4,7 +4,7 @@ import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { posterPathFor } from "./mediaTake";
 import { effectiveRowData, graphicRowMessage } from "./rowData";
-import { rowAirState, songRowIsUnique, type AirContext } from "./rowAirState";
+import { rowAirState, sessionPlaysRow, songRowIsUnique, type AirContext } from "./rowAirState";
 import type { RowLike } from "./rowLike";
 import { sectionShortLabel, type RowViewCtx } from "./rowView";
 import { slideDeltaTo } from "./songNav";
@@ -83,6 +83,12 @@ function exactRowOn(ch: string | undefined, row: { id: string; kind: string; son
   return !taken || taken.kind !== row.kind;
 }
 
+/** A song session on `ch` is this row's: the session's own row when it names one, else exactRowOn. */
+function songSessionIsRow(ch: string, s: SongSessionSummary, row: SongRow, ctx: ThumbCtx): boolean {
+  if (s.songId !== row.songId) return false;
+  return sessionPlaysRow(s, row.id, ctx.show.id) ?? exactRowOn(ch, row, ctx);
+}
+
 function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
   const song = ctx.songCache[row.songId];
   if (!song) return null;
@@ -93,7 +99,7 @@ function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
   if (air === "program") {
     for (const ch of ["program", routed]) {
       const s = ch ? ctx.songSessions[ch] : null;
-      if (ch && s && s.songId === row.songId && exactRowOn(ch, row, ctx)) {
+      if (ch && s && songSessionIsRow(ch, s, row, ctx)) {
         session = { channel: ch, summary: s };
         live = true;
         break;
@@ -101,7 +107,7 @@ function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
     }
   } else if (air === "preview") {
     const s = ctx.songSessions.preview;
-    if (s && s.songId === row.songId && exactRowOn("preview", row, ctx)) session = { channel: "preview", summary: s };
+    if (s && songSessionIsRow("preview", s, row, ctx)) session = { channel: "preview", summary: s };
   }
   const showSong = ctx.show.songs.find((s) => s.songId === row.songId);
   const arrangement = session ? session.summary.arrangement : resolveArrangement(row, showSong, song);

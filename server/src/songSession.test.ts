@@ -537,3 +537,33 @@ describe("songSession queued song (intro → section buttons)", () => {
     expect(channels.getState(CH).queuedSong).toBeUndefined();
   });
 });
+
+describe("songSession summary names its row (exact-row rule)", () => {
+  const base = { song, lyricTemplateId: "lyric-default", arrangement: song.defaultArrangement, trustMode: false };
+
+  beforeEach(() => {
+    songSession.endAll();
+  });
+
+  it("start publishes the row and show it was taken from", () => {
+    songSession.start(CH, { ...base, row: { showId: "show-1", rowId: "row-a" } });
+    expect(channels.getState(CH).songSession).toMatchObject({ rowId: "row-a", showId: "show-1" });
+  });
+
+  it("promoteTo carries the promoted row, not the source's", () => {
+    songSession.start("preview", { ...base, row: { showId: "show-1", rowId: "row-a" } });
+    songSession.promoteTo("preview", CH, { ...base, row: { showId: "show-1", rowId: "row-b" } });
+    expect(channels.getState(CH).songSession).toMatchObject({ rowId: "row-b", showId: "show-1" });
+  });
+
+  it("a queued song started by advance keeps its row", () => {
+    songSession.queue(CH, { ...base, row: { showId: "show-1", rowId: "row-q" } }, { songRowId: "row-q" });
+    songSession.advance(CH, 1);
+    expect(channels.getState(CH).songSession?.rowId).toBe("row-q");
+  });
+
+  it("without a row the summary has no rowId (older callers)", () => {
+    songSession.start(CH, base);
+    expect(channels.getState(CH).songSession?.rowId).toBeUndefined();
+  });
+});

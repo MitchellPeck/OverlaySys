@@ -75,6 +75,11 @@ type RowSource = { showId: string; rowId: string } | undefined;
  */
 export function liveSongRowId(show: Show | null, session: SongSessionSummary, liveRow?: RowSource): string | null {
   if (!show) return null;
+  // The session names its own row (exact-row rule): trust it over liveRow.
+  if (session.rowId) {
+    if (session.showId && session.showId !== show.id) return null;
+    return show.rows.some((r) => r.id === session.rowId) ? session.rowId : null;
+  }
   // Taken from another show: none of this show's rows is the live one
   // (the rundown marks the matching row "other show").
   if (liveRow && liveRow.showId !== show.id) return null;

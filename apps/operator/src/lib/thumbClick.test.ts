@@ -241,6 +241,21 @@ describe("thumbActivate", () => {
     }
   });
 
+  it("reprise after a video take with a session naming its row: that row advances, the other cues", () => {
+    const video = { kind: "video", id: "vid", assetUrl: "/assets/a.mp4" };
+    const reprise = { ...songRowA, id: "rowA2" };
+    const ctx = mkCtx({
+      rows: [songRowA, video, reprise],
+      channelStates: liveState("vid"),
+      songSessions: { program: { ...session("A", arr, { sectionIdx: 1, slideIdx: 0 }), rowId: "rowA2", showId: "show1" } },
+    });
+    expect(thumbActivate(reprise as never, 3, ctx).messages).toEqual([{ type: "song_advance", channel: "program", delta: 1 }]);
+    expect(thumbsFor(reprise as never, ctx).some((t) => t.state === "live")).toBe(true);
+    const msgs = thumbActivate(songRowA as never, 3, ctx).messages;
+    expect(msgs[0]).toEqual({ type: "song_take", channel: "preview", showId: "show1", songRowId: "rowA" });
+    expect(thumbsFor(songRowA as never, ctx).some((t) => t.state === "live")).toBe(false);
+  });
+
   it("no liveRow: a song's only row advances program; a reprise row cues to PVW", () => {
     const sess = { program: session("A", arr, { sectionIdx: 1, slideIdx: 0 }) };
     const alone = mkCtx({ channelStates: { program: {} as unknown as ChannelState }, songSessions: sess });

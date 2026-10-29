@@ -816,6 +816,7 @@ export function handleConnection(
             lyricTemplateId: row.lyricTemplateId,
             arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
+            row: { showId: parsed.showId, rowId: row.id },
           });
           channels.setLiveRow(parsed.channel, { showId: parsed.showId, rowId: row.id });
           break;
@@ -842,6 +843,7 @@ export function handleConnection(
             lyricTemplateId: row.lyricTemplateId,
             arrangement: resolveArrangement(row, showSong, song),
             trustMode: row.trustMode ?? false,
+            row: { showId: parsed.showId, rowId: row.id },
           });
           channels.setLiveRow(parsed.toChannel, { showId: parsed.showId, rowId: parsed.songRowId });
           break;
@@ -952,6 +954,7 @@ export function handleConnection(
                   lyricTemplateId: row.lyricTemplateId,
                   arrangement: resolveArrangement(row, showSong, song),
                   trustMode: row.trustMode ?? false,
+                  row: { showId: parsed.showId, rowId: row.id },
                 },
                 { songRowId: row.id },
               );
@@ -959,8 +962,12 @@ export function handleConnection(
             break;
           }
           // sub === "lyrics": advance an existing same-song session, else start.
+          // Advance only this row's own session: a reprise row of the same
+          // song starts afresh instead of moving the other row's slides.
           const liveSession = songSession.getSession(resolvedChannel);
-          if (liveSession && liveSession.songId === row.songId) {
+          const sameRow =
+            !liveSession?.rowId || (liveSession.rowId === row.id && liveSession.showId === parsed.showId);
+          if (liveSession && liveSession.songId === row.songId && sameRow) {
             songSession.advance(resolvedChannel, 1);
           } else {
             songSession.start(resolvedChannel, {
@@ -968,6 +975,7 @@ export function handleConnection(
               lyricTemplateId: row.lyricTemplateId,
               arrangement: resolveArrangement(row, showSong, song),
               trustMode: row.trustMode ?? false,
+              row: { showId: parsed.showId, rowId: row.id },
             });
           }
           channels.setLiveRow(resolvedChannel, { showId: parsed.showId, rowId: row.id });

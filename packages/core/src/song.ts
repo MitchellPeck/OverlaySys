@@ -111,5 +111,11 @@ export const SongSessionSummarySchema = z.object({
   blanked: z.boolean(),
   trustMode: z.boolean(),
   startedAt: z.number(),
+  /**
+   * The rundown row (and its show) the session was taken from. Optional and
+   * additive: a reprise row must not drive the other row's session.
+   */
+  rowId: z.string().optional(),
+  showId: z.string().optional(),
 });
 export type SongSessionSummary = z.infer<typeof SongSessionSummarySchema>;
