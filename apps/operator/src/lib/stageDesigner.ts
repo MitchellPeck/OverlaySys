@@ -275,3 +275,27 @@ export function newLayoutFrom(start: StageStartFrom, name: string): StageLayout 
 export function previewNeedsConfirm(i: { showLive: boolean; channelInUse: boolean }): boolean {
   return i.showLive && i.channelInUse;
 }
+
+const RULE_LABELS: Record<string, string> = { song: "Song", scripture: "Scripture", slides: "Slides", graphic: "Graphic", video: "Video" };
+
+/** Where a stage layout is referenced: channel defaults, type rules and row overrides, as plain sentences. */
+export function stageLayoutUses(
+  layoutId: string,
+  channels: { id: string; name: string; layoutId?: string; layoutRules?: Record<string, string> }[],
+  rows: { id: string; title?: string; stageLayouts?: Record<string, string> }[],
+): string[] {
+  const out: string[] = [];
+  const nameOf = (id: string) => channels.find((c) => c.id === id)?.name ?? id;
+  for (const c of channels) {
+    if (c.layoutId === layoutId) out.push(`Default layout of ${c.name}`);
+    for (const [kind, id] of Object.entries(c.layoutRules ?? {})) {
+      if (id === layoutId) out.push(`${RULE_LABELS[kind] ?? kind} rule on ${c.name}`);
+    }
+  }
+  for (const r of rows) {
+    for (const [ch, id] of Object.entries(r.stageLayouts ?? {})) {
+      if (id === layoutId) out.push(`Override on row ${r.title || "Untitled"} (${nameOf(ch)})`);
+    }
+  }
+  return out;
+}

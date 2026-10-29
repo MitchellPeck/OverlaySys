@@ -9,6 +9,7 @@ import {
   newLayoutFrom,
   previewNeedsConfirm,
   sampleKindFor,
+  stageLayoutUses,
   shouldAdoptIncomingLayout,
   stageLayoutsEqual,
   centeredRectAt,
@@ -336,5 +337,27 @@ describe("previewNeedsConfirm", () => {
     expect(previewNeedsConfirm({ showLive: true, channelInUse: false })).toBe(false);
     expect(previewNeedsConfirm({ showLive: false, channelInUse: true })).toBe(false);
     expect(previewNeedsConfirm({ showLive: false, channelInUse: false })).toBe(false);
+  });
+});
+
+describe("stageLayoutUses", () => {
+  const channels = [
+    { id: "st1", name: "Pastor", layoutId: "lay", layoutRules: { song: "lay", scripture: "other" } },
+    { id: "st2", name: "Green room", layoutId: "other" },
+  ];
+  const rows: { id: string; title?: string; stageLayouts?: Record<string, string> }[] = [
+    { id: "r1", title: "Opening song", stageLayouts: { st1: "lay" } },
+    { id: "r2", title: "Sermon", stageLayouts: { st2: "other" } },
+    { id: "r3", title: "Plain" },
+  ];
+  it("lists default, rule and row-override uses in plain words", () => {
+    expect(stageLayoutUses("lay", channels, rows)).toEqual([
+      "Default layout of Pastor",
+      "Song rule on Pastor",
+      "Override on row Opening song (Pastor)",
+    ]);
+  });
+  it("is empty when nothing references the layout", () => {
+    expect(stageLayoutUses("zzz", channels, rows)).toEqual([]);
   });
 });

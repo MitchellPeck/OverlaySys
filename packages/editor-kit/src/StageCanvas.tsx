@@ -1,12 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Draft } from "immer";
-import type { StageFeed, StageLayout, StageRect, StageWidget, StageWidgetKind } from "@overlaysys/core";
+import type { StageFeed, StageLayout, StageRect, StageWidget } from "@overlaysys/core";
 import { STAGE_WIDGET_LABELS } from "@overlaysys/core";
 import { StageWidgetView } from "@overlaysys/stage-widgets";
 import { colors } from "@overlaysys/ui";
 import { fitScale, isEditableTarget } from "./utils";
 import { SNAP_SCREEN_PX, type Guide, type ResizeHandle } from "./stageGeometry";
-import { STAGE_WIDGET_DRAG_TYPE } from "./StagePalette";
 import { GuideOverlays, ViewToolbar, useCanvasZoom, type GuideToggles } from "./canvasView";
 import {
   dragMove,
@@ -39,11 +38,6 @@ export type StageCanvasProps = {
   onCancelDrag?(): void;
   /** The page commits nudgeWidgets(selectedIds, dx, dy). */
   onNudge(dx: number, dy: number): void;
-  /**
-   * A StagePalette button dropped on the canvas: `point` is in canvas px.
-   * Omit it (e.g. read-only) and the canvas refuses palette drops.
-   */
-  onDropWidget?(kind: StageWidgetKind, point: { x: number; y: number }): void;
 };
 
 type Point = { x: number; y: number };
@@ -64,7 +58,7 @@ type DragState =
   | (DragBase & { kind: "marquee"; origin: Point; lastIds: string | null; base: string[] });
 
 const HOST_PADDING = 32;
-const SELECT_COLOR = "#4ade80";
+const SELECT_COLOR = colors.accent;
 const GUIDE_COLOR = "#ff00ff";
 
 const HANDLES: { handle: ResizeHandle; fx: number; fy: number; cursor: string }[] = [
@@ -308,23 +302,6 @@ export function StageCanvas(props: StageCanvasProps) {
     if (d && d.started && d.kind !== "marquee") runFrame(d, altKey);
   }
 
-  function isPaletteDrag(e: React.DragEvent): boolean {
-    return !!props.onDropWidget && Array.from(e.dataTransfer.types).includes(STAGE_WIDGET_DRAG_TYPE);
-  }
-
-  function onDragOver(e: React.DragEvent) {
-    if (!isPaletteDrag(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  }
-
-  function onDrop(e: React.DragEvent) {
-    if (!isPaletteDrag(e) || !stageRef.current) return;
-    e.preventDefault();
-    const kind = e.dataTransfer.getData(STAGE_WIDGET_DRAG_TYPE) as StageWidgetKind;
-    if (kind) props.onDropWidget?.(kind, toCanvas(e.clientX, e.clientY));
-  }
-
   const line = 1 / scale;
   const handleSize = 8 / scale;
 
@@ -339,8 +316,6 @@ export function StageCanvas(props: StageCanvasProps) {
       onPointerUp={(e) => endDrag(e, "up")}
       onPointerCancel={(e) => endDrag(e, "cancel")}
       onLostPointerCapture={(e) => endDrag(e, "lost")}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
       style={{
         position: "relative",
         width: "100%",
@@ -413,8 +388,8 @@ export function StageCanvas(props: StageCanvasProps) {
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  background: isSel ? SELECT_COLOR : "rgba(12,13,16,0.85)",
-                  color: isSel ? "#0c0d10" : colors.textDim,
+                  background: isSel ? colors.brandFill : colors.surface2,
+                  color: isSel ? colors.text : isHover ? colors.brandText : colors.textDim,
                   pointerEvents: "none",
                 }}
               >
@@ -437,7 +412,7 @@ export function StageCanvas(props: StageCanvasProps) {
                 height: handleSize,
                 boxSizing: "border-box",
                 background: SELECT_COLOR,
-                border: `${line}px solid #0c0d10`,
+                border: `${line}px solid ${colors.bg}`,
                 borderRadius: 2 * line,
                 cursor: h.cursor,
               }}
@@ -469,7 +444,7 @@ export function StageCanvas(props: StageCanvasProps) {
               width: marquee.w,
               height: marquee.h,
               border: `${line}px solid ${SELECT_COLOR}`,
-              background: "rgba(74, 222, 128, 0.12)",
+              background: colors.brandSubtle,
               pointerEvents: "none",
             }}
           />

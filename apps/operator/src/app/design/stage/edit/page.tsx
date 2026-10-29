@@ -41,10 +41,10 @@ import {
 } from "@/lib/stageLayoutOps";
 import {
   STAGE_SIZE_PRESETS,
-  centeredRectAt,
   createTrailingThrottle,
   isLocalDraftEdit,
   sampleKindFor,
+  stageLayoutUses,
   shouldAdoptIncomingLayout,
   sizePresetKey,
   stageEditorShortcut,
@@ -119,11 +119,13 @@ function StageLayoutEditor() {
   const [error, setError] = useState<string | null>(null);
   const [previewOn, setPreviewOn] = useState(false);
   const [saving, setSaving] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null);
   /** Channels with a stage screen attached, from the server's status broadcasts; null until one arrives. */
   const [screenChannels, setScreenChannels] = useState<Set<string> | null>(null);
   const channelStates = useStore((s) => s.channelStates);
+  const show = useStore((s) => s.show);
   const { connected } = useConnection();
   const confirmDialog = useConfirm();
   const [previewChannel, setPreviewChannel] = useState("");
@@ -188,6 +190,7 @@ function StageLayoutEditor() {
           const sent = savingRef.current;
           savingRef.current = null;
           setSaving(false);
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           awaitingEchoRef.current = msg.id;
           // Edits made while the save was in flight stay unsaved.
           if (sent && useStageEditor.getState().draft === sent) markSaved();
@@ -206,6 +209,7 @@ function StageLayoutEditor() {
         if (savingRef.current) toast({ tone: "error", message: "Not saved: the server rejected this layout." });
         savingRef.current = null;
         setSaving(false);
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         duplicateRef.current = { pending: false, copyId: null };
       }
     });
@@ -300,6 +304,14 @@ function StageLayoutEditor() {
     if (!cur || readOnly || conn !== "open") return;
     savingRef.current = cur;
     setSaving(true);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    // No ack in time: stop showing "Saving" so the operator can retry.
+    saveTimerRef.current = setTimeout(() => {
+      if (savingRef.current !== cur) return;
+      savingRef.current = null;
+      setSaving(false);
+      toast({ tone: "error", message: "Not saved: the server didn't confirm in time." });
+    }, 8000);
     send({ type: "save_stage_layout", layout: cur });
   }
 
@@ -320,9 +332,26 @@ function StageLayoutEditor() {
 
   async function deleteLayout() {
     if (!draft || readOnly || conn !== "open") return;
+    const uses = stageLayoutUses(
+      draft.id,
+      channelConfigs,
+      (show?.rows ?? []).map((r, i) => ({ id: r.id, title: `${r.kind} ${i + 1}`, stageLayouts: "stageLayouts" in r ? r.stageLayouts : undefined })),
+    );
     const ok = await confirmDialog({
-      title: `Delete ${draft.name}?`,
-      message: "This stage layout is removed for good.",
+      title: uses.length > 0 ? `Delete ${draft.name}? It is in use` : `Delete ${draft.name}?`,
+      message:
+        uses.length > 0 ? (
+          <div>
+            <p style={{ margin: "0 0 6px" }}>These will fall back to the default layout:</p>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {uses.map((u) => (
+                <li key={u}>{u}</li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          "This stage layout is removed for good."
+        ),
       confirmLabel: "Delete",
       danger: true,
     });
@@ -346,17 +375,6 @@ function StageLayoutEditor() {
     if (readOnly) return;
     const id = newWidgetId(kind);
     commit(addWidgetOp(kind, id));
-    select([id]);
-  }
-
-  function dropKind(kind: StageWidgetKind, point: { x: number; y: number }) {
-    if (readOnly) return;
-    const id = newWidgetId(kind);
-    commit((d) => {
-      addWidgetOp(kind, id)(d);
-      const w = d.widgets.find((x) => x.id === id);
-      if (w) w.rect = centeredRectAt(point, w.rect.w, w.rect.h, d.size);
-    });
     select([id]);
   }
 
@@ -507,7 +525,11 @@ function StageLayoutEditor() {
             <StagePreviewSwitch
               channels={stageChannels}
               channelId={previewChannel}
-              onChannel={setPreviewChannel}
+              onChannel={(id) => {
+                // A new monitor needs its own confirm: never move a draft to it silently.
+                setPreviewOn(false);
+                setPreviewChannel(id);
+              }}
               on={previewOn}
               onChange={setPreviewOn}
               disabled={conn !== "open" || stageChannels.length === 0}
@@ -579,7 +601,6 @@ function StageLayoutEditor() {
             onPushHistory={pushHistory}
             onCancelDrag={cancelDrag}
             onNudge={(dx, dy) => commit(nudgeWidgets(useStageEditor.getState().selectedIds, dx, dy))}
-            onDropKind={dropKind}
           />
 
           {inspectorOpen ? (
@@ -632,7 +653,6 @@ function CanvasPane({
   onPushHistory,
   onCancelDrag,
   onNudge,
-  onDropKind,
 }: {
   draft: StageLayout;
   sampleKind: StageSampleKind;
@@ -643,7 +663,6 @@ function CanvasPane({
   onPushHistory: () => void;
   onCancelDrag: () => void;
   onNudge: (dx: number, dy: number) => void;
-  onDropKind: (kind: StageWidgetKind, point: { x: number; y: number }) => void;
 }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -664,7 +683,6 @@ function CanvasPane({
         onPushHistory={readOnly ? NOOP : onPushHistory}
         onCancelDrag={readOnly ? NOOP : onCancelDrag}
         onNudge={readOnly ? NOOP : onNudge}
-        onDropWidget={readOnly ? undefined : onDropKind}
       />
     </div>
   );
