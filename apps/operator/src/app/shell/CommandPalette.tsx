@@ -2,23 +2,30 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Modal, colors, fontSize, radius } from "@overlaysys/ui";
+import { Modal, colors, fontSize, radius, useConfirm } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
-import { buildPaletteEntries, rankEntries, type PaletteEntry } from "./paletteEntries";
+import { useWs } from "@/lib/useWs";
+import { liveCommands } from "@/lib/liveCommands";
+import { buildPaletteEntries, rankEntries, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
 import { enterArea } from "./TopBar";
 import { OPEN_FIRST_RUN_EVENT } from "./FirstRunChecklist";
 import { AREAS, LAST_NON_LIVE_KEY, areasFor, destinationsFor, liveToggleTarget, routeToArea } from "./areas";
 
 /**
  * ⌘K palette: destinations, library items (shows, songs, designs, hotcards)
- * and app actions, ranked by `rankEntries`. Built on the kit Modal (focus trap, Esc from anywhere,
+ * and app actions, ranked by `rankEntries`. On the desktop it also lists
+ * Live's on-air verbs (`liveCommands`, contracts §10); each asks its
+ * `confirm` first and only then reads and sends its messages, so the palette
+ * never takes silently. None in cloud mode. Built on the kit Modal (focus trap, Esc from anywhere,
  * keys stopped before the live shortcuts) with an ARIA combobox: the input
  * owns focus and points at the highlighted option via aria-activedescendant.
  */
 export function CommandPalette() {
   const router = useRouter();
+  const { send } = useWs();
+  const confirm = useConfirm();
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -59,6 +66,8 @@ export function CommandPalette() {
   const templates = useStore((s) => s.templates);
   const stageLayouts = useStore((s) => s.stageLayouts);
   const hotcards = useStore((s) => s.hotcards);
+  // Re-list once a card's body loads: liveCommands omits unloaded cards.
+  const hotcardCache = useStore((s) => s.hotcardCache);
   const projectId = useStore((s) => s.currentProjectId);
 
   const entries: PaletteEntry[] = useMemo(() => {
@@ -78,8 +87,11 @@ export function CommandPalette() {
       if (api.copyDiagnostics) extras.push({ id: "app:copy-diagnostics", label: "Copy diagnostics", group: "App", run: () => void api.copyDiagnostics?.() });
       if (api.revealLogs) extras.push({ id: "app:reveal-logs", label: "Reveal logs", group: "App", run: () => void api.revealLogs?.() });
     }
+    // Built from a getter: each verb's messages() re-reads the store when sent.
+    if (!cloud) extras.push(...liveCommands(useStore.getState).map((c) => toPaletteEntry(c, send)));
     return buildPaletteEntries({ destinations, shows, songs, templates, stageLayouts, hotcards, projectId, cloud, extras });
-  }, [router, shows, songs, templates, stageLayouts, hotcards, projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hotcardCache only re-triggers the listing
+  }, [router, send, shows, songs, templates, stageLayouts, hotcards, hotcardCache, projectId]);
 
   const filtered = useMemo(() => rankEntries(query, entries), [entries, query]);
 
@@ -92,12 +104,17 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, clampedIndex]);
 
-  function runAt(i: number) {
+  async function runAt(i: number) {
     const entry = filtered[i];
     if (!entry) return;
     setOpen(false);
-    if (entry.href) router.push(entry.href);
-    else entry.run?.();
+    if (entry.href) {
+      router.push(entry.href);
+      return;
+    }
+    // On-air verbs: nothing is read or sent until the operator confirms.
+    if (entry.confirm && !(await confirm(entry.confirm))) return;
+    entry.run?.();
   }
 
   return (
@@ -134,7 +151,7 @@ export function CommandPalette() {
           } else if (e.key === "Enter") {
             e.preventDefault();
             e.stopPropagation();
-            runAt(clampedIndex);
+            void runAt(clampedIndex);
           }
           // Escape is handled by Modal, wherever focus is.
         }}
@@ -164,7 +181,7 @@ export function CommandPalette() {
             onMouseEnter={() => setIndex(i)}
             // Keep focus in the input so typing continues after a hover.
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => runAt(i)}
+            onClick={() => void runAt(i)}
             style={{
               display: "flex",
               alignItems: "baseline",
