@@ -1,4 +1,11 @@
-import { CURRENT_ITEM_TIMER_ID, type StageTimerInstance } from "@overlaysys/core";
+import {
+  CURRENT_ITEM_TIMER_ID,
+  DEFAULT_STAGE_LAYOUT_ID,
+  isBuiltInStageLayoutId,
+  resolveBuiltInStageLayout,
+  type StageTimerInstance,
+} from "@overlaysys/core";
+import { captionFontSize, fitFontSize } from "@overlaysys/stage-widgets";
 
 export const DRAWER_OPEN_KEY = "overlaysys:live:drawerOpen";
 export const DOUBLE_CLICK_TAKES_KEY = "overlaysys:live:doubleClickTakes";
@@ -46,6 +53,38 @@ export function stagePreviewWarnings(
 /** Names of the stage displays a stage message reaches. */
 export function stageTargetNames(channels: readonly { id: string; name: string; kind?: string }[]): string[] {
   return channels.filter((c) => c.kind === "stage").map((c) => c.name);
+}
+
+/**
+ * Whether a stage message would overflow a stage display's message bar:
+ * `fitFontSize` (floor 48 px) needs the bar taller than the layout gives it.
+ * Only built-in layouts can be measured here (custom layouts live on the
+ * server); a stage channel's default layout and its per-kind rules count.
+ */
+export function stageMessageTooLong(
+  text: string,
+  channels: readonly { id?: string; name?: string; kind?: string; layoutId?: string; layoutRules?: Partial<Record<string, string>> }[],
+): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  const ids = new Set<string>();
+  for (const c of channels) {
+    if (c.kind !== "stage") continue;
+    // An unset layoutId is the Speaker layout.
+    ids.add(c.layoutId ?? DEFAULT_STAGE_LAYOUT_ID);
+    for (const id of Object.values(c.layoutRules ?? {})) if (id) ids.add(id);
+  }
+  for (const id of ids) {
+    if (!isBuiltInStageLayoutId(id)) continue;
+    for (const w of resolveBuiltInStageLayout(id).widgets) {
+      if (w.kind !== "message") continue;
+      const st = w.style;
+      const caption = st.label ? captionFontSize(st.fontSize, st.captionSize) + 6 : 0;
+      const inner = { w: w.rect.w - 2 * st.padding, h: w.rect.h - 2 * st.padding - caption };
+      if (fitFontSize(t, inner, st.fontSize, { minPx: 48 }).grow > 1) return true;
+    }
+  }
+  return false;
 }
 
 /** The first non-empty image-field value of a hotcard's data, or null. */

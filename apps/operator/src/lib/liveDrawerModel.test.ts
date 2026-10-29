@@ -8,6 +8,7 @@ import {
   readBool,
   showHasPcoItems,
   stagePreviewWarnings,
+  stageMessageTooLong,
   stageTargetNames,
 } from "./liveDrawerModel";
 
@@ -95,4 +96,19 @@ describe("hotcard hydration", () => {
     expect(uncachedTemplateIds(cards, "p", hc, {})).toEqual(["t1"]);
     expect(uncachedTemplateIds(cards, "p", hc, { t1: {} })).toEqual([]);
   });
+});
+
+describe("stageMessageTooLong", () => {
+  const stage = (o: object) => ({ id: "st", name: "Stage", kind: "stage", ...o });
+  it("a short message fits the Speaker layout's bar", () =>
+    expect(stageMessageTooLong("Wrap up", [stage({})])).toBe(false));
+  it("a 200-character message is too long for the built-in message bar (fitFontSize floor 48)", () =>
+    expect(stageMessageTooLong("x".repeat(200), [stage({ layoutId: "speaker" })])).toBe(true));
+  it("no stage channel, or only custom layouts we can't measure: no hint", () => {
+    expect(stageMessageTooLong("x".repeat(200), [{ id: "program", name: "Program", kind: "graphics" }])).toBe(false);
+    expect(stageMessageTooLong("x".repeat(200), [stage({ layoutId: "my-custom" })])).toBe(false);
+  });
+  it("checks the per-kind rule layouts too", () =>
+    expect(stageMessageTooLong("x".repeat(200), [stage({ layoutId: "my-custom", layoutRules: { song: "lyrics" } })])).toBe(true));
+  it("empty text is never too long", () => expect(stageMessageTooLong("  ", [stage({})])).toBe(false));
 });

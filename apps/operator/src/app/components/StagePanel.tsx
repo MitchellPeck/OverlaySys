@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { getStageSettings } from "@/lib/stageSettingsClient";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { showHasPcoItems, stagePreviewWarnings, stageTargetNames } from "@/lib/liveDrawerModel";
+import { showHasPcoItems, stageMessageTooLong, stagePreviewWarnings, stageTargetNames } from "@/lib/liveDrawerModel";
 
 /** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
 const noFocus = (e: React.MouseEvent) => e.preventDefault();
@@ -73,6 +73,8 @@ export function StagePanel() {
   const message = stage?.state.message ?? null;
   const targets = stageTargetNames(channelConfigs);
   const warnings = stagePreviewWarnings(previews, channelConfigs);
+  // What's typed, else what's on stage now: would it overflow a stage message bar?
+  const tooLong = stageMessageTooLong(text.trim() ? text : (message?.text ?? ""), channelConfigs);
 
   function sendMessage(t: string) {
     const trimmed = t.trim().slice(0, MAX_MESSAGE);
@@ -234,6 +236,12 @@ export function StagePanel() {
             Send
           </Button>
         </div>
+        {tooLong && (
+          <div role="status" style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: colors.warn }}>
+            <AlertTriangle size={12} aria-hidden style={{ flexShrink: 0 }} />
+            Message too long for this layout
+          </div>
+        )}
         {presets.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {presets.map((p) => (
