@@ -27,9 +27,9 @@ export function buildOutputArgs(device: string, f: SignalFormat, opts: { preroll
   const p = opts.prerollSec;
   const preroll = p !== undefined && Number.isFinite(p) && p > 0 ? p : DEFAULT_PREROLL_SEC;
   return [
+    // No -thread_queue_size here: the FFmpeg master build Narthex TV's script
+    // makes treats it as an output (muxer) option and rejects it on an input.
     "-hide_banner", "-loglevel", "warning",
-    // Don't let the reader thread queue frames ahead of the card (default 8).
-    "-thread_queue_size", "2",
     "-f", "rawvideo", "-pix_fmt", "bgra", "-s", `${f.width}x${f.height}`, "-r", f.rate, "-i", "pipe:0",
     "-an", "-c:v", "v210", "-preroll", String(preroll), "-f", "decklink", device,
   ];

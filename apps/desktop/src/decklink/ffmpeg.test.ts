@@ -6,10 +6,13 @@ describe("buildOutputArgs", () => {
   it("builds the Narthex-proven output command, device as one argv element, with low latency", () => {
     expect(buildOutputArgs(`Studio "A" 3G`, findFormat("1080p59.94"))).toEqual([
       "-hide_banner", "-loglevel", "warning",
-      "-thread_queue_size", "2",
       "-f", "rawvideo", "-pix_fmt", "bgra", "-s", "1920x1080", "-r", "60000/1001", "-i", "pipe:0",
       "-an", "-c:v", "v210", "-preroll", "0.1", "-f", "decklink", `Studio "A" 3G`,
     ]);
+  });
+
+  it("passes no input-side -thread_queue_size (current ffmpeg rejects it on an input)", () => {
+    expect(buildOutputArgs("D", findFormat("1080p59.94"))).not.toContain("-thread_queue_size");
   });
 
   it("takes a preroll override, ignoring nonsense", () => {
