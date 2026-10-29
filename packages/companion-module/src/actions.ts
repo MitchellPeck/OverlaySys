@@ -631,13 +631,22 @@ export function dispatchAction(
       });
       break;
     }
-    case "song_advance":
+    case "song_advance": {
+      // A song converted to a deck keeps its Stream Deck buttons: with slides
+      // (and no song) live on the channel, next / previous drive the deck.
+      const ch = str("channel");
+      const st = state.channelStates.get(ch);
+      if (st?.slidesSession && !st.songSession) {
+        messages.push({ type: "slides_advance", channel: ch, delta: num("delta", 1) < 0 ? -1 : 1 });
+        break;
+      }
       messages.push({
         type: "song_advance",
-        channel: str("channel"),
+        channel: ch,
         delta: num("delta", 1),
       });
       break;
+    }
     case "song_jump_section":
       messages.push({
         type: "song_jump",

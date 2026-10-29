@@ -208,6 +208,21 @@ describe("dispatchAction — song actions", () => {
     ]);
   });
 
+  it("song_advance drives a slides deck when the channel has slides and no song (converted liturgy)", () => {
+    const s = initialState();
+    s.channelStates.set("program", {
+      channel: "program",
+      active: null,
+      slidesSession: { rowId: "r", title: "D", slideIdx: 0, slideCount: 3, lines: [], blanked: false, atEnd: false },
+    } as never);
+    expect(dispatchAction(s, "song_advance", { channel: "program", delta: 1 }).messages).toEqual([
+      { type: "slides_advance", channel: "program", delta: 1 },
+    ]);
+    expect(dispatchAction(s, "song_advance", { channel: "program", delta: -1 }).messages).toEqual([
+      { type: "slides_advance", channel: "program", delta: -1 },
+    ]);
+  });
+
   it("song_take_row sends song_take", () => {
     const r = dispatchAction(initialState(), "song_take_row", {
       showId: "show-1",
