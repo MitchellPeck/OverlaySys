@@ -76,6 +76,9 @@ function onChannel(
   ctx?: AirContext,
 ): boolean {
   const st = channelStates[ch];
+  // A graphic playing out after Clear / Esc Esc keeps its context for a
+  // moment; it is no longer on air.
+  const live = st?.active && st.active.phase !== "out" ? st.active : undefined;
   switch (row.kind) {
     case "graphic": {
       const a = st?.active;
@@ -84,14 +87,14 @@ function onChannel(
     case "song":
       return (
         (songSessions[ch]?.songId === row.songId && isTakenSongRow(row, st, ctx, songSessions[ch])) ||
-        st?.active?.subTakeContext?.songRowId === row.id
+        live?.subTakeContext?.songRowId === row.id
       );
     case "video": {
       const m = st?.media;
       return !!m && m.rowId === row.id && m.playback.status !== "ended" && m.playback.status !== "error";
     }
     case "scripture":
-      return st?.scriptureSession?.rowId === row.id || st?.active?.scriptureContext?.rowId === row.id;
+      return st?.scriptureSession?.rowId === row.id || live?.scriptureContext?.rowId === row.id;
     case "slides":
       return false; // routed through slidesAirState in rowAirState()
   }

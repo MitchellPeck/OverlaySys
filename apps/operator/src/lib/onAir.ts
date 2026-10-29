@@ -20,9 +20,12 @@ export function channelIsLive(st: ChannelState | undefined): boolean {
   return !!st.active && st.active.phase !== "out";
 }
 
-/** True when any channel is live; used to guard show switches mid-service. */
+/**
+ * True when program or another output is live; used to guard show switches
+ * mid-service. Preview is never "on air": a cue alone doesn't need a confirm.
+ */
 export function anythingOnAir(channelStates: Record<string, ChannelState>): boolean {
-  return Object.values(channelStates).some(channelIsLive);
+  return Object.entries(channelStates).some(([ch, st]) => ch !== "preview" && channelIsLive(st));
 }
 
 /** A channel can be cleared when it holds a graphic, media, or a song/scripture session. */

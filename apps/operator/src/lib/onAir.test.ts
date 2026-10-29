@@ -65,6 +65,14 @@ describe("anythingOnAir / channelHasContent", () => {
     expect(anythingOnAir({ program: { channel: "program", active: null } })).toBe(false);
     expect(channelHasContent({ channel: "program", active: null, songSession: { ...session, blanked: true } })).toBe(true);
   });
+
+  it("counts program and other outputs, never preview (a cue is not on air)", () => {
+    const g = (channel: string): ChannelState => ({ channel, active: { templateId: "l3", data: {}, phase: "on", takenAt: 1 } });
+    expect(anythingOnAir({ preview: g("preview"), program: { channel: "program", active: null } })).toBe(false);
+    expect(anythingOnAir({ preview: { channel: "preview", active: null, songSession: session } })).toBe(false);
+    expect(anythingOnAir({ lyrics: g("lyrics") })).toBe(true);
+    expect(anythingOnAir({ preview: g("preview"), program: g("program") })).toBe(true);
+  });
 });
 
 const videoMedia = {

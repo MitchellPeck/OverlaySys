@@ -97,6 +97,25 @@ describe("rowAirState", () => {
     expect(rowAirState(row, intro, {})).toBe("preview");
     expect(rowAirState(row, {}, {})).toBeNull();
   });
+
+  it("a cleared scripture (active going out, session gone) is not ON AIR; a cue on preview stays cued", () => {
+    const row = { kind: "scripture", id: "sr", reference: "John 3:16", translation: "KJV", templateId: "body", slides: [] } as unknown as Show["rows"][number];
+    const out = { templateId: "body", data: {}, phase: "out", takenAt: 1, scriptureContext: { rowId: "sr", sub: "slide", slideIdx: 0 } };
+    const cleared = {
+      program: { channel: "program", active: out },
+      preview: { channel: "preview", active: null, scriptureSession: { rowId: "sr", reference: "John 3:16", slideIdx: 0, slideCount: 1, slideReference: "John 3:16", text: "x" } },
+    } as unknown as Record<string, ChannelState>;
+    expect(rowAirState(row, cleared, {})).toBe("preview");
+    expect(rowAirState(row, { program: cleared.program! }, {})).toBeNull();
+  });
+
+  it("a song's outgoing intro (sub-take going out) is not ON AIR", () => {
+    const row = song("r", "s1");
+    const st = {
+      program: { channel: "program", active: { templateId: "i", data: {}, phase: "out", takenAt: 1, subTakeContext: { songRowId: "r", sub: "intro" } } },
+    } as unknown as Record<string, ChannelState>;
+    expect(rowAirState(row, st, {})).toBeNull();
+  });
 });
 
 describe("rowAirState song context", () => {
