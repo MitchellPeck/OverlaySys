@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { BUILT_IN_STAGE_LAYOUTS, stageLayoutMeta } from "@overlaysys/core";
 import { Select, colors, fontSize } from "@overlaysys/ui";
+import { nextStageLayouts } from "@/lib/stageLayoutOverrides";
 import { useStore } from "@/lib/store";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
@@ -21,12 +22,7 @@ export function StageScreensField(p: {
   if (screens.length === 0) {
     return <div style={{ fontSize: fontSize.xs, color: colors.textMuted }}>No stage screens are set up.</div>;
   }
-  function set(channel: string, layoutId: string) {
-    const next = { ...(p.value ?? {}) };
-    if (layoutId) next[channel] = layoutId;
-    else delete next[channel];
-    p.onChange(Object.keys(next).length > 0 ? next : undefined);
-  }
+  const set = (channel: string, layoutId: string) => p.onChange(nextStageLayouts(p.value, channel, layoutId));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {screens.map((c) => {

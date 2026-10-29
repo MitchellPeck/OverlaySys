@@ -33,14 +33,20 @@ export function subscribeStageLayoutStatus(l: () => void): () => void {
   };
 }
 
+/** Forget the last status (disconnect/reconnect); the server sends a fresh one on connect. */
+export function resetStageLayoutStatus(): void {
+  if (cache === EMPTY) return;
+  cache = EMPTY;
+  listeners.forEach((l) => l());
+}
+
 export function resetStageLayoutStatusForTests(): void {
   cache = EMPTY;
   attachedTo = null;
   listeners.clear();
 }
 
-/** Latest per-screen (the feed is attached at WS bootstrap in useWs.ts).
- * layout status; a late-mounted panel still sees the last value. */
+/** Latest per-screen layout status; the feed is attached at WS bootstrap (useWs.ts). */
 export function useStageLayoutStatus(): StageLayoutStatus[] {
   return useSyncExternalStore(subscribeStageLayoutStatus, getStageLayoutStatuses, () => EMPTY);
 }

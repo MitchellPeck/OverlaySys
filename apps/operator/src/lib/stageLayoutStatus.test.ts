@@ -4,6 +4,7 @@ import {
   attachStageLayoutStatusFeed,
   getStageLayoutStatuses,
   reasonLabel,
+  resetStageLayoutStatus,
   resetStageLayoutStatusForTests,
   setStageLayoutMessage,
   subscribeStageLayoutStatus,
@@ -46,5 +47,18 @@ describe("stageLayoutStatus", () => {
     c.emit({ type: "stage_layout_status", screens: [] } as ServerMessage);
     expect(calls).toBe(1);
     expect(getStageLayoutStatuses()).toEqual([]);
+  });
+  it("resets to empty and notifies", () => {
+    resetStageLayoutStatusForTests();
+    const c = fakeClient();
+    attachStageLayoutStatusFeed(c);
+    c.emit({ type: "stage_layout_status", screens: [{ channel: "s1", reason: "default", manual: null }] } as ServerMessage);
+    let calls = 0;
+    subscribeStageLayoutStatus(() => calls++);
+    resetStageLayoutStatus();
+    expect(getStageLayoutStatuses()).toEqual([]);
+    expect(calls).toBe(1);
+    resetStageLayoutStatus();
+    expect(calls).toBe(1);
   });
 });

@@ -40,6 +40,7 @@ export function StagePanel() {
   const channelConfigs = useResolvedChannelConfigs();
   // [P2a.22]
   const layoutStatus = useStageLayoutStatus();
+  const offline = useStore((s) => s.conn) !== "open";
   const layoutMetas = useStore((s) => s.stageLayouts);
   const layoutList = layoutMetas.length > 0 ? layoutMetas : BUILT_IN_STAGE_LAYOUTS.map(stageLayoutMeta);
   // Only configured, non-mirror stage screens can take a layout; with none, the control is hidden.
@@ -293,7 +294,8 @@ export function StagePanel() {
             <div style={{ fontSize: 11, color: colors.textDim, textTransform: "uppercase", letterSpacing: 0.4 }}>Stage screens</div>
             {stageScreens.map((c) => {
               const st = layoutStatus.find((x) => x.channel === c.id);
-              const name = st?.layoutId ? (layoutList.find((l) => l.id === st.layoutId)?.name ?? st.layoutId) : "—";
+              const name = st?.layoutId ? (layoutList.find((l) => l.id === st.layoutId)?.name ?? "(missing layout)") : "—";
+              const manualMissing = !!st?.manual && !layoutList.some((l) => l.id === st.manual);
               return (
                 <div key={c.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, minWidth: 0 }}>
@@ -307,11 +309,13 @@ export function StagePanel() {
                   </div>
                   <Select
                     aria-label={`Switch layout for ${c.name}`}
-                    title="Switch layout"
+                    title={offline ? "Reconnect to switch layouts" : "Switch layout"}
+                    disabled={offline}
                     value={st?.manual ?? ""}
                     onChange={(e) => send(setStageLayoutMessage(c.id, e.target.value || null))}
                   >
                     <option value="">Automatic</option>
+                    {manualMissing && <option value={st!.manual!}>(missing layout)</option>}
                     {layoutList.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}

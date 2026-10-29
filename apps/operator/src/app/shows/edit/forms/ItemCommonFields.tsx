@@ -74,6 +74,9 @@ export function ItemCommonFields({
   outputHint?: string | null;
 }) {
   const r = row as CommonRow;
+  // [P2a.22] opened once if overrides exist; stays as the user left it (not re-driven after clearing).
+  const stageInitiallyOpen = useRef(!!r.stageLayouts && Object.keys(r.stageLayouts).length > 0).current;
+  // [/P2a.22]
   const channels = useResolvedChannelConfigs();
   // Mirror channels show another channel's state; targeting one would do nothing.
   const takeable = useMemo(() => channels.filter((c) => !c.mirrorOf), [channels]);
@@ -114,7 +117,7 @@ export function ItemCommonFields({
       )}
       {/* [P2a.22] */}
       <FormRow label="Stage screens">
-        <details open={!!r.stageLayouts && Object.keys(r.stageLayouts).length > 0}>
+        <details key={row.id} open={stageInitiallyOpen}>
           <summary style={{ fontSize: fontSize.sm, color: colors.textDim, cursor: "pointer", paddingTop: 5 }}>
             Layout per stage screen
           </summary>

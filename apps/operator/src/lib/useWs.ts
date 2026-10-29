@@ -8,7 +8,7 @@ import { requestedDecks } from "./deckRequests";
 // [/P3.13]
 import { isCloudMode } from "./mode";
 // [P2a.22]
-import { attachStageLayoutStatusFeed } from "./stageLayoutStatus";
+import { attachStageLayoutStatusFeed, resetStageLayoutStatus } from "./stageLayoutStatus";
 // [/P2a.22]
 import type { ClientMessage, OutputsState } from "@overlaysys/ws-protocol";
 
@@ -94,6 +94,9 @@ function bootstrap(): void {
   client.onStatus((s) => {
     useStore.getState().setConn(s);
     if (s !== "open") setOutputsState(null);
+    // [P2a.22]
+    if (s !== "open") resetStageLayoutStatus();
+    // [/P2a.22]
   });
 
   client.on((msg) => {
