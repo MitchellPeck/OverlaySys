@@ -56,3 +56,35 @@ describe("decksLoaded", () => {
   });
 });
 // [/P3.14]
+
+describe("deck delete and restore (deck_list only)", () => {
+  it("a cached deck missing from the new list is evicted and marked missing", () => {
+    useStore.getState().upsertDeck(deck);
+    useStore.getState().setDecks([]);
+    expect(useStore.getState().deckCache.d1).toBeUndefined();
+    expect(useStore.getState().deckNotFound.d1).toBe(true);
+  });
+
+  it("keeps listed decks and unrelated cache entries", () => {
+    useStore.getState().upsertDeck(deck);
+    useStore.getState().setDecks([{ id: "d1" } as never]);
+    expect(useStore.getState().deckCache.d1).toBe(deck);
+    expect(useStore.getState().deckNotFound.d1).toBeUndefined();
+  });
+
+  it("Undo (restore) brings it back: the deck message clears the mark", () => {
+    useStore.getState().upsertDeck(deck);
+    useStore.getState().setDecks([]);
+    useStore.getState().upsertDeck(deck);
+    useStore.getState().setDecks([{ id: "d1" } as never]);
+    expect(useStore.getState().deckCache.d1).toBe(deck);
+    expect(useStore.getState().deckNotFound.d1).toBeUndefined();
+  });
+
+  it("a list that names the deck again clears the mark so it is re-fetched", () => {
+    useStore.getState().upsertDeck(deck);
+    useStore.getState().setDecks([]);
+    useStore.getState().setDecks([{ id: "d1" } as never]);
+    expect(useStore.getState().deckNotFound.d1).toBeUndefined();
+  });
+});

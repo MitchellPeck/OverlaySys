@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/lib/store";
+import { buildThumbCtx } from "@/lib/buildThumbCtx";
 import type { ThumbCtx } from "@/lib/thumbClick";
 
 /** Everything rowView / thumbsFor / thumbActivate read, from the store. Null with no show loaded. */
@@ -13,13 +14,12 @@ export function useThumbCtx(): ThumbCtx | null {
   const templateCache = useStore((s) => s.templateCache);
   const overrides = useStore((s) => s.rowDataOverrides);
   const deckCache = useStore((s) => s.deckCache);
+  const deckNotFound = useStore((s) => s.deckNotFound);
   const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
   return useMemo(
     () =>
-      show
-        ? { show, songs, songCache, templates, templateCache, overrides, deckCache, channelStates, songSessions }
-        : null,
-    [show, songs, songCache, templates, templateCache, overrides, deckCache, channelStates, songSessions],
+      buildThumbCtx({ show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions }),
+    [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions],
   );
 }

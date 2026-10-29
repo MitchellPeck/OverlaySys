@@ -215,7 +215,7 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
       }
       case "slides": {
         const deckId = (row as { deckId?: string }).deckId;
-        const view = slidesRowViewFor(row, deckId ? ctx.deckCache[deckId] : null);
+        const view = slidesRowViewFor(row, deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null);
         if (!view) return [placeholder(row.id, "Slides decks aren't available yet")];
         return view.slides.map((s, i) => ({
           key: s.key,

@@ -407,7 +407,25 @@ export const useStore = create<StoreState>((set) => ({
     }),
   setSongs: (songs) => set({ songs, songsLoaded: true }), // [P1.13]
   // [P3.13]
-  setDecks: (decks) => set({ decks, decksLoaded: true }), // [P3.14] decksLoaded
+  setDecks: (decks) =>
+    set((s) => {
+      // A cached deck that fell out of the list was deleted (the server sends only the list):
+      // drop it and mark it missing so Live shows "Missing deck" at once. A restore sends the
+      // deck itself, and upsertDeck clears the mark.
+      const listed = new Set(decks.map((d) => d.id));
+      const gone = Object.keys(s.deckCache).filter((id) => !listed.has(id));
+      const deckNotFound = { ...s.deckNotFound };
+      // Listed again (restored elsewhere): no longer missing; the next lookup fetches it.
+      for (const id of listed) delete deckNotFound[id];
+      if (gone.length === 0) return { decks, decksLoaded: true, deckNotFound }; // [P3.14] decksLoaded
+      const deckCache = { ...s.deckCache };
+      for (const id of gone) {
+        delete deckCache[id];
+        deckNotFound[id] = true;
+        requestedDecks.delete(id);
+      }
+      return { decks, decksLoaded: true, deckCache, deckNotFound };
+    }),
   upsertDeck: (d) =>
     set((s) => {
       const { [d.id]: _gone, ...deckNotFound } = s.deckNotFound;

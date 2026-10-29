@@ -15,7 +15,7 @@ import { onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
 import { editedFieldKeys, effectiveRowData, graphicRowMessage } from "@/lib/rowData";
 import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import { hotcardFireMessage } from "@/lib/shortcutGuards";
-import { slidesRowTakeMessages } from "@/lib/slidesRowView";
+import { slidesControlState, slidesRowTakeMessages } from "@/lib/slidesRowView";
 import { useTakeFeedback } from "../../hooks/useTakeFeedback";
 import { SongTakeStrip } from "../SongTakeStrip";
 import { ScriptureTakeStrip } from "../ScriptureTakeStrip";
@@ -150,6 +150,8 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
   const templateCache = useStore((s) => s.templateCache);
   const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
+  const deckCache = useStore((s) => s.deckCache);
+  const deckNotFound = useStore((s) => s.deckNotFound);
   const confirm = useConfirm();
   const caches = useMemo(() => ({ songCache, templateCache }), [songCache, templateCache]);
   if (!show) return null;
@@ -206,7 +208,14 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
       const cue = slidesRowTakeMessages(show.id, row, "cue");
       const take = slidesRowTakeMessages(show.id, row, "take");
       if (!cue || !take) return <span style={{ fontSize: 12, color: colors.textMuted }}>Slides decks arrive with plan 3</span>;
-      return <CueTake cueMany={() => slidesRowTakeMessages(show.id, row, "cue")} takeMany={() => slidesRowTakeMessages(show.id, row, "take")} />;
+      const can = slidesControlState(row, { deckCache, deckNotFound });
+      return (
+        <CueTake
+          cueMany={() => slidesRowTakeMessages(show.id, row, "cue")}
+          takeMany={() => slidesRowTakeMessages(show.id, row, "take")}
+          blocked={can.enabled ? undefined : { title: can.title }}
+        />
+      );
     }
     default:
       return null;
@@ -239,17 +248,21 @@ function CueTake({
   take,
   cueMany,
   takeMany,
+  blocked,
 }: {
   cue?: Build;
   take?: Build;
   cueMany?: () => ClientMessage[] | null;
   takeMany?: () => ClientMessage[] | null;
+  /** Both buttons disabled (with this tooltip) when set. */
+  blocked?: { title?: string };
 }) {
   const { send } = useWs();
   const disconnected = useStore((s) => s.conn) !== "open";
   const cueFb = useTakeFeedback();
   const takeFb = useTakeFeedback();
-  const title = disconnected ? "Disconnected from server" : undefined;
+  const title = disconnected ? "Disconnected from server" : blocked?.title;
+  const off = disconnected || !!blocked;
   const fire = (fb: ReturnType<typeof useTakeFeedback>, one?: Build, many?: () => ClientMessage[] | null) => async () => {
     if (many) {
       const msgs = many() ?? [];
@@ -268,7 +281,7 @@ function CueTake({
         </span>
       )}
       {(cue || cueMany) && (
-        <Button size="md" onMouseDown={keepFocus} onClick={fire(cueFb, cue, cueMany)} disabled={disconnected} title={title} aria-busy={cueFb.status === "pending"}>
+        <Button size="md" onMouseDown={keepFocus} onClick={fire(cueFb, cue, cueMany)} disabled={off} title={title} aria-busy={cueFb.status === "pending"}>
           {cueFb.status === "pending" ? "Cueing…" : "Cue"}
         </Button>
       )}
@@ -278,7 +291,7 @@ function CueTake({
           variant="onair"
           onMouseDown={keepFocus}
           onClick={fire(takeFb, take, takeMany)}
-          disabled={disconnected}
+          disabled={off}
           title={title}
           aria-busy={takeFb.status === "pending"}
           style={{ minWidth: 72, opacity: takeFb.status === "pending" ? 0.75 : undefined }}

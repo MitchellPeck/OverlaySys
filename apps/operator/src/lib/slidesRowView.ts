@@ -95,3 +95,19 @@ export function slidesAdvanceMessage(delta: 1 | -1): ClientMessage | null {
 export function slidesBlankMessage(): ClientMessage | null {
   return { type: "slides_blank", channel: "program" };
 }
+
+/**
+ * Header Cue / Take for a slides row: enabled only when the deck is loaded and
+ * has slides (same rule as the rundown buttons and the Enter / Space keys).
+ * A missing deck says so in the tooltip.
+ */
+export const MISSING_DECK_TITLE = "Missing deck — restore it from Slides";
+export function slidesControlState(
+  row: RowLike,
+  c: { deckCache: Record<string, Deck>; deckNotFound?: Record<string, true> },
+): { enabled: boolean; title?: string } {
+  const deckId = (row as { deckId?: string }).deckId;
+  const view = slidesRowViewFor(row, deckId ? (c.deckNotFound?.[deckId] ? null : c.deckCache[deckId]) : null);
+  if (view && !view.missingDeck && view.slides.length > 0) return { enabled: true };
+  return view?.missingDeck ? { enabled: false, title: MISSING_DECK_TITLE } : { enabled: false };
+}
