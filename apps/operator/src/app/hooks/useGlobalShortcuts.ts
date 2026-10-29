@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect } from "react";
-import { toast } from "@overlaysys/ui";
+import { dismissToast, toast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { onAirMediaFor } from "@/lib/mediaTake";
 import { pvwTakeMessages } from "@/lib/onAir";
-import { rowFireMessages, sectionKeyAction, sectionKeyFor } from "@/lib/liveKeys";
+import { escArmText, rowFireMessages, sectionKeyAction, sectionKeyFor } from "@/lib/liveKeys";
 import {
   advanceMessage,
   blankMessage,
   escapeMessages,
+  escPress,
   hasCommandModifier,
   keyMode,
   hotcardForEvent,
@@ -39,14 +40,15 @@ import {
  *                   selection (video: play / pause when on air)
  *   Shift+Space     song / scripture / slides: advance − 1
  *   B               slides: blank (in song mode B is the bridge)
- *   Esc             clear program (graphics and video)
+ *   Esc Esc         clear program (graphics and video); the first Esc only
+ *                   arms and toasts what the second does (D3)
  *
  * When a song session IS live on program (song mode):
  *   C / B / T       jump to the chorus / bridge / tag
  *   1..9, 0         jump to verse 1..9, 10
  *                   (a section the song doesn't have toasts and sends nothing)
  *   .               toggle blank
- *   Esc             end song (and clear program video)
+ *   Esc Esc         end song (and clear program video)
  *
  * Ignored: keys while typing in a text field, keys while a dialog is open or
  * already handled (a modal's Esc), ⌘/Ctrl/Alt chords other than ⌘Enter, and
@@ -54,6 +56,9 @@ import {
  */
 export function useGlobalShortcuts(): void {
   useEffect(() => {
+    // Esc Esc: when the last (arming) press happened, and its toast.
+    let lastEscAt: number | null = null;
+    let armToast: string | null = null;
     function onKey(e: KeyboardEvent) {
       const dialogOpen = !!document.querySelector('[role="dialog"], [aria-modal="true"], dialog[open]');
       if (shouldIgnoreGlobalKey(e, e.target as TargetLike, dialogOpen)) return;
@@ -91,6 +96,26 @@ export function useGlobalShortcuts(): void {
         e.preventDefault();
         const m = blankMessage("slides");
         if (m) send(m);
+        return;
+      }
+
+      // Esc is a panic key with a safety catch (D3): the first press only
+      // arms and says what the second will do; a second press within 600 ms
+      // ends the program song (song mode) or clears program.
+      if (e.code === "Escape" && !hasCommandModifier(e)) {
+        e.preventDefault();
+        const song = songKeyChannel(store.songSessions) !== null;
+        const now = Date.now();
+        if (escPress(now, lastEscAt) === "arm") {
+          lastEscAt = now;
+          if (armToast) dismissToast(armToast);
+          armToast = toast({ message: escArmText(song ? "song" : "other"), tone: "warn", durationMs: 1500 });
+          return;
+        }
+        lastEscAt = null;
+        if (armToast) dismissToast(armToast);
+        armToast = null;
+        for (const m of song ? songEscapeMessages() : escapeMessages()) send(m);
         return;
       }
 
@@ -159,9 +184,6 @@ export function useGlobalShortcuts(): void {
         } else if (hotcard) {
           send(hotcardFireMessage(hotcard, "take"));
         }
-      } else if (e.code === "Escape") {
-        e.preventDefault();
-        for (const m of escapeMessages()) send(m);
       }
     }
 
@@ -179,13 +201,7 @@ type Sender = ReturnType<typeof getClient>["send"];
  */
 function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): boolean {
   if (hasCommandModifier(e)) return false;
-  // Space / Shift+Space are handled by keyMode before this.
-  if (e.code === "Escape") {
-    e.preventDefault();
-    // Panic key: end the song and clear any program video with it.
-    for (const m of songEscapeMessages()) send(m);
-    return true;
-  }
+  // Space / Shift+Space and Esc are handled before this.
   if (e.key === "." || e.code === "Period") {
     e.preventDefault();
     const m = blankMessage("song");
