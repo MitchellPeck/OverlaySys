@@ -23,7 +23,9 @@ function AutoTextarea(p: {
     el.style.height = "auto";
     const min = 2 * LINE_PX + 14;
     const max = 8 * LINE_PX + 14;
-    el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight))}px`;
+    // border-box: add the borders, or a box sized to scrollHeight still scrolls by 2 px.
+    const borders = el.offsetHeight - el.clientHeight;
+    el.style.height = `${Math.min(max, Math.max(min, el.scrollHeight + borders))}px`;
   }, [p.value]);
   return (
     <div ref={wrap}>
