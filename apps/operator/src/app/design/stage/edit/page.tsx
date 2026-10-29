@@ -331,7 +331,8 @@ function StageLayoutEditor() {
   }
 
   async function deleteLayout() {
-    if (!draft || readOnly || conn !== "open") return;
+    // Dirty delete would mark-saved then navigate, racing the guard's history sentinel.
+    if (!draft || readOnly || dirty || conn !== "open") return;
     const uses = stageLayoutUses(
       draft.id,
       channelConfigs,
@@ -504,7 +505,7 @@ function StageLayoutEditor() {
           onDuplicate={duplicateLayout}
           duplicateDisabled={duplicateDisabled}
           onDelete={() => void deleteLayout()}
-          deleteDisabled={readOnly ? "Built-in layouts can't be deleted" : conn !== "open" ? "Reconnect to delete" : false}
+          deleteDisabled={readOnly ? "Built-in layouts can't be deleted" : dirty ? "Save or revert first" : conn !== "open" ? "Reconnect to delete" : false}
         />
       </div>
 

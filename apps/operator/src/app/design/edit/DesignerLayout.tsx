@@ -1,24 +1,42 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { colors, fontSize } from "@overlaysys/ui";
 import { TIMELINE_HEIGHT_KEY, clampTimelineHeight, defaultTimelineHeight, readStoredTimelineHeight } from "./timelineSize";
 
 const HEADER_H = 40;
 const HANDLE_H = 6;
-const WIDE_MIN_W = 1440;
+/**
+ * The designer's own width at which the inspector widens to 320 px: a 1440 px
+ * window less the 184 px sub-nav (and a little slack).
+ */
+const WIDE_MIN_W = 1240;
 const KEY_STEP = 16;
 
-/** Live window size (SSR: a 1280×800 guess, replaced on mount). */
-function useViewport(): { w: number; h: number } {
-  const [vp, setVp] = useState({ w: 1280, h: 800 });
-  useEffect(() => {
-    const read = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+/** Live window height (SSR guess 800, replaced before the first paint). */
+function useViewportHeight(): number {
+  const [h, setH] = useState(800);
+  useLayoutEffect(() => {
+    const read = () => setH(window.innerHeight);
     read();
     window.addEventListener("resize", read);
     return () => window.removeEventListener("resize", read);
   }, []);
-  return vp;
+  return h;
+}
+
+/** The element's own width, tracked with a ResizeObserver (read before the first paint). */
+function useWidth(ref: React.RefObject<HTMLElement | null>): number {
+  const [w, setW] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setW(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => setW(entries[0]?.contentRect.width ?? 0));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
 }
 
 function readStored(): number | null {
@@ -62,26 +80,30 @@ export function DesignerLayout({
   /** Error strip over the top of the canvas. */
   banner?: ReactNode;
 }) {
-  const vp = useViewport();
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const vh = useViewportHeight();
+  const width = useWidth(gridRef);
   const [stored, setStored] = useState<number | null>(null);
-  useEffect(() => setStored(readStored()), []);
-  const timelineH = stored !== null ? clampTimelineHeight(stored, vp.h) : defaultTimelineHeight(trackCount, vp.h);
-  const inspectorW = vp.w >= WIDE_MIN_W ? 320 : 300;
+  useLayoutEffect(() => setStored(readStored()), []);
+  const timelineH = stored !== null ? clampTimelineHeight(stored, vh) : defaultTimelineHeight(trackCount, vh);
+  const inspectorW = width >= WIDE_MIN_W ? 320 : 300;
 
   const dragRef = useRef<{ pointerId: number; startY: number; startH: number } | null>(null);
   function setHeight(h: number, persist: boolean) {
-    const next = clampTimelineHeight(h, vp.h);
+    const next = clampTimelineHeight(h, vh);
     setStored(next);
     if (persist) writeStored(next);
   }
 
   return (
     <div
+      ref={gridRef}
       style={{
         height: "100%",
         display: "grid",
         gridTemplateColumns: `240px minmax(0, 1fr) ${inspectorW}px`,
-        gridTemplateRows: `${HEADER_H}px minmax(0, 1fr) ${timelineH}px`,
+        // The handle sits on top of the timeline's own height, so it never covers a track.
+        gridTemplateRows: `${HEADER_H}px minmax(0, 1fr) ${timelineH + HANDLE_H}px`,
         gap: 1,
         background: colors.border,
         overflow: "hidden",
@@ -110,7 +132,7 @@ export function DesignerLayout({
           aria-label="Resize timeline"
           aria-valuenow={timelineH}
           aria-valuemin={140}
-          aria-valuemax={clampTimelineHeight(Number.MAX_SAFE_INTEGER, vp.h)}
+          aria-valuemax={clampTimelineHeight(Number.MAX_SAFE_INTEGER, vh)}
           tabIndex={0}
           title="Drag to resize · double-click to fit the tracks"
           onPointerDown={(e) => {

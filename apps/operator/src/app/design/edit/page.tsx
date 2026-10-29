@@ -1,7 +1,7 @@
 "use client";
 
 import { spaceAction } from "./designerKeys";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import {
@@ -227,9 +227,19 @@ function DesignPageInner() {
     send({ type: "get_template", templateId });
   }, [cloud, conn, templateId, send, setDraft]);
 
-  useUnsavedGuard(dirty, {
+  // A name typed in the header but not yet committed counts as unsaved too.
+  const nameFlushRef = useRef<(() => void) | null>(null);
+  const namePendingRef = useRef(false);
+  const [namePending, setNamePending] = useState(false);
+  const onNamePendingChange = useCallback((p: boolean) => {
+    namePendingRef.current = p;
+    setNamePending(p);
+  }, []);
+  const anyDirty = dirty || namePending;
+
+  useUnsavedGuard(anyDirty, {
     message: UNSAVED_PROMPT,
-    getDirty: () => useEditor.getState().dirty,
+    getDirty: () => useEditor.getState().dirty || namePendingRef.current,
     resetKey: templateId,
     canArm: draft?.id === templateId,
   });
@@ -316,18 +326,13 @@ function DesignPageInner() {
 
   // ---- Keyboard ----
   const spacePannedRef = useRef(false);
-  const keyActionsRef = useRef({ save, play, pause, deleteSelection, duplicateSelection, moveZ });
-  keyActionsRef.current = { save, play, pause, deleteSelection, duplicateSelection, moveZ };
+  const keyActionsRef = useRef({ play, pause, deleteSelection, duplicateSelection, moveZ });
+  keyActionsRef.current = { play, pause, deleteSelection, duplicateSelection, moveZ };
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const a = keyActionsRef.current;
       const meta = e.metaKey || e.ctrlKey;
-      // Save works from inside an input too, and must never open the browser's Save dialog.
-      if (meta && e.code === "KeyS" && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        void a.save();
-        return;
-      }
+      // ⌘S is SaveBar's (it works from inside inputs too).
       if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
       const st = useEditor.getState();
       if (meta && e.code === "KeyZ" && !e.shiftKey) {
@@ -436,6 +441,8 @@ function DesignPageInner() {
 
   // ---- Save / revert ----
   async function save() {
+    // Commit a typed-but-uncommitted template name first, so it is never left out.
+    nameFlushRef.current?.();
     const cur = useEditor.getState().draft;
     if (!cur || !useEditor.getState().dirty || savingRef.current) return;
     if (cloud) {
@@ -515,7 +522,7 @@ function DesignPageInner() {
 
   async function deleteTemplate() {
     const cur = useEditor.getState().draft;
-    if (!cur) return;
+    if (!cur || useEditor.getState().dirty || namePendingRef.current) return;
     const usage =
       (cloud ? null : await fetchTemplateUsage(cur.id)) ??
       (PROTECTED_TEMPLATE_IDS.includes(cur.id)
@@ -523,7 +530,7 @@ function DesignPageInner() {
         : null);
     const c = templateDeleteConfirm(cur.name || "template", usage);
     if (c.blocked) {
-      await alertDialog({ title: c.title, message: c.message });
+      await alertDialog({ title: c.title, message: c.message, okLabel: c.confirmLabel });
       return;
     }
     const ok = await confirmDialog({ title: c.title, message: c.message, confirmLabel: c.confirmLabel, danger: true });
@@ -577,7 +584,7 @@ function DesignPageInner() {
           <DesignerHeader
             name={draft.name}
             size={draft.size}
-            dirty={dirty}
+            dirty={anyDirty}
             saving={saving}
             canUndo={canUndo}
             canRedo={canRedo}
@@ -593,11 +600,14 @@ function DesignPageInner() {
             previewSlot={null}
             saveDisabledReason={offline ? "Reconnect to save" : undefined}
             onDuplicate={() => void duplicateTemplate()}
-            duplicateDisabled={dirty ? saveFirst("Duplicate") : offline ? "Reconnect to duplicate" : false}
+            duplicateDisabled={anyDirty ? saveFirst("Duplicate") : offline ? "Reconnect to duplicate" : false}
             onExport={exportTemplate}
-            exportDisabled={dirty ? saveFirst("Export") : false}
+            exportDisabled={anyDirty ? saveFirst("Export") : false}
             onDelete={() => void deleteTemplate()}
-            deleteDisabled={offline ? "Reconnect to delete" : false}
+            // Delete-while-dirty would mark-saved then navigate, racing the guard's history sentinel.
+            deleteDisabled={anyDirty ? "Save or revert first" : offline ? "Reconnect to delete" : false}
+            nameFlushRef={nameFlushRef}
+            onNamePendingChange={onNamePendingChange}
           />
         }
         banner={

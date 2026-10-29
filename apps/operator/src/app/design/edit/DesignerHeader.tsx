@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { MoreHorizontal, Redo2, Undo2 } from "lucide-react";
 import { IconButton, Menu, SaveBar, Tooltip, colors, fontSize, radius, type MenuItem } from "@overlaysys/ui";
 import { HelpPopover } from "./HelpPopover";
+import { isSaveShortcut, nameToCommit } from "./nameEdit";
 
 type Props = {
   name: string;
@@ -28,6 +29,10 @@ type Props = {
   duplicateDisabled?: boolean | string;
   exportDisabled?: boolean | string;
   deleteDisabled?: boolean | string;
+  /** Set to a function that commits a typed-but-uncommitted name; save() calls it first. */
+  nameFlushRef?: MutableRefObject<(() => void) | null>;
+  /** True while the name field holds text that differs from the template's name. */
+  onNamePendingChange?(pending: boolean): void;
 };
 
 /**
@@ -57,7 +62,7 @@ export function DesignerHeader(p: Props) {
         background: colors.surface,
       }}
     >
-      <NameInput name={p.name} onRename={p.onRename} />
+      <NameInput name={p.name} onRename={p.onRename} flushRef={p.nameFlushRef} onPendingChange={p.onNamePendingChange} />
       <span style={{ color: colors.textMuted, fontSize: fontSize.xs, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
         {p.size.w}×{p.size.h}
       </span>
@@ -93,13 +98,52 @@ export function DesignerHeader(p: Props) {
   );
 }
 
-/** The title: looks like text, shows a border on hover / focus. Enter or blur renames, Escape reverts. */
-function NameInput({ name, onRename }: { name: string; onRename(name: string): void }) {
+/**
+ * The title: looks like text, shows a border on hover / focus. Enter or blur
+ * renames, Escape reverts, and ⌘S commits before the save listeners run (React's
+ * root handler fires before SaveBar's window listener), so a typed name is never
+ * left out of a save.
+ */
+function NameInput({
+  name,
+  onRename,
+  flushRef,
+  onPendingChange,
+}: {
+  name: string;
+  onRename(name: string): void;
+  flushRef?: MutableRefObject<(() => void) | null>;
+  onPendingChange?(pending: boolean): void;
+}) {
   const [text, setText] = useState(name);
   const [hover, setHover] = useState(false);
   const [focus, setFocus] = useState(false);
   const skipRef = useRef(false);
-  useEffect(() => setText(name), [name]);
+  // Live values for the flush function, which runs outside a render.
+  const live = useRef({ text, name, onRename, focus });
+  live.current = { text, name, onRename, focus };
+  // A name change from elsewhere (undo, revert, an echo) replaces the text, but never mid-typing.
+  useEffect(() => {
+    if (!live.current.focus) setText(name);
+  }, [name]);
+
+  const pending = nameToCommit(text, name) !== null;
+  useEffect(() => {
+    onPendingChange?.(pending);
+  }, [pending, onPendingChange]);
+  useEffect(() => () => onPendingChange?.(false), [onPendingChange]);
+
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = () => {
+      const { text: t, name: n, onRename: rename } = live.current;
+      const next = nameToCommit(t, n);
+      if (next) rename(next);
+    };
+    return () => {
+      flushRef.current = null;
+    };
+  }, [flushRef]);
 
   function commit() {
     setFocus(false);
@@ -109,13 +153,10 @@ function NameInput({ name, onRename }: { name: string; onRename(name: string): v
       setText(name);
       return;
     }
-    const next = text.trim();
-    // Never leave the template nameless.
-    if (!next || next === name) {
-      setText(name);
-      return;
-    }
-    onRename(next);
+    const next = nameToCommit(text, name);
+    if (next) onRename(next);
+    // Blank or unchanged: show the template's name again.
+    else setText(name);
   }
 
   return (
@@ -123,12 +164,20 @@ function NameInput({ name, onRename }: { name: string; onRename(name: string): v
       value={text}
       aria-label="Template name"
       title="Template name"
-      onChange={(e) => setText(e.target.value)}
+      onChange={(e) => {
+        live.current.text = e.target.value;
+        setText(e.target.value);
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onFocus={() => setFocus(true)}
       onBlur={commit}
       onKeyDown={(e) => {
+        if (isSaveShortcut(e)) {
+          const next = nameToCommit(text, name);
+          if (next) onRename(next);
+          return;
+        }
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") {
           skipRef.current = true;
