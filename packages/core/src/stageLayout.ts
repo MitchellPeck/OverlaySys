@@ -15,6 +15,12 @@ export const StageRectSchema = z.object({
 });
 export type StageRect = z.infer<typeof StageRectSchema>;
 
+/** Warn / overtime colours the timer and video-remaining widgets use when none is set. Shared by the schema, the renderer and the inspector. */
+export const STAGE_TIMER_WARN_COLOR = "#ffb703";
+export const STAGE_TIMER_OVER_COLOR = "#ef233c";
+export const STAGE_VIDEO_WARN_COLOR = "#ff5c5c";
+export const STAGE_VIDEO_OVER_COLOR = "#ef233c";
+
 export const StageWidgetStyleSchema = z.object({
   fontFamily: z.string().default("Inter, system-ui, sans-serif"),
   fontSize: z.number().positive().default(64),
@@ -95,8 +101,8 @@ export const StageWidgetSchema = z.discriminatedUnion("kind", [
       .object({
         source: StageTimerSourceSchema.default("firstActive"),
         warnBelowSec: z.number().min(0).default(60),
-        warnColor: z.string().default("#ffb703"),
-        overColor: z.string().default("#ef233c"),
+        warnColor: z.string().default(STAGE_TIMER_WARN_COLOR),
+        overColor: z.string().default(STAGE_TIMER_OVER_COLOR),
         showLabel: z.boolean().default(false),
         /** How overtime is shown. Renderer treats undefined as "text" for stored layouts. */
         overtimeStyle: z.enum(["text", "fill", "flash"]).optional(),

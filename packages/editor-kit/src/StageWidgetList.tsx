@@ -40,7 +40,8 @@ function Row({
   const { primary, secondary } = names(w);
   // The eye and lock show on hover, focus or selection; a hidden or locked widget keeps its icon visible.
   const showTools = hover || focus || selected;
-  const tool = (always: boolean) => ({ opacity: always || showTools ? 1 : 0 });
+  const tool = (always: boolean) => (always || showTools ? {} : { display: "none" as const });
+  const [ring, setRing] = useState(false);
   return (
     <div
       onMouseEnter={() => setHover(true)}
@@ -60,6 +61,8 @@ function Row({
       <button
         type="button"
         aria-pressed={selected}
+        onFocus={(e) => setRing(e.currentTarget.matches(":focus-visible"))}
+        onBlur={() => setRing(false)}
         onClick={(e) => props.onSelect(w.id, e.shiftKey)}
         style={{
           flex: 1,
@@ -77,6 +80,8 @@ function Row({
           fontSize: fontSize.base,
           textAlign: "left",
           cursor: "pointer",
+          outline: ring ? `2px solid ${colors.accent}` : "none",
+          outlineOffset: -2,
         }}
       >
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{primary}</span>

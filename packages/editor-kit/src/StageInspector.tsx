@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { StageLayout, StageWidget } from "@overlaysys/core";
+import { STAGE_VIDEO_OVER_COLOR, STAGE_VIDEO_WARN_COLOR, type StageLayout, type StageWidget } from "@overlaysys/core";
 import { Button, Input, NumberInput, SegmentedControl, Select, Switch, Textarea, colors, fontSize, radius } from "@overlaysys/ui";
 import { ColorInput } from "./ColorInput";
 import { FieldRow } from "./FieldRow";
@@ -393,8 +393,8 @@ function renderProps(
           <FieldRow label="Under (s)" hint="Warn when this many seconds or fewer remain">
             {(id) => <Num id={id} label="Under (s)" value={w.props.warnBelowSec} min={0} onChange={(warnBelowSec) => set({ warnBelowSec })} />}
           </FieldRow>
-          <FieldRow label="Warn">{() => <ColorInput value={w.props.warnColor ?? "#ffb703"} onChange={(warnColor) => set({ warnColor })} />}</FieldRow>
-          <FieldRow label="Overtime">{() => <ColorInput value={w.props.overColor ?? "#ef233c"} onChange={(overColor) => set({ overColor })} />}</FieldRow>
+          <FieldRow label="Warn">{() => <ColorInput value={w.props.warnColor ?? STAGE_VIDEO_WARN_COLOR} onChange={(warnColor) => set({ warnColor })} />}</FieldRow>
+          <FieldRow label="Overtime">{() => <ColorInput value={w.props.overColor ?? STAGE_VIDEO_OVER_COLOR} onChange={(overColor) => set({ overColor })} />}</FieldRow>
         </>
       );
     case "sermonNotes":
@@ -409,7 +409,6 @@ function renderProps(
           <FieldRow label="Anchor" hint="Where the current point sits, from the top">
             {(id) => <Slider id={id} label="Anchor" value={w.props.anchor} min={0} max={1} step={0.01} onChange={(anchor) => set({ anchor })} />}
           </FieldRow>
-          <p style={{ margin: "0 0 0 88px", fontSize: fontSize.sm, color: colors.textDim }}>Where the current point sits, from the top</p>
         </>
       );
     case "message":

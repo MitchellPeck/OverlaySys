@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { STAGE_VIDEO_OVER_COLOR, STAGE_VIDEO_WARN_COLOR } from "@overlaysys/core";
 import type { SlideView, StageFeed, StageWidget } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { parseNotesMarkdown, type Span } from "./notesMarkdown";
@@ -374,7 +375,7 @@ export function StageWidgetView({
       const { warnBelowSec, warnColor, overColor } = widget.props;
       const done = !!v && sec <= 0;
       const warn = !!v && !done && sec <= warnBelowSec;
-      const color = done ? (overColor ?? "#ef233c") : warn ? (warnColor ?? "#ff5c5c") : widget.style.color;
+      const color = done ? (overColor ?? STAGE_VIDEO_OVER_COLOR) : warn ? (warnColor ?? STAGE_VIDEO_WARN_COLOR) : widget.style.color;
       const shown: StageWidget = { ...widget, style: { ...widget.style, color } };
       const paused = !!v && v.status === "paused";
       return (
