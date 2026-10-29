@@ -739,19 +739,7 @@ export function Canvas(props: Props) {
         )}
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: 8,
-          left: 12,
-          fontSize: 11,
-          color: "var(--text-dim, #9099a8)",
-          fontFamily: "ui-monospace, monospace",
-          pointerEvents: "none",
-        }}
-      >
-        {props.template.size.w}×{props.template.size.h} · space+drag to pan · Alt: no snap
-      </div>
+      {/* The size and the pan / snap hints live in the designer header ("?"). */}
       <ViewToolbar
         zoom={zoom}
         scale={scale}

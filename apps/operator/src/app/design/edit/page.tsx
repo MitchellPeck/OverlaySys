@@ -2,7 +2,8 @@
 
 import { spaceAction } from "./designerKeys";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { v4 as uuid } from "uuid";
 import {
   Canvas,
   LayerTree,
@@ -31,7 +32,7 @@ import {
 } from "@overlaysys/editor-kit";
 import type { Draft } from "immer";
 import type { Layer, Template } from "@overlaysys/core";
-import { Button, colors } from "@overlaysys/ui";
+import { Button, alertDialog, colors, confirm as confirmDialog, toast } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
@@ -39,15 +40,22 @@ import { isLocalDraftEdit, shouldAdoptIncoming } from "@/lib/stageDesigner";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { uploadAsset } from "@/lib/uploadAsset";
+import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
+import { downloadJson } from "@/lib/download";
+import { exportFileName } from "@/lib/exportName";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import {
+  deleteTemplateCloud,
   getTemplateCloud,
   refreshTemplateMetasCloud,
   saveTemplateCloud,
 } from "@/lib/cloudData";
 import { useDialog } from "@/lib/dialog";
+import { DesignerHeader } from "./DesignerHeader";
+import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
+import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
 type Recipe = (d: Draft<Template>) => void;
 
@@ -77,6 +85,7 @@ export default function DesignPage() {
 function DesignPageInner() {
   const searchParams = useSearchParams();
   const templateId = decodeURIComponent(searchParams?.get("id") ?? "");
+  const router = useRouter();
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
 
@@ -477,6 +486,64 @@ function DesignPageInner() {
     send({ type: "get_template", templateId });
   }
 
+  // ---- Header menu: duplicate / export / delete (the saved template) ----
+  async function duplicateTemplate() {
+    const cur = useEditor.getState().draft;
+    if (!cur || useEditor.getState().dirty) return;
+    let copyId: string;
+    try {
+      if (cloud) {
+        copyId = `template-${uuid().slice(0, 8)}`;
+        await saveTemplateCloud({ ...cur, id: copyId, name: `${cur.name} (copy)` });
+        await refreshTemplateMetasCloud();
+      } else {
+        copyId = await requestOne(getClient(), { type: "duplicate_template", templateId: cur.id }, (m) =>
+          m.type === "ack" && m.op === "duplicate_template" && m.id ? m.id : undefined,
+        );
+      }
+    } catch (e) {
+      toast({ tone: "error", message: `Not duplicated: ${ackErrorText(e)}` });
+      return;
+    }
+    router.push(`/design/edit?id=${encodeURIComponent(copyId)}`);
+  }
+
+  function exportTemplate() {
+    const cur = useEditor.getState().draft;
+    if (cur) downloadJson(exportFileName("template", cur), cur);
+  }
+
+  async function deleteTemplate() {
+    const cur = useEditor.getState().draft;
+    if (!cur) return;
+    const usage =
+      (cloud ? null : await fetchTemplateUsage(cur.id)) ??
+      (PROTECTED_TEMPLATE_IDS.includes(cur.id)
+        ? { shows: [], hotcards: [], songs: [], scriptureDefault: false, protected: true }
+        : null);
+    const c = templateDeleteConfirm(cur.name || "template", usage);
+    if (c.blocked) {
+      await alertDialog({ title: c.title, message: c.message });
+      return;
+    }
+    const ok = await confirmDialog({ title: c.title, message: c.message, confirmLabel: c.confirmLabel, danger: true });
+    if (!ok) return;
+    try {
+      if (cloud) {
+        await deleteTemplateCloud(cur.id);
+        await refreshTemplateMetasCloud();
+      } else {
+        await sendAndAwaitAck(getClient(), { type: "delete_template", templateId: cur.id }, { op: "delete_template", id: cur.id });
+      }
+    } catch (e) {
+      toast({ tone: "error", message: `Not deleted: ${ackErrorText(e)}` });
+      return;
+    }
+    // Deleted: nothing left to guard.
+    markSaved();
+    router.push("/design");
+  }
+
   if (!draft) {
     return (
       <>
@@ -498,90 +565,65 @@ function DesignPageInner() {
     .map((id) => findLayer(draft.layers, id))
     .filter((l): l is Layer => !!l);
   const primary = selectedLayerId ? findLayer(draft.layers, selectedLayerId) : null;
+  const offline = !cloud && conn !== "open";
+  const saveFirst = (what: string) => `Save first. ${what} uses the saved template.`;
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "grid",
-        // PageChrome renders into the shell (returns null), so it takes no
-        // row here: error banner, editor, timeline.
-        gridTemplateRows: "auto minmax(0, 1fr) 280px",
-        overflow: "hidden",
-      }}
-    >
-      <PageChrome
-        context={
-          <>
-            <TemplateNameInput template={draft} onCommit={commit} onLive={applyLive} />
-            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
-            {saving ? (
-              <span style={{ color: colors.textDim, fontSize: 11 }}>saving…</span>
-            ) : (
-              dirty && (
-                <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>
-                  <span
-                    aria-hidden
-                    style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }}
-                  />
-                  unsaved
-                </span>
-              )
-            )}
-          </>
-        }
-        actions={
-          <>
-            <Button onClick={undo} variant="ghost" size="sm" disabled={!canUndo} title="Undo (⌘Z)">↶ Undo</Button>
-            <Button onClick={redo} variant="ghost" size="sm" disabled={!canRedo} title="Redo (⇧⌘Z)">↷ Redo</Button>
-            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty || saving}>Revert</Button>
-            <Button
-              onClick={() => void save()}
-              variant="primary"
-              size="sm"
-              disabled={!dirty || saving || (!cloud && conn !== "open")}
-              title={!cloud && conn !== "open" ? "Not connected to the server" : undefined}
-            >
-              {saving ? "Saving…" : "Save (⌘S)"}
-            </Button>
-          </>
-        }
-      />
-
-      <div>
-        {error && (
-          <div
-            role="alert"
-            style={{ padding: "6px 12px", fontSize: 12, color: colors.danger, borderBottom: `1px solid ${colors.border}`, display: "flex", gap: 12, alignItems: "center" }}
-          >
-            {error}
-            <Button size="sm" variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
-          </div>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "260px minmax(0, 1fr) 300px",
-          gap: 1,
-          background: colors.border,
-          minHeight: 0,
-          overflow: "hidden",
-        }}
-      >
-        <EditorSection title="Layers" extra={<LayersHint />}>
-          <LayerTree
-            template={draft}
-            selectedId={selectedLayerId}
-            selectedIds={selectedLayerIds}
-            onSelect={setSelectedLayer}
-            onSelectLayers={selectLayers}
-            onCommit={commit}
+    <>
+      <PageChrome docTitle={draft.name} />
+      <DesignerLayout
+        trackCount={draft.timelines[activeTimeline].tracks.length}
+        header={
+          <DesignerHeader
+            name={draft.name}
+            size={draft.size}
+            dirty={dirty}
+            saving={saving}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
+            onSave={() => void save()}
+            onRevert={() => void revert()}
+            onRename={(name) =>
+              commit((d) => {
+                d.name = name;
+              })
+            }
+            previewSlot={null}
+            saveDisabledReason={offline ? "Reconnect to save" : undefined}
+            onDuplicate={() => void duplicateTemplate()}
+            duplicateDisabled={dirty ? saveFirst("Duplicate") : offline ? "Reconnect to duplicate" : false}
+            onExport={exportTemplate}
+            exportDisabled={dirty ? saveFirst("Export") : false}
+            onDelete={() => void deleteTemplate()}
+            deleteDisabled={offline ? "Reconnect to delete" : false}
           />
-        </EditorSection>
-
-        <div style={{ background: "var(--bg)", minWidth: 0, minHeight: 0, overflow: "hidden" }}>
+        }
+        banner={
+          error && (
+            <div
+              role="alert"
+              style={{ padding: "6px 12px", fontSize: 12, color: colors.dangerText, background: colors.surface, borderBottom: `1px solid ${colors.border}`, display: "flex", gap: 12, alignItems: "center" }}
+            >
+              {error}
+              <Button size="sm" variant="ghost" onClick={() => setError(null)}>Dismiss</Button>
+            </div>
+          )
+        }
+        layers={
+          <DesignerPanel title="Layers">
+            <LayerTree
+              template={draft}
+              selectedId={selectedLayerId}
+              selectedIds={selectedLayerIds}
+              onSelect={setSelectedLayer}
+              onSelectLayers={selectLayers}
+              onCommit={commit}
+            />
+          </DesignerPanel>
+        }
+        canvas={
           <Canvas
             template={draft}
             data={previewData}
@@ -597,117 +639,74 @@ function DesignPageInner() {
             spacePannedRef={spacePannedRef}
             onPasteboardClick={() => selectLayers([])}
           />
-        </div>
-
-        {selectedLayers.length === 0 ? (
-          <EditorSection title="Template" subtitle="nothing selected">
-            <TemplateSettings template={draft} onCommit={commit} onLive={applyLive} />
-            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-              <FieldsPanel template={draft} onCommit={commit} onLive={applyLive} onUpload={uploadInspector} />
-            </div>
-          </EditorSection>
-        ) : (
-          <EditorSection
-            title="Inspector"
-            subtitle={selectedLayers.length > 1 ? `${selectedLayers.length} layers` : (primary?.name ?? "")}
-          >
-            <ArrangeBar
-              count={selectedLayers.length}
-              onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
-              onDistribute={(axis) => commit(distributeLayers(useEditor.getState().selectedLayerIds, axis))}
-              onZ={moveZ}
-            />
-            {selectedLayers.length === 1 && (
-              <>
-                <PropertyInspector
-                  template={draft}
-                  selectedId={selectedLayerId}
-                  onCommit={commit}
-                  onLive={applyLive}
-                  onPushHistory={pushHistory}
-                  onUpload={uploadInspector}
-                />
-                {selectedLayerId && (
-                  <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
-                    <ClipBySection template={draft} selectedLayerId={selectedLayerId} onCommit={commit} />
-                  </div>
-                )}
-              </>
-            )}
-            {selectedLayers.length > 1 && (
-              <p style={{ fontSize: 11, color: colors.textDim, lineHeight: 1.5 }}>
-                Arrows nudge (Shift = 10px) · ⌘D duplicate · ⌘C / ⌘V copy and paste · Delete removes.
-              </p>
-            )}
-          </EditorSection>
-        )}
-      </div>
-
-      <div style={{ borderTop: `1px solid ${colors.border}`, minHeight: 0, overflow: "hidden" }}>
-        <TimelinePanel
-          template={draft}
-          active={activeTimeline}
-          setActive={setActiveTimeline}
-          time={scrubTime}
-          setTime={setScrubTime}
-          selectedLayerId={selectedLayerId}
-          selectedKeyframe={selectedKeyframe}
-          setSelectedKeyframe={setSelectedKeyframe}
-          playing={playing}
-          loop={loop}
-          onPlay={play}
-          onPause={pause}
-          onLoopToggle={() => setLoop(!loop)}
-          onCommit={commit}
-          onLive={applyLive}
-          onPushHistory={pushHistory}
-        />
-      </div>
-      {dialog}
-    </div>
-  );
-}
-
-/** Template name; one undo step per edit, Enter / blur ends it, Escape reverts. */
-function TemplateNameInput({ template, onCommit, onLive }: { template: Template; onCommit: (r: Recipe) => void; onLive: (r: Recipe) => void }) {
-  const { commit, handlers } = useEditCoalescer(onCommit, onLive);
-  const startRef = useRef(template.name);
-  return (
-    <span {...handlers}>
-      <input
-        value={template.name}
-        onFocus={() => (startRef.current = template.name)}
-        onChange={(e) => {
-          const v = e.target.value;
-          commit((d) => {
-            d.name = v;
-          });
-        }}
-        onBlur={() => {
-          if (template.name.trim()) return;
-          // Never leave the template nameless.
-          const back = startRef.current || template.id;
-          onLive((d) => {
-            d.name = back;
-          });
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        title="Template name"
-        aria-label="Template name"
-        style={{
-          background: "transparent",
-          border: "1px solid transparent",
-          color: colors.text,
-          fontSize: 15,
-          fontWeight: 600,
-          padding: "2px 6px",
-          borderRadius: 4,
-          minWidth: 200,
-        }}
+        }
+        inspector={
+          selectedLayers.length === 0 ? (
+            <DesignerPanel title="Template" subtitle="nothing selected">
+              <TemplateSettings template={draft} onCommit={commit} onLive={applyLive} />
+              <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
+                <FieldsPanel template={draft} onCommit={commit} onLive={applyLive} onUpload={uploadInspector} />
+              </div>
+            </DesignerPanel>
+          ) : (
+            <DesignerPanel
+              title="Inspector"
+              subtitle={selectedLayers.length > 1 ? `${selectedLayers.length} layers` : (primary?.name ?? "")}
+            >
+              <ArrangeBar
+                count={selectedLayers.length}
+                onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
+                onDistribute={(axis) => commit(distributeLayers(useEditor.getState().selectedLayerIds, axis))}
+                onZ={moveZ}
+              />
+              {selectedLayers.length === 1 && (
+                <>
+                  <PropertyInspector
+                    template={draft}
+                    selectedId={selectedLayerId}
+                    onCommit={commit}
+                    onLive={applyLive}
+                    onPushHistory={pushHistory}
+                    onUpload={uploadInspector}
+                  />
+                  {selectedLayerId && (
+                    <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
+                      <ClipBySection template={draft} selectedLayerId={selectedLayerId} onCommit={commit} />
+                    </div>
+                  )}
+                </>
+              )}
+              {selectedLayers.length > 1 && (
+                <p style={{ fontSize: 11, color: colors.textDim, lineHeight: 1.5 }}>
+                  Arrows nudge (Shift = 10px) · ⌘D duplicate · ⌘C / ⌘V copy and paste · Delete removes.
+                </p>
+              )}
+            </DesignerPanel>
+          )
+        }
+        timeline={
+          <TimelinePanel
+            template={draft}
+            active={activeTimeline}
+            setActive={setActiveTimeline}
+            time={scrubTime}
+            setTime={setScrubTime}
+            selectedLayerId={selectedLayerId}
+            selectedKeyframe={selectedKeyframe}
+            setSelectedKeyframe={setSelectedKeyframe}
+            playing={playing}
+            loop={loop}
+            onPlay={play}
+            onPause={pause}
+            onLoopToggle={() => setLoop(!loop)}
+            onCommit={commit}
+            onLive={applyLive}
+            onPushHistory={pushHistory}
+          />
+        }
       />
-    </span>
+      {dialog}
+    </>
   );
 }
 
@@ -1244,52 +1243,3 @@ const selectStyle: React.CSSProperties = {
   fontSize: 12,
   width: "100%",
 };
-
-function LayersHint() {
-  return (
-    <span style={{ fontSize: 11, color: colors.textDim }}>
-      drag to reorder · ⇧-click to multi-select
-    </span>
-  );
-}
-
-/**
- * Sidebar section for the design editor. Distinct from @overlaysys/ui Panel —
- * uses a small uppercase letterspaced title without a bordered card to fit
- * the editor's three-pane chrome.
- */
-function EditorSection({
-  title,
-  subtitle,
-  extra,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  extra?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section style={{ background: colors.panel, padding: 12, overflow: "auto", minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8, gap: 6 }}>
-        <h3
-          style={{
-            margin: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            color: colors.textDim,
-          }}
-        >
-          {title}
-        </h3>
-        {subtitle && (
-          <span style={{ fontSize: 11, color: colors.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            · {subtitle}
-          </span>
-        )}
-        <div style={{ marginLeft: "auto" }}>{extra}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
