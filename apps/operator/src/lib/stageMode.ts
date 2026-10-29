@@ -75,7 +75,10 @@ type RowSource = { showId: string; rowId: string } | undefined;
  */
 export function liveSongRowId(show: Show | null, session: SongSessionSummary, liveRow?: RowSource): string | null {
   if (!show) return null;
-  if (liveRow && liveRow.showId === show.id) {
+  // Taken from another show: none of this show's rows is the live one
+  // (the rundown marks the matching row "other show").
+  if (liveRow && liveRow.showId !== show.id) return null;
+  if (liveRow) {
     const r = show.rows.find((x) => x.id === liveRow.rowId);
     if (r && r.kind === "song" && r.songId === session.songId) return r.id;
   }

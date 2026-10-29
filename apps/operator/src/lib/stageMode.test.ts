@@ -193,4 +193,8 @@ describe("pinnedRowId", () => {
     expect(pinnedRowId(show, undefined, "g")).toBeNull();
     expect(pinnedRowId(show, st({ scriptureSession: { rowId: "gone" } as never }), "g")).toBeNull();
   });
+
+  it("a song taken from another show is never pinned as this show's row, even its only row", () => {
+    expect(pinnedRowId(show, st({ songSession: session, liveRow: { showId: "other", rowId: "s-elsewhere" } }), "g")).toBeNull();
+  });
 });
