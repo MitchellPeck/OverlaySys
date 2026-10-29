@@ -21,6 +21,7 @@ import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { PageBody } from "@/app/components/PageShell";
+import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
 import { isElectron } from "@/lib/desktop";
 import { useAuthStore } from "@/lib/useAuth";
@@ -424,6 +425,8 @@ export default function ProjectsIndexPage() {
   const stale = !cloud && conn === "closed" && projects.length > 0;
 
   return (
+    <>
+    <PageChrome title="Projects" />
     <PageBody variant="list">
       {offlineEmpty ? (
         <OfflineState noun="projects" onRetry={retry} />
@@ -500,6 +503,7 @@ export default function ProjectsIndexPage() {
         />
       )}
     </PageBody>
+    </>
   );
 }
 

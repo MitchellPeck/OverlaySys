@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button, Panel, Pill, colors, confirm, fontSize, type PillTone } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
-import { getDesktopApi } from "@/lib/desktop";
+import { getDesktopApi, isElectron } from "@/lib/desktop";
+import { isCloudMode } from "@/lib/mode";
 import { disconnectPco, getPcoStatus } from "@/lib/pcoClient";
 import { useAuthStore } from "@/lib/useAuth";
 import { integrationStatus } from "./integrationStatus";
@@ -129,18 +130,27 @@ function CloudPanel() {
   const user = useAuthStore((s) => s.user);
   const initialized = useAuthStore((s) => s.initialized);
   const router = useRouter();
+  // The auth store is only wired up in cloud mode or the desktop app. In a plain
+  // local browser session it never initializes, so don't wait on it.
+  const supported = isCloudMode() || isElectron();
   return (
     <Panel title="OverlaySys Cloud" padding="md">
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <StatusPill configured={!initialized || status !== "signed_out"} ok={initialized ? status === "signed_in" : null} />
+        {supported ? (
+          <StatusPill configured={!initialized || status !== "signed_out"} ok={initialized ? status === "signed_in" : null} />
+        ) : (
+          <Pill tone="dim">Desktop only</Pill>
+        )}
         {status === "signed_in" && user?.email && (
           <span style={{ color: colors.textDim, fontSize: fontSize.sm }}>{user.email}</span>
         )}
-        <div style={{ marginLeft: "auto" }}>
-          <Button size="sm" onClick={() => router.push("/account")}>
-            {status === "signed_out" ? "Sign in" : "Account"}
-          </Button>
-        </div>
+        {supported && (
+          <div style={{ marginLeft: "auto" }}>
+            <Button size="sm" onClick={() => router.push("/account")}>
+              {status === "signed_out" ? "Sign in" : "Account"}
+            </Button>
+          </div>
+        )}
       </div>
       <p style={{ color: colors.textDim, fontSize: fontSize.sm, margin: 0 }}>
         Optional. Syncs shows, songs and designs to the cloud so they are backed up and editable on the web.

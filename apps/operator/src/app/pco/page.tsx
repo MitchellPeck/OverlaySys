@@ -674,7 +674,7 @@ export default function PcoPage() {
   return (
     <>
       <PageChrome title="Planning Center" />
-      <PageBody maxWidth={1000} style={{ height: "100%" }}>
+      <PageBody variant="wide" maxWidth={1000} style={{ height: "100%" }}>
         {status === "checking" && <p style={{ color: colors.textDim }}>Checking connection…</p>}
 
         {status === "disconnected" && (
