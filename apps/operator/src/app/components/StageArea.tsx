@@ -9,7 +9,7 @@ import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { rowView } from "@/lib/rowView";
 import { thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
 import type { RowLike } from "@/lib/rowLike";
-import { pinnedRowId, regionRowId, selectionOf, shortcutHint, stageModeFor } from "@/lib/stageMode";
+import { liveSongRowId, pinnedRowId, regionRowId, selectionOf, shortcutHint, stageModeFor } from "@/lib/stageMode";
 import { slidesRowViewFor, slidesStripNotice, useDeckFor } from "@/lib/slidesRowView";
 import { SongLiveBar } from "./SongModePanel";
 import { TakePanel } from "./TakePanel";
@@ -42,9 +42,11 @@ export function StageArea() {
   const rowId = regionRowId(mode, show, liveRow);
   const row = (rowId && show ? show.rows.find((r) => r.id === rowId) : undefined) as RowLike | undefined;
   const pinned = pinnedRowId(show, channelStates.program, rowId);
-  // The live song's own controls (Blank, End song, Auto-advance) sit over its thumbnails.
+  // The live song's own controls (Blank, End song, Auto-advance) sit over its
+  // thumbnails: only for the exact live row (never a reprise row, nor a row
+  // the rundown marks OTHER SHOW).
   const songBar =
-    mode.kind === "song-live" && row?.kind === "song" && (row as { songId: string }).songId === mode.session.songId;
+    mode.kind === "song-live" && !!row && row.id === liveSongRowId(show, mode.session, liveRow);
 
   return (
     <div
