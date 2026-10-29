@@ -65,6 +65,16 @@ describe("slidesRowOps", () => {
     expect(out).toEqual({ kind: "slides", id: "r", deckId: "d2", extra: "keep", templateId: "rowT" });
   });
 
+  it("setDeck keeps the row's stage screen layouts", () => {
+    const stageLayouts = { band: "lyrics-big" };
+    expect(setDeck(row({ stageLayouts, slideIds: ["a"] }), "d2").stageLayouts).toEqual(stageLayouts);
+  });
+
+  it("detachSlidesRow keeps the row's stage screen layouts", () => {
+    const stageLayouts = { band: "lyrics-big", confidence: "clock" };
+    expect(detachSlidesRow(row({ stageLayouts }), deck, () => "x").stageLayouts).toEqual(stageLayouts);
+  });
+
   it("useAllSlides removes slideIds", () => {
     expect(useAllSlides(row({ slideIds: ["a"] }))).toEqual(row());
   });
