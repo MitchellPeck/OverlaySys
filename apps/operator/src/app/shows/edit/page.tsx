@@ -621,13 +621,18 @@ function ShowEditPageInner() {
         icon: <Film size={14} />,
         onSelect: () => setVideoModalOpen(true),
       },
-      {
-        id: "slides",
-        label: "Slides",
-        icon: <Presentation size={14} />,
-        disabled: !slidesAddItemEnabled ? "Needs Slides decks" : !slidesAddFlowReady ? "Coming soon" : false,
-        onSelect: () => setSlidesAddOpen(true),
-      },
+      // Slides decks load over the local server only, so cloud mode can't offer them.
+      ...(cloud
+        ? []
+        : [
+            {
+              id: "slides",
+              label: "Slides",
+              icon: <Presentation size={14} />,
+              disabled: !slidesAddItemEnabled ? "Needs Slides decks" : !slidesAddFlowReady ? "Coming soon" : false,
+              onSelect: () => setSlidesAddOpen(true),
+            } as MenuItem,
+          ]),
     ]);
   }
 
