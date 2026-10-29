@@ -12,7 +12,6 @@ export { Table, Th, Td, Tr } from "./Table";
 export { Stack, Inline } from "./Stack";
 export { Pill, StatusDot, type PillTone } from "./Pill";
 export { Kbd } from "./Kbd";
-export { EntityList, EntityRow } from "./EntityList";
 export { PanelHeader } from "./PanelHeader";
 export { AreaTabs, type AreaTabItem } from "./AreaTabs";
 export { variantStyle, sizeStyle } from "./buttonStyles";
