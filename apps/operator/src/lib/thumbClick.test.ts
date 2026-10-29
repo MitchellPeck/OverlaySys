@@ -137,7 +137,7 @@ describe("thumbActivate", () => {
 
   it("repeated chorus lands on the clicked occurrence", () => {
     const ctx = mkCtx({ channelStates: liveState("rowA"), songSessions: { program: session("A", arr) } });
-    // entries: v1s0 v1s1 c1 v2 c1(arrIdx 3); cursor {0,0}; target arrIdx 3 => 2 + 1 + 1 = 4? v1 has 2 slides
+    // entries: v1s0 v1s1 c1 v2 c1(arrIdx 3) v1 has 2 slides: 2 + 1 (c1) + 1 (v2) = 4
     const msgs = thumbActivate(songRowA as never, 4, ctx).messages;
     expect(msgs).toEqual([{ type: "song_advance", channel: "program", delta: 4 }]);
     expect(msgs.some((m) => m.type === "song_jump")).toBe(false);
@@ -184,9 +184,31 @@ describe("thumbActivate", () => {
     ]);
   });
 
+  it("same song live on program from a different row or show never moves that session", () => {
+    const sess = { program: session("A", arr, { sectionIdx: 1, slideIdx: 0 }) };
+    const otherRow = mkCtx({ rows: [songRowA, { ...songRowA, id: "rowA2" }], channelStates: liveState("rowA2"), songSessions: sess });
+    const otherShow = mkCtx({
+      channelStates: { program: { liveRow: { showId: "other", rowId: "rowA" } } as unknown as ChannelState },
+      songSessions: sess,
+    });
+    for (const ctx of [otherRow, otherShow]) {
+      const msgs = thumbActivate(songRowA as never, 3, ctx).messages;
+      expect(msgs[0]).toEqual({ type: "song_take", channel: "preview", showId: "show1", songRowId: "rowA" });
+      expect(msgs.every((m) => !("channel" in m) || m.channel === "preview")).toBe(true);
+    }
+  });
+
+  it("scripture live from another show cues preview", () => {
+    const row = { kind: "scripture", id: "sc", reference: "R", translation: "kjv", slides: [{ verses: [] }, { verses: [] }], templateId: "st" };
+    const ctx = mkCtx({
+      channelStates: { program: { scriptureSession: { rowId: "sc", slideIdx: 0 }, liveRow: { showId: "other", rowId: "sc" } } as unknown as ChannelState },
+    });
+    expect(thumbActivate(row as never, 1, ctx).messages[0]).toMatchObject({ type: "scripture_take_slide", channel: "preview" });
+  });
+
   const scrip = { kind: "scripture", id: "sc", reference: "R", translation: "kjv", slides: [{ verses: [] }, { verses: [] }, { verses: [] }], templateId: "st" };
   it("scripture: live goes to the slide, not live cues it on preview", () => {
-    const live = mkCtx({ channelStates: { program: { scriptureSession: { rowId: "sc", slideIdx: 0 } } as unknown as ChannelState } });
+    const live = mkCtx({ channelStates: { program: { scriptureSession: { rowId: "sc", slideIdx: 0 }, liveRow: { showId: "show1", rowId: "sc" } } as unknown as ChannelState } });
     expect(thumbActivate(scrip as never, 2, live).messages).toEqual([{ type: "scripture_goto", channel: "program", slideIdx: 2 }]);
     expect(thumbActivate(scrip as never, 2, mkCtx()).messages).toEqual([
       { type: "scripture_take_slide", showId: "show1", rowId: "sc", slideIdx: 2, channel: "preview" },

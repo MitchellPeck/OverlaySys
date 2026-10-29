@@ -60,6 +60,12 @@ function placeholder(key: string, text: string): ThumbSpec {
   return { key, label: "", group: null, render: { kind: "placeholder", text }, state: null, blanked: false };
 }
 
+/** True only when the channel's live row is exactly this row of this show. */
+function exactRowOn(ch: string | undefined, row: { id: string }, ctx: ThumbCtx): boolean {
+  const lr = ch ? ctx.channelStates[ch]?.liveRow : undefined;
+  return !!lr && lr.showId === ctx.show.id && lr.rowId === row.id;
+}
+
 function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
   const song = ctx.songCache[row.songId];
   if (!song) return null;
@@ -70,7 +76,7 @@ function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
   if (air === "program") {
     for (const ch of ["program", routed]) {
       const s = ch ? ctx.songSessions[ch] : null;
-      if (ch && s && s.songId === row.songId) {
+      if (ch && s && s.songId === row.songId && exactRowOn(ch, row, ctx)) {
         session = { channel: ch, summary: s };
         live = true;
         break;
@@ -78,7 +84,7 @@ function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
     }
   } else if (air === "preview") {
     const s = ctx.songSessions.preview;
-    if (s && s.songId === row.songId) session = { channel: "preview", summary: s };
+    if (s && s.songId === row.songId && exactRowOn("preview", row, ctx)) session = { channel: "preview", summary: s };
   }
   const showSong = ctx.show.songs.find((s) => s.songId === row.songId);
   const arrangement = session ? session.summary.arrangement : resolveArrangement(row, showSong, song);
@@ -133,8 +139,8 @@ function songThumbs(row: SongRow, ctx: ThumbCtx): ThumbSpec[] {
 }
 
 function scriptureThumbs(row: Extract<RowLike, { kind: "scripture" }>, ctx: ThumbCtx): ThumbSpec[] {
-  const prog = ctx.channelStates.program?.scriptureSession;
-  const prev = ctx.channelStates.preview?.scriptureSession;
+  const prog = exactRowOn("program", row, ctx) ? ctx.channelStates.program?.scriptureSession : undefined;
+  const prev = exactRowOn("preview", row, ctx) ? ctx.channelStates.preview?.scriptureSession : undefined;
   return row.slides.map((_, i) => ({
     key: `${row.id}:${i}`,
     label: `${i + 1}`,
@@ -252,7 +258,7 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
       case "scripture": {
         const r = row as Extract<RowLike, { kind: "scripture" }>;
         if (index < 0 || index >= r.slides.length) return { messages: [] };
-        if (ctx.channelStates.program?.scriptureSession?.rowId === r.id) {
+        if (ctx.channelStates.program?.scriptureSession?.rowId === r.id && exactRowOn("program", r, ctx)) {
           return { messages: [{ type: "scripture_goto", channel: "program", slideIdx: index }] };
         }
         return {
