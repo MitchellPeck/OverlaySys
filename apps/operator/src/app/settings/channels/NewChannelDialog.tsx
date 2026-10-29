@@ -121,7 +121,7 @@ export function NewChannelDialog({
             <Field label="Mirror">
               <Select value={mirrorOf} onChange={(e) => setMirrorOf(e.target.value)}>
                 <option value="">No mirror</option>
-                {channels.map((o) => (
+                {channels.filter((o) => o.kind !== "stage").map((o) => (
                   <option key={o.id} value={o.id}>
                     Mirrors {o.name}
                   </option>

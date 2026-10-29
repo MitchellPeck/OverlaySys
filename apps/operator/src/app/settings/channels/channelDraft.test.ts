@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelConfig } from "@overlaysys/core";
-import { channelConfigEqual, newChannelDefaults, setLayoutRule, sortChannels } from "./channelDraft";
+import { channelConfigEqual, deleteImpact, draftAfterSave, newChannelDefaults, setLayoutRule, sortChannels } from "./channelDraft";
 
 const g = (o: Partial<ChannelConfig> & { id: string; name: string }): ChannelConfig =>
   ({ kind: "graphics", renderMode: "normal", background: "transparent", ...o }) as ChannelConfig;
@@ -70,5 +70,33 @@ describe("setLayoutRule", () => {
   it("keeps other rules", () => {
     const a = setLayoutRule(setLayoutRule(cfg, "song", "lyrics"), "video", "speaker");
     expect(setLayoutRule(a, "song", null).layoutRules).toEqual({ video: "speaker" });
+  });
+});
+
+describe("draftAfterSave", () => {
+  const saved = g({ id: "a", name: "A" });
+  it("clears the draft when it equals what was saved", () => {
+    expect(draftAfterSave({ ...saved }, saved)).toBeNull();
+  });
+  it("keeps edits typed during the save", () => {
+    const typed = { ...saved, name: "A2" };
+    expect(draftAfterSave(typed, saved)).toBe(typed);
+  });
+});
+
+describe("deleteImpact", () => {
+  const cs = [
+    g({ id: "program", name: "Program" }),
+    g({ id: "alpha", name: "Alpha", mirrorOf: "program" }),
+    { id: "s", name: "Stage", kind: "stage", follows: "program" } as ChannelConfig,
+    { id: "s2", name: "Stage 2", kind: "stage", follows: "other" } as ChannelConfig,
+  ];
+  it("blocks program and preview", () => {
+    expect(deleteImpact("program", cs, true).blocked).toBeTruthy();
+    expect(deleteImpact("preview", cs, false).blocked).toBeTruthy();
+  });
+  it("lists mirrors and followers", () => {
+    expect(deleteImpact("program", cs, false).dependents).toEqual(["Alpha", "Stage"]);
+    expect(deleteImpact("alpha", cs, false)).toEqual({ blocked: null, onAir: false, dependents: [] });
   });
 });

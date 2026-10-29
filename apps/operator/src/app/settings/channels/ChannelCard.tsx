@@ -45,6 +45,8 @@ export type ChannelCardProps = {
   rendererBase: string;
   onChange: (c: ChannelConfig) => void;
   onDelete: () => void;
+  /** Set when the channel cannot be deleted; shown as the menu item reason. */
+  deleteDisabled?: string;
   showOverride: boolean;
   currentProjectId: string;
   currentProjectName: string;
@@ -61,7 +63,7 @@ export function ChannelCard(p: ChannelCardProps) {
   const { open: openMenu, menu } = useContextMenu();
   const isStage = config.kind === "stage";
   const layoutModel = layoutPickerModel(p.stageLayouts, config.layoutId);
-  const mirrorOptions = allChannels.filter((o) => o.id !== config.id);
+  const mirrorOptions = allChannels.filter((o) => o.id !== config.id && o.kind !== "stage");
   const followOptions = mirrorOptions.filter((o) => o.kind !== "stage");
   const followsValue = config.follows ?? DEFAULT_STAGE_FOLLOWS;
   const patch = (x: Partial<ChannelConfig>) => p.onChange({ ...config, ...x });
@@ -159,7 +161,7 @@ export function ChannelCard(p: ChannelCardProps) {
                 },
                 { id: "copy", label: "Copy id", onSelect: () => void navigator.clipboard?.writeText(config.id) },
                 { separator: true },
-                { id: "delete", label: "Delete", danger: true, onSelect: p.onDelete },
+                { id: "delete", label: "Delete", danger: true, disabled: p.deleteDisabled ?? false, onSelect: p.onDelete },
               ])
             }
           >
@@ -333,7 +335,7 @@ function ProjectOverrideEditor({
   }, [override, currentProjectId, config.id]);
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(override ?? blank);
-  const mirrorOptions = allChannels.filter((o) => o.id !== config.id);
+  const mirrorOptions = allChannels.filter((o) => o.id !== config.id && o.kind !== "stage");
   const patch = (p: Partial<ProjectChannelOverride>) => setDraft((cur) => ({ ...cur, ...p }));
 
   if (!open) {

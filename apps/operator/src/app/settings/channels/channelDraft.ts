@@ -61,6 +61,22 @@ export function setLayoutRule(cfg: ChannelConfig, kind: StageRuleKind, layoutId:
   return Object.keys(next).length === 0 ? (rest as ChannelConfig) : { ...rest, layoutRules: next };
 }
 
+/** After a save ack: the draft to keep, or null when the card has no edits beyond what was saved. */
+export function draftAfterSave(current: ChannelConfig | undefined, saved: ChannelConfig): ChannelConfig | null {
+  return current && !channelConfigEqual(current, saved) ? current : null;
+}
+
+export type DeleteImpact = { blocked: string | null; onAir: boolean; dependents: string[] };
+
+/** What deleting `id` affects: program/preview are protected; mirrors and followers are listed. */
+export function deleteImpact(id: string, channels: ChannelConfig[], onAir: boolean): DeleteImpact {
+  const blocked = id === "program" || id === "preview" ? "Program and Preview can't be deleted." : null;
+  const dependents = channels
+    .filter((c) => c.id !== id && (c.mirrorOf === id || (c.kind === "stage" && (c.follows ?? DEFAULT_STAGE_FOLLOWS) === id)))
+    .map((c) => c.name);
+  return { blocked, onAir, dependents };
+}
+
 /** Lower-case a user-entered name into a channel id. */
 export function channelIdFromName(name: string, taken: string[]): string {
   const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "channel";

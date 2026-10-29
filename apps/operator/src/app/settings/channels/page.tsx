@@ -23,7 +23,7 @@ import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { ChannelCard } from "./ChannelCard";
 import { NewChannelDialog } from "./NewChannelDialog";
-import { channelConfigEqual, sortChannels } from "./channelDraft";
+import { channelConfigEqual, deleteImpact, draftAfterSave, sortChannels } from "./channelDraft";
 
 /**
  * Resolve the renderer base URL for "open channel" links. Electron exposes the
@@ -60,6 +60,7 @@ export default function ChannelsPage() {
   const { connected, conn } = useConnection();
   const channels = useStore((s) => s.channelConfigs);
   const stageLayouts = useStore((s) => s.stageLayouts);
+  const channelStates = useStore((s) => s.channelStates);
   const projects = useStore((s) => s.projects);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const currentProject = projects.find((p) => p.id === currentProjectId);
@@ -135,25 +136,33 @@ export default function ChannelsPage() {
 
   const saveAll = useCallback(async (): Promise<boolean> => {
     if (saving) return false;
+    if (!connected) {
+      toast({ tone: "error", message: "Not saved: Reconnect to save" });
+      return false;
+    }
     setSaving(true);
     setError(null);
     let failed = 0;
     let firstError = "";
     for (const c of sorted) {
-      const draft = drafts[c.id];
+      const draft = draftsRef.current[c.id];
       if (!draft || channelConfigEqual(draft, savedOf(c))) continue;
       try {
         await writeConfig(draft);
         // This card's baseline becomes the config we just saved.
         setBaselines((b) => ({ ...b, [c.id]: { cfg: draft, base: c } }));
+        // Keep anything typed while the save was in flight.
+        const keep = draftAfterSave(draftsRef.current[c.id], draft);
         setDrafts((d) => {
           const { [c.id]: _gone, ...rest } = d;
-          return rest;
+          return keep ? { ...rest, [c.id]: keep } : rest;
         });
-        setEditBase((d) => {
-          const { [c.id]: _gone, ...rest } = d;
-          return rest;
-        });
+        if (!keep) {
+          setEditBase((d) => {
+            const { [c.id]: _gone, ...rest } = d;
+            return rest;
+          });
+        }
       } catch (e) {
         failed++;
         if (!firstError) firstError = `${c.name}: ${ackErrorText(e)}`;
@@ -168,8 +177,10 @@ export default function ChannelsPage() {
     toast({ tone: "ok", message: "Saved" });
     return true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [saving, sorted, drafts, savedOf, useCloudBackend]);
+  }, [saving, connected, sorted, savedOf, useCloudBackend]);
 
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
   const saveRef = useRef(saveAll);
   saveRef.current = saveAll;
   useUnsavedGuard(dirty, { onSave: () => saveRef.current() });
@@ -185,10 +196,20 @@ export default function ChannelsPage() {
   }
 
   async function remove(c: ChannelConfig) {
+    const impact = deleteImpact(c.id, sorted, !!channelStates[c.id]?.active);
+    if (impact.blocked) {
+      toast({ tone: "error", message: impact.blocked });
+      return;
+    }
+    const warnings: string[] = [];
+    if (impact.onAir) warnings.push(`${c.name} is on air right now. Deleting it takes its graphic off.`);
+    if (impact.dependents.length > 0) {
+      warnings.push(`These channels follow or mirror it and will stop updating: ${impact.dependents.join(", ")}.`);
+    }
     const ok = await confirm({
       title: `Delete ${c.name}?`,
-      message: "This soft-deletes the channel; other replicas remove their copy on the next sync.",
-      confirmLabel: "Delete",
+      message: [...warnings, "This soft-deletes the channel; other replicas remove their copy on the next sync."].join(" "),
+      confirmLabel: warnings.length > 0 ? "Delete anyway" : "Delete",
       danger: true,
     });
     if (!ok) return;
@@ -282,6 +303,7 @@ export default function ChannelsPage() {
               rendererBase={rendererBase}
               onChange={(next) => edit(c, next)}
               onDelete={() => void remove(c)}
+              deleteDisabled={deleteImpact(c.id, sorted, false).blocked ?? undefined}
               showOverride={overridesAvailable}
               currentProjectId={currentProjectId}
               currentProjectName={currentProject?.name ?? currentProjectId}
