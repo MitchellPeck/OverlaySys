@@ -60,18 +60,34 @@ describe("stageLayoutOverride", () => {
     expect(decideLayout(cfg, followed, show({ band: "item-lay" }))).toEqual({ layoutId: "man", reason: "manual" });
   });
 
-  it("[I2] falls back to the default when the followed output has nothing live (sticky liveRow)", () => {
+  it("keeps the row's layout after its graphic leaves the screen, until the next row is taken", () => {
     const cfg = { id: "band", kind: "stage", layoutId: "def", layoutRules: { song: "rule-song" } } as unknown as ChannelConfig;
-    const show = { id: "sh", rows: [{ kind: "song", id: "r1", songId: "s", stageLayouts: { band: "item-lay" } }] } as unknown as Show;
-    const live = { liveRow: { showId: "sh", rowId: "r1" }, songSession: { songId: "s" } } as unknown as ChannelState;
+    const show = {
+      id: "sh",
+      rows: [
+        { kind: "graphic", id: "r1", templateId: "t", data: {}, stageLayouts: { band: "item-lay" } },
+        { kind: "song", id: "r2", songId: "s" },
+        { kind: "graphic", id: "r3", templateId: "t", data: {} },
+      ],
+    } as unknown as Show;
+    const live = { liveRow: { showId: "sh", rowId: "r1" }, active: { phase: "in", templateId: "t", data: {} } } as unknown as ChannelState;
     expect(decideLayout(cfg, live, show)).toEqual({ layoutId: "item-lay", reason: "item" });
-    // Cleared: liveRow sticks, nothing on air.
-    const cleared = { liveRow: { showId: "sh", rowId: "r1" }, active: null } as unknown as ChannelState;
-    expect(decideLayout(cfg, cleared, show)).toEqual({ layoutId: "def", reason: "default" });
-    // Graphic animating out counts as nothing live.
+    // Animated out (auto-out or a clear): still the current item.
     const out = { liveRow: { showId: "sh", rowId: "r1" }, active: { phase: "out", templateId: "t", data: {} } } as unknown as ChannelState;
-    expect(decideLayout(cfg, out, show).reason).toBe("default");
-    // Manual still wins with nothing live.
+    expect(decideLayout(cfg, out, show)).toEqual({ layoutId: "item-lay", reason: "item" });
+    const cleared = { liveRow: { showId: "sh", rowId: "r1" }, active: null } as unknown as ChannelState;
+    expect(decideLayout(cfg, cleared, show)).toEqual({ layoutId: "item-lay", reason: "item" });
+    // The next item taken decides: its rule, or the default.
+    expect(decideLayout(cfg, { liveRow: { showId: "sh", rowId: "r2" }, active: null } as unknown as ChannelState, show)).toEqual({
+      layoutId: "rule-song",
+      reason: "rule:song",
+    });
+    expect(decideLayout(cfg, { liveRow: { showId: "sh", rowId: "r3" }, active: null } as unknown as ChannelState, show)).toEqual({
+      layoutId: "def",
+      reason: "default",
+    });
+    // Nothing ever taken: default. Manual still wins.
+    expect(decideLayout(cfg, { active: null } as unknown as ChannelState, show).reason).toBe("default");
     setManualStageLayout("band", "man");
     expect(decideLayout(cfg, cleared, show)).toEqual({ layoutId: "man", reason: "manual" });
   });
