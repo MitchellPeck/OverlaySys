@@ -10,6 +10,9 @@ import type { RowLike } from "@/lib/rowLike";
  * by P2a.17 so the editor can mount them; P2a.18 owns the file next and P3.16
  * replaces both bodies (SlidesRowInspector, DeckPicker).
  */
+/** False while SlidesAddFlow is a placeholder: the "Add item → Slides" entry stays disabled ("Coming soon"). P3.16 sets it true. */
+export const slidesAddFlowReady = false;
+
 export type SlidesItemFormProps = { row: RowLike; show: Show; onChange(next: RowLike): void };
 
 export function SlidesItemForm(_p: SlidesItemFormProps): ReactElement {

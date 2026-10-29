@@ -1,6 +1,6 @@
-import { groupRowsBySection, moveRow, type Show } from "@overlaysys/core";
+import { addSection, groupRowsBySection, insertRow, moveRow, type Show } from "@overlaysys/core";
 import { formatRowLength, showTotal } from "../../../lib/rowLength";
-import { insertRowsAfter, nameForSave, type RowLike } from "./showEditOps";
+import { insertRowsAfter, nameForSave, restoreRow, type RowLike } from "./showEditOps";
 
 /**
  * The selected row's section: its id when the section exists, null when the
@@ -70,4 +70,58 @@ export function showForSave(show: Show): Show {
 /** After an ack, the baseline moves only if the draft is still the one that was sent. */
 export function savedSettles(sent: Show, current: Show | null): boolean {
   return current === sent;
+}
+
+/** Undo of a row delete: only in the same show (never into another one); later edits are kept. */
+export function undoRowDelete(
+  current: Show,
+  showId: string,
+  removed: { row: RowLike; index: number },
+): Show {
+  if (current.id !== showId) return current;
+  return restoreRow(current, removed);
+}
+
+/**
+ * Undo of a section delete. `prev` is the draft before the delete and `next`
+ * the draft right after it. Nothing happens in another show. With no edits
+ * since, `prev` comes back as is; otherwise the section is re-added at its old
+ * place and its rows return to it (rows the delete removed are re-inserted,
+ * rows deleted separately later stay deleted), keeping every later edit.
+ */
+export function undoSectionDelete(current: Show, prev: Show, next: Show, sectionId: string): Show {
+  if (current.id !== prev.id) return current;
+  if (current === next) return prev;
+  const prevGroups = groupRowsBySection(prev);
+  const gi = prevGroups.findIndex((g) => g.section?.id === sectionId);
+  if (gi < 0) return current;
+  const section = prevGroups[gi]!.section!;
+  let out = current;
+  if (!(out.sections ?? []).some((s) => s.id === sectionId)) {
+    const curIds = new Set((out.sections ?? []).map((s) => s.id));
+    const before = prevGroups
+      .slice(0, gi)
+      .map((g) => g.section?.id)
+      .filter((id): id is string => !!id && curIds.has(id))
+      .at(-1);
+    out = addSection(out, section.name, before ?? null, sectionId).show;
+    // Keep any extra keys the section carried.
+    out = { ...out, sections: (out.sections ?? []).map((s) => (s.id === sectionId ? section : s)) };
+  }
+  const inNext = new Set(next.rows.map((r) => r.id));
+  let at = 0;
+  for (const row of prevGroups[gi]!.rows) {
+    if (out.rows.some((r) => r.id === row.id)) out = moveRow(out, row.id, sectionId, at);
+    else if (!inNext.has(row.id)) out = insertRow(out, row, sectionId, at);
+    else continue;
+    at++;
+  }
+  return out;
+}
+
+/** A show-wide song default with nothing set that no song item uses any more (left behind by changing an item's song). */
+export function isBareUnusedSongDefault(show: Show, songId: string): boolean {
+  const entry = show.songs.find((e) => e.songId === songId);
+  if (!entry || Object.keys(entry).some((k) => k !== "songId")) return false;
+  return !show.rows.some((r) => r.kind === "song" && r.songId === songId);
 }

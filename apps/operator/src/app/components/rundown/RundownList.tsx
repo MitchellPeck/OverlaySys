@@ -37,7 +37,7 @@ export type RundownListProps = {
   onRowMenu?(rowId: string, e: React.MouseEvent | HTMLElement): void;
   footer?: ReactNode; // edit: "+ Add item · + Section" (also the empty state's add buttons)
   // [P2a.17] Edit: open this section's inline rename.
-  renameSectionId?: string | null;
+  renameSection?: { id: string; n: number } | null;
   // [/P2a.17]
 };
 
@@ -213,7 +213,7 @@ export function RundownList(p: RundownListProps) {
                 mode={mode}
                 dropActive={!!dropAt && "sectionId" in dropAt && dropAt.sectionId === section.id}
                 // [P2a.17]
-                startRename={p.renameSectionId === section.id}
+                renameNonce={p.renameSection?.id === section.id ? p.renameSection.n : undefined}
                 // [/P2a.17]
                 onRename={p.onRenameSection ? (name) => p.onRenameSection!(section.id, name) : undefined}
                 onMenu={p.onSectionMenu ? (e) => p.onSectionMenu!(section.id, e) : undefined}

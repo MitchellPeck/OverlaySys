@@ -54,7 +54,7 @@ import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
 import { VideoThumb } from "@/app/components/VideoThumb";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
-import { canSave, removeRowAt, restoreRow } from "./showEditOps";
+import { canSave, removeRowAt } from "./showEditOps";
 import {
   duplicateRowIn,
   insertNewRows,
@@ -64,10 +64,13 @@ import {
   sectionIdOf,
   sectionRowCount,
   showForSave,
+  undoRowDelete,
+  undoSectionDelete,
+  isBareUnusedSongDefault,
 } from "./showEditorModel";
 import { ShowHeader } from "./ShowHeader";
 import { ShowDetailsPane } from "./ShowDetailsPane";
-import { SlidesAddFlow, SlidesItemForm } from "./forms/SlidesItemForm";
+import { SlidesAddFlow, SlidesItemForm, slidesAddFlowReady } from "./forms/SlidesItemForm";
 import {
   deleteShowCloud,
   getShowCloud,
@@ -127,7 +130,9 @@ function ShowEditPageInner() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [renameSectionId, setRenameSectionId] = useState<string | null>(null);
+  // A counter per request, so asking to rename the same section again re-opens it.
+  const [renameRequest, setRenameRequest] = useState<{ id: string; n: number } | null>(null);
+  const requestRename = (id: string) => setRenameRequest((r) => ({ id, n: (r?.n ?? 0) + 1 }));
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
   const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
@@ -261,13 +266,6 @@ function ShowEditPageInner() {
       }
     }
   }, [draft, songCache, cloud, conn, send, setSong]);
-
-  // A rename request only needs to reach the divider once.
-  useEffect(() => {
-    if (!renameSectionId) return;
-    const t = setTimeout(() => setRenameSectionId(null), 0);
-    return () => clearTimeout(t);
-  }, [renameSectionId]);
 
   /** Save; resolves true once the server (or cloud) confirmed. The baseline moves only then. */
   async function save(): Promise<boolean> {
@@ -495,7 +493,7 @@ function ShowEditPageInner() {
     if (!cur) return;
     const { show, section } = addSection(cur, "", sectionIdOf(cur, selectedRowId));
     commit(show);
-    setRenameSectionId(section.id);
+    requestRename(section.id);
   }
 
   function deleteRow(rowId: string) {
@@ -510,9 +508,10 @@ function ShowEditPageInner() {
       action: {
         label: "Undo",
         onClick: () => {
+          // Never into another show (the page stays mounted across ?id changes).
           const now = draftRef.current;
-          if (!now) return;
-          commit(restoreRow(now, removed));
+          if (!now || now.id !== cur.id) return;
+          commit(undoRowDelete(now, cur.id, removed));
           setSelectedRowId(removed.row.id);
         },
       },
@@ -525,7 +524,17 @@ function ShowEditPageInner() {
     const next = deleteSection(prev, sectionId, mode);
     commit(next);
     if (selectedRowId && !next.rows.some((r) => r.id === selectedRowId)) setSelectedRowId(null);
-    toast({ message: "Section deleted", action: { label: "Undo", onClick: () => commit(prev) } });
+    toast({
+      message: "Section deleted",
+      action: {
+        label: "Undo",
+        onClick: () => {
+          // Same show only; later edits are kept (see undoSectionDelete).
+          const now = draftRef.current;
+          if (now) commit(undoSectionDelete(now, prev, next, sectionId));
+        },
+      },
+    });
   }
 
   function openSectionMenu(sectionId: string, e: React.MouseEvent | HTMLElement) {
@@ -535,7 +544,7 @@ function ShowEditPageInner() {
     if (!section) return;
     const n = sectionRowCount(cur, sectionId);
     const items: MenuItem[] = [
-      { id: "rename", label: "Rename", onSelect: () => setRenameSectionId(sectionId) },
+      { id: "rename", label: "Rename", onSelect: () => requestRename(sectionId) },
       { separator: true },
       {
         id: "delete-keep",
@@ -589,7 +598,8 @@ function ShowEditPageInner() {
         onSelect: () => {
           const el = document.getElementById(rowDomId(rowId));
           if (!el) return;
-          menu.open(
+          // Next tick: the first menu closes and a fresh one mounts (no carried-over highlight).
+          setTimeout(() => menu.open(
             el,
             choices.map((c) => ({
               id: `to-${c.id ?? "none"}`,
@@ -599,7 +609,7 @@ function ShowEditPageInner() {
                 if (now) commit(moveRowToSection(now, rowId, c.id));
               },
             })),
-          );
+          ), 0);
         },
       },
       { separator: true },
@@ -634,7 +644,7 @@ function ShowEditPageInner() {
         id: "slides",
         label: "Slides",
         icon: <Presentation size={14} />,
-        disabled: slidesAddItemEnabled ? false : "Needs Slides decks",
+        disabled: !slidesAddItemEnabled ? "Needs Slides decks" : !slidesAddFlowReady ? "Coming soon" : false,
         onSelect: () => setSlidesAddOpen(true),
       },
     ]);
@@ -697,7 +707,7 @@ function ShowEditPageInner() {
               if (cur) commit(renameSection(cur, id, name));
             }}
             onRowMenu={openRowMenu}
-            renameSectionId={renameSectionId}
+            renameSection={renameRequest}
             footer={
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {empty && (
@@ -1070,6 +1080,7 @@ function SongRowForm({
       const r = s.rows.find((x) => x.id === row.id);
       if (!r || r.kind !== "song") return;
       const changed = r.songId !== songId;
+      const oldSongId = r.songId;
       r.songId = songId;
       // Lyric template cascade: ShowSong → Song default → first template.
       const targetShowSong = s.songs.find((e) => e.songId === songId);
@@ -1082,6 +1093,8 @@ function SongRowForm({
         for (const k of ["introTemplateId", "introFieldMap", "outroTemplateId", "outroFieldMap", "skipIntro", "skipOutro"]) delete rec[k];
       }
       if (!s.songs.some((e) => e.songId === songId)) s.songs.push({ songId });
+      // Drop the old song's auto-added (empty, now unused) default entry.
+      if (changed && isBareUnusedSongDefault(s, oldSongId)) s.songs = s.songs.filter((e) => e.songId !== oldSongId);
     });
   }
 

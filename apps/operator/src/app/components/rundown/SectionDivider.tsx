@@ -17,7 +17,7 @@ type Props = {
   onDragOver?(e: React.DragEvent): void;
   onDrop?(e: React.DragEvent): void;
   // [P2a.17] Edit: open the inline rename (a new section, or the section menu's Rename).
-  startRename?: boolean;
+  renameNonce?: number;
   // [/P2a.17]
 };
 
@@ -38,14 +38,14 @@ const bar: CSSProperties = {
 };
 
 /** A section header in the rundown. Never aired; in Live it isn't interactive. */
-export function SectionDivider({ section, lengthSec, mode, dropActive, onRename, onMenu, onDragOver, onDrop, startRename }: Props) {
+export function SectionDivider({ section, lengthSec, mode, dropActive, onRename, onMenu, onDragOver, onDrop, renameNonce }: Props) {
   const [draft, setDraft] = useState<string | null>(null);
   const edit = mode === "edit";
   // [P2a.17]
   useEffect(() => {
-    if (edit && startRename) setDraft(section.name);
+    if (edit && renameNonce !== undefined) setDraft(section.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startRename, edit]);
+  }, [renameNonce, edit]);
   // [/P2a.17]
   const commit = () => {
     const name = draft?.trim();

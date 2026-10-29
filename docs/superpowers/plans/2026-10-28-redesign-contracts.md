@@ -238,7 +238,7 @@ Show-editor slot `apps/operator/src/app/shows/edit/forms/SlidesItemForm.tsx` —
 function SlidesItemForm(p: ItemFormProps<RowLike>): JSX.Element;          // placeholder "Slides decks aren't available yet" → P3: <SlidesRowInspector>
 function SlidesAddFlow(p: { open: boolean; onClose(): void; onAdd(row: RowLike): void }): JSX.Element | null;  // placeholder null → P3: DeckPicker + "One-off slides for this show"
 ```
-The show editor's `+ Add item` menu shows "Slides" (disabled with reason "Needs Slides decks" while `slidesAddItemEnabled` is false) and opens `SlidesAddFlow`.
+The show editor's `+ Add item` menu shows "Slides" (disabled with reason "Needs Slides decks" while `slidesAddItemEnabled` is false, and "Coming soon" while `slidesAddFlowReady` — exported from `SlidesItemForm.tsx`, added by P2a.17 fix1 — is false; P3.16 sets it true) and opens `SlidesAddFlow`.
 
 ## 10. Live palette commands — owner P2a
 

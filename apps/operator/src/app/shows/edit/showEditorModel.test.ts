@@ -10,7 +10,12 @@ import {
   sectionIdOf,
   sectionRowCount,
   showForSave,
+  undoRowDelete,
+  isBareUnusedSongDefault,
+  undoSectionDelete,
 } from "./showEditorModel";
+import { deleteSection, renameSection } from "@overlaysys/core";
+import { removeRowAt } from "./showEditOps";
 
 const g = (id: string, sectionId?: string, extra: Record<string, unknown> = {}) =>
   ({ id, kind: "graphic", templateId: "t", data: {}, ...(sectionId ? { sectionId } : {}), ...extra }) as unknown as RundownRow;
@@ -103,5 +108,60 @@ describe("showEditorModel", () => {
     expect(savedSettles(sent, sent)).toBe(true);
     expect(savedSettles(sent, { ...sent, name: "edited during save" })).toBe(false);
     expect(savedSettles(sent, null)).toBe(false);
+  });
+
+  it("undoSectionDelete returns the pre-delete draft when nothing changed since", () => {
+    const prev = mk();
+    const next = deleteSection(prev, "A", "keep-rows");
+    expect(undoSectionDelete(next, prev, next, "A")).toBe(prev);
+  });
+
+  it("undoSectionDelete keeps later edits: re-adds the section and moves its rows back (keep-rows)", () => {
+    const prev = mk();
+    const next = deleteSection(prev, "A", "keep-rows");
+    const later = renameSection({ ...next, name: "Edited later" }, "B", "Praise");
+    const out = undoSectionDelete(later, prev, next, "A");
+    expect(out.name).toBe("Edited later");
+    expect(out.sections).toEqual([
+      { id: "A", name: "Welcome" },
+      { id: "B", name: "Praise" },
+    ]);
+    expect(ids(out)).toEqual(["a1:A", "a2:A", "b1:B"]);
+  });
+
+  it("undoSectionDelete re-inserts deleted rows (delete-rows) but not ones removed later", () => {
+    const prev = mk();
+    const next = deleteSection(prev, "A", "delete-rows");
+    const later = { ...next, rows: [...next.rows, g("new", "B")] } as Show;
+    const out = undoSectionDelete(later, prev, next, "A");
+    expect(ids(out)).toEqual(["a1:A", "a2:A", "b1:B", "new:B"]);
+    // keep-rows, then a moved-out row deleted separately: it stays deleted.
+    const kept = deleteSection(prev, "A", "keep-rows");
+    const after = removeRowAt(kept, "a2").show;
+    expect(ids(undoSectionDelete(after, prev, kept, "A"))).toEqual(["a1:A", "b1:B"]);
+  });
+
+  it("isBareUnusedSongDefault: only an untouched default no item uses", () => {
+    const song = (id: string, songId: string) => ({ id, kind: "song", songId, lyricTemplateId: "l" }) as unknown as RundownRow;
+    const show = {
+      ...mk(),
+      songs: [{ songId: "x" }, { songId: "y", lyricTemplateId: "t" }, { songId: "z" }],
+      rows: [song("r1", "z")],
+    } as unknown as Show;
+    expect(isBareUnusedSongDefault(show, "x")).toBe(true);
+    expect(isBareUnusedSongDefault(show, "y")).toBe(false);
+    expect(isBareUnusedSongDefault(show, "z")).toBe(false);
+    expect(isBareUnusedSongDefault(show, "missing")).toBe(false);
+  });
+
+  it("undo never crosses shows", () => {
+    const prev = mk();
+    const next = deleteSection(prev, "A", "keep-rows");
+    const other = { ...mk(), id: "other" } as Show;
+    expect(undoSectionDelete(other, prev, next, "A")).toBe(other);
+    const { removed } = removeRowAt(prev, "a1");
+    expect(undoRowDelete(other, "s", removed!)).toBe(other);
+    const after = removeRowAt(prev, "a1").show;
+    expect(ids(undoRowDelete(after, "s", removed!))).toEqual(["a1:A", "a2:A", "b1:B"]);
   });
 });

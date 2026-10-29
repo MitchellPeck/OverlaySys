@@ -71,6 +71,7 @@ export function ShowHeader({
         <Input
           type="date"
           aria-label="Service date"
+          title="Service date (used by Companion 'select next show')"
           value={draft.scheduledFor ?? ""}
           onChange={(e) => {
             const v = e.target.value;
