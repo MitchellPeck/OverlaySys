@@ -37,3 +37,4 @@ export * from "./slidesMapping";
 export * from "./sections";
 export * from "./slidesConvert";
 export * from "./slidesRowOps";
+export * from "./templateIds";

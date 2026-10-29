@@ -20,7 +20,7 @@ import {
 } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as templates from "./templates";
-import { PROTECTED_TEMPLATE_IDS } from "./templateUsage";
+import { isDraftTemplateId, isProtectedTemplateId } from "@overlaysys/core";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as hotcards from "./hotcards";
@@ -468,6 +468,12 @@ export function handleConnection(
           break;
         }
         case "save_template": {
+          // Draft ids are in-memory previews (Preview on PVW); saving one would
+          // persist and sync it and let it reach program.
+          if (isDraftTemplateId(parsed.template.id)) {
+            send({ type: "error", code: "invalid", message: `Template id "${parsed.template.id}" is reserved for unsaved drafts.` });
+            break;
+          }
           const saved = await templates.saveTemplate(parsed.template);
           send({ type: "ack", op: "save_template", id: saved.id });
           // Notify everyone (the editor itself, plus the operator's template
@@ -480,7 +486,7 @@ export function handleConnection(
           break;
         }
         case "delete_template": {
-          if (PROTECTED_TEMPLATE_IDS.includes(parsed.templateId)) {
+          if (isProtectedTemplateId(parsed.templateId)) {
             send({ type: "error", code: "protected", message: `Template "${parsed.templateId}" is built in and can't be deleted.` });
             break;
           }

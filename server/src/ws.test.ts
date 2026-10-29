@@ -481,6 +481,32 @@ describe("ws delete_template protection", () => {
   });
 });
 
+describe("ws save_template draft ids", () => {
+  it("refuses to save a __draft__ id, with the op/id on the error", async () => {
+    const spy = vi.spyOn(templates, "saveTemplate");
+    const sock = connect();
+    await sock.client({
+      type: "save_template",
+      template: {
+        id: "__draft__lt",
+        name: "Draft",
+        size: { w: 1920, h: 1080 },
+        fields: [],
+        layers: [],
+        timelines: { in: { duration: 0, tracks: [] }, out: { duration: 0, tracks: [] } },
+      },
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(sock.sent.find((m) => m.type === "error")).toMatchObject({
+      code: "invalid",
+      op: "save_template",
+      id: "__draft__lt",
+    });
+    expect(sock.sent.some((m) => m.type === "ack")).toBe(false);
+    spy.mockRestore();
+  });
+});
+
 describe("[I5] replyTo", () => {
   it("tags untagged errors with the request ref, leaves other messages and tagged errors alone", () => {
     const out: ServerMessage[] = [];

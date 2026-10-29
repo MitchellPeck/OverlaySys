@@ -1,11 +1,12 @@
-import type { Template } from "@overlaysys/core";
+import { DRAFT_TEMPLATE_PREFIX, isDraftTemplateId, type Template } from "@overlaysys/core";
 
 /**
  * Unsaved designer drafts shown on PVW ("Preview on PVW", P2b.11). In memory
  * only: never saved, never listed, never synced. channels.ts refuses a draft
  * id on any channel but "preview", so a draft can never reach program.
  */
-export const DRAFT_PREFIX = "__draft__";
+export const DRAFT_PREFIX = DRAFT_TEMPLATE_PREFIX;
+export { isDraftTemplateId };
 const MAX_DRAFTS = 10;
 
 // Insertion order = age; a re-set moves the draft to the newest slot.
@@ -13,10 +14,6 @@ const drafts = new Map<string, Template>();
 
 export function draftTemplateId(id: string): string {
   return isDraftTemplateId(id) ? id : `${DRAFT_PREFIX}${id}`;
-}
-
-export function isDraftTemplateId(id: string): boolean {
-  return id.startsWith(DRAFT_PREFIX);
 }
 
 export function setDraftTemplate(t: Template): Template {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { v4 as uuid } from "uuid";
-import type { Deck, DeckLicensing } from "@overlaysys/core";
+import { FALLBACK_TEMPLATE_ID, type Deck, type DeckLicensing } from "@overlaysys/core";
 import { Button, Dialog, Input, Select, Tooltip, colors, fontSize, radius } from "@overlaysys/ui";
 import { useStore } from "../../lib/store";
 import { getClient } from "../../lib/useWs";
@@ -11,7 +11,6 @@ import { LicensingField } from "./LicensingField";
 import { buildNewDeck, defaultDeckTemplateId, newDeckBlocker } from "./libraryConfig";
 
 /** Built-in lyric template; used when no template list has loaded. */
-const FALLBACK_TEMPLATE_ID = "lyric-default";
 
 /**
  * Name, licensing (no default, Q8) and default design for a new deck. Builds a

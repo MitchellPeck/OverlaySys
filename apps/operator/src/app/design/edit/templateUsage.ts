@@ -31,8 +31,8 @@ function nameList(names: string[]): string {
   return names.length > 3 ? `${head} and ${names.length - 3} more` : head;
 }
 
-/** Ids the server refuses to delete; mirrors PROTECTED_TEMPLATE_IDS so a failed usage fetch can't unlock them. */
-export const PROTECTED_TEMPLATE_IDS: readonly string[] = ["lyric-default"];
+/** Ids the server refuses to delete (shared core list), so a failed usage fetch can't unlock them. */
+export { PROTECTED_TEMPLATE_IDS } from "@overlaysys/core";
 
 export function templateDeleteConfirm(
   name: string,

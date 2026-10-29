@@ -1,7 +1,7 @@
-import type { Deck, Hotcard, ScriptureSettings, Show, Song } from "@overlaysys/core";
+import { PROTECTED_TEMPLATE_IDS, type Deck, type Hotcard, type ScriptureSettings, type Show, type Song } from "@overlaysys/core";
 
-/** Built-in templates that can't be deleted (the lyric fallback every song relies on). */
-export const PROTECTED_TEMPLATE_IDS: readonly string[] = ["lyric-default"];
+/** Built-in templates that can't be deleted; one shared list in @overlaysys/core. */
+export { PROTECTED_TEMPLATE_IDS };
 
 export type TemplateUsage = {
   shows: { id: string; name: string }[];

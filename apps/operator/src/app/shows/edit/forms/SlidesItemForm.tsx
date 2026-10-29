@@ -2,7 +2,7 @@
 
 import type { ReactElement } from "react";
 import { v4 as uuid } from "uuid";
-import { newOneOffSlidesRow, newSlidesRow, type SlidesRow } from "@overlaysys/core";
+import { FALLBACK_TEMPLATE_ID, newOneOffSlidesRow, newSlidesRow, type SlidesRow } from "@overlaysys/core";
 import { useStore } from "@/lib/store";
 import { isCloudMode } from "@/lib/mode";
 import type { RowLike } from "@/lib/rowLike";
@@ -23,7 +23,6 @@ import type { ItemFormProps } from "./types";
 export const slidesAddFlowReady = true;
 
 /** Built-in lyric template; used for one-off slides when no template list has loaded. */
-const FALLBACK_TEMPLATE_ID = "lyric-default";
 
 export function SlidesItemForm({ row, show, onChange }: ItemFormProps<RowLike>): ReactElement {
   const slides = row as SlidesRow;

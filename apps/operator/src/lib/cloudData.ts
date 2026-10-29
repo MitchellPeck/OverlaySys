@@ -8,6 +8,7 @@ import {
   ShowSchema,
   SongSchema,
   TemplateSchema,
+  isProtectedTemplateId,
   type Bundle,
   type ChannelConfig,
   type Hotcard,
@@ -503,6 +504,8 @@ export async function saveTemplateCloud(template: Template): Promise<void> {
 }
 
 export async function deleteTemplateCloud(id: string): Promise<void> {
+  // Same rule as the server's delete_template: built-ins stay.
+  if (isProtectedTemplateId(id)) throw new Error(`Template "${id}" is built in and can't be deleted.`);
   const client = getCloudClient();
   const orgId = getOrgId();
   const { error } = await client
