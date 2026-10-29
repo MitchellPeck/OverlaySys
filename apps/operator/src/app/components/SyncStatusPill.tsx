@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Button, colors } from "@overlaysys/ui";
+import { toast } from "@overlaysys/ui";
 import { useSyncStatus } from "@/lib/useSyncStatus";
 import { httpBase } from "@/lib/pcoClient";
 import { syncView } from "@/app/shell/shellStatus";
 import { copyText } from "@/app/shell/clipboard";
 import { StatusPopoverButton } from "@/app/shell/StatusPopoverButton";
+import { statusPopoverModel } from "@/app/shell/statusPopover";
 
 /**
  * Top-bar status for the desktop server's cloud sync. Renders nothing in the
@@ -17,49 +18,48 @@ import { StatusPopoverButton } from "@/app/shell/StatusPopoverButton";
 export function SyncStatusPill() {
   const status = useSyncStatus();
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   if (!status) return null;
   const view = syncView(status, Date.now());
   if (!view) return null;
 
   async function syncNow() {
     setBusy(true);
-    setNote(null);
     try {
       const res = await fetch(`${httpBase()}/api/cloud/sync`, { method: "POST" });
-      setNote(res.ok ? "Sync started — status updates within 10s." : `Sync request failed (${res.status}).`);
+      toast(
+        res.ok
+          ? { message: "Sync started. Status updates within 10s.", tone: "ok" }
+          : { message: `Sync request failed (${res.status})`, tone: "error" },
+      );
     } catch (e) {
-      setNote(`Sync request failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast({ message: `Sync request failed: ${e instanceof Error ? e.message : String(e)}`, tone: "error" });
     } finally {
       setBusy(false);
     }
   }
 
+  const model = statusPopoverModel("sync", {
+    details: view.details,
+    paired: status.paired,
+    running: status.running,
+    busy,
+    error: view.error,
+  });
   return (
-    <StatusPopoverButton tone={view.tone} label={view.label} ariaLabel={`Cloud ${view.label} — details`} width={320}>
-      {() => (
-        <>
-          <div style={{ fontWeight: 600 }}>Cloud sync</div>
-          {view.details.map((d, i) => (
-            <div key={i} style={{ color: i === 0 ? colors.textDim : colors.text, wordBreak: "break-word" }}>
-              {d}
-            </div>
-          ))}
-          {note && <div style={{ color: colors.textDim }}>{note}</div>}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {status.paired && (
-              <Button size="sm" disabled={busy || status.running} onClick={() => void syncNow()}>
-                {busy ? "Starting…" : "Sync now"}
-              </Button>
-            )}
-            {view.error && (
-              <Button size="sm" onClick={() => void copyText(view.error!).then((ok) => setNote(ok ? "Error copied." : "Couldn't copy."))}>
-                Copy error
-              </Button>
-            )}
-          </div>
-        </>
-      )}
-    </StatusPopoverButton>
+    <StatusPopoverButton
+      tone={view.tone}
+      label={view.label}
+      ariaLabel={`Cloud ${view.label} — details`}
+      width={320}
+      model={model}
+      onAction={(id) => {
+        if (id === "sync-now") void syncNow();
+        else if (id === "copy-error" && view.error) {
+          void copyText(view.error).then((ok) =>
+            toast(ok ? { message: "Error copied", tone: "ok" } : { message: "Couldn't copy to the clipboard", tone: "warn" }),
+          );
+        }
+      }}
+    />
   );
 }

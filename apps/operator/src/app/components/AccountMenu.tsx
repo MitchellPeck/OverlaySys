@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Cloud } from "lucide-react";
+import { Button, toast, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { useAuthStore } from "@/lib/useAuth";
 import { isCloudMode } from "@/lib/mode";
 import { isElectron, getDesktopApi } from "@/lib/desktop";
@@ -12,22 +13,23 @@ import {
   signOutFromElectron,
 } from "@/lib/cloudSession";
 import { getCloudClient } from "@/lib/cloudAuth";
+import { copyText } from "@/app/shell/clipboard";
 
 /**
  * Account UI in the primary header. Three modes:
  *
- *  - Electron, signed out: a sign-in pill that triggers the loopback
- *    OAuth flow (same as the old `CloudSignInButton`).
- *  - Electron, signed in: an avatar/email pill that opens a small menu
- *    with "Manage account" (shellOpens the cloud /account in the system
+ *  - Electron, signed out: a sign-in button that triggers the loopback
+ *    OAuth flow.
+ *  - Electron, signed in: an email button that opens a Menu with
+ *    "Manage account" (shellOpens the cloud /account in the system
  *    browser) and "Sign out".
  *  - Cloud, signed in: same menu but "Manage account" navigates to the
  *    in-app /account route.
- *  - Cloud, signed out: no menu — the cloud build comes pre-authed from
+ *  - Cloud, signed out: nothing — the cloud build comes pre-authed from
  *    apps-portal; there's no in-app sign-in flow to show.
- *  - Either, session expired: a "Session expired" indicator that triggers
- *    re-auth on click. In Electron this re-runs the OAuth flow; in cloud
- *    it redirects back to apps-portal.
+ *  - Either, session expired: a "Session expired" button that triggers
+ *    re-auth. In Electron this re-runs the OAuth flow; in cloud it
+ *    redirects back to apps-portal.
  */
 export function AccountMenu() {
   const status = useAuthStore((s) => s.status);
@@ -36,42 +38,15 @@ export function AccountMenu() {
   const cloud = isCloudMode();
   const inElectron = isElectron();
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { open, menu } = useContextMenu();
 
-  // Initial Electron token bootstrap — same as the old CloudSignInButton
-  // did. The useAuth hook handles cloud's hash-bootstrap path; for
-  // Electron we need to push persisted tokens into the Supabase client.
+  // Initial Electron token bootstrap: push persisted tokens into the
+  // Supabase client. (The useAuth hook handles cloud's hash-bootstrap path.)
   useEffect(() => {
     if (!inElectron) return;
     void bootstrapFromElectron();
   }, [inElectron]);
-
-  // Close the menu when the user clicks outside or presses Escape.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent | KeyboardEvent): void => {
-      if (e instanceof KeyboardEvent) {
-        if (e.key !== "Escape") return;
-        // Now that the menu sits in the top bar on Live too, an Escape that
-        // closes it must not also reach the console's "clear program".
-        e.stopPropagation();
-        e.preventDefault();
-        setOpen(false);
-        return;
-      }
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onDown, true);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onDown, true);
-    };
-  }, [open]);
 
   async function signIn(): Promise<void> {
     if (busy) return;
@@ -79,11 +54,9 @@ export function AccountMenu() {
     try {
       if (inElectron) {
         await signInFromElectron();
-      } else {
+      } else if (typeof window !== "undefined") {
         // Cloud sign-in goes through apps-portal — redirect there.
-        if (typeof window !== "undefined") {
-          window.location.href = "https://apps.mitchellpeck.com";
-        }
+        window.location.href = "https://apps.mitchellpeck.com";
       }
     } finally {
       setBusy(false);
@@ -96,11 +69,9 @@ export function AccountMenu() {
     } else {
       await getCloudClient().auth.signOut();
     }
-    setOpen(false);
   }
 
   function openAccount(): void {
-    setOpen(false);
     if (inElectron) {
       // Desktop opens the cloud account page externally so management
       // lives in one place (the cloud), not duplicated in-app.
@@ -108,8 +79,6 @@ export function AccountMenu() {
       if (api?.openExternal) {
         void api.openExternal("https://apps.mitchellpeck.com/account");
       } else if (typeof window !== "undefined") {
-        // Fallback: same-window navigation. The Electron API may not
-        // expose openExternal yet — see W6 follow-up.
         window.open("https://apps.mitchellpeck.com/account", "_blank");
       }
     } else {
@@ -124,127 +93,71 @@ export function AccountMenu() {
 
   if (status === "signed_out") {
     return (
-      <button
-        onClick={signIn}
+      <Button
+        size="sm"
+        icon={<Cloud size={14} aria-hidden />}
+        onClick={() => void signIn()}
         disabled={busy}
-        style={pillStyle}
         title="Open apps.mitchellpeck.com in your browser to sign in"
       >
-        {busy ? "Signing in…" : <><Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Sign in</>}
-      </button>
+        {busy ? "Signing in…" : "Sign in"}
+      </Button>
     );
   }
 
   if (status === "expired") {
     return (
-      <button
-        onClick={signIn}
+      <Button
+        size="sm"
+        onClick={() => void signIn()}
         disabled={busy}
-        style={{ ...pillStyle, borderColor: "var(--amber, var(--warn))", color: "var(--amber, var(--warn))" }}
-        title="Your session has expired — sign in again"
+        title="Your session has expired. Sign in again."
       >
         {busy ? "Signing in…" : "Session expired — sign in"}
-      </button>
+      </Button>
     );
   }
 
-  // Signed in. Render a dropdown trigger + menu.
+  // Signed in: a trigger that opens a Menu (role="menu").
   const label = user?.email ?? "Account";
+  const items: MenuItem[] = [
+    { id: "who", label, disabled: true, onSelect: () => {} },
+    { id: "manage", label: "Manage account…", onSelect: openAccount },
+    ...(orgId
+      ? [
+          {
+            id: "copy-org",
+            label: "Copy organization id",
+            onSelect: () => {
+              void copyText(orgId).then((ok) =>
+                toast(ok ? { message: "Organization id copied", tone: "ok" } : { message: "Couldn't copy to the clipboard", tone: "warn" }),
+              );
+            },
+          } satisfies MenuItem,
+        ]
+      : []),
+    { separator: true },
+    { id: "signout", label: "Sign out", danger: true, onSelect: () => void signOut() },
+  ];
   return (
-    <div ref={containerRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{ ...pillStyle, whiteSpace: "nowrap" }}
-        title={orgId ? `Signed in (org: ${orgId})` : "Signed in"}
-        aria-haspopup="true"
-        aria-expanded={open}
+    <>
+      <Button
+        size="sm"
+        onClick={(e) => open(e.currentTarget, items)}
+        aria-haspopup="menu"
         aria-label={`Account: ${label}`}
+        title={orgId ? "Signed in" : undefined}
+        icon={<Cloud size={14} aria-hidden />}
+        style={{ whiteSpace: "nowrap" }}
       >
-        <Cloud size={14} aria-hidden style={{ verticalAlign: "-2px" }} />{" "}
-        <span className="shell-status-label">{truncate(label, 24)}</span>{" "}
-        <ChevronDown size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 4px)",
-            background: "var(--panel)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
-            padding: 4,
-            minWidth: 220,
-            zIndex: 100,
-            boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
-          }}
-        >
-          <div style={{ padding: "6px 10px", fontSize: 11, color: "var(--text-dim)" }}>
-            {user?.email}
-            {orgId && (
-              <div style={{ marginTop: 2, fontFamily: "ui-monospace, monospace", fontSize: 10 }}>
-                org: {orgId}
-              </div>
-            )}
-          </div>
-          <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "4px 0" }} />
-          <MenuItem onClick={openAccount}>Manage account…</MenuItem>
-          <MenuItem onClick={signOut} variant="destructive">
-            Sign out
-          </MenuItem>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuItem({
-  children,
-  onClick,
-  variant,
-}: {
-  children: React.ReactNode;
-  onClick: () => void | Promise<void>;
-  variant?: "destructive";
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "block",
-        width: "100%",
-        textAlign: "left",
-        background: "transparent",
-        border: "none",
-        padding: "6px 10px",
-        fontSize: 13,
-        color: variant === "destructive" ? "var(--red, var(--danger))" : "var(--text)",
-        cursor: "pointer",
-        borderRadius: 4,
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = "var(--panel-2)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "transparent";
-      }}
-    >
-      {children}
-    </button>
+        <span className="shell-status-label">{truncate(label, 24)}</span>
+        <ChevronDown size={14} aria-hidden />
+      </Button>
+      {menu}
+    </>
   );
 }
 
 function truncate(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
-
-const pillStyle: React.CSSProperties = {
-  background: "var(--panel-2)",
-  border: "1px solid var(--border)",
-  color: "var(--text)",
-  fontSize: 12,
-  padding: "4px 10px",
-  borderRadius: 12,
-  cursor: "pointer",
-};

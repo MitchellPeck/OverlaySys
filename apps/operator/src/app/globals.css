@@ -133,3 +133,22 @@ input, textarea {
   .shell-topbar-right { gap: 8px; }
   .shell-title { max-width: 18ch; }
 }
+
+/* Skip link: first focusable element in the shell; hidden until focused. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 2000;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--brand-fill);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus {
+  transform: none;
+}

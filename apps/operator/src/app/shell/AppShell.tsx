@@ -35,6 +35,10 @@ function ShellFrame({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "grid", gridTemplateRows: "auto auto minmax(0,1fr)", overflow: "hidden" }}>
+      {/* First focusable element: visually hidden until focused (.skip-link in globals.css). */}
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
       <TopBar />
       {/* Always a grid child: ConnectionBanner renders null while connected,
           which would otherwise shift the content into this auto row. */}
@@ -43,7 +47,7 @@ function ShellFrame({ children }: { children: ReactNode }) {
       </div>
       <div style={{ display: "flex", minHeight: 0 }}>
         {area !== "live" && <SubNav area={area} />}
-        <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden" }}>{children}</main>
+        <main id="main" tabIndex={-1} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", outline: "none" }}>{children}</main>
       </div>
       <CommandPalette />
       <DesktopEventToasts />
