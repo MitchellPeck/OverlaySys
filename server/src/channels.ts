@@ -19,6 +19,7 @@ import * as scriptureSession from "./scriptureSession";
 import * as songSession from "./songSession";
 import * as slidesSession from "./slidesSession";
 import * as templates from "./templates";
+import { isDraftTemplateId } from "./templateDrafts"; // [P2b.11]
 
 type Listener = (state: ChannelState) => void;
 
@@ -163,6 +164,19 @@ export function subscribe(channel: string, listener: Listener): () => void {
   };
 }
 
+// [P2b.11] draft guard
+/**
+ * An unsaved designer draft may only ever sit on "preview". Every take, cue
+ * and PVW→PGM (operator, Companion, hotkeys, HTTP API) lands in take() or
+ * takePvwToPgm(), so this is the single gate keeping a draft off program.
+ */
+function refuseDraft(channel: string, templateId: string): boolean {
+  if (channel === "preview" || !isDraftTemplateId(templateId)) return false;
+  console.warn("[channels] refused draft template on", channel);
+  return true;
+}
+// [/P2b.11]
+
 export function take(
   channel: string,
   templateId: string,
@@ -171,6 +185,9 @@ export function take(
   scripture?: { context: ScriptureContext; session?: ScriptureSessionSummary; queued?: QueuedScripture },
   source?: RowSource,
 ): void {
+  // [P2b.11] draft guard
+  if (refuseDraft(channel, templateId)) return;
+  // [/P2b.11]
   // Cancel any prior auto-out before we install the new active mount —
   // even if the new take is for the same template, the timer should
   // restart from this take's takenAt.
@@ -236,6 +253,9 @@ export function take(
  * take, resumed.
  */
 export function restoreActive(channel: string, active: ActiveGraphic): void {
+  // [P2b.11] draft guard (a draft never outlives the process anyway)
+  if (isDraftTemplateId(active.templateId)) return;
+  // [/P2b.11]
   const s = getOrInit(channel);
   s.active = { ...active, phase: "in" };
   states.set(channel, s);
@@ -397,6 +417,10 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   const src = states.get(fromChannel);
   if (!src || !src.active) return;
   const queued = src.active;
+
+  // [P2b.11] draft guard
+  if (refuseDraft(toChannel, queued.templateId)) return;
+  // [/P2b.11]
 
   // [P3.5] slides session
   if (src.slidesSession && slidesSession.getSession(fromChannel)) {

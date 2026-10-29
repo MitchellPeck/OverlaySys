@@ -1,6 +1,10 @@
 import type { ChannelState, Show, SongMeta, TemplateMeta } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 
+// [P2b.11] mirrors server/src/templateDrafts.ts
+const DRAFT_PREFIX = "__draft__";
+// [/P2b.11]
+
 type Ctx = {
   show: Show | null;
   songs: Pick<SongMeta, "id" | "title">[];
@@ -85,7 +89,13 @@ export function onAirCaption(st: ChannelState | undefined, ctx: Ctx): string | n
     } else if (a.scriptureContext) {
       parts.push(rowTitle(a.scriptureContext.rowId, ctx) ?? "Scripture");
     } else {
-      const name = ctx.templates.find((t) => t.id === a.templateId)?.name ?? a.templateId;
+      let name = ctx.templates.find((t) => t.id === a.templateId)?.name ?? a.templateId;
+      // [P2b.11] an unsaved designer draft
+      if (a.templateId.startsWith(DRAFT_PREFIX)) {
+        const src = a.templateId.slice(DRAFT_PREFIX.length);
+        name = `${ctx.templates.find((t) => t.id === src)?.name ?? "Template"} (unsaved draft)`;
+      }
+      // [/P2b.11]
       const detail = a.data["title"] ?? a.data["name"] ?? Object.values(a.data).find((v) => v && !v.startsWith("data:"));
       parts.push(detail ? `${name}: ${detail}` : name);
     }
@@ -103,6 +113,9 @@ export function onAirCaption(st: ChannelState | undefined, ctx: Ctx): string | n
  */
 export function pvwTakeMessages(pvw: ChannelState | undefined, showId: string | null): ClientMessage[] {
   if (!pvw || !channelHasContent(pvw)) return [];
+  // [P2b.11] a designer draft never goes to program (the server refuses it too)
+  if (pvw.active?.templateId.startsWith(DRAFT_PREFIX)) return [];
+  // [/P2b.11]
   const lr = pvw.liveRow;
   if (pvw.songSession && lr && showId && lr.showId === showId) {
     return [{ type: "song_take_pvw_to_pgm", showId, songRowId: lr.rowId, fromChannel: "preview", toChannel: "program" }];

@@ -93,6 +93,18 @@ describe("clearChannelMessages", () => {
   });
 });
 
+// [P2b.11] draft preview
+describe("an unsaved designer draft on preview", () => {
+  const active = { templateId: "__draft__l3", data: { name: "Ada" }, phase: "in" as const, takenAt: 1 };
+  it("offers no Take (the server would refuse it)", () => {
+    expect(pvwTakeMessages({ channel: "preview", active }, "show1")).toEqual([]);
+  });
+  it("is captioned with its template's name, marked unsaved", () => {
+    expect(onAirCaption({ channel: "preview", active }, ctx)).toBe("Lower third (unsaved draft): Ada");
+  });
+});
+// [/P2b.11]
+
 describe("pvwTakeMessages", () => {
   const pvw = (extra: Partial<ChannelState>): ChannelState => ({ channel: "preview", active: null, ...extra });
   it("promotes a cued song with its session", () => {

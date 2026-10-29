@@ -3,6 +3,7 @@ import type { Template, TemplateMeta } from "@overlaysys/core";
 import * as storage from "./storage";
 import { normalizeAssetUrlsInTemplate } from "./bundleApply";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
+import { getDraftTemplate, isDraftTemplateId } from "./templateDrafts"; // [P2b.11]
 
 // In-memory cache rebuilt on first load and on every save.
 const REGISTRY = new Map<string, Template>();
@@ -55,7 +56,7 @@ export async function listTemplates(): Promise<Template[]> {
 export async function getTemplate(id: string): Promise<Template | null> {
   await ensureLoaded();
   const t = REGISTRY.get(id);
-  return t && isLive(t) ? t : null;
+  return (t && isLive(t) ? t : null) ?? (isDraftTemplateId(id) ? getDraftTemplate(id) : null); // [P2b.11]
 }
 
 export async function saveTemplate(template: Template): Promise<Template> {

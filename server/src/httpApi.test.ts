@@ -99,3 +99,21 @@ describe("timer_create via the ws handler", () => {
     expect(t?.anchor).not.toBeNull();
   });
 });
+
+// [P2b.11] draft guard
+describe("/api/v1 and drafts", () => {
+  it("a take of a draft id on program leaves program unchanged", async () => {
+    const ch = "program";
+    channels.take(ch, "on-air", {});
+    const before = channels.getState(ch).active;
+    const r = await app.inject({
+      method: "POST",
+      url: `/api/v1/channels/${ch}/take`,
+      payload: { templateId: "__draft__lt", data: {} },
+    });
+    expect(r.statusCode).toBe(200);
+    expect(channels.getState(ch).active).toBe(before);
+    channels.setActiveNull(ch);
+  });
+});
+// [/P2b.11]

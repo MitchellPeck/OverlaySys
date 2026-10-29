@@ -54,6 +54,7 @@ import {
 } from "@/lib/cloudData";
 import { useDialog } from "@/lib/dialog";
 import { DesignerHeader } from "./DesignerHeader";
+import { PreviewOnPvwButton } from "./PreviewOnPvwButton"; // [P2b.11]
 import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
 import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
@@ -597,7 +598,7 @@ function DesignPageInner() {
                 d.name = name;
               })
             }
-            previewSlot={null}
+            previewSlot={<PreviewOnPvwButton sourceId={templateId} draft={draft} data={previewData} offline={offline} />}
             saveDisabledReason={offline ? "Reconnect to save" : undefined}
             onDuplicate={() => void duplicateTemplate()}
             duplicateDisabled={anyDirty ? saveFirst("Duplicate") : offline ? "Reconnect to duplicate" : false}

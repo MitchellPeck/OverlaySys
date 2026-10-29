@@ -127,6 +127,9 @@ export function apply(
       return { ...state, hotcardCache: nextCache, hotcards };
     }
     case "template": {
+      // [P2b.11] a designer's unsaved draft (preview-only) is never offered as a template
+      if (evt.template.id.startsWith("__draft__")) return state;
+      // [/P2b.11]
       const idx = state.templates.findIndex((t) => t.id === evt.template.id);
       const meta = {
         id: evt.template.id,

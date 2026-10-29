@@ -125,3 +125,36 @@ describe("channels auto-out", () => {
     channels.setActiveNull("program");
   });
 });
+
+// [P2b.11] draft guard
+describe("draft templates", () => {
+  beforeEach(() => {
+    vi.spyOn(templates, "getTemplate").mockResolvedValue(null);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    channels.setActiveNull("preview");
+    channels.setActiveNull("program");
+  });
+
+  it("refuses draft templates on any channel but preview", () => {
+    channels.take("program", "plain-tpl", { a: "1" });
+    const before = channels.getState("program").active;
+    channels.take("program", "__draft__lt", {});
+    expect(channels.getState("program").active).toBe(before);
+    expect(console.warn).toHaveBeenCalledWith("[channels] refused draft template on", "program");
+
+    channels.takeInternal("program", "__draft__lt", {});
+    expect(channels.getState("program").active).toBe(before);
+
+    channels.take("preview", "__draft__lt", {});
+    expect(channels.getState("preview").active?.templateId).toBe("__draft__lt");
+
+    channels.takePvwToPgm("preview", "program");
+    expect(channels.getState("program").active).toBe(before);
+    // Preview keeps the draft; nothing moved.
+    expect(channels.getState("preview").active?.templateId).toBe("__draft__lt");
+  });
+});
+// [/P2b.11]

@@ -471,3 +471,24 @@ describe("ws delete_template protection", () => {
     spy.mockRestore();
   });
 });
+
+// [P2b.11] draft guard, end to end: the operator's Take button, hotkeys and
+// Companion all send take_pvw_to_pgm / take / cue over this socket.
+describe("ws: a draft on preview never reaches program", () => {
+  it("take_pvw_to_pgm, take and cue of a draft all leave program unchanged", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    channels.take("program", "on-air", { a: "1" });
+    const before = channels.getState("program").active;
+    channels.take("preview", "__draft__lt", {});
+    const sock = connect();
+    await sock.client({ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" });
+    await sock.client({ type: "take", channel: "program", templateId: "__draft__lt", data: {} });
+    await sock.client({ type: "cue", channel: "program", templateId: "__draft__lt", data: {} });
+    expect(channels.getState("program").active).toBe(before);
+    expect(channels.getState("preview").active?.templateId).toBe("__draft__lt");
+    channels.setActiveNull("preview");
+    channels.setActiveNull("program");
+    warn.mockRestore();
+  });
+});
+// [/P2b.11]
