@@ -73,19 +73,19 @@ export interface FeedbackDefinition {
 export const feedbackDefinitions: FeedbackDefinition[] = [
   {
     id: "video_remaining_below",
-    name: "Video remaining below N seconds",
+    name: "Video: remaining below N seconds",
     description: "True while the chosen channel's video has N seconds or less left (playing or paused).",
     options: [{ id: "channel", type: "channel" }, { id: "seconds", type: "seconds" }],
   },
   {
     id: "video_errored",
-    name: "Video errored",
+    name: "Video: errored",
     description: "True when the chosen channel's video failed to load or play.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "output_offline",
-    name: "Output offline",
+    name: "Output: offline",
     description:
       "True when no renderer window (OBS browser source, output window) is connected to the chosen channel. " +
       "Stays false until the server reports outputs.",
@@ -93,79 +93,79 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "stt_silent",
-    name: "STT silent while a song is live",
+    name: "Speech-to-text: silent while a song is live",
     description: "True when a song is live and speech-to-text hasn't heard anything for more than N seconds.",
     options: [{ id: "seconds", type: "seconds" }],
   },
   {
     id: "notes_active",
-    name: "Pastor notes active",
-    description: "True when pastor notes with at least one point are selected.",
+    name: "Sermon notes: active",
+    description: "True when sermon notes with at least one point are selected.",
     options: [],
   },
   {
     id: "notes_at_first",
-    name: "Pastor notes at first point",
+    name: "Sermon notes: at first point",
     description: "True when notes are active and on the first point.",
     options: [],
   },
   {
     id: "notes_at_last",
-    name: "Pastor notes at last point",
+    name: "Sermon notes: at last point",
     description: "True when notes are active and on the last point.",
     options: [],
   },
   {
     id: "stage_message_showing",
-    name: "Stage message showing",
+    name: "Stage: message showing",
     description: "True while a message is shown on the stage display.",
     options: [],
   },
   {
     id: "item_timer_warning",
-    name: "Item timer warning",
+    name: "Item timer: under 60 seconds",
     description: "True when the current item timer is under 60 seconds remaining (not yet overtime).",
     options: [],
   },
   {
     id: "item_timer_overtime",
-    name: "Item timer overtime",
+    name: "Item timer: overtime",
     description: "True when the current item timer has run past zero (overtime on).",
     options: [],
   },
   {
     id: "pco_live_active",
-    name: "PCO Live active",
+    name: "Planning Center: live sync active",
     description: "True while PCO Live sync is on and the service is live.",
     options: [],
   },
   {
     id: "channel_is_live",
-    name: "Channel is live",
+    name: "Channel: live",
     description: "True when the chosen channel has a graphic on air.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "channel_is_blank",
-    name: "Channel is blank",
+    name: "Channel: blank",
     description: "True when the chosen channel is cleared.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "video_on_air",
-    name: "Video is on air",
+    name: "Video: on air",
     description: "True while the chosen channel has a video up (playing, paused or held on its last frame).",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "video_paused",
-    name: "Video is paused",
+    name: "Video: paused",
     description: "True when the chosen channel's video is paused or holding at its end.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "hotcard_on_air",
-    name: "Hotcard is on air",
+    name: "Hotcard: on air",
     description:
       "True when the chosen channel currently shows this hotcard's content.",
     options: [
@@ -175,13 +175,13 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "song_active",
-    name: "Song session active",
+    name: "Song: session active",
     description: "True when the chosen channel has a live song session.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "song_queued",
-    name: "Song queued (intro taken)",
+    name: "Song: queued (intro taken)",
     description:
       "True when the chosen channel has a song armed by its intro take. Song " +
       "section / slide / advance actions on that channel will start it.",
@@ -189,14 +189,14 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "song_trust_on",
-    name: "Song trust mode on",
+    name: "Auto-advance (STT): on",
     description:
       "True when the chosen channel's song session has trust mode enabled.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "song_section_is",
-    name: "Song section matches",
+    name: "Song: section matches",
     description: "True when the active section's kind + ordinal matches.",
     options: [
       { id: "channel", type: "channel" },
@@ -205,7 +205,7 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "song_sub_take_on_channel",
-    name: "Song sub-take is on channel (by row ID)",
+    name: "Song: part on channel (pick from list)",
     description:
       "True when the chosen channel is currently showing the chosen sub-take " +
       "(intro / lyrics / outro) for the chosen song row. Sub-take template ids " +
@@ -220,7 +220,7 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "song_sub_take_on_channel_by_index",
-    name: "Song sub-take is on channel (by row index)",
+    name: "Song: part on channel (by number)",
     description:
       "Same as 'Song sub-take is on channel' but selects the song row from the " +
       "loaded show by 1-based index — survives show changes.",
@@ -232,70 +232,70 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "scripture_active",
-    name: "Scripture slides live",
+    name: "Scripture: slides live",
     description: "True when the chosen channel shows a scripture slide.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "scripture_queued",
-    name: "Scripture queued (intro taken)",
+    name: "Scripture: queued (intro taken)",
     description: "True when the chosen channel has a scripture armed by its intro. Next / go to slide on that channel will start it.",
     options: [{ id: "channel", type: "channel" }],
   },
   {
     id: "scripture_slide_is",
-    name: "Scripture slide N is live",
+    name: "Scripture: slide N live",
     description: "True when the chosen channel's live scripture is on slide N (1-based).",
     options: [{ id: "channel", type: "channel" }, { id: "slide", type: "slide" }],
   },
   {
     id: "stt_running",
-    name: "STT spawner running",
-    description: "True when the STT spawner reports running state.",
+    name: "Speech-to-text: running",
+    description: "True when speech-to-text reports it is running.",
     options: [],
   },
   {
     id: "connection_lost",
-    name: "Connection lost",
+    name: "Connection: lost",
     description: "True when the WebSocket is not connected.",
     options: [],
   },
   {
     id: "show_loaded",
-    name: "Show is loaded",
+    name: "Show: loaded",
     description: "True when a show has been loaded into this Companion instance.",
     options: [],
   },
   {
     id: "row_is_cursor",
-    name: "Row is at cursor (by row ID)",
+    name: "Rundown: row at cursor (pick from list)",
     description: "True when the chosen row is at the cursor position.",
     options: [{ id: "rowId", type: "row" }],
   },
   {
     id: "row_is_active",
-    name: "Row is active on PGM (by row ID)",
+    name: "Rundown: row on program (pick from list)",
     description:
       "True when the chosen row's content currently matches PGM.",
     options: [{ id: "rowId", type: "row" }],
   },
   {
     id: "row_at_index_is_cursor",
-    name: "Row at index is at cursor",
+    name: "Rundown: row at cursor (by number)",
     description:
       "True when the row at the given 1-based index is at the cursor — survives show changes.",
     options: [{ id: "rowIndex", type: "row_index" }],
   },
   {
     id: "row_at_index_is_active",
-    name: "Row at index is active on PGM",
+    name: "Rundown: row on program (by number)",
     description:
       "True when the row at the given 1-based index currently matches PGM — survives show changes.",
     options: [{ id: "rowIndex", type: "row_index" }],
   },
   {
     id: "cursor_row_kind_is",
-    name: "Cursor row is type",
+    name: "Rundown: cursor row is type",
     description:
       "True when the row at the cursor is the chosen type (song, graphic, " +
       "video, scripture). Use it to style a button or branch a button's " +
@@ -304,7 +304,7 @@ export const feedbackDefinitions: FeedbackDefinition[] = [
   },
   {
     id: "row_at_index_kind_is",
-    name: "Row at index is type",
+    name: "Rundown: row is type (by number)",
     description:
       "True when the row at the given 1-based index is the chosen type — " +
       "survives show changes.",

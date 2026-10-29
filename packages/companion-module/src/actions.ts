@@ -895,7 +895,7 @@ const sectionIdInput: CompanionInputFieldTextInput = {
 const trustInput: CompanionInputFieldCheckbox = {
   id: "trustMode",
   type: "checkbox",
-  label: "Trust mode",
+  label: "Auto-advance (STT)",
   default: false,
 };
 
@@ -989,7 +989,7 @@ export function actionDefinitions(
 
   return {
     take_template: {
-      name: "Take template",
+      name: "Template: take on channel",
       options: [
         channelDropdown(state),
         templateDropdown(state),
@@ -998,12 +998,12 @@ export function actionDefinitions(
       callback: wrap("take_template"),
     },
     clear: {
-      name: "Clear channel (graphics only)",
+      name: "Channel: clear graphics",
       options: [channelDropdown(state)],
       callback: wrap("clear"),
     },
     clear_all: {
-      name: "Clear all on channel (graphics + cut video)",
+      name: "Channel: clear graphics and video",
       options: [channelDropdown(state)],
       callback: wrap("clear_all"),
     },
@@ -1013,7 +1013,7 @@ export function actionDefinitions(
       callback: wrap("video_stop"),
     },
     video_play_pause: {
-      name: "Video: play / pause",
+      name: "Video: play/pause",
       options: [channelDropdown(state)],
       callback: wrap("video_play_pause"),
     },
@@ -1023,7 +1023,7 @@ export function actionDefinitions(
       callback: wrap("video_restart"),
     },
     cue_template: {
-      name: "Cue template",
+      name: "Template: cue on channel",
       options: [
         channelDropdown(state),
         templateDropdown(state),
@@ -1032,7 +1032,7 @@ export function actionDefinitions(
       callback: wrap("cue_template"),
     },
     take_pvw_to_pgm: {
-      name: "Take PVW → PGM",
+      name: "Channel: take preview to program",
       options: [
         channelDropdown(state, "fromChannel", "From", "preview"),
         channelDropdown(state, "toChannel", "To", "program"),
@@ -1050,32 +1050,32 @@ export function actionDefinitions(
       callback: wrap("cue_hotcard"),
     },
     load_show: {
-      name: "Load show (this Companion instance)",
+      name: "Show: load into Companion",
       options: [showDropdown(state)],
       callback: wrap("load_show"),
     },
     clear_loaded_show: {
-      name: "Clear loaded show",
+      name: "Show: clear loaded show",
       options: [],
       callback: wrap("clear_loaded_show"),
     },
     select_next_show: {
-      name: "Select next show (soonest upcoming, else most recent)",
+      name: "Show: select next show (soonest upcoming, else most recent)",
       options: [],
       callback: wrap("select_next_show"),
     },
     take_row: {
-      name: "Take row from loaded show (by row ID)",
+      name: "Rundown: take row (pick from list)",
       options: [rowDropdown(state), withDefaultChoice(channelDropdown(state))],
       callback: wrap("take_row"),
     },
     take_row_by_index: {
-      name: "Take row from loaded show (by index)",
+      name: "Rundown: take row (by number)",
       options: [rowIndexInput, withDefaultChoice(channelDropdown(state))],
       callback: wrap("take_row_by_index"),
     },
     take_row_pvw_pgm: {
-      name: "Take row PVW → PGM (by row ID)",
+      name: "Rundown: take row via preview (pick from list)",
       options: [
         rowDropdown(state),
         channelDropdown(state, "fromChannel", "From", "preview"),
@@ -1084,7 +1084,7 @@ export function actionDefinitions(
       callback: wrap("take_row_pvw_pgm"),
     },
     take_row_pvw_pgm_by_index: {
-      name: "Take row PVW → PGM (by index)",
+      name: "Rundown: take row via preview (by number)",
       options: [
         rowIndexInput,
         channelDropdown(state, "fromChannel", "From", "preview"),
@@ -1093,42 +1093,42 @@ export function actionDefinitions(
       callback: wrap("take_row_pvw_pgm_by_index"),
     },
     take_row_at_cursor: {
-      name: "Take row at cursor",
+      name: "Rundown: take row at cursor",
       options: [channelDropdown(state)],
       callback: wrap("take_row_at_cursor"),
     },
     scripture_take_intro: {
-      name: "Scripture: take intro (queues the scripture) by row ID",
+      name: "Scripture: take intro (pick from list)",
       options: [showDropdown(state), rowDropdown(state), optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro"),
     },
     scripture_take_intro_by_index: {
-      name: "Scripture: take intro from loaded show (by index)",
+      name: "Scripture: take intro (by number)",
       options: [rowIndexInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro_by_index"),
     },
     scripture_take_intro_at_cursor: {
-      name: "Scripture: take intro of the cursor row",
+      name: "Scripture: take intro (at cursor)",
       options: [optionalChannelDropdown(state)],
       callback: wrap("scripture_take_intro_at_cursor"),
     },
     scripture_take_slide: {
-      name: "Scripture: take slide N by row ID",
+      name: "Scripture: take slide N (pick from list)",
       options: [showDropdown(state), rowDropdown(state), slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide"),
     },
     scripture_take_slide_by_index: {
-      name: "Scripture: take slide N from loaded show (by index)",
+      name: "Scripture: take slide N (by number)",
       options: [rowIndexInput, slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide_by_index"),
     },
     scripture_take_slide_at_cursor: {
-      name: "Scripture: take slide N of the cursor row",
+      name: "Scripture: take slide N (at cursor)",
       options: [slideInput, optionalChannelDropdown(state)],
       callback: wrap("scripture_take_slide_at_cursor"),
     },
     scripture_advance: {
-      name: "Scripture: next / previous slide (starts a queued scripture)",
+      name: "Scripture: next/previous slide (starts a queued scripture)",
       options: [channelDropdown(state), deltaInput],
       callback: wrap("scripture_advance"),
     },
@@ -1143,7 +1143,7 @@ export function actionDefinitions(
       callback: wrap("scripture_end"),
     },
     take_row_song_aware: {
-      name: "Take row (song-aware: songs take a sub-take, other rows take normally)",
+      name: "Rundown: take row (song-aware: songs take a part, other rows take normally)",
       options: [
         {
           id: "target",
@@ -1181,7 +1181,7 @@ export function actionDefinitions(
       callback: wrap("take_row_song_aware"),
     },
     cursor_advance: {
-      name: "Cursor: advance",
+      name: "Cursor: move by N rows",
       options: [deltaInput],
       callback: wrap("cursor_advance"),
     },
@@ -1191,7 +1191,7 @@ export function actionDefinitions(
       callback: wrap("cursor_prev"),
     },
     panic: {
-      name: "Panic: clear ALL channels (graphics + cut video)",
+      name: "Panic: clear all channels (graphics and video)",
       options: [
         {
           id: "keepVideo",
@@ -1214,12 +1214,12 @@ export function actionDefinitions(
       callback: wrap("create_countdown"),
     },
     cursor_set: {
-      name: "Cursor: set to row (by row ID)",
+      name: "Cursor: set to row (pick from list)",
       options: [rowDropdown(state)],
       callback: wrap("cursor_set"),
     },
     cursor_set_by_index: {
-      name: "Cursor: set to row (by index)",
+      name: "Cursor: set to row (by number)",
       options: [rowIndexInput],
       callback: wrap("cursor_set_by_index"),
     },
@@ -1233,12 +1233,12 @@ export function actionDefinitions(
       callback: wrap("song_take_row"),
     },
     song_take_row_by_index: {
-      name: "Song: take row from loaded show (by index)",
+      name: "Song: take row (loaded show, by number)",
       options: [rowIndexInput, channelDropdown(state)],
       callback: wrap("song_take_row_by_index"),
     },
     song_take_row_pvw_pgm: {
-      name: "Song: take row PVW → PGM (any show)",
+      name: "Song: take row via preview (any show)",
       options: [
         showDropdown(state),
         { ...rowDropdown(state), id: "songRowId" },
@@ -1248,7 +1248,7 @@ export function actionDefinitions(
       callback: wrap("song_take_row_pvw_pgm"),
     },
     song_take_row_pvw_pgm_by_index: {
-      name: "Song: take row PVW → PGM from loaded show (by index)",
+      name: "Song: take row via preview (loaded show, by number)",
       options: [
         rowIndexInput,
         channelDropdown(state, "fromChannel", "From", "preview"),
@@ -1257,7 +1257,7 @@ export function actionDefinitions(
       callback: wrap("song_take_row_pvw_pgm_by_index"),
     },
     song_take_sub: {
-      name: "Song: take sub-take (intro / lyrics / outro) by row ID",
+      name: "Song: take part (pick from list)",
       options: [
         showDropdown(state),
         { ...rowDropdown(state), id: "songRowId" },
@@ -1268,7 +1268,7 @@ export function actionDefinitions(
       callback: wrap("song_take_sub"),
     },
     song_take_sub_by_index: {
-      name: "Song: take sub-take (intro / lyrics / outro) from loaded show (by index)",
+      name: "Song: take part (by number)",
       options: [
         rowIndexInput,
         subTakeInput,
@@ -1277,7 +1277,7 @@ export function actionDefinitions(
       callback: wrap("song_take_sub_by_index"),
     },
     song_advance: {
-      name: "Song: advance ±",
+      name: "Song: next/previous slide",
       options: [channelDropdown(state), deltaInput],
       callback: wrap("song_advance"),
     },
@@ -1287,7 +1287,7 @@ export function actionDefinitions(
       callback: wrap("song_jump_section"),
     },
     song_jump_kind: {
-      name: "Song: jump by section kind + ordinal",
+      name: "Song: jump to section by type",
       options: [channelDropdown(state), kindInput, ordinalInput],
       callback: wrap("song_jump_kind"),
     },
@@ -1302,52 +1302,52 @@ export function actionDefinitions(
       callback: wrap("song_end"),
     },
     song_set_trust: {
-      name: "Song: set trust mode",
+      name: "Auto-advance (STT): on/off",
       options: [channelDropdown(state), trustInput],
       callback: wrap("song_set_trust"),
     },
     stt_start: {
-      name: "STT: start spawner",
+      name: "Speech-to-text: start listening",
       options: [],
       callback: wrap("stt_start"),
     },
     stt_stop: {
-      name: "STT: stop spawner",
+      name: "Speech-to-text: stop listening",
       options: [],
       callback: wrap("stt_stop"),
     },
     notes_next_point: {
-      name: "Notes: next point",
+      name: "Sermon notes: next point",
       options: [],
       callback: wrap("notes_next_point"),
     },
     notes_prev_point: {
-      name: "Notes: previous point",
+      name: "Sermon notes: previous point",
       options: [],
       callback: wrap("notes_prev_point"),
     },
     notes_goto_point: {
-      name: "Notes: go to point",
+      name: "Sermon notes: go to point",
       options: [notesPointInput],
       callback: wrap("notes_goto_point"),
     },
     notes_scroll_down: {
-      name: "Notes: scroll down",
+      name: "Sermon notes: scroll down",
       options: [notesAmountInput],
       callback: wrap("notes_scroll_down"),
     },
     notes_scroll_up: {
-      name: "Notes: scroll up",
+      name: "Sermon notes: scroll up",
       options: [notesAmountInput],
       callback: wrap("notes_scroll_up"),
     },
     notes_top: {
-      name: "Notes: scroll to top",
+      name: "Sermon notes: scroll to top",
       options: [],
       callback: wrap("notes_top"),
     },
     notes_select: {
-      name: "Notes: select set (loaded show)",
+      name: "Sermon notes: select set (loaded show)",
       options: [notesDropdown(state)],
       callback: wrap("notes_select"),
     },

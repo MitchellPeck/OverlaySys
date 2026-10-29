@@ -454,7 +454,7 @@ export function presetDefinitions(
   ) => {
     presets[key] = {
       type: "button",
-      category: "Pastor Notes",
+      category: "Sermon notes",
       name,
       style: { text, size: "14", color: white, bgcolor: dark },
       steps: [{ down: [{ actionId, options: {} }], up: [] }],
@@ -476,7 +476,7 @@ export function presetDefinitions(
   notesBtn("notes_top", "Notes: top", "TOP", "notes_top");
   presets["notes_status"] = {
     type: "button",
-    category: "Pastor Notes",
+    category: "Sermon notes",
     name: "Notes: current point heading",
     style: {
       text: "$(overlaysys:notes_point_heading)",
