@@ -3,8 +3,11 @@ export const TIMELINE_HEIGHT_KEY = "overlaysys:designer:timelineHeight";
 
 const MIN_TIMELINE_H = 140;
 const ROW_H = 24;
-/** Timeline toolbar + ruler above the first track. */
-const CHROME_H = 56;
+/**
+ * Timeline chrome above the first row, measured in the browser (P2b.10):
+ * toolbar 37 + keyframe strip 32 + ruler 20.
+ */
+const CHROME_H = 89;
 
 /** 45 % of the viewport, but never below the floor. */
 function maxFor(viewportH: number): number {
@@ -16,9 +19,14 @@ export function clampTimelineHeight(h: number, viewportH: number): number {
   return Math.round(Math.min(maxFor(viewportH), Math.max(MIN_TIMELINE_H, h)));
 }
 
-/** Room for every track without scrolling, clamped. */
-export function defaultTimelineHeight(trackCount: number, viewportH: number): number {
-  return clampTimelineHeight(trackCount * ROW_H + CHROME_H, viewportH);
+/** Rows the timeline draws: one header per animated layer plus one per track. */
+export function timelineRowCount(tracks: readonly { layerId: string }[]): number {
+  return tracks.length + new Set(tracks.map((t) => t.layerId)).size;
+}
+
+/** Room for every row (see timelineRowCount) without scrolling, clamped. */
+export function defaultTimelineHeight(rowCount: number, viewportH: number): number {
+  return clampTimelineHeight(rowCount * ROW_H + CHROME_H, viewportH);
 }
 
 /** A stored height, or null when missing or not a positive number. */

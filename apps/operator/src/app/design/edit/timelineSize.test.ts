@@ -1,17 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { TIMELINE_HEIGHT_KEY, clampTimelineHeight, defaultTimelineHeight, readStoredTimelineHeight } from "./timelineSize";
+import { TIMELINE_HEIGHT_KEY, clampTimelineHeight, defaultTimelineHeight, readStoredTimelineHeight, timelineRowCount } from "./timelineSize";
 
 describe("defaultTimelineHeight", () => {
   it("never goes below 140", () => {
     expect(defaultTimelineHeight(2, 800)).toBe(140);
     expect(defaultTimelineHeight(0, 800)).toBe(140);
   });
-  it("is 24 px per track plus 56", () => {
-    expect(defaultTimelineHeight(8, 800)).toBe(248);
+  it("is 24 px per row plus 89 px of chrome (toolbar 37 + keyframe strip 32 + ruler 20)", () => {
+    expect(defaultTimelineHeight(8, 800)).toBe(281);
+  });
+  it("fits a 2-track layer (1 header + 2 tracks) without scrolling", () => {
+    const rows = timelineRowCount([{ layerId: "lt" }, { layerId: "lt" }]);
+    expect(rows).toBe(3);
+    expect(defaultTimelineHeight(rows, 800)).toBe(161);
   });
   it("caps at 45 % of the viewport", () => {
     expect(defaultTimelineHeight(20, 800)).toBe(360);
     expect(defaultTimelineHeight(20, 901)).toBe(405);
+  });
+});
+
+describe("timelineRowCount", () => {
+  it("counts one header per animated layer plus every track", () => {
+    expect(timelineRowCount([])).toBe(0);
+    expect(timelineRowCount([{ layerId: "a" }, { layerId: "b" }, { layerId: "a" }])).toBe(5);
   });
 });
 

@@ -67,7 +67,7 @@ export function DesignerLayout({
   canvas,
   inspector,
   timeline,
-  trackCount,
+  rowCount,
   banner,
 }: {
   header: ReactNode;
@@ -76,7 +76,7 @@ export function DesignerLayout({
   inspector: ReactNode;
   timeline: ReactNode;
   /** Tracks in the active timeline; sizes the timeline until the user drags it. */
-  trackCount: number;
+  rowCount: number;
   /** Error strip over the top of the canvas. */
   banner?: ReactNode;
 }) {
@@ -85,7 +85,7 @@ export function DesignerLayout({
   const width = useWidth(gridRef);
   const [stored, setStored] = useState<number | null>(null);
   useLayoutEffect(() => setStored(readStored()), []);
-  const timelineH = stored !== null ? clampTimelineHeight(stored, vh) : defaultTimelineHeight(trackCount, vh);
+  const timelineH = stored !== null ? clampTimelineHeight(stored, vh) : defaultTimelineHeight(rowCount, vh);
   const inspectorW = width >= WIDE_MIN_W ? 320 : 300;
 
   const dragRef = useRef<{ pointerId: number; startY: number; startH: number } | null>(null);

@@ -48,6 +48,7 @@ import { DesignerHeader } from "./DesignerHeader";
 import { PreviewOnPvwButton } from "./PreviewOnPvwButton"; // [P2b.11]
 import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
 import { DesignerInspector } from "./DesignerInspector";
+import { timelineRowCount } from "./timelineSize";
 import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
 type Recipe = (d: Draft<Template>) => void;
@@ -573,7 +574,7 @@ function DesignPageInner() {
     <>
       <PageChrome docTitle={draft.name} />
       <DesignerLayout
-        trackCount={draft.timelines[activeTimeline].tracks.length}
+        rowCount={timelineRowCount(draft.timelines[activeTimeline].tracks)}
         header={
           <DesignerHeader
             name={draft.name}
