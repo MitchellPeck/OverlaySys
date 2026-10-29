@@ -75,7 +75,7 @@ function SongEditorPageInner() {
   // [/P3.20]
   /** Bumped to re-request the song (after a restore). */
   const [reloadKey, setReloadKey] = useState(0);
-  const { alert, dialog } = useDialog();
+  const { dialog } = useDialog();
   const toast = useToast();
   const more = useContextMenu();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -319,7 +319,8 @@ function SongEditorPageInner() {
               saving={saving}
               onSave={save}
               onRevert={revert}
-              disabledReason={offline ? "Not connected" : undefined}
+              disabledReason={offline ? "Reconnect to save" : undefined}
+              onBlockedSave={(reason) => toast({ message: `Not saved: ${reason}`, tone: "error" })}
               revertMessage="Discard unsaved changes to this song?"
             />
           </>

@@ -20,13 +20,15 @@ export type SaveBarProps = {
   // [P2a.17] Revert confirm title (default "Revert changes?").
   revertTitle?: string;
   // [/P2a.17]
+  /** Called with the disabled reason when the save shortcut is pressed while there are unsaved changes but saving is blocked. */
+  onBlockedSave?(reason: string): void;
 };
 
 function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
 }
 
-export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason, revertMessage, revertTitle }: SaveBarProps) {
+export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason, revertMessage, revertTitle, onBlockedSave }: SaveBarProps) {
   const [justSaved, setJustSaved] = useState(false);
   const wasSaving = useRef(false);
   useEffect(() => {
@@ -42,13 +44,14 @@ export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason, rever
   }, [saving, dirty]);
 
   const s = saveBarState({ dirty, saving, disabledReason, justSaved });
-  const latest = useRef({ onSave, enabled: s.saveEnabled });
-  latest.current = { onSave, enabled: s.saveEnabled };
+  const latest = useRef({ onSave, enabled: s.saveEnabled, blocked: undefined as string | undefined, onBlockedSave });
+  latest.current = { onSave, enabled: s.saveEnabled, blocked: dirty && !saving ? disabledReason : undefined, onBlockedSave };
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         if (latest.current.enabled) latest.current.onSave();
+        else if (latest.current.blocked) latest.current.onBlockedSave?.(latest.current.blocked);
       }
     };
     window.addEventListener("keydown", h);
