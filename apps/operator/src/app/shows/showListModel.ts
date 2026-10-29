@@ -44,3 +44,9 @@ export const showFilterWhenOptions = [
   { value: "past", label: "Past" },
   { value: "none", label: "No date" },
 ];
+
+/** True when the fetched body is older than the list meta says the show is (updatedAt is ISO, so string compare works). */
+export function isStaleShow(fetched: { updatedAt?: string }, meta: { updatedAt?: string } | undefined): boolean {
+  if (!meta?.updatedAt) return false;
+  return (fetched.updatedAt ?? "") < meta.updatedAt;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Copy, Download, FolderInput, Trash2, Files } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
@@ -13,7 +13,7 @@ import { useStore, type ShowMeta } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
 import { exportFileName } from "@/lib/exportName";
 import { formatDuration, formatRelative, formatServiceDate, plural } from "@/lib/listFormat";
-import { matchesWhen, metaDate, showFilterWhenOptions, showSorts } from "./showListModel";
+import { isStaleShow, matchesWhen, metaDate, showFilterWhenOptions, showSorts } from "./showListModel";
 import { downloadJson } from "@/lib/download";
 import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
@@ -37,7 +37,9 @@ export default function ShowsIndexPage() {
   const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
   const showsLoaded = useStore((s) => s.showsLoaded);
+  const [cloudFailed, setCloudFailed] = useState(false);
   const load = listLoadState({ cloud, conn, loaded: showsLoaded });
+  const loadFailed = load.error || (cloud && cloudFailed && !showsLoaded);
   const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
@@ -57,9 +59,12 @@ export default function ShowsIndexPage() {
     if (cloud) {
       // Cloud mode: pull project + show metadata from Supabase. Projects
       // come along because the move-to-project selector needs them.
-      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()]).catch(
-        (err) => console.warn("[shows] cloud list failed", err),
-      );
+      Promise.all([refreshProjectsCloud(), refreshShowMetasCloud()])
+        .then(() => setCloudFailed(false))
+        .catch((err) => {
+          console.warn("[shows] cloud list failed", err);
+          setCloudFailed(true);
+        });
     } else if (conn === "open") {
       send({ type: "list_shows" });
     }
@@ -161,13 +166,22 @@ export default function ShowsIndexPage() {
       await refreshShowMetasCloud();
       return;
     }
-    // Re-save the whole show so the rest of the payload comes along.
-    const cached = useStore.getState().showCache[id];
-    const show =
-      cached ??
-      (await requestOne(getClient(), { type: "get_show", showId: id }, (m) =>
+    // Re-save the whole show so the rest of the payload comes along. Never
+    // trust the cache: fetch fresh, and refetch if the body is older than the
+    // list says (a `show` broadcast from another save can answer first).
+    let show = await requestOne(getClient(), { type: "get_show", showId: id }, (m) =>
+      m.type === "show" && m.show.id === id ? m.show : undefined,
+    );
+    for (let i = 0; i < 2; i++) {
+      const meta = useStore.getState().showMetas.find((x) => x.id === id);
+      if (!isStaleShow(show, meta)) break;
+      show = await requestOne(getClient(), { type: "get_show", showId: id }, (m) =>
         m.type === "show" && m.show.id === id ? m.show : undefined,
-      ));
+      );
+    }
+    if (isStaleShow(show, useStore.getState().showMetas.find((x) => x.id === id))) {
+      throw new Error("Couldn't load the latest version of this show.");
+    }
     await sendAndAwaitAck(
       getClient(),
       { type: "save_show", show: { ...show, projectId: nextProjectId } },
@@ -296,7 +310,7 @@ export default function ShowsIndexPage() {
         action: { label: "New show", onClick: () => void newShow() },
       }}
       loading={load.loading}
-      error={load.error ? "Not connected to the server" : null}
+      error={loadFailed ? (cloud ? "Couldn't load shows" : "Not connected to the server") : null}
     />
   );
 }

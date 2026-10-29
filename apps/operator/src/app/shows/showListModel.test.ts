@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ShowMeta } from "@/lib/store";
-import { matchesWhen, showSorts } from "./showListModel";
+import { isStaleShow, matchesWhen, showSorts } from "./showListModel";
 
 const m = (id: string, name: string, scheduledFor?: string, updatedAt?: string): ShowMeta => ({
   id, name, projectId: "p", rowCount: 0, scheduledFor, updatedAt,
@@ -38,5 +38,17 @@ describe("matchesWhen", () => {
     expect(matchesWhen(m("a", "x", "2026-10-27"), "past", now)).toBe(true);
     expect(matchesWhen(m("a", "x"), "none", now)).toBe(true);
     expect(matchesWhen(m("a", "x"), "upcoming", now)).toBe(false);
+  });
+});
+
+describe("isStaleShow", () => {
+  it("older or missing body updatedAt vs newer meta is stale", () => {
+    expect(isStaleShow({ updatedAt: "2026-10-01T00:00:00Z" }, { updatedAt: "2026-10-02T00:00:00Z" })).toBe(true);
+    expect(isStaleShow({}, { updatedAt: "2026-10-02T00:00:00Z" })).toBe(true);
+  });
+  it("equal, newer, or no meta is fresh", () => {
+    expect(isStaleShow({ updatedAt: "2026-10-02T00:00:00Z" }, { updatedAt: "2026-10-02T00:00:00Z" })).toBe(false);
+    expect(isStaleShow({ updatedAt: "2026-10-03T00:00:00Z" }, { updatedAt: "2026-10-02T00:00:00Z" })).toBe(false);
+    expect(isStaleShow({}, undefined)).toBe(false);
   });
 });
