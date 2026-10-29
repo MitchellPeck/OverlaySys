@@ -1,25 +1,37 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
-import { useStore } from "@/lib/store";
+import { List, Pencil } from "lucide-react";
+import { Dialog, IconButton, LibraryList, Select, colors, useConfirm, type SortSpec } from "@overlaysys/ui";
+import { useStore, type ShowMeta } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { useDialog } from "@/lib/dialog";
+import { useConnection } from "@/lib/useConnection";
 import { anythingOnAir } from "@/lib/onAir";
+import { formatServiceDate } from "@/lib/listFormat";
+import { metaDate, showSorts } from "../shows/showListModel";
 
+/** The picker offers service date (newest first, the default) and name. */
+const PICKER_SORTS: SortSpec<ShowMeta>[] = showSorts.filter((s) => s.id === "date-desc" || s.id === "name-asc");
+
+/**
+ * The Live page's show picker (top bar context): the current show, an edit
+ * link, and a "Shows" button that opens the show library to switch from.
+ */
 export function ShowPicker() {
   const { send } = useWs();
+  const { connected } = useConnection();
   const showMetas = useStore((s) => s.showMetas);
   const show = useStore((s) => s.show);
-  const { confirm, dialog } = useDialog();
+  const confirm = useConfirm();
+  const [open, setOpen] = useState(false);
 
   async function switchTo(id: string) {
     if (!id || id === show?.id) return;
     if (show && anythingOnAir(useStore.getState().channelStates)) {
-      const name = showMetas.find((m) => m.id === id)?.name ?? "this show";
       const ok = await confirm({
-        title: "Switch show while on air?",
-        message: `Something is on air. Switching to "${name}" changes the rundown; what's on air stays up until you clear it.`,
+        title: "Switch show?",
+        message: `${show.name} is on air. Switching won't clear the outputs.`,
         confirmLabel: "Switch show",
       });
       if (!ok) return;
@@ -29,55 +41,78 @@ export function ShowPicker() {
     send({ type: "get_show", showId: id });
   }
 
+  // Offline keeps the last show's name, dimmed, even if the list is gone.
+  const options = showMetas.some((m) => m.id === show?.id) || !show ? showMetas : [{ id: show.id, name: show.name } as ShowMeta, ...showMetas];
+
   return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-      <select
-        aria-label="Show"
-        value={show?.id ?? ""}
-        onChange={(e) => {
-          // Hand the keyboard back to the show shortcuts once a show is picked.
-          e.currentTarget.blur();
-          void switchTo(e.target.value);
-        }}
-        style={{
-          padding: "4px 8px",
-          background: "var(--panel-2)",
-          border: "1px solid var(--border)",
-          color: "var(--text)",
-          borderRadius: 4,
-          fontSize: 12,
-        }}
-      >
-        {showMetas.length === 0 && <option value="">(no shows)</option>}
-        {showMetas.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name} ({s.rowCount})
-          </option>
-        ))}
-      </select>
+    <div style={{ display: "flex", gap: 6, alignItems: "center", opacity: connected ? 1 : 0.55 }}>
+      <div style={{ width: 220 }}>
+        <Select
+          aria-label="Show"
+          value={show?.id ?? ""}
+          disabled={!connected}
+          title={connected ? undefined : "Not connected to the server"}
+          onChange={(e) => {
+            // Hand the keyboard back to the show shortcuts once a show is picked.
+            e.currentTarget.blur();
+            void switchTo(e.target.value);
+          }}
+        >
+          {options.length === 0 && <option value="">No shows</option>}
+          {options.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
+      </div>
       {show && (
-        <Link href={`/shows/edit?id=${encodeURIComponent(show.id)}`} title="Edit show" style={iconLink}>
+        <Link
+          href={`/shows/edit?id=${encodeURIComponent(show.id)}`}
+          title="Edit show"
+          aria-label={`Edit ${show.name}`}
+          style={iconLink}
+        >
           <Pencil size={14} aria-hidden />
         </Link>
       )}
-      <Link href="/shows" title="Manage shows" style={iconLink}>
-        +
-      </Link>
-      {dialog}
+      <IconButton aria-label="Shows" title="Shows" disabled={!connected} onClick={() => setOpen(true)}>
+        <List size={16} aria-hidden />
+      </IconButton>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Shows" size="lg" bodyStyle={{ height: "min(60vh, 560px)", display: "flex", flexDirection: "column" }}>
+        <LibraryList<ShowMeta>
+          items={showMetas}
+          getId={(s) => s.id}
+          primary={(s) => (
+            <span style={{ color: s.id === show?.id ? colors.brand : undefined }}>{s.name || "Untitled show"}</span>
+          )}
+          secondary={(s) => {
+            const d = metaDate(s);
+            return d ? formatServiceDate(d, new Date()) : null;
+          }}
+          searchText={(s) => s.name}
+          sorts={PICKER_SORTS}
+          defaultSort="date-desc"
+          menuItems={() => []}
+          onOpen={(s) => {
+            setOpen(false);
+            void switchTo(s.id);
+          }}
+          storageKey="live-show-picker"
+          emptyState={{ title: "No shows yet", body: "Create a show on the Shows page." }}
+        />
+      </Dialog>
     </div>
   );
 }
 
 const iconLink: React.CSSProperties = {
-  width: 26,
-  height: 24,
+  width: 28,
+  height: 28,
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  background: "var(--panel-2)",
-  border: "1px solid var(--border)",
-  borderRadius: 4,
+  borderRadius: 6,
   color: "var(--text)",
   textDecoration: "none",
-  fontSize: 13,
 };

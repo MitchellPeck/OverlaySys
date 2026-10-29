@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { colors, PanelHeader } from "@overlaysys/ui";
+import { colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { isCloudMode } from "@/lib/mode";
@@ -20,9 +20,9 @@ import { PageChrome } from "./shell/PageChrome";
 
 const SELECTED_SHOW_KEY = "overlaysys:selectedShowId";
 
-export default function ShowPage() {
+export default function LivePage() {
   const router = useRouter();
-  // The Show view drives a paired Electron renderer — pointless on the web
+  // The Live view drives a paired Electron renderer — pointless on the web
   // deploy. Redirect to the Shows list so the user lands on something they
   // can actually interact with. Done in an effect so the redirect happens
   // after hydration; SSR-friendly even though Next.js exports static here.
@@ -33,10 +33,10 @@ export default function ShowPage() {
     return null;
   }
 
-  return <ShowPageLocal />;
+  return <LivePageLocal />;
 }
 
-function ShowPageLocal() {
+function LivePageLocal() {
   const { send } = useWs();
 
   const showMetas = useStore((s) => s.showMetas);
@@ -71,28 +71,29 @@ function ShowPageLocal() {
 
   return (
     <div style={{ height: "100%", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", overflow: "hidden" }}>
-      <PageChrome title="Show" context={<ShowPicker />} />
+      <PageChrome title="Live" context={<ShowPicker />} />
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: `320px minmax(0, 1fr) ${drawerOpen ? DRAWER_OPEN_WIDTH : DRAWER_COLLAPSED_WIDTH}px`,
+          gridTemplateColumns: "300px minmax(0, 1fr) auto",
           gap: 1,
           background: colors.border,
           minHeight: 0,
         }}
       >
-        <section style={columnStyle}>
-          <PanelHeader title="Rundown" right={show ? `${show.rows.length} items` : undefined} />
+        <section aria-label="Rundown" style={columnStyle}>
+          {/* The rundown's own header line names the show and counts its items. */}
           <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
             <Rundown />
           </div>
         </section>
-        <section style={columnStyle}>
+        <section aria-label="Monitors and selected item" style={columnStyle}>
+          {/* Monitors + air controls in one fixed row; the selected item scrolls below. */}
           <Monitors />
           <StageArea />
         </section>
         {/* [P2a.15] right drawer */}
-        <section style={columnStyle}>
+        <section style={{ ...columnStyle, width: drawerOpen ? DRAWER_OPEN_WIDTH : DRAWER_COLLAPSED_WIDTH }}>
           <LiveDrawer />
         </section>
         {/* [/P2a.15] */}

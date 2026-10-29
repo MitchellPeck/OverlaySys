@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
+import { toast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
-import { videoRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
-import { graphicRowMessage } from "@/lib/rowData";
-import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
+import { onAirMediaFor } from "@/lib/mediaTake";
+import { pvwTakeMessages } from "@/lib/onAir";
+import { rowFireMessages, sectionKeyAction, sectionKeyFor } from "@/lib/liveKeys";
 import {
   escapeMessages,
   hasCommandModifier,
@@ -20,27 +21,25 @@ import {
 } from "@/lib/shortcutGuards";
 
 /**
- * Global keyboard shortcuts for the show page.
+ * Global keyboard shortcuts for the Live page.
  *
  * Always:
  *   F1..F12         take the current project's hotcard assigned that key
  *                   (Shift: cue it on preview)
+ *   ↑/↓             select the previous / next rundown row
+ *   Enter           cue the selection → preview (scripture: slide 1; video: nothing)
+ *   ⌘/Ctrl+Enter   take preview to program (pvwTakeMessages)
  *
- * When NO song session is live on program (graphic mode):
- *   ↑/↓             navigate rundown
- *   Enter           cue selected → preview
- *   Space           take selected → program
+ * When NO song session is live on program (rundown keys):
+ *   Space           take the selection (video: play / pause when on air)
  *   Esc             clear program (graphics and video)
- *   ⌘/Ctrl+Enter   PVW → PGM swap
  *
  * When a song session IS live on program (song mode):
  *   Space           advance + 1 slide
  *   Shift+Space     advance − 1 slide
- *   C               jump to the next chorus
- *   B               jump to the next bridge
- *   T               jump to the next tag
- *   1..9            jump to verse 1..9
- *   0               jump to verse 10
+ *   C / B / T       jump to the chorus / bridge / tag
+ *   1..9, 0         jump to verse 1..9, 10
+ *                   (a section the song doesn't have toasts and sends nothing)
  *   .               toggle blank
  *   Esc             end song (and clear program video)
  *
@@ -77,20 +76,28 @@ export function useGlobalShortcuts(): void {
       const songChannel = songKeyChannel(store.songSessions);
       if (songChannel && handleSongHotkey(e, send, songChannel)) return;
 
+      const show = store.show;
+
       // ⌘/Ctrl+Enter is the only chord the show binds.
       if (e.code === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey) {
         e.preventDefault();
-        send({ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" });
+        for (const m of pvwTakeMessages(store.channelStates.preview, show?.id ?? null)) send(m);
         return;
       }
       if (hasCommandModifier(e)) return;
 
-      const show = store.show;
       const selId = store.selectedRowId;
       const row = show?.rows.find((r) => r.id === selId);
       const hotcardId = store.selectedHotcardId;
       const hotcard = hotcardId ? store.hotcardCache[hotcardId] : null;
-      const caches = { songCache: store.songCache, templateCache: store.templateCache };
+      const fireCtx = show
+        ? {
+            show,
+            overrides: store.rowDataOverrides,
+            caches: { songCache: store.songCache, templateCache: store.templateCache },
+            channelStates: store.channelStates,
+          }
+        : null;
 
       if (e.code === "ArrowDown") {
         e.preventDefault();
@@ -105,21 +112,16 @@ export function useGlobalShortcuts(): void {
         const prev = show.rows[Math.max(idx - 1, 0)];
         if (prev) store.setSelectedRow(prev.id);
       } else if (e.code === "Enter") {
+        // Cue the selection: always preview, never program (D7a).
         e.preventDefault();
-        if (row && row.kind === "graphic") {
-          send(graphicRowMessage(row, "cue", store.rowDataOverrides, show?.id));
-        } else if (row && row.kind === "song" && show) {
-          send({ type: "song_take", channel: songCueChannel(row, show, caches), showId: show.id, songRowId: row.id });
+        if (row && fireCtx) {
+          for (const m of rowFireMessages(row, "cue", fireCtx)) send(m);
         } else if (hotcard) {
           send(hotcardFireMessage(hotcard, "cue"));
         }
       } else if (e.code === "Space") {
         e.preventDefault();
-        if (row && row.kind === "graphic") {
-          send(graphicRowMessage(row, "take", store.rowDataOverrides, show?.id));
-        } else if (row && row.kind === "song" && show) {
-          send({ type: "song_take", channel: songTakeChannel(row, show, caches), showId: show.id, songRowId: row.id });
-        } else if (row && row.kind === "video") {
+        if (row && row.kind === "video") {
           const onAir = onAirMediaFor(row, store.channelStates);
           if (onAir) {
             send({
@@ -128,9 +130,11 @@ export function useGlobalShortcuts(): void {
               takenAt: onAir.takenAt,
               action: onAir.paused ? "play" : "pause",
             });
-          } else {
-            send(videoRowTakeMessage(row, show?.id));
+            return;
           }
+        }
+        if (row && fireCtx) {
+          for (const m of rowFireMessages(row, "take", fireCtx)) send(m);
         } else if (hotcard) {
           send(hotcardFireMessage(hotcard, "take"));
         }
@@ -149,8 +153,8 @@ type Sender = ReturnType<typeof getClient>["send"];
 
 /**
  * Handle song-mode hotkeys. Returns true if the key was consumed (caller
- * should stop further graphic-mode handling). ⌘/Ctrl/Alt chords are never
- * song keys, so ⌘C copies instead of jumping to the chorus.
+ * should stop further rundown handling). ⌘/Ctrl/Alt chords are never song
+ * keys, so ⌘C copies instead of jumping to the chorus.
  */
 function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): boolean {
   if (hasCommandModifier(e)) return false;
@@ -170,22 +174,18 @@ function handleSongHotkey(e: KeyboardEvent, send: Sender, channel: "program"): b
     send({ type: "song_blank", channel });
     return true;
   }
-  // Section jumps. Use e.key (case-insensitive lower) so Shift+C still works.
-  const k = e.key.toLowerCase();
-  const kind = k === "c" ? "chorus" : k === "b" ? "bridge" : k === "t" ? "tag" : null;
-  if (kind) {
+  // Section jumps (e.key, so Shift+C still works). A section the song
+  // doesn't have toasts and sends nothing.
+  const target = sectionKeyFor(e.key);
+  if (target) {
     e.preventDefault();
-    send({ type: "song_jump_kind", channel, kind, ordinal: 1 });
+    const st = useStore.getState();
+    const session = st.songSessions[channel];
+    const song = session ? st.songCache[session.songId] : undefined;
+    const r = sectionKeyAction(target, song, session?.arrangement ?? []);
+    if ("toast" in r) toast({ message: r.toast, tone: "warn" });
+    else send(r.send);
     return true;
   }
-  // Verse jumps: 1..9 → Verse 1..9, 0 → Verse 10. Ten verses covers any
-  // realistic worship song (Amazing Grace's longest published version is 7).
-  if (/^[0-9]$/.test(k)) {
-    e.preventDefault();
-    const ordinal = k === "0" ? 10 : Number(k);
-    send({ type: "song_jump_kind", channel, kind: "verse", ordinal });
-    return true;
-  }
-
   return false;
 }
