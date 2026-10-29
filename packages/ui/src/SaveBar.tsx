@@ -14,13 +14,16 @@ export type SaveBarProps = {
   onSave(): void;
   onRevert(): void;
   disabledReason?: string;
+  // [P2a.20] editor-specific Revert confirm text, e.g. "Discard unsaved changes to this song?"
+  revertMessage?: string;
+  // [/P2a.20]
 };
 
 function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
 }
 
-export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason }: SaveBarProps) {
+export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason, revertMessage }: SaveBarProps) {
   const [justSaved, setJustSaved] = useState(false);
   const wasSaving = useRef(false);
   useEffect(() => {
@@ -50,7 +53,7 @@ export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason }: Sav
   }, []);
 
   const revert = async () => {
-    const ok = await confirm({ title: "Revert changes?", message: "Your unsaved edits will be lost.", confirmLabel: "Revert", danger: true });
+    const ok = await confirm({ title: "Revert changes?", message: revertMessage ?? "Your unsaved edits will be lost.", confirmLabel: "Revert", danger: true });
     if (ok) onRevert();
   };
 
