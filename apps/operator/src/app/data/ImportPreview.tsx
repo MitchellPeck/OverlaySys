@@ -16,6 +16,7 @@ import {
 import { Button, FileDrop, Panel, SegmentedControl, Select, colors, useConfirm, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { findLikelySongDuplicate, setAllFlagged, type LikelyDuplicate } from "./bundleDuplicates";
+import { buildImportRequest } from "./importRequest";
 import { planImport, summarizePlan, type ImportDecision } from "./planImport";
 import { defaultServerUrl } from "@/lib/wsClient";
 import { isCloudMode } from "@/lib/mode";
@@ -120,8 +121,8 @@ export function ImportPreview() {
     const exTemplates = new Map(templates.map((t) => [t.id, t]));
     const exShows = new Map(showMetas.map((s) => [s.id, s]));
     const exHotcards = new Map(hotcardMetas.map((h) => [h.id, h]));
+    // Only projects that exist on this install count; anything else falls back to the current project.
     const known = new Set(projects.map((p) => p.id));
-    if (project) known.add(project.id);
     const fromProject = (id: string | undefined) => (id && known.has(id) ? id : undefined);
 
     const rows = [
@@ -240,34 +241,7 @@ export function ImportPreview() {
     setImportError(null);
     setResult(null);
 
-    const by = (kind: ItemKind) => new Map(preview.rows.filter((r) => r.kind === kind && r.decision !== "skip").map((r) => [r.id, r]));
-    const songRows = by("song");
-    const templateRows = by("template");
-    const hotcardRows = by("hotcard");
-    const showRows = by("show");
-
-    // Copies get a fresh id and a "(copy)" name; shows and hotcards also move to their target project.
-    const body = {
-      templates: preview.templates.filter((t) => templateRows.has(t.id)),
-      songs: preview.songs.flatMap((s) => {
-        const r = songRows.get(s.id);
-        if (!r) return [];
-        return [r.decision === "copy" ? { ...s, id: `song-${uuid().slice(0, 8)}`, title: `${s.title} (copy)` } : s];
-      }),
-      hotcards: preview.hotcards.flatMap((h) => {
-        const r = hotcardRows.get(h.id);
-        if (!r) return [];
-        const moved = { ...h, projectId: r.targetProject };
-        return [r.decision === "copy" ? { ...moved, id: `hotcard-${uuid().slice(0, 8)}`, name: `${h.name} (copy)` } : moved];
-      }),
-      shows: preview.shows.flatMap((sh) => {
-        const r = showRows.get(sh.id);
-        if (!r) return [];
-        const moved = { ...sh, projectId: r.targetProject };
-        return [r.decision === "copy" ? { ...moved, id: `show-${uuid().slice(0, 8)}`, name: `${sh.name} (copy)` } : moved];
-      }),
-      assets: preview.assets,
-    };
+    const body = buildImportRequest(preview, preview.rows, (prefix) => `${prefix}-${uuid().slice(0, 8)}`);
 
     try {
       if (isCloudMode()) {
