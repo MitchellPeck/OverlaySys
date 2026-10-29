@@ -29,6 +29,8 @@ import {
   type SlideSizePref,
 } from "@/lib/slideSizePref";
 import type { ScriptureRow } from "@overlaysys/core";
+import { templatesFor } from "@/lib/templateRoles";
+import { TemplateSelect } from "@/app/shows/edit/TemplateSelect";
 
 interface Props {
   open: boolean;
@@ -36,6 +38,12 @@ interface Props {
   onSave: (args: SaveArgs) => void;
   /** When set, modal opens at step 2 pre-loaded with this row's slides + template. */
   editingRow?: ScriptureRow;
+  /**
+   * When set, the modal edits this row's passage: it opens at step 1 with the
+   * row's reference and translation, then re-splits the new passage. The
+   * caller keeps the row id, length and notes link.
+   */
+  changePassageOf?: ScriptureRow;
 }
 
 export interface SaveArgs {
@@ -50,7 +58,7 @@ export interface SaveArgs {
   intro: IntroConfig & { skipIntro?: boolean };
 }
 
-export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) {
+export function ScriptureRowModal({ open, onClose, onSave, editingRow, changePassageOf }: Props) {
   const [translations, setTranslations] = useState<TranslationMeta[]>([]);
   const [refInput, setRefInput] = useState("");
   const [translation, setTranslation] = useState<string>("");
@@ -84,6 +92,9 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
             verses: slidesToBreaks(editingRow.slides).verses,
           };
           setPassage(synthesized);
+        } else if (changePassageOf) {
+          setRefInput(changePassageOf.reference);
+          setTranslation(changePassageOf.translation || t[0]?.id || "");
         } else {
           setTranslation((cur) => cur || t[0]?.id || "");
         }
@@ -95,7 +106,7 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
     return () => {
       cancelled = true;
     };
-  }, [open, editingRow]);
+  }, [open, editingRow, changePassageOf]);
 
   // Reset when modal closes so the next open starts fresh.
   useEffect(() => {
@@ -155,7 +166,7 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
       onCancel={onClose}
       onConfirm={!passage && canContinue ? onContinue : undefined}
       size="sm"
-      title="Add scripture"
+      title={editingRow || changePassageOf ? "Edit scripture" : "Add scripture"}
       footer={
         !passage ? (
           <>
@@ -308,14 +319,14 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow }: Props) 
               ? editingRow.slides.map((s) => ({ id: s.id, verses: s.verses }))
               : undefined
           }
-          seedTemplateId={editingRow?.templateId}
+          seedTemplateId={(editingRow ?? changePassageOf)?.templateId}
           seedIntro={
-            editingRow
+            editingRow ?? changePassageOf
               ? {
-                  introTemplateId: editingRow.introTemplateId,
-                  introFieldMap: editingRow.introFieldMap,
-                  introFieldLiterals: editingRow.introFieldLiterals,
-                  skipIntro: editingRow.skipIntro,
+                  introTemplateId: (editingRow ?? changePassageOf)!.introTemplateId,
+                  introFieldMap: (editingRow ?? changePassageOf)!.introFieldMap,
+                  introFieldLiterals: (editingRow ?? changePassageOf)!.introFieldLiterals,
+                  skipIntro: (editingRow ?? changePassageOf)!.skipIntro,
                 }
               : undefined
           }
@@ -378,8 +389,9 @@ function Step2({
   );
   // Saved rows count as hand-edited: their breaks may have been placed manually.
   const [manualEdits, setManualEdits] = useState<boolean>(!!seedSlides && seedSlides.length > 0);
+  // Fallback: the first suggested scripture template (contracts: templatesFor).
   const [templateId, setTemplateId] = useState<string>(
-    seedTemplateId || templates[0]?.id || "",
+    seedTemplateId || templatesFor(templates, "scripture").suggested[0]?.id || templates[0]?.id || "",
   );
 
   const [introMode, setIntroMode] = useState<"default" | "custom" | "none">(
@@ -441,17 +453,16 @@ function Step2({
     <>
       {dialog}
       <Field label="Template">
-        <Select
+        <TemplateSelect
+          label="Template"
+          use="scripture"
           value={templateId}
-          onChange={(e) => {
+          onChange={(id) => {
             setTemplatePicked(true);
-            setTemplateId(e.target.value);
+            setTemplateId(id);
           }}
-        >
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </Select>
+          style={{ maxWidth: "none" }}
+        />
       </Field>
       <Field label="Text per slide" style={{ marginTop: 12 }}>
         <div style={{ display: "flex", gap: 8 }}>

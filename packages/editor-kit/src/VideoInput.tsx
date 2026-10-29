@@ -5,6 +5,9 @@ type Props = {
   onChange: (v: string) => void;
   /** When provided, picked/dropped files upload via this; else inline data URL. */
   onUpload?: (file: File) => Promise<string>;
+  // [P2a.18] preview src for stored paths ("/assets/…" on the server's origin); the text field still shows `value`.
+  resolveUrl?: (v: string) => string;
+  // [/P2a.18]
 };
 
 /**
@@ -13,7 +16,7 @@ type Props = {
  * Adds drag-and-drop — drop a video file anywhere on the control to
  * upload it (or embed as a data URL when onUpload isn't wired).
  */
-export function VideoInput({ value, onChange, onUpload }: Props) {
+export function VideoInput({ value, onChange, onUpload, resolveUrl }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -95,7 +98,7 @@ export function VideoInput({ value, onChange, onUpload }: Props) {
           // muted+playsInline gives us a reliable poster-style preview without
           // autoplay-block warnings; loop so the operator sees motion.
           <video
-            src={value}
+            src={resolveUrl ? resolveUrl(value) : value}
             muted
             playsInline
             loop

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SCRIPTURE_FIELD_DESCRIPTORS, suggestScriptureFieldMap } from "@overlaysys/core";
-import { Field, Select, colors } from "@overlaysys/ui";
+import { Field, colors } from "@overlaysys/ui";
+import { TemplateSelect } from "@/app/shows/edit/TemplateSelect";
 import { FieldMappingTable } from "@/app/songs/edit/FieldMappingTable";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
@@ -16,7 +17,6 @@ export interface IntroConfig {
 /** Template picker + field mapping for a scripture intro (default or per-row). */
 export function ScriptureIntroEditor({ value, onChange }: { value: IntroConfig; onChange(next: IntroConfig): void }) {
   const { send } = useWs();
-  const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
   const tplId = value.introTemplateId ?? "";
   const tpl = tplId ? templateCache[tplId] : undefined;
@@ -54,20 +54,17 @@ export function ScriptureIntroEditor({ value, onChange }: { value: IntroConfig; 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <Field label="Intro template">
-        <Select
+        <TemplateSelect
+          label="Intro template"
+          use="title"
           value={tplId}
-          onChange={(e) => {
-            const id = e.target.value;
+          emptyLabel="None"
+          onChange={(id) => {
             setConfirmed(new Set());
             latest.current = id ? { introTemplateId: id } : {};
             onChange(latest.current);
           }}
-        >
-          <option value="">— None —</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </Select>
+        />
       </Field>
       {tplId && !tpl && <p style={{ fontSize: 12, color: colors.textDim }}>Loading template…</p>}
       {tpl && (

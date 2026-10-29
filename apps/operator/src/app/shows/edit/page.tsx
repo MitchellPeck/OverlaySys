@@ -1,32 +1,16 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type {
-  ChannelConfig,
-  SermonNotes,
-  Show,
-  RundownRow,
-  GraphicRow,
-  ScriptureRow,
-  VideoRow,
-  SongRow,
-  ShowSong,
-  Song,
-  SongMeta,
-  Template,
-  TemplateMeta,
-} from "@overlaysys/core";
-import { addSection, deleteSection, moveRow, renameSection, resolveArrangement } from "@overlaysys/core";
-import { BookOpen, ChevronDown, ChevronRight, Copy, Film, FolderInput, Music, Plus, Presentation, Rows3, Trash2, Type } from "lucide-react";
+import type { Show, RundownRow, ScriptureRow, VideoRow, SongRow } from "@overlaysys/core";
+import { addSection, deleteSection, moveRow, renameSection } from "@overlaysys/core";
+import { BookOpen, ChevronDown, Copy, Film, FolderInput, Music, Plus, Presentation, Rows3, Trash2, Type } from "lucide-react";
 import {
   Button,
-  Checkbox,
-  Input,
-  KindBar,
-  Select,
+  Field,
+  Modal,
   alertDialog,
   colors,
   fontSize,
@@ -37,7 +21,6 @@ import {
 } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
-import { FieldInput } from "@/lib/FieldInput";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { useConnection } from "@/lib/useConnection";
@@ -48,11 +31,8 @@ import { PageChrome } from "@/app/shell/PageChrome";
 import { RundownList } from "@/app/components/rundown/RundownList";
 import { rowDomId } from "@/app/components/rundown/RundownRow";
 import { isCloudMode } from "@/lib/mode";
-import { NotesSetPicker } from "./SermonNotesEditor";
-import { formatRowLength, parseRowLength } from "@/lib/rowLength";
-import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
+import type { RowLike } from "@/lib/rowLike";
 import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
-import { VideoThumb } from "@/app/components/VideoThumb";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import { canSave, removeRowAt } from "./showEditOps";
 import {
@@ -71,6 +51,21 @@ import {
 import { ShowHeader } from "./ShowHeader";
 import { ShowDetailsPane } from "./ShowDetailsPane";
 import { SlidesAddFlow, SlidesItemForm, slidesAddFlowReady } from "./forms/SlidesItemForm";
+import { GraphicItemForm } from "./forms/GraphicItemForm";
+import { SongItemForm } from "./forms/SongItemForm";
+import { ScriptureItemForm } from "./forms/ScriptureItemForm";
+import { VideoItemForm } from "./forms/VideoItemForm";
+import {
+  applyPassage,
+  lastUsedGraphicTemplate,
+  newSongRows,
+  recentSongIds,
+  recentTemplateIds,
+  withSongDefaults,
+  withVideoLengthPrefill,
+} from "./forms/itemFormModel";
+import { SongPickerDialog } from "./SongPickerDialog";
+import { TemplateSelect } from "./TemplateSelect";
 import {
   deleteShowCloud,
   getShowCloud,
@@ -133,10 +128,11 @@ function ShowEditPageInner() {
   // A counter per request, so asking to rename the same section again re-opens it.
   const [renameRequest, setRenameRequest] = useState<{ id: string; n: number } | null>(null);
   const requestRename = (id: string) => setRenameRequest((r) => ({ id, n: (r?.n ?? 0) + 1 }));
+  // Add flows only: existing items are edited in their form (forms/*).
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
-  const [editingScriptureRow, setEditingScriptureRow] = useState<ScriptureRow | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
-  const [editingVideoRow, setEditingVideoRow] = useState<VideoRow | null>(null);
+  const [songPickerOpen, setSongPickerOpen] = useState(false);
+  const [graphicAddOpen, setGraphicAddOpen] = useState(false);
   const [slidesAddOpen, setSlidesAddOpen] = useState(false);
   // Cloud `updated_at` value at the moment the editor loaded the draft.
   // Used by save() in cloud mode to detect concurrent writes — a newer
@@ -396,74 +392,76 @@ function ShowEditPageInner() {
     setSelectedRowId(rows[rows.length - 1]!.id);
   }
 
-  function addGraphic() {
-    const firstMeta = templates[0];
-    const firstTpl = firstMeta?.id ?? "";
+  function addGraphic(templateId: string) {
+    setGraphicAddOpen(false);
     // Prefer the meta's defaultChannel (always available from list_templates).
-    const channelHint = firstMeta?.defaultChannel || templateCache[firstTpl]?.defaultChannel || undefined;
-    addRows([{ kind: "graphic", id: uuid(), templateId: firstTpl, data: {}, ...(channelHint ? { channelHint } : {}) }]);
+    const channelHint = templates.find((t) => t.id === templateId)?.defaultChannel || templateCache[templateId]?.defaultChannel || undefined;
+    addRows([{ kind: "graphic", id: uuid(), templateId, data: {}, ...(channelHint ? { channelHint } : {}) }]);
   }
 
-  function addSong() {
-    const firstSong = songs[0];
-    if (!firstSong) {
+  function openAddSong() {
+    if (songs.length === 0) {
       toast({ tone: "warn", message: "No songs in the library yet. Create one in Songs first." });
       return;
     }
-    const showSong = draftRef.current?.songs.find((e) => e.songId === firstSong.id);
-    // Lyric template cascade: ShowSong override → song default → first template.
-    const lyricTemplateId =
-      showSong?.lyricTemplateId ?? songCache[firstSong.id]?.defaultLyricTemplateId ?? templates[0]?.id ?? "";
-    addRows([{ kind: "song", id: uuid(), songId: firstSong.id, lyricTemplateId }], firstSong.id);
+    setSongPickerOpen(true);
+  }
+
+  /** Insert the picked songs, in the picked order, after the selection. */
+  function addSongs(songIds: string[]) {
+    setSongPickerOpen(false);
+    const cur = draftRef.current;
+    if (!cur || songIds.length === 0) return;
+    const rows = newSongRows(songIds, cur, songCache, templates, uuid);
+    commit(insertNewRows(withSongDefaults(cur, songIds), selectedRowId, rows));
+    setSelectedRowId(rows[rows.length - 1]!.id);
+  }
+
+  /**
+   * Replace one row from its form (same id). A song item that switched songs
+   * also keeps the show-wide song defaults in step: the new song gets an
+   * entry, the old one's bare unused entry goes.
+   */
+  function replaceRow(next: RowLike) {
+    const cur = draftRef.current;
+    if (!cur) return;
+    const i = cur.rows.findIndex((r) => r.id === next.id);
+    if (i < 0) return;
+    const prev = cur.rows[i]!;
+    const rows = [...cur.rows];
+    rows[i] = next as RundownRow;
+    let out: Show = { ...cur, rows };
+    if (prev.kind === "song" && next.kind === "song") {
+      const newSongId = (next as SongRow).songId;
+      if (newSongId !== prev.songId) {
+        out = withSongDefaults(out, [newSongId]);
+        if (isBareUnusedSongDefault(out, prev.songId)) out = { ...out, songs: out.songs.filter((e) => e.songId !== prev.songId) };
+      }
+    }
+    commit(out);
   }
 
   function saveScriptureRow(args: ScriptureSaveArgs) {
-    // Undefined values clear a previous override when switching back to "default".
-    const introFields = {
-      introTemplateId: args.intro.introTemplateId,
-      introFieldMap: args.intro.introFieldMap,
-      introFieldLiterals: args.intro.introFieldLiterals,
-      skipIntro: args.intro.skipIntro || undefined,
-    };
-    const abbr = args.translationAbbreviation !== undefined ? { translationAbbreviation: args.translationAbbreviation } : {};
-    if (editingScriptureRow) {
-      update((s) => {
-        const idx = s.rows.findIndex((r) => r.id === editingScriptureRow.id);
-        if (idx >= 0) {
-          s.rows[idx] = {
-            ...editingScriptureRow,
-            reference: args.reference,
-            translation: args.translation,
-            ...abbr,
-            attribution: args.attribution,
-            slides: args.slides.map((sl) => ({ id: sl.id, verses: sl.verses })),
-            templateId: args.templateId,
-            ...introFields,
-          };
-        }
-      });
-    } else {
-      addRows([
-        {
-          kind: "scripture",
-          id: uuid(),
-          reference: args.reference,
-          translation: args.translation,
-          ...abbr,
-          attribution: args.attribution,
-          ...(args.passage.source ? { source: args.passage.source } : {}),
-          slides: args.slides.map((sl) => ({ id: sl.id, verses: sl.verses })),
-          templateId: args.templateId,
-          ...introFields,
-        },
-      ]);
-    }
+    const blank = { kind: "scripture", id: uuid(), reference: "", translation: "", slides: [], templateId: "" } as unknown as ScriptureRow;
+    addRows([
+      applyPassage(blank, {
+        reference: args.reference,
+        translation: args.translation,
+        translationAbbreviation: args.translationAbbreviation,
+        attribution: args.attribution,
+        source: args.passage.source as ScriptureRow["source"],
+        slides: args.slides,
+        templateId: args.templateId,
+        intro: args.intro,
+      }),
+    ]);
     setScriptureModalOpen(false);
-    setEditingScriptureRow(null);
   }
 
   function saveVideoRow(args: VideoRowSaveArgs) {
-    const fields = {
+    const row: VideoRow = {
+      kind: "video",
+      id: uuid(),
       assetUrl: args.assetUrl,
       ...(args.label ? { label: args.label } : {}),
       ...(args.durationSec !== undefined ? { durationSec: args.durationSec } : {}),
@@ -473,19 +471,8 @@ function ShowEditPageInner() {
       transitionOut: args.transitionOut,
       channelHint: args.channelHint,
     };
-    if (editingVideoRow) {
-      update((s) => {
-        const idx = s.rows.findIndex((r) => r.id === editingVideoRow.id);
-        if (idx >= 0) {
-          const { label: _l, durationSec: _d, ...keep } = editingVideoRow;
-          s.rows[idx] = { ...keep, ...fields };
-        }
-      });
-    } else {
-      addRows([{ kind: "video", id: uuid(), ...fields }]);
-    }
+    addRows([withVideoLengthPrefill(row)]);
     setVideoModalOpen(false);
-    setEditingVideoRow(null);
   }
 
   function addSectionHere() {
@@ -620,25 +607,19 @@ function ShowEditPageInner() {
 
   function openAddMenu(e: React.MouseEvent) {
     menu.open(e, [
-      { id: "graphic", label: "Graphic", icon: <Type size={14} />, onSelect: addGraphic },
-      { id: "song", label: "Song", icon: <Music size={14} />, onSelect: addSong },
+      { id: "graphic", label: "Graphic", icon: <Type size={14} />, onSelect: () => setGraphicAddOpen(true) },
+      { id: "song", label: "Song", icon: <Music size={14} />, onSelect: openAddSong },
       {
         id: "scripture",
         label: "Scripture",
         icon: <BookOpen size={14} />,
-        onSelect: () => {
-          setEditingScriptureRow(null);
-          setScriptureModalOpen(true);
-        },
+        onSelect: () => setScriptureModalOpen(true),
       },
       {
         id: "video",
         label: "Video",
         icon: <Film size={14} />,
-        onSelect: () => {
-          setEditingVideoRow(null);
-          setVideoModalOpen(true);
-        },
+        onSelect: () => setVideoModalOpen(true),
       },
       {
         id: "slides",
@@ -729,30 +710,7 @@ function ShowEditPageInner() {
         </div>
         <div style={{ overflow: "auto", padding: 16, minHeight: 0, minWidth: 0 }}>
           {selectedRow ? (
-            <ItemPane
-              key={selectedRow.id}
-              row={selectedRow}
-              draft={draft}
-              templates={templates}
-              templateCache={templateCache}
-              songs={songs}
-              songCache={songCache}
-              channels={takeableChannels}
-              sermonNotes={notesSets}
-              onUpdate={update}
-              onReplaceRow={(next) => update((s) => {
-                const i = s.rows.findIndex((r) => r.id === next.id);
-                if (i >= 0) s.rows[i] = next as RundownRow;
-              })}
-              onEditScripture={(row) => {
-                setEditingScriptureRow(row);
-                setScriptureModalOpen(true);
-              }}
-              onEditVideo={(row) => {
-                setEditingVideoRow(row);
-                setVideoModalOpen(true);
-              }}
-            />
+            <ItemPane key={selectedRow.id} row={selectedRow} draft={draft} onReplaceRow={replaceRow} />
           ) : (
             <ShowDetailsPane
               draft={draft}
@@ -767,24 +725,20 @@ function ShowEditPageInner() {
           )}
         </div>
       </div>
-      <ScriptureRowModal
-        open={scriptureModalOpen}
-        editingRow={editingScriptureRow ?? undefined}
-        onClose={() => {
-          setScriptureModalOpen(false);
-          setEditingScriptureRow(null);
-        }}
-        onSave={saveScriptureRow}
+      <ScriptureRowModal open={scriptureModalOpen} onClose={() => setScriptureModalOpen(false)} onSave={saveScriptureRow} />
+      <VideoRowModal open={videoModalOpen} channels={takeableChannels} onClose={() => setVideoModalOpen(false)} onSave={saveVideoRow} />
+      <SongPickerDialog
+        open={songPickerOpen}
+        recentIds={recentSongIds(draft)}
+        onClose={() => setSongPickerOpen(false)}
+        onAdd={addSongs}
       />
-      <VideoRowModal
-        open={videoModalOpen}
-        editingRow={editingVideoRow ?? undefined}
-        channels={takeableChannels}
-        onClose={() => {
-          setVideoModalOpen(false);
-          setEditingVideoRow(null);
-        }}
-        onSave={saveVideoRow}
+      <AddGraphicDialog
+        open={graphicAddOpen}
+        initialId={lastUsedGraphicTemplate(draft, templates)?.id ?? ""}
+        recentIds={recentTemplateIds(draft, "graphic")}
+        onClose={() => setGraphicAddOpen(false)}
+        onAdd={addGraphic}
       />
       <SlidesAddFlow
         open={slidesAddOpen}
@@ -830,562 +784,70 @@ function ShowDetailsRow({ selected, onSelect }: { selected: boolean; onSelect():
 }
 
 // ---------------------------------------------------------------------------
-// Selected item pane. Interim forms (P2a.18 replaces them with forms/*).
+// Selected item pane: one form per kind (forms/*), each with a live preview.
 // ---------------------------------------------------------------------------
 
-const KIND_LABEL: Record<string, string> = {
-  graphic: "Graphic",
-  song: "Song",
-  scripture: "Scripture",
-  video: "Video",
-  slides: "Slides",
-};
-
-/** Set or clear keys on one row: `undefined` removes the key. */
-function patchRowIn(onUpdate: Update, rowId: string, patch: Record<string, unknown>) {
-  onUpdate((s) => {
-    const r = s.rows.find((x) => x.id === rowId) as Record<string, unknown> | undefined;
-    if (!r) return;
-    for (const [key, value] of Object.entries(patch)) {
-      if (value === undefined) delete r[key];
-      else r[key] = value;
-    }
-  });
-}
-
-function FormRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "90px 1fr", gap: 8, alignItems: "start" }}>
-      <span style={{ fontSize: fontSize.sm, color: colors.textDim, paddingTop: 5 }}>{label}</span>
-      <div style={{ minWidth: 0 }}>{children}</div>
-    </div>
-  );
-}
-
-function ItemPane({
-  row,
-  draft,
-  templates,
-  templateCache,
-  songs,
-  songCache,
-  channels,
-  sermonNotes,
-  onUpdate,
-  onReplaceRow,
-  onEditScripture,
-  onEditVideo,
-}: {
-  row: RundownRow;
-  draft: Show;
-  templates: TemplateMeta[];
-  templateCache: Record<string, Template>;
-  songs: SongMeta[];
-  songCache: Record<string, Song>;
-  channels: ChannelConfig[];
-  sermonNotes: SermonNotes[];
-  onUpdate: Update;
-  onReplaceRow(next: { id: string }): void;
-  onEditScripture(row: ScriptureRow): void;
-  onEditVideo(row: VideoRow): void;
-}) {
-  const kind = KIND_LABEL[row.kind] ?? "Item";
-  let name = "";
-  let body: ReactNode;
-  if (row.kind === "graphic") {
-    name = templates.find((t) => t.id === row.templateId)?.name ?? "Missing template";
-    body = (
-      <GraphicRowForm
-        row={row}
-        templates={templates}
-        template={templateCache[row.templateId] ?? null}
-        onUpdate={onUpdate}
-      />
-    );
-  } else if (row.kind === "song") {
-    name = songCache[row.songId]?.title ?? songs.find((s) => s.id === row.songId)?.title ?? "Missing song";
-    body = (
-      <SongRowForm
-        row={row}
-        showSong={draft.songs.find((e) => e.songId === row.songId)}
-        songs={songs}
-        songCache={songCache}
-        templates={templates}
-        onUpdate={onUpdate}
-      />
-    );
-  } else if (row.kind === "scripture") {
-    name = row.reference;
-    body = (
-      <FormRow label="Passage">
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.md }}>
-          <span>
-            {row.reference} ({row.translation})
-          </span>
-          <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
-            {row.slides.length} slide{row.slides.length !== 1 ? "s" : ""}
-          </span>
-          <Button size="sm" onClick={() => onEditScripture(row)}>
-            Edit slides…
-          </Button>
-        </div>
-      </FormRow>
-    );
-  } else if (row.kind === "video") {
-    name = row.label || "Video";
-    body = (
-      <FormRow label="Video">
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.md }}>
-          <VideoThumb assetUrl={row.assetUrl} width={64} />
-          <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>
-            {row.endAction === "clear" ? "Clears at end" : "Holds at end"}
-          </span>
-          <Button size="sm" onClick={() => onEditVideo(row)}>
-            Edit video…
-          </Button>
-        </div>
-      </FormRow>
-    );
-  } else if (row.kind === "slides") {
-    // [P3.8] placeholder for slides rows; P3.16 fills in SlidesItemForm.
-    body = <SlidesItemForm row={row} show={draft} onChange={onReplaceRow} />;
-  } else {
-    body = (
-      <p style={{ color: colors.textMuted, fontSize: 12, margin: 0 }}>
-        This item type isn&apos;t supported by this version. It is kept as is when you save.
-      </p>
-    );
+function ItemPane({ row, draft, onReplaceRow }: { row: RundownRow; draft: Show; onReplaceRow(next: RowLike): void }) {
+  switch (row.kind) {
+    case "graphic":
+      return <GraphicItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    case "song":
+      return <SongItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    case "scripture":
+      return <ScriptureItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    case "video":
+      return <VideoItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    case "slides":
+      // [P3.8] placeholder for slides rows; P3.16 fills in SlidesItemForm.
+      return <SlidesItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    default:
+      return (
+        <p style={{ color: colors.textMuted, fontSize: 12, margin: 0 }}>
+          This item type isn&apos;t supported by this version. It is kept as is when you save.
+        </p>
+      );
   }
-  const known = ["graphic", "song", "scripture", "video"].includes(row.kind);
-  const showSong = row.kind === "song" ? draft.songs.find((e) => e.songId === row.songId) : undefined;
-  const inheritedChannel =
-    row.kind === "song" ? showSong?.channelOverride ?? songCache[row.songId]?.defaultChannel : undefined;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 720 }}>
-      <h2 style={{ margin: 0, fontSize: fontSize.base, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-        <KindBar kind={row.kind as Parameters<typeof KindBar>[0]["kind"]} />
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {kind}
-          {name ? ` · ${name}` : ""}
-        </span>
-      </h2>
-      {body}
-      {known && (
-        <>
-          <FormRow label="Output">
-            <ChannelHintSelect
-              value={row.channelHint}
-              onChange={(v) => patchRowIn(onUpdate, row.id, { channelHint: v })}
-              channels={channels}
-              inheritedValue={inheritedChannel}
-            />
-          </FormRow>
-          <FormRow label="Length">
-            <RowLengthInput
-              value={row.lengthSec}
-              onCommit={(lengthSec) => patchRowIn(onUpdate, row.id, { lengthSec, lengthSecManual: true })}
-            />
-          </FormRow>
-          <FormRow label="Cue note">
-            <Input
-              aria-label="Cue note"
-              value={row.notes ?? ""}
-              onChange={(e) => patchRowIn(onUpdate, row.id, { notes: e.target.value || undefined })}
-              placeholder="Operator cue…"
-            />
-          </FormRow>
-          {sermonNotes.length > 0 && (
-            <FormRow label="Sermon notes">
-              <NotesSetPicker
-                sets={sermonNotes}
-                value={row.sermonNotesId}
-                onChange={(v) => patchRowIn(onUpdate, row.id, { sermonNotesId: v })}
-              />
-            </FormRow>
-          )}
-        </>
-      )}
-    </div>
-  );
 }
 
-function GraphicRowForm({
-  row,
-  templates,
-  template,
-  onUpdate,
+/** "Add item → Graphic": choose a template (grouped, last used first), then add. */
+function AddGraphicDialog({
+  open,
+  initialId,
+  recentIds,
+  onClose,
+  onAdd,
 }: {
-  row: GraphicRow;
-  templates: TemplateMeta[];
-  template: Template | null;
-  onUpdate: Update;
+  open: boolean;
+  initialId: string;
+  recentIds: string[];
+  onClose(): void;
+  onAdd(templateId: string): void;
 }) {
-  function setData(key: string, value: string) {
-    onUpdate((s) => {
-      const r = s.rows.find((x) => x.id === row.id);
-      if (!r || r.kind !== "graphic") return;
-      r.data = { ...r.data, [key]: value };
-    });
-  }
-  return (
-    <>
-      <FormRow label="Template">
-        <Select
-          aria-label="Template"
-          value={row.templateId}
-          onChange={(e) => {
-            const nextId = e.target.value;
-            // Prefill the output from the new template only when the item has none yet.
-            const nextHint = row.channelHint ?? templates.find((t) => t.id === nextId)?.defaultChannel ?? undefined;
-            patchRowIn(onUpdate, row.id, { templateId: nextId, channelHint: nextHint });
-          }}
-        >
-          {!templates.some((t) => t.id === row.templateId) && <option value={row.templateId}>Missing template</option>}
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </Select>
-      </FormRow>
-      <FormRow label="Fields">
-        <FieldsEditor template={template} data={row.data} onChange={setData} />
-      </FormRow>
-    </>
-  );
-}
-
-function SongRowForm({
-  row,
-  showSong,
-  songs,
-  songCache,
-  templates,
-  onUpdate,
-}: {
-  row: SongRow;
-  showSong: ShowSong | undefined;
-  songs: SongMeta[];
-  songCache: Record<string, Song>;
-  templates: TemplateMeta[];
-  onUpdate: Update;
-}) {
-  const [overridesOpen, setOverridesOpen] = useState(false);
-  const [arrModalOpen, setArrModalOpen] = useState(false);
-  const patch = (p: Partial<SongRow>) => patchRowIn(onUpdate, row.id, p as Record<string, unknown>);
-
-  function pickSong(songId: string) {
-    const cached = songCache[songId];
-    onUpdate((s) => {
-      const r = s.rows.find((x) => x.id === row.id);
-      if (!r || r.kind !== "song") return;
-      const changed = r.songId !== songId;
-      const oldSongId = r.songId;
-      r.songId = songId;
-      // Lyric template cascade: ShowSong → Song default → first template.
-      const targetShowSong = s.songs.find((e) => e.songId === songId);
-      const nextLyricTpl = targetShowSong?.lyricTemplateId ?? cached?.defaultLyricTemplateId ?? templates[0]?.id;
-      if (nextLyricTpl) r.lyricTemplateId = nextLyricTpl;
-      // Intro/outro overrides belonged to the old song (field maps are
-      // template-specific): clear them when the song changes.
-      if (changed) {
-        const rec = r as Record<string, unknown>;
-        for (const k of ["introTemplateId", "introFieldMap", "outroTemplateId", "outroFieldMap", "skipIntro", "skipOutro"]) delete rec[k];
-      }
-      if (!s.songs.some((e) => e.songId === songId)) s.songs.push({ songId });
-      // Drop the old song's auto-added (empty, now unused) default entry.
-      if (changed && isBareUnusedSongDefault(s, oldSongId)) s.songs = s.songs.filter((e) => e.songId !== oldSongId);
-    });
-  }
-
-  const cachedSong = songCache[row.songId];
-  const inheritedLyricTplId = showSong?.lyricTemplateId ?? cachedSong?.defaultLyricTemplateId;
-  const inheritedIntroTplId = showSong?.introTemplateId ?? cachedSong?.defaultIntroTemplateId;
-  const inheritedOutroTplId = showSong?.outroTemplateId ?? cachedSong?.defaultOutroTemplateId;
-  const tplName = (id: string | undefined) => (!id ? "(none)" : templates.find((t) => t.id === id)?.name ?? "Missing template");
-
-  return (
-    <>
-      <FormRow label="Song">
-        <Select aria-label="Song" value={row.songId} onChange={(e) => pickSong(e.target.value)}>
-          {!songs.some((s) => s.id === row.songId) && <option value={row.songId}>Missing song</option>}
-          {songs.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </Select>
-      </FormRow>
-      <FormRow label="Lyric template">
-        <Select aria-label="Lyric template" value={row.lyricTemplateId} onChange={(e) => patch({ lyricTemplateId: e.target.value })}>
-          {!templates.some((t) => t.id === row.lyricTemplateId) && <option value={row.lyricTemplateId}>Missing template</option>}
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </Select>
-        {inheritedLyricTplId && row.lyricTemplateId !== inheritedLyricTplId && (
-          <div style={{ fontSize: fontSize.xs, color: colors.textMuted, marginTop: 4 }}>
-            Show default: {tplName(inheritedLyricTplId)}
-          </div>
-        )}
-      </FormRow>
-      <FormRow label="Arrangement">
-        {cachedSong ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: fontSize.sm }}>
-            <span>{arrangementSummary(resolveArrangement(row, showSong, cachedSong), cachedSong)}</span>
-            <Button size="sm" onClick={() => setArrModalOpen(true)}>
-              Edit arrangement…
-            </Button>
-          </div>
-        ) : (
-          <span style={{ fontSize: fontSize.sm, color: colors.textMuted }}>Loading song…</span>
-        )}
-        {arrModalOpen && cachedSong && (
-          <ArrangementModal
-            song={cachedSong}
-            level="row"
-            value={row.arrangement}
-            inherited={showSong?.arrangement ?? cachedSong.defaultArrangement}
-            onSave={(next) => patch({ arrangement: next })}
-            onClose={() => setArrModalOpen(false)}
-          />
-        )}
-      </FormRow>
-      <FormRow label="Intro / outro">
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ display: "flex", gap: 16 }}>
-            <Checkbox checked={!!row.skipIntro} onChange={(v) => patch({ skipIntro: v || undefined })} label="Skip intro" />
-            <Checkbox checked={!!row.skipOutro} onChange={(v) => patch({ skipOutro: v || undefined })} label="Skip outro" />
-          </div>
-          <div>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-expanded={overridesOpen}
-              icon={overridesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              onClick={() => setOverridesOpen((v) => !v)}
-            >
-              Intro and outro templates for this item
-            </Button>
-          </div>
-          {overridesOpen && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: fontSize.xs }}>
-              <RowOverrideField
-                label="Intro template"
-                isOverridden={row.introTemplateId !== undefined}
-                inheritedLabel={inheritedIntroTplId ? tplName(inheritedIntroTplId) : "(none — skip)"}
-                onRevert={() => patch({ introTemplateId: undefined, introFieldMap: undefined })}
-                onOverride={() => patch({ introTemplateId: inheritedIntroTplId ?? templates[0]?.id ?? "" })}
-              >
-                <RowTemplateSelect
-                  label="Intro template"
-                  value={row.introTemplateId}
-                  templates={templates}
-                  onChange={(v) => patch({ introTemplateId: v })}
-                  allowEmpty
-                />
-              </RowOverrideField>
-              <RowOverrideField
-                label="Outro template"
-                isOverridden={row.outroTemplateId !== undefined}
-                inheritedLabel={inheritedOutroTplId ? tplName(inheritedOutroTplId) : "(none — skip)"}
-                onRevert={() => patch({ outroTemplateId: undefined, outroFieldMap: undefined })}
-                onOverride={() => patch({ outroTemplateId: inheritedOutroTplId ?? templates[0]?.id ?? "" })}
-              >
-                <RowTemplateSelect
-                  label="Outro template"
-                  value={row.outroTemplateId}
-                  templates={templates}
-                  onChange={(v) => patch({ outroTemplateId: v })}
-                  allowEmpty
-                />
-              </RowOverrideField>
-            </div>
-          )}
-        </div>
-      </FormRow>
-    </>
-  );
-}
-
-/** An inherited value with "Override" / "Use show value". */
-function RowOverrideField({
-  label,
-  isOverridden,
-  inheritedLabel,
-  onRevert,
-  onOverride,
-  children,
-}: {
-  label: string;
-  isOverridden: boolean;
-  inheritedLabel: string;
-  onRevert: () => void;
-  onOverride: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ width: 100, flexShrink: 0, color: colors.textDim }}>{label}</span>
-      <div style={{ flex: 1, minWidth: 0, maxWidth: 320 }}>
-        {isOverridden ? (
-          children
-        ) : (
-          <span
-            style={{
-              display: "inline-block",
-              padding: "2px 8px",
-              border: `1px dashed ${colors.border}`,
-              borderRadius: 4,
-              color: colors.textDim,
-              fontStyle: "italic",
-            }}
-            title="Inherited from the show or song"
-          >
-            {inheritedLabel}
-          </span>
-        )}
-      </div>
-      <Button size="sm" variant="ghost" onClick={isOverridden ? onRevert : onOverride}>
-        {isOverridden ? "Use show value" : "Override"}
-      </Button>
-    </div>
-  );
-}
-
-function RowTemplateSelect({
-  label,
-  value,
-  templates,
-  onChange,
-  allowEmpty,
-}: {
-  label: string;
-  value: string | undefined;
-  templates: TemplateMeta[];
-  onChange: (v: string | undefined) => void;
-  allowEmpty?: boolean;
-}) {
-  const current = value ?? "";
-  const known = current && templates.some((t) => t.id === current);
-  return (
-    <Select aria-label={label} value={current} onChange={(e) => onChange(e.target.value || undefined)}>
-      {allowEmpty && <option value="">(none — skip)</option>}
-      {!known && current && <option value={current}>Missing template</option>}
-      {templates.map((t) => (
-        <option key={t.id} value={t.id}>
-          {t.name}
-        </option>
-      ))}
-    </Select>
-  );
-}
-
-function FieldsEditor({
-  template,
-  data,
-  onChange,
-}: {
-  template: Template | null;
-  data: Record<string, string>;
-  onChange: (key: string, value: string) => void;
-}) {
-  const declaredKeys = useMemo(() => template?.fields.map((f) => f.key) ?? [], [template]);
-  const orphanKeys = Object.keys(data).filter((k) => !declaredKeys.includes(k));
-  const fieldsToShow = template?.fields ?? [];
-
-  if (!template) {
-    return <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>Loading template…</span>;
-  }
-  if (fieldsToShow.length === 0 && orphanKeys.length === 0) {
-    return <span style={{ color: colors.textMuted, fontSize: fontSize.xs }}>This template has no fields.</span>;
-  }
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {fieldsToShow.map((f) => (
-        <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ width: 110, fontSize: fontSize.xs, color: colors.textDim, flexShrink: 0 }}>{f.label}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <FieldInput field={f} value={data[f.key]} onChange={(v) => onChange(f.key, v)} />
-          </div>
-        </div>
-      ))}
-      {orphanKeys.map((k) => (
-        <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, opacity: 0.7 }}>
-          <span
-            style={{ width: 110, fontSize: fontSize.xs, color: colors.warn, flexShrink: 0 }}
-            title="Not declared by the template — still sent on Take. Declare it in the template's Fields panel."
-          >
-            {k}*
-          </span>
-          <Input aria-label={k} value={data[k] ?? ""} onChange={(e) => onChange(k, e.target.value)} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChannelHintSelect({
-  value,
-  onChange,
-  channels,
-  inheritedValue,
-}: {
-  value: string | undefined;
-  onChange: (v: string | undefined) => void;
-  channels: ChannelConfig[];
-  /** Cascade-resolved output used when `value` is unset (labels the empty option). */
-  inheritedValue?: string;
-}) {
-  const current = value ?? "";
-  const knownChannel = current && channels.some((c) => c.id === current);
-  const inheritedLabel = inheritedValue ? channels.find((c) => c.id === inheritedValue)?.name ?? inheritedValue : null;
-  const emptyLabel = inheritedLabel ? `${inheritedLabel} (inherited)` : "Program (auto)";
-  // Keep out-of-list values rather than silently dropping them on save.
-  return (
-    <Select aria-label="Output" value={current} onChange={(e) => onChange(e.target.value ? e.target.value : undefined)} style={{ maxWidth: 320 }}>
-      <option value="">{emptyLabel}</option>
-      {!knownChannel && current && <option value={current}>{current} (missing)</option>}
-      {channels.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-    </Select>
-  );
-}
-
-/** "Length" text input: commits on blur when valid, reverts when not. */
-function RowLengthInput({ value, onCommit }: { value: number | undefined; onCommit: (sec: number | undefined) => void }) {
-  const [text, setText] = useState(formatRowLength(value));
-  const focusedRef = useRef(false);
-  // Sync from the model, but never clobber what the user is typing.
+  const [templateId, setTemplateId] = useState(initialId);
   useEffect(() => {
-    if (!focusedRef.current) setText(formatRowLength(value));
-  }, [value]);
+    if (open) setTemplateId(initialId);
+  }, [open, initialId]);
   return (
-    <Input
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onFocus={() => {
-        focusedRef.current = true;
-      }}
-      onBlur={() => {
-        focusedRef.current = false;
-        const parsed = parseRowLength(text);
-        if (!parsed.ok) {
-          setText(formatRowLength(value));
-          return;
-        }
-        if (parsed.sec !== value) onCommit(parsed.sec);
-        setText(formatRowLength(parsed.sec));
-      }}
-      placeholder="M:SS"
-      title="Length (M:SS) — starts the item countdown when taken"
-      aria-label="Length"
-      style={{ width: 90 }}
-    />
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Add graphic"
+      size="sm"
+      onConfirm={templateId ? () => onAdd(templateId) : undefined}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!templateId} onClick={() => onAdd(templateId)}>
+            Add graphic
+          </Button>
+        </>
+      }
+    >
+      <Field label="Template">
+        <TemplateSelect label="Template" use="graphic" value={templateId} recentIds={recentIds} onChange={setTemplateId} style={{ maxWidth: "none" }} />
+      </Field>
+    </Modal>
   );
 }

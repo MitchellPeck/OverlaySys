@@ -31,7 +31,7 @@ const STYLE_LABELS: Record<MediaTransitionStyle, string> = {
 };
 
 /** Style picker plus duration in seconds (hidden for Cut). */
-function TransitionField({
+export function TransitionField({
   label,
   value,
   onChange,
@@ -77,7 +77,7 @@ function TransitionField({
 }
 
 /** Read a video's duration in the browser; undefined if it can't load. */
-function probeDuration(url: string): Promise<number | undefined> {
+export function probeDuration(url: string): Promise<number | undefined> {
   return new Promise((resolve) => {
     const v = document.createElement("video");
     v.preload = "metadata";
@@ -177,6 +177,7 @@ export function VideoRowModal({
           value={assetUrl}
           onChange={setAssetUrl}
           onUpload={async (file) => (await uploadAsset(file)).url}
+          resolveUrl={resolveAssetUrl}
         />
       </Field>
       <Field label="Label">

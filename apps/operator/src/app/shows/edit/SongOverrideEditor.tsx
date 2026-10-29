@@ -14,13 +14,15 @@ import {
   resolveCustomFieldValue,
   suggestFieldMap,
 } from "@overlaysys/core";
-import { Input, Select, colors } from "@overlaysys/ui";
+import { Button, Checkbox, Input, Select, colors, fontSize } from "@overlaysys/ui";
 import { FieldMappingTable } from "@/app/songs/edit/FieldMappingTable";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
+import { TemplateSelect as GroupedTemplateSelect } from "./TemplateSelect";
+import { songIntroOutroChip } from "./forms/itemFormModel";
 
 /**
  * Inline override editor for a single {@link ShowSong} entry. Owns per-editor
@@ -281,8 +283,7 @@ export function SongOverrideEditor({
         isOverridden={entry.lyricTemplateId !== undefined}
         defaultText={
           song.defaultLyricTemplateId
-            ? templates.find((t) => t.id === song.defaultLyricTemplateId)?.name ??
-              song.defaultLyricTemplateId
+            ? `${templates.find((t) => t.id === song.defaultLyricTemplateId)?.name ?? "Missing template"} (song)`
             : "(none)"
         }
         onRevert={() => onChange({ lyricTemplateId: undefined })}
@@ -292,22 +293,18 @@ export function SongOverrideEditor({
           })
         }
       >
-        <TemplateSelect
-          value={entry.lyricTemplateId}
-          templates={templates}
-          onChange={(v) => onChange({ lyricTemplateId: v })}
+        <GroupedTemplateSelect
+          label="Lyric template"
+          use="lyric"
+          value={entry.lyricTemplateId ?? ""}
+          onChange={(v) => onChange({ lyricTemplateId: v || undefined })}
         />
       </OverrideRow>
 
       <OverrideRow
         label="Intro template"
         isOverridden={entry.introTemplateId !== undefined}
-        defaultText={
-          song.defaultIntroTemplateId
-            ? templates.find((t) => t.id === song.defaultIntroTemplateId)?.name ??
-              song.defaultIntroTemplateId
-            : "(none — skip)"
-        }
+        defaultText={songIntroOutroChip("intro", {}, undefined, song, templates)}
         onRevert={() => overrideTemplate("intro", undefined)}
         onOverride={() =>
           overrideTemplate(
@@ -316,11 +313,11 @@ export function SongOverrideEditor({
           )
         }
       >
-        <TemplateSelect
-          value={entry.introTemplateId}
-          templates={templates}
-          onChange={(v) => overrideTemplate("intro", v)}
-          allowEmpty
+        <GroupedTemplateSelect
+          label="Intro template"
+          use="title"
+          value={entry.introTemplateId ?? ""}
+          onChange={(v) => overrideTemplate("intro", v || undefined)}
         />
       </OverrideRow>
       {introTemplate && introTemplate.fields.length > 0 && (
@@ -349,12 +346,7 @@ export function SongOverrideEditor({
       <OverrideRow
         label="Outro template"
         isOverridden={entry.outroTemplateId !== undefined}
-        defaultText={
-          song.defaultOutroTemplateId
-            ? templates.find((t) => t.id === song.defaultOutroTemplateId)?.name ??
-              song.defaultOutroTemplateId
-            : "(none — skip)"
-        }
+        defaultText={songIntroOutroChip("outro", {}, undefined, song, templates)}
         onRevert={() => overrideTemplate("outro", undefined)}
         onOverride={() =>
           overrideTemplate(
@@ -363,11 +355,11 @@ export function SongOverrideEditor({
           )
         }
       >
-        <TemplateSelect
-          value={entry.outroTemplateId}
-          templates={templates}
-          onChange={(v) => overrideTemplate("outro", v)}
-          allowEmpty
+        <GroupedTemplateSelect
+          label="Outro template"
+          use="title"
+          value={entry.outroTemplateId ?? ""}
+          onChange={(v) => overrideTemplate("outro", v || undefined)}
         />
       </OverrideRow>
       {outroTemplate && outroTemplate.fields.length > 0 && (
@@ -515,7 +507,7 @@ function OverrideRow({
       >
         {label}
       </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ flex: 1, minWidth: 0, maxWidth: 320 }}>
         {isOverridden ? (
           children
         ) : (
@@ -546,37 +538,6 @@ function OverrideRow({
   );
 }
 
-function TemplateSelect({
-  value,
-  templates,
-  onChange,
-  allowEmpty,
-}: {
-  value: string | undefined;
-  templates: TemplateMeta[];
-  onChange: (v: string | undefined) => void;
-  allowEmpty?: boolean;
-}) {
-  const current = value ?? "";
-  const known = current && templates.some((t) => t.id === current);
-  return (
-    <Select
-      value={current}
-      onChange={(e) => onChange(e.target.value || undefined)}
-    >
-      {allowEmpty && <option value="">(none — skip)</option>}
-      {!known && current && (
-        <option value={current}>{current} (missing)</option>
-      )}
-      {templates.map((t) => (
-        <option key={t.id} value={t.id}>
-          {t.name}
-        </option>
-      ))}
-    </Select>
-  );
-}
-
 const linkBtn: React.CSSProperties = {
   background: "transparent",
   border: "none",
@@ -586,3 +547,89 @@ const linkBtn: React.CSSProperties = {
   padding: 0,
   textDecoration: "underline",
 };
+
+/**
+ * Intro and outro for one song item: the resolved value as a chip
+ * ("Intro: Song Intro (song)"), skip toggles, and an item-level template
+ * override that falls back to the show and song values.
+ */
+export function SongRowIntroOutro({
+  row,
+  showSong,
+  song,
+  templates,
+  onPatch,
+}: {
+  row: SongRow;
+  showSong: ShowSong | undefined;
+  song: Song | undefined;
+  templates: TemplateMeta[];
+  onPatch(patch: Record<string, unknown>): void;
+}) {
+  const parts = [
+    { which: "intro" as const, label: "Intro", tpl: row.introTemplateId, skip: !!row.skipIntro },
+    { which: "outro" as const, label: "Outro", tpl: row.outroTemplateId, skip: !!row.skipOutro },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {parts.map((p) => {
+        const inherited =
+          p.which === "intro"
+            ? showSong?.introTemplateId ?? song?.defaultIntroTemplateId
+            : showSong?.outroTemplateId ?? song?.defaultOutroTemplateId;
+        const overridden = p.tpl !== undefined;
+        const clear = { [`${p.which}FieldMap`]: undefined, [`${p.which}FieldLiterals`]: undefined };
+        return (
+          <div key={p.which} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "2px 8px",
+                  borderRadius: 999,
+                  background: colors.surface2,
+                  border: `1px solid ${colors.border}`,
+                  fontSize: fontSize.xs,
+                  color: colors.textDim,
+                  maxWidth: 320,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {songIntroOutroChip(p.which, row, showSong, song, templates)}
+              </span>
+              <Checkbox
+                checked={p.skip}
+                onChange={(v) => onPatch({ [p.which === "intro" ? "skipIntro" : "skipOutro"]: v || undefined })}
+                label={`Skip ${p.which}`}
+              />
+              {!p.skip && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    onPatch({
+                      [`${p.which}TemplateId`]: overridden ? undefined : inherited ?? templates[0]?.id ?? "",
+                      ...clear,
+                    })
+                  }
+                >
+                  {overridden ? "Use show value" : `Choose ${p.which} for this item`}
+                </Button>
+              )}
+            </div>
+            {overridden && !p.skip && (
+              <GroupedTemplateSelect
+                label={`${p.label} template`}
+                use="title"
+                value={p.tpl ?? ""}
+                onChange={(v) => onPatch({ [`${p.which}TemplateId`]: v, ...clear })}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

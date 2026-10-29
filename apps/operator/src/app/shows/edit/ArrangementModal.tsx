@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Modal, Button, colors } from "@overlaysys/ui";
 import type { Song } from "@overlaysys/core";
+import { sectionShortLabel } from "@/lib/rowView";
 
 // Subtle accent per section kind, matching the app's token palette.
 const KIND_ACCENT: Record<string, { bg: string; border: string }> = {
@@ -12,8 +13,12 @@ const KIND_ACCENT: Record<string, { bg: string; border: string }> = {
 
 /** Compact "V1 · C · V2" summary of an arrangement, reused by both editors. */
 export function arrangementSummary(ids: string[], song: Song): string {
+  // Short labels (V1, C, B), as on the item form's chips; never a raw id.
   return ids
-    .map((id) => song.sections.find((s) => s.id === id)?.label ?? id)
+    .map((id) => {
+      const s = song.sections.find((x) => x.id === id);
+      return s ? sectionShortLabel(s, song.sections) : "?";
+    })
     .join(" · ");
 }
 
