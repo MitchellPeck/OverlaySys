@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { useOutputs, useWs } from "@/lib/useWs";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { channelDotModel, rendererBaseFor, rendererHref, type OutputPresenceTone } from "@/lib/channelDotModel";
+import { clearChannelMessages } from "@/lib/onAir";
 import { useChannelWindowPrefs } from "@/lib/useChannelWindowPrefs";
 import { getDesktopApi, isElectron } from "@/lib/desktop";
 import { AnchoredPopover } from "./AnchoredPopover";
@@ -96,7 +97,7 @@ function ChannelDot({ config }: { config: ChannelConfig }) {
                 label={model.canClear ? "Clear" : "Already empty"}
                 disabled={!model.canClear}
                 onClick={() => {
-                  send({ type: "clear", channel: config.id });
+                  clearChannelMessages(channelStates[config.id], config.id).forEach(send);
                   setMenu("closed");
                 }}
               />
@@ -166,6 +167,7 @@ function MenuButton({
   return (
     <Button
       variant="ghost"
+      onMouseDown={noFocus}
       size="sm"
       disabled={disabled}
       onClick={onClick}
@@ -176,3 +178,6 @@ function MenuButton({
     </Button>
   );
 }
+
+/** Keep focus off live controls after a click: Space is the global advance key. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();

@@ -1,43 +1,35 @@
 "use client";
 
-import { Button, colors, space } from "@overlaysys/ui";
+import { Button, colors, useConfirm } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
-import { useDialog } from "@/lib/dialog";
-import { channelHasContent, clearChannelMessages, onAirCaption } from "@/lib/onAir";
+import { channelHasContent, clearChannelMessages, pvwTakeMessages } from "@/lib/onAir";
 import { useTakeFeedback } from "../hooks/useTakeFeedback";
-import { monitorColumns } from "./Monitors";
 
 /**
- * "What's on air" under the monitors: program and preview captions with the
- * actions each needs (PVW: Take, Clear; PGM: Clear), plus Clear all.
+ * Air controls beside the monitors: Take (PVW to PGM), Clear PVW, Clear PGM
+ * and Clear all, stacked full width. What each channel is showing is
+ * captioned under its monitor (see MonitorCaption).
  */
-export function OnAirStrip({ compact = false }: { compact?: boolean }) {
+export function AirControls() {
   const { send } = useWs();
   const channelStates = useStore((s) => s.channelStates);
   const show = useStore((s) => s.show);
-  const songs = useStore((s) => s.songs);
-  const templates = useStore((s) => s.templates);
   const disconnected = useStore((s) => s.conn) !== "open";
   const take = useTakeFeedback();
-  const { confirm, dialog } = useDialog();
+  const confirm = useConfirm();
 
-  const ctx = { show, songs, templates };
   const pgm = channelStates["program"];
   const pvw = channelStates["preview"];
-  const pgmCaption = onAirCaption(pgm, ctx);
-  const pvwCaption = onAirCaption(pvw, ctx);
+  const takeMsgs = pvwTakeMessages(pvw, show?.id ?? null);
   const anyContent = Object.values(channelStates).some(channelHasContent);
   const offline = disconnected ? "Disconnected from server" : undefined;
 
   function takePreview() {
-    // A song cued on PVW moves with its session; anything else swaps.
-    const lr = pvw?.liveRow;
-    if (pvw?.songSession && lr && show && lr.showId === show.id) {
-      take.send({ type: "song_take_pvw_to_pgm", showId: lr.showId, songRowId: lr.rowId, fromChannel: "preview", toChannel: "program" });
-    } else {
-      take.send({ type: "take_pvw_to_pgm", fromChannel: "preview", toChannel: "program" });
-    }
+    const [first, ...rest] = takeMsgs;
+    if (!first) return;
+    take.send(first);
+    for (const m of rest) send(m);
   }
 
   async function clearAll() {
@@ -47,7 +39,7 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
       title: "Clear all channels?",
       message: `Everything on ${live.map(([ch]) => ch).join(", ")} will be cleared.`,
       confirmLabel: "Clear all",
-      destructive: true,
+      danger: true,
     });
     if (!ok) return;
     for (const [ch, st] of live) for (const m of clearChannelMessages(st, ch)) send(m);
@@ -57,95 +49,63 @@ export function OnAirStrip({ compact = false }: { compact?: boolean }) {
     fn();
     e.currentTarget.blur();
   };
+  const full = { width: "100%" } as const;
 
   return (
-    <div
-      role="region"
-      aria-label="On air"
-      style={{
-        // Same columns as <Monitors> (PVW left, PGM right) so each slot's
-        // controls sit under its own monitor.
-        display: "grid",
-        gridTemplateColumns: monitorColumns(compact),
-        columnGap: 12,
-        alignItems: "center",
-        padding: "0 12px 12px",
-        fontSize: 12,
-        flexShrink: 0,
-      }}
-    >
-      <Slot label="PVW" tone={colors.ok} caption={pvwCaption}>
-        <Button
-          size="sm"
-          variant="onair"
-          disabled={disconnected || !pvwCaption || take.status === "pending"}
-          title={offline}
-          aria-busy={take.status === "pending"}
-          onClick={blurAfter(takePreview)}
-        >
-          {take.status === "pending" ? "Taking…" : "Take ▶"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={disconnected || !channelHasContent(pvw)}
-          title={offline}
-          onClick={blurAfter(() => clearChannelMessages(pvw, "preview").forEach(send))}
-        >
-          Clear
-        </Button>
-        {take.status === "failed" && (
-          <span role="status" style={{ color: colors.warn }}>
-            No response; check program
-          </span>
-        )}
-      </Slot>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: `${space[2]}px ${space[4]}px`, minWidth: 0 }}>
-        <Slot label="PGM" tone={colors.onair} caption={pgmCaption}>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disconnected || !channelHasContent(pgm)}
-            title={offline}
-            onClick={blurAfter(() => clearChannelMessages(pgm, "program").forEach(send))}
-          >
-            Clear
-          </Button>
-        </Slot>
-        <Button
-          size="sm"
-          variant="danger"
-          disabled={disconnected || !anyContent}
-          title={offline ?? "Clear every channel"}
-          onClick={blurAfter(() => void clearAll())}
-          style={{ marginLeft: "auto" }}
-        >
-          Clear all
-        </Button>
-      </div>
-      {dialog}
-    </div>
-  );
-}
-
-function Slot({ label, tone, caption, children }: { label: string; tone: string; caption: string | null; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: space[2], minWidth: 0, flex: "1 1 220px" }}>
-      <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: 0.8, color: tone }}>{label}</span>
-      <span
-        title={caption ?? undefined}
-        style={{
-          color: caption ? colors.text : colors.textMuted,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          minWidth: 0,
-          flex: "0 1 auto",
-        }}
+    <div role="region" aria-label="Air controls" style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+      <Button
+        size="sm"
+        onMouseDown={noFocus}
+        variant="onair"
+        style={full}
+        disabled={disconnected || takeMsgs.length === 0 || take.status === "pending"}
+        title={offline}
+        aria-busy={take.status === "pending"}
+        onClick={blurAfter(takePreview)}
       >
-        {caption ?? "Nothing"}
-      </span>
-      {children}
+        {take.status === "pending" ? "Taking…" : "Take"}
+      </Button>
+      <Button
+        size="sm"
+        onMouseDown={noFocus}
+        variant="secondary"
+        style={full}
+        disabled={disconnected || !channelHasContent(pvw)}
+        title={offline}
+        onClick={blurAfter(() => clearChannelMessages(pvw, "preview").forEach(send))}
+      >
+        Clear PVW
+      </Button>
+      <Button
+        size="sm"
+        onMouseDown={noFocus}
+        variant="secondary"
+        style={full}
+        disabled={disconnected || !channelHasContent(pgm)}
+        title={offline}
+        onClick={blurAfter(() => clearChannelMessages(pgm, "program").forEach(send))}
+      >
+        Clear PGM
+      </Button>
+      <Button
+        size="sm"
+        onMouseDown={noFocus}
+        variant="danger"
+        style={full}
+        disabled={disconnected || !anyContent}
+        title={offline ?? "Clear every channel"}
+        onClick={blurAfter(() => void clearAll())}
+      >
+        Clear all
+      </Button>
+      {take.status === "failed" && (
+        <span role="status" style={{ color: colors.warn, fontSize: 11 }}>
+          No response; check program
+        </span>
+      )}
     </div>
   );
 }
+
+/** Keep focus off live controls after a click: Space is the global advance key. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();

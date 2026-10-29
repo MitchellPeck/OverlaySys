@@ -38,7 +38,7 @@ const ICON_STYLE: CSSProperties = { verticalAlign: "-2px" };
  * `inline` renders each channel as a compact single row (≤ 32px tall) so the
  * console's bottom bar stays one stable 40px row while a video plays.
  */
-export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {}) {
+export function MediaTransportStrip({ inline = false, size = "sm" }: { inline?: boolean; size?: "sm" | "lg" } = {}) {
   const channelStates = useStore((s) => s.channelStates);
   const entries = Object.values(channelStates).filter(
     (s): s is typeof s & { media: ChannelMedia } => !!s.media,
@@ -48,7 +48,7 @@ export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {
     return (
       <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, overflowX: "auto" }}>
         {entries.map((s) => (
-          <CompactTransport key={s.channel} channel={s.channel} media={s.media} />
+          <CompactTransport key={s.channel} channel={s.channel} media={s.media} size={size} />
         ))}
       </div>
     );
@@ -57,7 +57,7 @@ export function MediaTransportStrip({ inline = false }: { inline?: boolean } = {
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
       {entries.map((s) => (
         <div key={s.channel}>
-          <ChannelTransport channel={s.channel} media={s.media} />
+          <ChannelTransport channel={s.channel} media={s.media} size={size} />
         </div>
       ))}
     </div>
@@ -87,7 +87,7 @@ function useChannelTransport(channel: string, media: ChannelMedia) {
   const stop = () => send({ type: "media_clear", channel });
   const cut = () => send({ type: "media_clear", channel, cut: true });
   const hasOutTransition = media.transitionOut.style !== "cut";
-  const stopTitle = hasOutTransition ? `Stop (${media.transitionOut.style} out)` : "Stop";
+  const stopTitle = `Fade out (${media.transitionOut.style})`;
 
   return { status, t, duration, fraction, scrub, setScrub, control, stop, cut, hasOutTransition, stopTitle };
 }
@@ -174,9 +174,8 @@ function elapsedLabel(tr: Transport): string {
 }
 
 /** Bottom-bar row: icon + label, status, time, slim scrub bar, icon buttons. */
-function CompactTransport({ channel, media }: { channel: string; media: ChannelMedia }) {
+function CompactTransport({ channel, media, size }: { channel: string; media: ChannelMedia; size: "sm" | "lg" }) {
   const tr = useChannelTransport(channel, media);
-  const iconBtn: CSSProperties = { padding: "4px 6px", lineHeight: 0 };
   return (
     <div
       title={media.playback.error ?? undefined}
@@ -208,31 +207,40 @@ function CompactTransport({ channel, media }: { channel: string; media: ChannelM
       >
         -{tr.duration > 0 ? formatClock(tr.t.remaining) : "–:––"}
       </span>
-      {media.paused ? (
-        <Button size="sm" onClick={() => tr.control("play")} title="Play" aria-label="Play" style={iconBtn}>
-          <Play size={14} aria-hidden />
-        </Button>
-      ) : (
-        <Button size="sm" onClick={() => tr.control("pause")} title="Pause" aria-label="Pause" style={iconBtn}>
-          <Pause size={14} aria-hidden />
-        </Button>
-      )}
-      <Button size="sm" onClick={() => tr.control("restart")} title="Restart" aria-label="Restart" style={iconBtn}>
-        <RotateCcw size={14} aria-hidden />
-      </Button>
-      <Button size="sm" variant="danger" onClick={tr.stop} title={tr.stopTitle} aria-label="Stop" style={iconBtn}>
-        <Square size={14} aria-hidden />
-      </Button>
-      {tr.hasOutTransition && (
-        <Button size="sm" variant="danger" onClick={tr.cut} title="Cut (clear instantly)" aria-label="Cut" style={iconBtn}>
-          <Scissors size={14} aria-hidden />
-        </Button>
-      )}
+      <TransportButtons tr={tr} media={media} size={size} />
     </div>
   );
 }
 
-function ChannelTransport({ channel, media }: { channel: string; media: ChannelMedia }) {
+/** Play/Pause, Restart, Fade out (the row's Out) and Cut. Labelled, with icons. */
+function TransportButtons({ tr, media, size }: { tr: Transport; media: ChannelMedia; size: "sm" | "lg" }) {
+  return (
+    <>
+      {media.paused ? (
+        <Button size={size} variant="secondary" onMouseDown={noFocus} onClick={() => tr.control("play")}>
+          <Play size={14} aria-hidden style={ICON_STYLE} /> Play
+        </Button>
+      ) : (
+        <Button size={size} variant="secondary" onMouseDown={noFocus} onClick={() => tr.control("pause")}>
+          <Pause size={14} aria-hidden style={ICON_STYLE} /> Pause
+        </Button>
+      )}
+      <Button size={size} variant="secondary" onMouseDown={noFocus} onClick={() => tr.control("restart")} title="Restart" aria-label="Restart">
+        <RotateCcw size={14} aria-hidden style={ICON_STYLE} />
+      </Button>
+      {tr.hasOutTransition && (
+        <Button size={size} variant="secondary" onMouseDown={noFocus} onClick={tr.stop} title={tr.stopTitle}>
+          <Square size={14} aria-hidden style={ICON_STYLE} /> Fade out
+        </Button>
+      )}
+      <Button size={size} variant="danger" onMouseDown={noFocus} onClick={tr.cut} title="Clear instantly">
+        <Scissors size={14} aria-hidden style={ICON_STYLE} /> Cut
+      </Button>
+    </>
+  );
+}
+
+function ChannelTransport({ channel, media, size }: { channel: string; media: ChannelMedia; size: "sm" | "lg" }) {
   const tr = useChannelTransport(channel, media);
   const { status, t, control } = tr;
 
@@ -271,21 +279,11 @@ function ChannelTransport({ channel, media }: { channel: string; media: ChannelM
       )}
 
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-        {media.paused ? (
-          <Button size="sm" onClick={() => control("play")} style={{ flex: 1 }}><Play size={14} aria-hidden style={ICON_STYLE} /> Play</Button>
-        ) : (
-          <Button size="sm" onClick={() => control("pause")} style={{ flex: 1 }}><Pause size={14} aria-hidden style={ICON_STYLE} /> Pause</Button>
-        )}
-        <Button size="sm" onClick={() => control("restart")} style={{ flex: 1 }}><RotateCcw size={14} aria-hidden style={ICON_STYLE} /> Restart</Button>
-        <Button size="sm" variant="danger" onClick={tr.stop} title={tr.stopTitle} style={{ flex: 1 }}>
-          <Square size={14} aria-hidden style={ICON_STYLE} /> Stop
-        </Button>
-        {tr.hasOutTransition && (
-          <Button size="sm" variant="danger" onClick={tr.cut} title="Clear instantly" style={{ flex: 1 }}>
-            <Scissors size={14} aria-hidden style={ICON_STYLE} /> Cut
-          </Button>
-        )}
+        <TransportButtons tr={tr} media={media} size={size} />
       </div>
     </div>
   );
 }
+
+/** Keep focus off live controls after a click: Space is the global advance key. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();

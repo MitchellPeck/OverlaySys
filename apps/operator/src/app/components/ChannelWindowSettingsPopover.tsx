@@ -7,7 +7,7 @@ import type {
   ChannelWindowPrefs,
   WindowPrefsFile,
 } from "@overlaysys/core";
-import { colors, radius } from "@overlaysys/ui";
+import { Button, Checkbox, Select, colors, radius } from "@overlaysys/ui";
 import { getDesktopApi } from "@/lib/desktop";
 import { POPOVER_W, popoverPosition } from "@/lib/popoverPosition";
 
@@ -182,23 +182,17 @@ export function ChannelWindowSettingsPopover({
     >
       <div style={{ fontWeight: 600, marginBottom: 8 }}>Window settings</div>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-        <input
-          type="checkbox"
-          checked={prefs.autoOpen}
-          onChange={(e) => update("autoOpen", e.target.checked)}
-        />
-        Auto-open at launch
-      </label>
+      <div style={{ marginBottom: 8 }}>
+        <Checkbox checked={prefs.autoOpen} onChange={(v) => update("autoOpen", v)} label="Auto-open at launch" />
+      </div>
 
       <div style={{ marginBottom: 8 }}>
         <div style={{ color: colors.textDim, marginBottom: 4 }}>Display</div>
-        <select
+        <Select
           value={prefs.displayId ?? ""}
           onChange={(e) =>
             update("displayId", e.target.value === "" ? undefined : Number(e.target.value))
           }
-          style={{ width: "100%", padding: 4 }}
         >
           <option value="">(none — open on primary)</option>
           {displays.map((d, i) => (
@@ -212,27 +206,15 @@ export function ChannelWindowSettingsPopover({
               {cachedConfigured.label} (not attached)
             </option>
           )}
-        </select>
-        <button
-          onClick={() => api.identifyDisplays()}
-          style={{
-            marginTop: 4,
-            background: "transparent",
-            color: colors.textDim,
-            border: `1px solid ${colors.border}`,
-            borderRadius: radius.sm,
-            padding: "2px 6px",
-            cursor: "pointer",
-            fontSize: 11,
-          }}
-        >
+        </Select>
+        <Button size="sm" variant="ghost" onClick={() => api.identifyDisplays()} style={{ marginTop: 4 }}>
           Identify displays
-        </button>
+        </Button>
       </div>
 
       <div style={{ marginBottom: 8 }}>
         <div style={{ color: colors.textDim, marginBottom: 4 }}>Audio output (video rows)</div>
-        <select
+        <Select
           value={prefs.audioOutput?.deviceId ?? ""}
           onChange={(e) => {
             const id = e.target.value;
@@ -240,7 +222,6 @@ export function ChannelWindowSettingsPopover({
             const d = audioDevices.find((x) => x.deviceId === id) ?? prefs.audioOutput;
             update("audioOutput", d ? { deviceId: d.deviceId, label: d.label } : undefined);
           }}
-          style={{ width: "100%", padding: 4 }}
         >
           <option value="">System default</option>
           {audioDevices.map((d) => (
@@ -254,7 +235,7 @@ export function ChannelWindowSettingsPopover({
                 {prefs.audioOutput.label} (not connected)
               </option>
             )}
-        </select>
+        </Select>
       </div>
 
       {(
@@ -265,47 +246,18 @@ export function ChannelWindowSettingsPopover({
           ["transparent", "Transparent"],
         ] as const
       ).map(([key, label]) => (
-        <label
-          key={key}
-          style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}
-        >
-          <input
-            type="checkbox"
-            checked={prefs[key]}
-            onChange={(e) => update(key, e.target.checked)}
-          />
-          {label}
-        </label>
+        <div key={key} style={{ marginBottom: 4 }}>
+          <Checkbox checked={prefs[key]} onChange={(v) => update(key, v)} label={label} />
+        </div>
       ))}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 10 }}>
-        <button
-          onClick={onClose}
-          style={{
-            background: "transparent",
-            color: colors.textDim,
-            border: `1px solid ${colors.border}`,
-            borderRadius: radius.sm,
-            padding: "4px 10px",
-            cursor: "pointer",
-          }}
-        >
+        <Button size="sm" variant="secondary" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          onClick={onSave}
-          disabled={!dirty}
-          style={{
-            background: dirty ? colors.accent : "transparent",
-            color: dirty ? "#000" : colors.textDim,
-            border: `1px solid ${colors.border}`,
-            borderRadius: radius.sm,
-            padding: "4px 10px",
-            cursor: dirty ? "pointer" : "default",
-          }}
-        >
+        </Button>
+        <Button size="sm" variant="primary" onClick={onSave} disabled={!dirty}>
           Save
-        </button>
+        </Button>
       </div>
     </div>,
     document.body,

@@ -8,6 +8,7 @@ import { colors, radius } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock } from "@/lib/mediaTake";
+import { inChipRemainingMs } from "@/lib/previewIn";
 import { displayTime, previewNeedsSeek, previewVideoSync, PREVIEW_SYNC_INTERVAL_MS } from "@/lib/mediaTime";
 import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
 
@@ -17,6 +18,8 @@ const STAGE_H = 1080;
 type Props = {
   config: ChannelConfig;
   state: ChannelState | undefined;
+  /** Shown centred while the channel is empty. Default "(idle)". */
+  emptyLabel?: string;
 };
 
 /**
@@ -25,7 +28,7 @@ type Props = {
  * driven from the operator's already-cached templates instead of fetching
  * each one independently.
  */
-export function ChannelPreview({ config, state }: Props) {
+export function ChannelPreview({ config, state, emptyLabel = "(idle)" }: Props) {
   const { send } = useWs();
   const templateCache = useStore((s) => s.templateCache);
   const heardAt = useStore((s) => s.mediaHeardAt[config.id] ?? 0);
@@ -44,6 +47,7 @@ export function ChannelPreview({ config, state }: Props) {
   // out timeline back to t=0 mid-fade.
   const outStartedRef = useRef<WeakSet<MountedTemplate>>(new WeakSet());
   const [scale, setScale] = useState(0);
+  const [inLeftMs, setInLeftMs] = useState(0);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -62,6 +66,17 @@ export function ChannelPreview({ config, state }: Props) {
     if (!id) return;
     if (!templateCache[id]) send({ type: "get_template", templateId: id });
   }, [state?.active?.templateId, templateCache, send]);
+
+  // "IN…" chip: from the take until the template's IN timeline has played.
+  const takenAt = state?.active?.phase === "out" ? 0 : (state?.active?.takenAt ?? 0);
+  const inDurationSec = state?.active ? (templateCache[state.active.templateId]?.timelines.in.duration ?? 0) : 0;
+  useEffect(() => {
+    const left = inChipRemainingMs(takenAt, inDurationSec, Date.now());
+    setInLeftMs(left);
+    if (left <= 0) return;
+    const t = setTimeout(() => setInLeftMs(0), left);
+    return () => clearTimeout(t);
+  }, [takenAt, inDurationSec]);
 
   useEffect(() => {
     if (!stageRef.current) return;
@@ -203,7 +218,7 @@ export function ChannelPreview({ config, state }: Props) {
           filter: matte ? "brightness(0) invert(1)" : undefined,
         }}
       />
-      {!state?.active && !state?.media && (
+      {!state?.active && !state?.media && !state?.songSession?.blanked && (
         <div
           style={{
             position: "absolute",
@@ -217,8 +232,46 @@ export function ChannelPreview({ config, state }: Props) {
             pointerEvents: "none",
           }}
         >
-          (idle)
+          {emptyLabel}
         </div>
+      )}
+      {state?.songSession?.blanked && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.55)",
+            color: colors.warn,
+            fontSize: 14,
+            fontWeight: 700,
+            letterSpacing: 2,
+            pointerEvents: "none",
+          }}
+        >
+          BLANKED
+        </div>
+      )}
+      {inLeftMs > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            right: 6,
+            bottom: state?.media ? 28 : 6,
+            padding: "1px 6px",
+            borderRadius: 3,
+            background: "rgba(0,0,0,0.7)",
+            color: "#fff",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: 0.6,
+            pointerEvents: "none",
+          }}
+        >
+          IN…
+        </span>
       )}
       {state?.media && (
         <div

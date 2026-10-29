@@ -10,7 +10,6 @@ import { ShowPicker } from "./components/ShowPicker";
 import { Rundown } from "./components/Rundown";
 import { Monitors } from "./components/Monitors";
 import { StageArea } from "./components/StageArea";
-import { OnAirStrip } from "./components/OnAirStrip";
 import { TimersRail } from "./components/TimersRail";
 import { HotcardsPanel } from "./components/HotcardsPanel";
 import { StagePanel } from "./components/StagePanel";
@@ -41,8 +40,6 @@ function ShowPageLocal() {
 
   const showMetas = useStore((s) => s.showMetas);
   const show = useStore((s) => s.show);
-  const programSession = useStore((s) => s.songSessions["program"]);
-  const previewSession = useStore((s) => s.songSessions["preview"]);
   useEffect(() => {
     if (show || showMetas.length === 0) return;
     const saved =
@@ -69,7 +66,6 @@ function ShowPageLocal() {
 
   useGlobalShortcuts();
 
-  const songModeActive = !!(programSession ?? previewSession);
   return (
     <div style={{ height: "100%", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", overflow: "hidden" }}>
       <PageChrome title="Show" context={<ShowPicker />} />
@@ -89,8 +85,7 @@ function ShowPageLocal() {
           </div>
         </section>
         <section style={columnStyle}>
-          <Monitors compact={songModeActive} />
-          <OnAirStrip compact={songModeActive} />
+          <Monitors />
           <StageArea />
         </section>
         <section style={columnStyle}>
