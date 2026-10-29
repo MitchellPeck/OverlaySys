@@ -54,8 +54,8 @@ export default function ConnectionPage() {
   return (
     <>
       <PageChrome title="Connection" />
-      <PageBody maxWidth={720} style={{ height: "100%" }}>
-        <Panel title="Server" padding="md" style={{ marginBottom: 16 }}>
+      <PageBody variant="form" style={{ height: "100%" }}>
+        <Panel title="Server" padding="md">
           <Row label="Status">
             <StatusDot
               tone={conn === "open" ? "good" : conn === "closed" ? "bad" : "warn"}
@@ -78,7 +78,7 @@ export default function ConnectionPage() {
           </Row>
         </Panel>
 
-        <Panel title="Other devices on this network" padding="md" style={{ marginBottom: 16 }}>
+        <Panel title="Other devices on this network" padding="md">
           {loopbackOnly ? (
             <p style={{ color: colors.warn, fontSize: fontSize.sm, margin: 0 }}>
               The server only accepts connections from this computer (HOST={bindHost}).
@@ -102,7 +102,7 @@ export default function ConnectionPage() {
           )}
         </Panel>
 
-        <Panel title="Change port or address" padding="md" style={{ marginBottom: 16 }}>
+        <Panel title="Change port or address" padding="md">
           <p style={{ color: colors.textDim, fontSize: fontSize.sm, margin: 0 }}>
             Set <Mono>PORT</Mono> and <Mono>HOST</Mono> in the <Mono>.env</Mono> file in the OverlaySys app-data folder
             {diag ? (

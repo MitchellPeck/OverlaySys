@@ -109,6 +109,12 @@ export async function setPcoCredentials(
   }
 }
 
+/** Forget the in-memory Planning Center credential (PAT or OAuth) on the server. */
+export async function clearPcoCredentials(): Promise<void> {
+  const res = await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to disconnect (${res.status})`);
+}
+
 export async function listServiceTypes(): Promise<PcoServiceType[]> {
   const { serviceTypes } = await get<{ serviceTypes: PcoServiceType[] }>(
     "/api/pco/service-types",
