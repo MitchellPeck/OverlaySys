@@ -59,6 +59,19 @@ describe("syncView", () => {
     expect(v?.error).toBe("[song:a] boom");
     expect(v?.details[0]).toBe("Last pass 5m ago");
   });
+  it("[I4] warns when the server kept a local show over a lossy cloud copy", () => {
+    const v = syncView(
+      {
+        ...base,
+        lastRanAt: "2026-10-28T11:59:30Z",
+        lastResult: { pulled: 0, pushed: 0, errors: [], overwrites: [], warnings: [{ kind: "shows", id: "sh", message: "cloud copy has no rows" }] },
+      },
+      NOW,
+    );
+    expect(v).toMatchObject({ tone: "warn", label: "synced · 1 kept local" });
+    expect(v?.details).toContain("[shows:sh] cloud copy has no rows");
+    expect(v?.error).toBe("[shows:sh] cloud copy has no rows");
+  });
   it("is good after a clean pass", () => {
     expect(
       syncView({ ...base, lastRanAt: "2026-10-28T11:59:30Z", lastResult: { pulled: 2, pushed: 3, errors: [], overwrites: [] } }, NOW),

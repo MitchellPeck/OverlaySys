@@ -112,6 +112,22 @@ export function syncView(status: SyncStatusSnapshot, now: number): SyncView | nu
   if (lastRanAt) {
     const overwrites = lastResult?.overwrites ?? [];
     const counts = lastResult ? `Pulled ${lastResult.pulled}, pushed ${lastResult.pushed}` : null;
+    const warnings = lastResult?.warnings ?? [];
+    if (warnings.length > 0) {
+      const lines = warnings.map((w) => `[${w.kind}:${w.id}] ${w.message}`);
+      return {
+        tone: "warn",
+        label: `synced · ${warnings.length} kept local`,
+        details: [
+          last,
+          ...(counts ? [counts] : []),
+          "Cloud copies not applied (they would lose local data):",
+          ...lines.slice(0, 8),
+          ...(lines.length > 8 ? [`…and ${lines.length - 8} more`] : []),
+        ],
+        error: lines.join("\n"),
+      };
+    }
     if (overwrites.length > 0) {
       return {
         tone: "warn",

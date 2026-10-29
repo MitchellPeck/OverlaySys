@@ -616,6 +616,8 @@ interface ShowRow {
   deleted_at: string | null;
 }
 
+const warnedUnreadableShows = new Set<string>();
+
 function rowToShow(row: ShowRow): Show {
   // `extra` spreads under the columned fields; a null `extra` reads as a
   // show from before the column (songs []). If `extra` holds something the
@@ -628,13 +630,22 @@ function rowToShow(row: ShowRow): Show {
       break;
     }
   }
-  base ??= {
-    id: row.id,
-    name: row.name,
-    projectId: row.project_id,
-    rows: [],
-    songs: [],
-  };
+  if (!base) {
+    // The cloud copy holds rows this build can't read (e.g. a row kind from a
+    // newer build). The fallback has `rows: []`; the sync engine refuses to
+    // pull an emptied show over a non-empty local one (showPullLossReason).
+    if (Array.isArray(row.rows) && row.rows.length > 0 && !warnedUnreadableShows.has(row.id)) {
+      warnedUnreadableShows.add(row.id);
+      console.warn(`[cloud] show ${row.id}: ${row.rows.length} row(s) unreadable by this build; read as empty`);
+    }
+    base = {
+      id: row.id,
+      name: row.name,
+      projectId: row.project_id,
+      rows: [],
+      songs: [],
+    };
+  }
   return {
     ...base,
     updatedAt: isoZ(row.updated_at),

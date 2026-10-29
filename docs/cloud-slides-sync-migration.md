@@ -130,3 +130,43 @@ naming the column marks it missing for that adapter, logs once per process
 `[sync] cloud hotcards.hotkey column unavailable; …`), and retries once without it.
 It is never counted as a sync error. The stopgaps live in
 `server/src/fsStorageAdapter.ts`.
+
+## 4. Deploy order
+
+Clients built before this branch don't understand sections or slides rows, and
+they strip what they don't understand when they save:
+
+- their strict row schema drops each row's `sectionId` (and `stageLayouts`);
+- their row union rejects `kind: "slides"`, so they read the whole show as
+  `rows: []`, and a save from them writes that empty show back to the cloud
+  with a newer `updated_at`.
+
+So deploy in this order, before any show gets sections or slides rows:
+
+1. Apply sections 1 and 2 above in apps-portal (and reload the schema cache).
+2. Deploy the cloud web operator (`build:cloud`) **from this branch**, and
+   reload every open web operator tab.
+3. Update every desktop install to a build from this branch. A desktop running
+   this branch must never sync against a cloud web operator, or another
+   desktop, still running older code. Deploy the cloud build with or before
+   the first desktop that runs it.
+
+### Safety net (not a substitute for the order above)
+
+This branch's sync engine refuses to pull a newer cloud show over the local one
+when the pull would lose data (`showPullLossReason` in
+`packages/core/src/syncEngine.ts`):
+
+- the cloud copy has `rows: []` but the local show has rows (also what this
+  build reads when it can't parse the cloud copy's rows; `rowToShow` logs
+  `[cloud] show <id>: N row(s) unreadable by this build`);
+- the cloud copy has no `sectionId` on any row while local rows with the same
+  ids are in sections.
+
+The local copy is kept (nothing is pulled or pushed for that show), the server
+logs `[sync] not applying remote shows:<id> — …`, and the operator's sync pill
+turns amber ("synced · N kept local") with the details. The warning repeats on
+every pass until someone saves the show from an up-to-date client, which writes
+the local copy back to the cloud. A deliberate "remove every row" made on another
+client is also held back by this rule; make that edit on this machine, or delete
+the show instead.

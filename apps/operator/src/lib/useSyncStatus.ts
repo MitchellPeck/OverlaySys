@@ -31,6 +31,12 @@ export interface SyncStatusSnapshot {
       localUpdatedAt: string;
       remoteUpdatedAt: string;
     }[];
+    /**
+     * Newer cloud records the server refused to apply because they would lose
+     * local data (e.g. a show emptied or stripped of sections by an older
+     * client). Optional: servers before this field omit it.
+     */
+    warnings?: { kind: string; id: string; message: string }[];
   } | null;
 }
 

@@ -47,6 +47,12 @@ export interface SyncResult {
   overwrites: SyncOverwrite[];
   /** Per-record failures; the rest of the pass still runs. */
   errors: SyncError[];
+  /**
+   * Newer remote records that were deliberately NOT applied because they
+   * look like a lossy write from an older client (see
+   * {@link showPullLossReason}). The local copy is kept as is.
+   */
+  warnings: SyncWarning[];
   /** Per-table count of records reconciled (skipped + applied). */
   perTable: Record<SyncEntityKind, { pulled: number; pushed: number }>;
 }
@@ -72,6 +78,12 @@ export interface SyncError {
   message: string;
 }
 
+export interface SyncWarning {
+  kind: SyncEntityKind;
+  id: string;
+  message: string;
+}
+
 export type SyncEntityKind =
   | "projects"
   | "shows"
@@ -93,6 +105,33 @@ function toInstant(iso: string): number {
   if (!iso) return 0;
   const t = Date.parse(iso);
   return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * Why applying `remote` over `local` would lose show data, or null when the
+ * pull is safe. Catches what an older client (one built before sections and
+ * slides rows) writes back to the cloud:
+ *   - an emptied `rows` (its strict row union rejected a `slides` row, so it
+ *     read the whole show as `rows: []`, or this build could not read the
+ *     cloud copy's rows);
+ *   - section membership stripped from every row (its strict row schema
+ *     drops `sectionId`).
+ * Tombstones on either side are never blocked: deletion is deliberate.
+ */
+export function showPullLossReason(local: Show, remote: Show): string | null {
+  if (local.deletedAt || remote.deletedAt) return null;
+  if (local.rows.length > 0 && remote.rows.length === 0) {
+    return `cloud copy has no rows but the local show has ${local.rows.length}; kept local (written by an older client?)`;
+  }
+  const localSectioned = new Map<string, string>();
+  for (const r of local.rows) if (r.sectionId) localSectioned.set(r.id, r.sectionId);
+  if (localSectioned.size > 0 && !remote.rows.some((r) => r.sectionId)) {
+    const shared = remote.rows.filter((r) => localSectioned.has(r.id)).length;
+    if (shared > 0) {
+      return `cloud copy dropped section membership from ${shared} row(s); kept local (written by an older client?)`;
+    }
+  }
+  return null;
 }
 
 /** Stable identity for an override row — composed of (projectId, channelId). */
@@ -124,6 +163,7 @@ export async function sync(
     pushed: 0,
     overwrites: [],
     errors: [],
+    warnings: [],
     perTable: {
       projects: { pulled: 0, pushed: 0 },
       shows: { pulled: 0, pushed: 0 },
@@ -159,6 +199,7 @@ export async function sync(
     keyOf: (s) => s.id,
     pushToRemote: (s) => remote.saveShow(orgId, s),
     pushToLocal: (s) => local.saveShow(orgId, s),
+    guardPull: showPullLossReason,
     result,
   });
 
@@ -273,6 +314,12 @@ interface ReconcileArgs<T extends { updatedAt?: string; deletedAt?: string }> {
   keyOf: (item: T) => string;
   pushToRemote: (item: T) => Promise<void>;
   pushToLocal: (item: T) => Promise<void>;
+  /**
+   * Checked before a newer remote record replaces an existing local one.
+   * A non-null reason skips the pull (local kept, nothing pushed either) and
+   * records a {@link SyncWarning}.
+   */
+  guardPull?: (local: T, remote: T) => string | null;
   result: SyncResult;
 }
 
@@ -286,6 +333,7 @@ async function reconcileTable<
     keyOf,
     pushToRemote,
     pushToLocal,
+    guardPull,
     result,
   } = args;
 
@@ -353,6 +401,12 @@ async function reconcileTable<
           result.pushed += 1;
           result.perTable[kind].pushed += 1;
         } else if (rt > lt) {
+          const blocked = guardPull?.(L, R) ?? null;
+          if (blocked) {
+            console.warn(`[sync] not applying remote ${kind}:${id} — ${blocked}`);
+            result.warnings.push({ kind, id, message: blocked });
+            continue;
+          }
           await pushToLocal(R);
           result.pulled += 1;
           result.perTable[kind].pulled += 1;

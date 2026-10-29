@@ -522,3 +522,47 @@ describe("syncEngine.sync — timestamp formats", () => {
     expect(result.overwrites).toEqual([]);
   });
 });
+
+describe("syncEngine.sync — [I4] lossy show pulls from older clients", () => {
+  const show = (rows: unknown[], updatedAt: string, extra: Partial<Show> = {}): Show =>
+    ({ id: "sh", name: "Sunday", projectId: "p", rows, songs: [], updatedAt, ...extra }) as Show;
+  const gfx = (id: string, sectionId?: string) => ({ kind: "graphic", id, templateId: "t", data: {}, ...(sectionId ? { sectionId } : {}) });
+  let local: StorageAdapter;
+  let remote: StorageAdapter;
+  beforeEach(() => {
+    local = makeMemAdapter();
+    remote = makeMemAdapter();
+  });
+
+  it("keeps local and warns when a newer cloud copy has rows: [] over a non-empty local show", async () => {
+    await local.saveShow(ORG, show([gfx("r1"), gfx("r2")], "2026-05-01T00:00:00Z"));
+    await remote.saveShow(ORG, show([], "2026-05-02T00:00:00Z"));
+    const result = await sync(local, remote, ORG);
+    expect((await local.getShow(ORG, "sh"))!.rows).toHaveLength(2);
+    expect(result.pulled).toBe(0);
+    expect(result.pushed).toBe(0);
+    expect(result.overwrites).toEqual([]);
+    expect(result.warnings).toEqual([{ kind: "shows", id: "sh", message: expect.stringContaining("no rows") }]);
+  });
+
+  it("keeps local when the cloud copy stripped every row's section membership", async () => {
+    await local.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2")], "2026-05-01T00:00:00Z"));
+    await remote.saveShow(ORG, show([gfx("r1"), gfx("r2")], "2026-05-02T00:00:00Z"));
+    const result = await sync(local, remote, ORG);
+    expect((await local.getShow(ORG, "sh"))!.rows[0]!.sectionId).toBe("s1");
+    expect(result.warnings[0]!.message).toMatch(/section membership/);
+  });
+
+  it("still applies ordinary newer edits, tombstones, and a remote that keeps some sections", async () => {
+    await local.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2", "s1")], "2026-05-01T00:00:00Z"));
+    await remote.saveShow(ORG, show([gfx("r1", "s1"), gfx("r2")], "2026-05-02T00:00:00Z"));
+    let result = await sync(local, remote, ORG);
+    expect(result.warnings).toEqual([]);
+    expect((await local.getShow(ORG, "sh"))!.rows[1]!.sectionId).toBeUndefined();
+
+    await remote.saveShow(ORG, show([], "2026-05-03T00:00:00Z", { deletedAt: "2026-05-03T00:00:00Z" }));
+    result = await sync(local, remote, ORG);
+    expect(result.warnings).toEqual([]);
+    expect(result.pulled).toBe(1);
+  });
+});
