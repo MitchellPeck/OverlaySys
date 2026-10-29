@@ -1,1014 +1,283 @@
 "use client";
 
-import { ArrowDown, ArrowUp, X } from "lucide-react";
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { Trash2 } from "lucide-react";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import type { Section, SectionKind, Song } from "@overlaysys/core";
+import { IconButton, Input, Select, colors, useToast, type MenuItem } from "@overlaysys/ui";
+import { LYRIC_SLIDE_BUDGET } from "@/lib/slideBreaks";
+import { ArrangementChips } from "./ArrangementChips";
+import { SECTION_KIND_NAMES, SectionsList } from "./SectionsList";
+import { SongDetails } from "./SongDetails";
+import { EditorFrame, SlideTextEditor, SlideThumbGrid, sectionKindColor, type SlideCard } from "./slides";
 import {
-  type Song,
-  type Section,
-  type SuggestedFieldMatch,
-  listSongFieldDescriptors,
-  suggestFieldMap,
-} from "@overlaysys/core";
-import { Button, Field, IconButton, Input, Panel, Select, Textarea, colors } from "@overlaysys/ui";
-import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
-import { useDialog } from "@/lib/dialog";
-import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
-import { isCloudMode } from "@/lib/mode";
-import { getTemplateCloud } from "@/lib/cloudData";
-import { FieldMappingTable } from "./FieldMappingTable";
-import { SECTION_ID_PREFIX, moveByOne, nextSlideId } from "./songDraftOps";
-import { LYRIC_SLIDE_BUDGET, lyricSlideStats } from "@/lib/slideBreaks";
+  linesFromText,
+  nextSlideId,
+  removeSection,
+  removeSlide,
+  restoreSection,
+  restoreSlide,
+  setSectionKind,
+  slideText,
+  uniqueLabel,
+} from "./songDraftOps";
+import { moveSlideWithin, slideEditorText, songSubtitle } from "./songEditorModel";
+
+const LYRIC_FIELDS = [{ key: "text", label: "Lyrics", multiline: true }];
 
 /**
- * Controlled editor for a single {@link Song} draft: metadata, custom fields,
- * intro/outro + channel defaults, sections/slides and the default arrangement.
- * Extracted from the song edit page so the Planning Center import can offer
- * the same editor for songs it is about to create — the page owns loading and
- * saving, this component owns nothing but the draft.
+ * Controlled editor for a single {@link Song} draft: arrangement, sections and
+ * their slides, and the Details group (templates, output, credits, custom
+ * fields). The song page passes `layout="frame"` (left rail + main); the
+ * Planning Center import keeps the default single-column `"stacked"` layout.
+ * The page owns loading and saving; this component owns nothing but the draft.
  */
 export function SongDraftEditor({
   draft,
   onChange,
+  layout = "stacked",
 }: {
   draft: Song;
   onChange: Dispatch<SetStateAction<Song>>;
+  layout?: "frame" | "stacked";
 }) {
-  const { send } = useWs();
-  const conn = useStore((s) => s.conn);
-  const templates = useStore((s) => s.templates);
-  const templateCache = useStore((s) => s.templateCache);
-  const setTemplate = useStore((s) => s.setTemplate);
-  const projects = useStore((s) => s.projects);
-  const currentProjectId = useStore((s) => s.currentProjectId);
-  const channelConfigs = useResolvedChannelConfigs();
-  const channelChoices = useMemo(
-    () => channelConfigs.filter((c) => !c.mirrorOf),
-    [channelConfigs],
-  );
-  const [dragSecIdx, setDragSecIdx] = useState<number | null>(null);
-  const [secDropZone, setSecDropZone] = useState<{ idx: number; pos: "before" | "after" } | null>(null);
-  // Tracks which template-field keys the user has explicitly touched in the
-  // intro / outro mapping tables. Suggested-but-unconfirmed rows show a pill
-  // until the user either picks a value or clicks the pill to confirm.
-  // Reset to empty whenever the corresponding template id changes — switching
-  // templates discards old confirmations along with old mappings.
-  const [introConfirmed, setIntroConfirmed] = useState<Set<string>>(() => new Set());
-  const [outroConfirmed, setOutroConfirmed] = useState<Set<string>>(() => new Set());
-  // Inline form state for adding an ad-hoc custom field.
-  const [newFieldKey, setNewFieldKey] = useState("");
-  const [newFieldError, setNewFieldError] = useState<string | null>(null);
-  const { dialog, confirm } = useDialog();
-  const cloud = isCloudMode();
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(draft.sections[0]?.id ?? null);
+  const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
+  const section =
+    draft.sections.find((s) => s.id === selectedSectionId) ?? draft.sections[0] ?? null;
+  const slide = section ? (section.slides.find((sl) => sl.id === selectedSlideId) ?? section.slides[0] ?? null) : null;
 
-  function moveSection(from: number, to: number) {
-    if (from === to) return;
-    onChange((d) => {
-      const next = d.sections.slice();
-      const [removed] = next.splice(from, 1);
-      if (!removed) return d;
-      const adjustedTo = from < to ? to - 1 : to;
-      next.splice(adjustedTo, 0, removed);
-      return { ...d, sections: next };
-    });
-  }
-
-  function nudgeSection(idx: number, delta: -1 | 1) {
-    onChange((d) => ({ ...d, sections: moveByOne(d.sections, idx, delta) }));
-  }
-
-  // Fetch full template payloads for the intro/outro defaults so we can show
-  // the FieldMappingTable. The store keeps a separate `templates` (meta-only)
-  // list for the picker dropdowns and a `templateCache` (full payload) for
-  // editors — we need the latter for `template.fields`.
-  //
-  // Deps are narrowed to just the two template ids (plus WS/cloud state) so
-  // typing in unrelated fields (e.g. the title input) doesn't re-fire this.
-  // `templateCache` is intentionally read via a one-shot `useStore.getState()`
-  // call instead of being a dep — a cache population shouldn't re-fire the
-  // effect, and the in-flight `if (templateCache[id])` check below guards
-  // against duplicate fetches on the next legitimate re-run.
-  const introTplId = draft.defaultIntroTemplateId;
-  const outroTplId = draft.defaultOutroTemplateId;
+  // Keep the selection on something that exists (a paste, revert or undo can
+  // replace the sections underneath it).
   useEffect(() => {
-    const needed: string[] = [];
-    if (introTplId) needed.push(introTplId);
-    if (outroTplId) needed.push(outroTplId);
-    if (needed.length === 0) return;
-    const cacheNow = useStore.getState().templateCache;
-    for (const templateId of needed) {
-      if (cacheNow[templateId]) continue;
-      if (cloud) {
-        getTemplateCloud(templateId)
-          .then((t) => {
-            if (t) setTemplate(t);
-          })
-          .catch((err) =>
-            console.warn(`[songs/edit] template ${templateId} load failed`, err),
-          );
-      } else if (conn === "open") {
-        send({ type: "get_template", templateId });
-      }
-    }
-  }, [introTplId, outroTplId, cloud, conn, send, setTemplate]);
+    if (section && section.id !== selectedSectionId) setSelectedSectionId(section.id);
+  }, [section, selectedSectionId]);
 
-  // Derived data for the Custom Fields + Defaults sections. The cheap pieces
-  // (projectSchema, adHocKeys) recompute each render; the expensive ones
-  // (listSongFieldDescriptors, suggestFieldMap) are memoized so typing in
-  // unrelated inputs doesn't re-run them.
-  const projectSchema =
-    projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema ?? [];
-  const songFieldDescriptors = useMemo(
-    () =>
-      listSongFieldDescriptors(draft, projectSchema),
-    [draft, projects, currentProjectId],
-  );
-  const introTemplate = draft.defaultIntroTemplateId
-    ? templateCache[draft.defaultIntroTemplateId]
-    : undefined;
-  const outroTemplate = draft.defaultOutroTemplateId
-    ? templateCache[draft.defaultOutroTemplateId]
-    : undefined;
-  const introSuggestions: Record<string, SuggestedFieldMatch> = useMemo(
-    () => (introTemplate ? suggestFieldMap(introTemplate.fields, songFieldDescriptors) : {}),
-    [introTemplate, songFieldDescriptors],
-  );
-  const outroSuggestions: Record<string, SuggestedFieldMatch> = useMemo(
-    () => (outroTemplate ? suggestFieldMap(outroTemplate.fields, songFieldDescriptors) : {}),
-    [outroTemplate, songFieldDescriptors],
+  function selectSection(id: string) {
+    setSelectedSectionId(id);
+    setSelectedSlideId(null);
+  }
+
+  const left = (
+    <>
+      <ArrangementChips song={draft} onChange={onChange} />
+      <SectionsList song={draft} selectedId={section?.id ?? null} onSelect={selectSection} onChange={onChange} />
+      <div style={{ borderTop: `1px solid ${colors.border}` }}>
+        <SongDetails draft={draft} onChange={onChange} defaultOpen={layout === "stacked"} />
+      </div>
+    </>
   );
 
-  // One-shot seeding for the cold-cache scenario: changeSubTakeTemplate runs
-  // while the template payload isn't in cache yet, the load effect later
-  // populates it, and we want suggestions to appear automatically instead of
-  // forcing the operator to re-pick the template. Re-running is guarded by
-  // confirmedKeys being empty — once the user has touched any row (including
-  // clearing it), we leave the map alone.
-  useEffect(() => {
-    if (!introTemplate) return;
-    if (introConfirmed.size > 0) return;
-    if (Object.keys(draft.defaultIntroFieldMap ?? {}).length > 0) return;
-    const next: Record<string, string> = {};
-    const exacts = new Set<string>();
-    for (const [k, s] of Object.entries(introSuggestions)) {
-      if (s.kind !== "none") next[k] = s.songFieldKey;
-      if (s.kind === "exact") exacts.add(k);
-    }
-    if (Object.keys(next).length === 0) return;
-    onChange((d) => ({ ...d, defaultIntroFieldMap: next }));
-    setIntroConfirmed(exacts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- introSuggestions/confirmed/draft are checked above; seeding fires only on the cold→warm transition
-  }, [introTemplate]);
-  useEffect(() => {
-    if (!outroTemplate) return;
-    if (outroConfirmed.size > 0) return;
-    if (Object.keys(draft.defaultOutroFieldMap ?? {}).length > 0) return;
-    const next: Record<string, string> = {};
-    const exacts = new Set<string>();
-    for (const [k, s] of Object.entries(outroSuggestions)) {
-      if (s.kind !== "none") next[k] = s.songFieldKey;
-      if (s.kind === "exact") exacts.add(k);
-    }
-    if (Object.keys(next).length === 0) return;
-    onChange((d) => ({ ...d, defaultOutroFieldMap: next }));
-    setOutroConfirmed(exacts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mirror of intro seeding effect above
-  }, [outroTemplate]);
+  const main = section ? (
+    <SectionEditor
+      key={section.id}
+      song={draft}
+      section={section}
+      slideId={slide?.id ?? null}
+      onSelectSlide={setSelectedSlideId}
+      onSelectSection={selectSection}
+      onChange={onChange}
+    />
+  ) : (
+    <p style={{ padding: 12, fontSize: 12, color: colors.textMuted }}>No sections yet. Add one with “+ Section” or paste lyrics.</p>
+  );
 
-  function setMeta<K extends keyof Song>(key: K, value: Song[K]) {
-    onChange((d) => ({ ...d, [key]: value }));
-  }
+  const header = (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 12, padding: "8px 12px", minWidth: 0 }}>
+      <Input
+        value={draft.title}
+        onChange={(e) => onChange((d) => ({ ...d, title: e.target.value }))}
+        aria-label="Song title"
+        placeholder="Untitled song"
+        style={{ fontSize: 15, fontWeight: 600, flex: "1 1 auto", minWidth: 0, maxWidth: 480 }}
+      />
+      <span style={{ fontSize: 12, color: colors.textMuted, whiteSpace: "nowrap" }}>{songSubtitle(draft)}</span>
+    </div>
+  );
 
-  const projectSchemaKeyMap = new Map(projectSchema.map((f) => [f.key, f]));
-  const adHocKeys = Object.keys(draft.customFields)
-    .filter((k) => !projectSchemaKeyMap.has(k))
-    .sort();
-
-  function addAdHocField() {
-    const key = newFieldKey.trim();
-    if (!key) {
-      setNewFieldError("Key required");
-      return;
-    }
-    const lower = key.toLowerCase();
-    const allKeys = [
-      ...projectSchema.map((f) => f.key),
-      ...Object.keys(draft.customFields),
-    ];
-    if (allKeys.some((k) => k.toLowerCase() === lower)) {
-      setNewFieldError("Key already exists");
-      return;
-    }
-    setCustomField(key, "");
-    setNewFieldKey("");
-    setNewFieldError(null);
-  }
-
-  function updateSection(idx: number, patch: Partial<Section>) {
-    onChange((d) => {
-      const next = d.sections.slice();
-      const target = next[idx];
-      if (!target) return d;
-      next[idx] = { ...target, ...patch };
-      return { ...d, sections: next };
-    });
-  }
-
-  function updateSlide(secIdx: number, slideIdx: number, lines: string[]) {
-    onChange((d) => {
-      const sections = d.sections.slice();
-      const sec = sections[secIdx];
-      if (!sec) return d;
-      const slides = sec.slides.slice();
-      const target = slides[slideIdx];
-      if (!target) return d;
-      slides[slideIdx] = { ...target, lines };
-      sections[secIdx] = { ...sec, slides };
-      return { ...d, sections };
-    });
-  }
-
-  function addSlide(secIdx: number) {
-    onChange((d) => {
-      const sections = d.sections.slice();
-      const sec = sections[secIdx];
-      if (!sec) return d;
-      sections[secIdx] = {
-        ...sec,
-        slides: [...sec.slides, { id: nextSlideId(d, sec), lines: [""] }],
-      };
-      return { ...d, sections };
-    });
-  }
-
-  function removeSlide(secIdx: number, slideIdx: number) {
-    onChange((d) => {
-      const sections = d.sections.slice();
-      const sec = sections[secIdx];
-      if (!sec) return d;
-      if (sec.slides.length <= 1) return d;
-      sections[secIdx] = { ...sec, slides: sec.slides.filter((_, i) => i !== slideIdx) };
-      return { ...d, sections };
-    });
-  }
-
-  function addSection(kind: Section["kind"] = "verse") {
-    onChange((d) => {
-      // Generate a unique kind-prefixed id by counting existing sections of
-      // the same kind. Falls back to a numeric suffix on collision so it
-      // works even when the song was authored with hand-picked ids.
-      const prefix = SECTION_ID_PREFIX[kind];
-      const sameKindCount = d.sections.filter((s) => s.kind === kind).length;
-      let n = sameKindCount + 1;
-      let id = `${prefix}${n}`;
-      while (d.sections.some((s) => s.id === id)) {
-        n += 1;
-        id = `${prefix}${n}`;
-      }
-      const label = `${KIND_LABEL[kind]} ${n}`;
-      const newSection: Section = {
-        id,
-        kind,
-        label,
-        slides: [{ id: `${id}s1`, lines: [""] }],
-      };
-      return { ...d, sections: [...d.sections, newSection] };
-    });
-  }
-
-  async function removeSection(secIdx: number) {
-    const sec = draft.sections[secIdx];
-    if (!sec) return;
-    // `SongSchema` requires at least one section, so deleting the last one
-    // would only fail at the save boundary — as a raw Zod message in the PCO
-    // import's result panel. Mirrors the `removeSlide` guard above.
-    if (draft.sections.length <= 1) return;
-    const arrangementUses = (draft.defaultArrangement ?? []).filter(
-      (sid) => sid === sec.id,
-    ).length;
-    const ok = await confirm({
-      title: "Delete section?",
-      destructive: true,
-      confirmLabel: "Delete",
-      message: (
-        <>
-          <p style={{ margin: 0 }}>
-            Delete <strong>{sec.label}</strong>{" "}
-            <span style={{ color: colors.textDim, fontFamily: "ui-monospace, monospace", fontSize: 11 }}>
-              ({sec.id})
-            </span>{" "}
-            and its {sec.slides.length} slide{sec.slides.length === 1 ? "" : "s"}?
-          </p>
-          {arrangementUses > 0 && (
-            <p style={{ marginTop: 8, marginBottom: 0, color: colors.textDim, fontSize: 12 }}>
-              This section appears {arrangementUses} time{arrangementUses === 1 ? "" : "s"} in
-              the default arrangement and will be removed from there too.
-            </p>
-          )}
-        </>
-      ),
-    });
-    if (!ok) return;
-    onChange((d) => {
-      if (d.sections.length <= 1) return d;
-      const sections = d.sections.filter((_, i) => i !== secIdx);
-      const defaultArrangement = d.defaultArrangement.filter((sid) => sid !== sec.id);
-      return { ...d, sections, defaultArrangement };
-    });
-  }
-
-  function setCustomField(key: string, value: string) {
-    onChange((d) => ({ ...d, customFields: { ...d.customFields, [key]: value } }));
-  }
-
-  function removeCustomField(key: string) {
-    onChange((d) => {
-      const next = { ...d.customFields };
-      delete next[key];
-      return { ...d, customFields: next };
-    });
-  }
-
-  /**
-   * Switches the intro/outro template and re-seeds the field map from
-   * `suggestFieldMap` against the new template. Any prior manual confirmations
-   * are discarded — the user can re-touch any incorrect suggestions. This
-   * keeps the UX simple at the cost of losing the user's previous picks; a
-   * future iteration could add a "keep my picks" confirm prompt.
-   */
-  function changeSubTakeTemplate(
-    which: "intro" | "outro",
-    templateId: string | undefined,
-  ) {
-    // We only have fields if the full template payload is in the cache. When
-    // it isn't yet, save just the templateId and leave the map empty — the
-    // load-template effect will fetch it and the user can re-pick to seed
-    // suggestions. In practice the cache is warm for any template the user
-    // saw in the dropdown long enough to click.
-    const tpl = templateId ? templateCache[templateId] : undefined;
-    const songFields = listSongFieldDescriptors(
-      draft,
-      projects.find((p) => p.id === currentProjectId)?.songCustomFieldSchema,
-    );
-    const suggestions = tpl ? suggestFieldMap(tpl.fields, songFields) : {};
-    const nextMap: Record<string, string> = {};
-    for (const [key, s] of Object.entries(suggestions)) {
-      if (s.kind !== "none") nextMap[key] = s.songFieldKey;
-    }
-    // Normalize empty maps to undefined: schema is .optional() and we want
-    // "absent" rather than "explicitly empty" to be the canonical form.
-    const persistedMap =
-      templateId && Object.keys(nextMap).length > 0 ? nextMap : undefined;
-    onChange((d) => {
-      if (which === "intro") {
-        return {
-          ...d,
-          defaultIntroTemplateId: templateId,
-          defaultIntroFieldMap: persistedMap,
-        };
-      }
-      return {
-        ...d,
-        defaultOutroTemplateId: templateId,
-        defaultOutroFieldMap: persistedMap,
-      };
-    });
-    // Exact-match rows don't need confirmation; they render the ✓ indicator.
-    // Treat them as confirmed-by-default so the parent state is consistent
-    // (clicking them later is a no-op).
-    const exacts = new Set<string>();
-    for (const [k, s] of Object.entries(suggestions)) {
-      if (s.kind === "exact") exacts.add(k);
-    }
-    if (which === "intro") setIntroConfirmed(exacts);
-    else setOutroConfirmed(exacts);
-  }
+  if (layout === "frame") return <EditorFrame header={header} left={left} main={main} />;
 
   return (
-    <>
-      <Panel title="Metadata" padding="md" style={{ marginBottom: 16 }}>
-        <Field label="Title" layout="inline">
-          <Input value={draft.title} onChange={(e) => setMeta("title", e.target.value)} />
-        </Field>
-        <Field label="Author" layout="inline">
-          <Input value={draft.author ?? ""} onChange={(e) => setMeta("author", e.target.value || undefined)} />
-        </Field>
-        <Field label="CCLI #" layout="inline">
-          <Input value={draft.ccliNumber ?? ""} onChange={(e) => setMeta("ccliNumber", e.target.value || undefined)} />
-        </Field>
-        <Field label="Copyright" layout="inline">
-          <Input value={draft.copyright ?? ""} onChange={(e) => setMeta("copyright", e.target.value || undefined)} />
-        </Field>
-        <Field
-          label="Template"
-          layout="inline"
-          hint="Default template used when this song is added to a show. Show rows can override per-row."
-        >
-          <Select
-            value={draft.defaultLyricTemplateId ?? ""}
-            onChange={(e) => setMeta("defaultLyricTemplateId", e.target.value || undefined)}
-          >
-            <option value="">(none — pick per show row)</option>
-            {!!draft.defaultLyricTemplateId &&
-              !templates.some((t) => t.id === draft.defaultLyricTemplateId) && (
-                <option value={draft.defaultLyricTemplateId}>
-                  {draft.defaultLyricTemplateId} (missing)
-                </option>
-              )}
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </Select>
-        </Field>
-      </Panel>
-
-      <Panel title="Custom Fields" padding="md" style={{ marginBottom: 16 }}>
-        {projectSchema.length === 0 && adHocKeys.length === 0 && (
-          <p style={{ fontSize: 12, color: colors.textDim, fontStyle: "italic", marginBottom: 8 }}>
-            No project-defined fields. Use “+ Add field” below to attach
-            song-specific data (e.g. hymn number, vocal arrangement).
-          </p>
-        )}
-        {projectSchema.map((f) => (
-          <Field key={f.key} label={f.label} layout="inline">
-            <Input
-              type={f.type === "number" ? "number" : "text"}
-              value={draft.customFields[f.key] ?? ""}
-              onChange={(e) => setCustomField(f.key, e.target.value)}
-            />
-          </Field>
-        ))}
-        {adHocKeys.length > 0 && (
-          <div
-            style={{
-              borderTop:
-                projectSchema.length > 0
-                  ? `1px solid ${colors.border}`
-                  : undefined,
-              paddingTop: projectSchema.length > 0 ? 8 : 0,
-              marginTop: projectSchema.length > 0 ? 8 : 0,
-            }}
-          >
-            {adHocKeys.map((k) => (
-              <Field key={k} label={k} layout="inline">
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Input
-                    value={draft.customFields[k] ?? ""}
-                    onChange={(e) => setCustomField(k, e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <Button
-                    onClick={() => removeCustomField(k)}
-                    size="sm"
-                    title="Remove this field"
-                    aria-label={`Remove field ${k}`}
-                  >
-                    ×
-                  </Button>
-                </div>
-              </Field>
-            ))}
-          </div>
-        )}
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            marginTop: 8,
-            paddingTop: 8,
-            borderTop: `1px solid ${colors.border}`,
-          }}
-        >
-          <Input
-            value={newFieldKey}
-            placeholder="new field key (e.g. vocal_arrangement)"
-            onChange={(e) => {
-              // Soft-normalise like CustomFieldSchemaModal — lowercase + spaces→_.
-              setNewFieldKey(e.target.value.toLowerCase().replace(/\s+/g, "_"));
-              if (newFieldError) setNewFieldError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addAdHocField();
-              }
-            }}
-            invalid={!!newFieldError}
-            style={{ flex: 1 }}
-          />
-          <Button onClick={addAdHocField} size="sm">+ Add field</Button>
-        </div>
-        {newFieldError && (
-          <div style={{ marginTop: 4, fontSize: 11, color: colors.errorText }}>
-            {newFieldError}
-          </div>
-        )}
-      </Panel>
-
-      <Panel title="Defaults" padding="md" style={{ marginBottom: 16 }}>
-        <Field
-          label="Intro template"
-          layout="inline"
-          hint="Played before the song's lyrics. Show rows can override per-row."
-        >
-          <Select
-            value={draft.defaultIntroTemplateId ?? ""}
-            onChange={(e) =>
-              changeSubTakeTemplate("intro", e.target.value || undefined)
-            }
-          >
-            <option value="">(none — skip intro by default)</option>
-            {!!draft.defaultIntroTemplateId &&
-              !templates.some((t) => t.id === draft.defaultIntroTemplateId) && (
-                <option value={draft.defaultIntroTemplateId}>
-                  {draft.defaultIntroTemplateId} (missing)
-                </option>
-              )}
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </Select>
-        </Field>
-        {introTemplate && (
-          <div style={{ marginLeft: 108, marginBottom: 12 }}>
-            <FieldMappingTable
-              templateFields={introTemplate.fields}
-              songFields={songFieldDescriptors}
-              value={draft.defaultIntroFieldMap ?? {}}
-              literals={draft.defaultIntroFieldLiterals ?? {}}
-              suggestions={introSuggestions}
-              confirmedKeys={introConfirmed}
-              onChange={(next) =>
-                setMeta(
-                  "defaultIntroFieldMap",
-                  Object.keys(next).length === 0 ? undefined : next,
-                )
-              }
-              onLiteralsChange={(next) =>
-                setMeta(
-                  "defaultIntroFieldLiterals",
-                  Object.keys(next).length === 0 ? undefined : next,
-                )
-              }
-              onConfirm={(key) =>
-                setIntroConfirmed((prev) => {
-                  if (prev.has(key)) return prev;
-                  const next = new Set(prev);
-                  next.add(key);
-                  return next;
-                })
-              }
-            />
-          </div>
-        )}
-
-        <Field
-          label="Outro template"
-          layout="inline"
-          hint="Played after the song's lyrics. Show rows can override per-row."
-        >
-          <Select
-            value={draft.defaultOutroTemplateId ?? ""}
-            onChange={(e) =>
-              changeSubTakeTemplate("outro", e.target.value || undefined)
-            }
-          >
-            <option value="">(none — skip outro by default)</option>
-            {!!draft.defaultOutroTemplateId &&
-              !templates.some((t) => t.id === draft.defaultOutroTemplateId) && (
-                <option value={draft.defaultOutroTemplateId}>
-                  {draft.defaultOutroTemplateId} (missing)
-                </option>
-              )}
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </Select>
-        </Field>
-        {outroTemplate && (
-          <div style={{ marginLeft: 108, marginBottom: 12 }}>
-            <FieldMappingTable
-              templateFields={outroTemplate.fields}
-              songFields={songFieldDescriptors}
-              value={draft.defaultOutroFieldMap ?? {}}
-              literals={draft.defaultOutroFieldLiterals ?? {}}
-              suggestions={outroSuggestions}
-              confirmedKeys={outroConfirmed}
-              onChange={(next) =>
-                setMeta(
-                  "defaultOutroFieldMap",
-                  Object.keys(next).length === 0 ? undefined : next,
-                )
-              }
-              onLiteralsChange={(next) =>
-                setMeta(
-                  "defaultOutroFieldLiterals",
-                  Object.keys(next).length === 0 ? undefined : next,
-                )
-              }
-              onConfirm={(key) =>
-                setOutroConfirmed((prev) => {
-                  if (prev.has(key)) return prev;
-                  const next = new Set(prev);
-                  next.add(key);
-                  return next;
-                })
-              }
-            />
-          </div>
-        )}
-
-        <Field
-          label="Default channel"
-          layout="inline"
-          hint="Picked first when no row or show overrides it. Falls through to the lyric template's default if unset."
-        >
-          <Select
-            value={draft.defaultChannel ?? ""}
-            onChange={(e) =>
-              setMeta("defaultChannel", e.target.value || undefined)
-            }
-          >
-            <option value="">(none)</option>
-            {/* Preserve out-of-list values so a previously-saved channel that
-                was deleted or hidden still shows up rather than silently
-                dropping. */}
-            {draft.defaultChannel &&
-              !channelChoices.some((c) => c.id === draft.defaultChannel) && (
-                <option value={draft.defaultChannel}>
-                  {draft.defaultChannel} (missing)
-                </option>
-              )}
-            {channelChoices.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </Select>
-        </Field>
-      </Panel>
-
-      <h2 style={{ fontSize: 14, marginBottom: 8 }}>Sections</h2>
-      {draft.sections.length === 0 && (
-        <p style={{ fontSize: 12, color: colors.textDim, fontStyle: "italic", marginBottom: 12 }}>
-          No sections yet. Add one below or paste lyrics.
-        </p>
-      )}
-      {draft.sections.map((sec, secIdx) => {
-        const isDragging = dragSecIdx === secIdx;
-        const dropAtMe = secDropZone?.idx === secIdx ? secDropZone.pos : null;
-        return (
-          <div
-            key={sec.id}
-            onDragOver={(e) => {
-              if (dragSecIdx === null) return;
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              const pos: "before" | "after" =
-                e.clientY < r.top + r.height / 2 ? "before" : "after";
-              setSecDropZone({ idx: secIdx, pos });
-            }}
-            onDragLeave={(e) => {
-              // Only clear when leaving the wrapper itself, not children.
-              if (e.currentTarget === e.target) setSecDropZone(null);
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              const sourceIdxStr = e.dataTransfer.getData("text/plain");
-              const sourceIdx = Number(sourceIdxStr);
-              const z = secDropZone;
-              setSecDropZone(null);
-              setDragSecIdx(null);
-              if (Number.isNaN(sourceIdx) || !z) return;
-              const target = z.pos === "before" ? z.idx : z.idx + 1;
-              moveSection(sourceIdx, target);
-            }}
-            style={{
-              marginBottom: 16,
-              // Raw 2px borders here are intentional drop indicators —
-              // not the standardized radius/border tokens.
-              borderTop: dropAtMe === "before" ? `2px solid ${colors.green}` : "2px solid transparent",
-              borderBottom: dropAtMe === "after" ? `2px solid ${colors.green}` : "2px solid transparent",
-              opacity: isDragging ? 0.5 : 1,
-            }}
-          >
-            <Panel padding="md">
-              <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
-                <span
-                  draggable
-                  onDragStart={(e) => {
-                    setDragSecIdx(secIdx);
-                    e.dataTransfer.effectAllowed = "move";
-                    e.dataTransfer.setData("text/plain", String(secIdx));
-                  }}
-                  onDragEnd={() => {
-                    setDragSecIdx(null);
-                    setSecDropZone(null);
-                  }}
-                  title="Drag to reorder section"
-                  aria-hidden
-                  style={{
-                    cursor: "grab",
-                    color: colors.textDim,
-                    fontSize: 16,
-                    padding: "0 4px",
-                    userSelect: "none",
-                  }}
-                >
-                  ⋮⋮
-                </span>
-                <IconButton
-                  onClick={() => nudgeSection(secIdx, -1)}
-                  disabled={secIdx === 0}
-                  title="Move section up"
-                  aria-label={`Move ${sec.label || "section"} up`}
-                >
-                  <ArrowUp size={14} aria-hidden />
-                </IconButton>
-                <IconButton
-                  onClick={() => nudgeSection(secIdx, 1)}
-                  disabled={secIdx === draft.sections.length - 1}
-                  title="Move section down"
-                  aria-label={`Move ${sec.label || "section"} down`}
-                >
-                  <ArrowDown size={14} aria-hidden />
-                </IconButton>
-                <Input
-                  value={sec.label}
-                  onChange={(e) => updateSection(secIdx, { label: e.target.value })}
-                  aria-label="Section label"
-                  style={{ fontWeight: 600, flex: 1 }}
-                />
-                <Select
-                  aria-label="Section kind"
-                  value={sec.kind}
-                  onChange={(e) => updateSection(secIdx, { kind: e.target.value as Section["kind"] })}
-                  style={{ width: "auto" }}
-                >
-                  {SECTION_KINDS.map((k) => (
-                    <option key={k} value={k}>{KIND_OPTION_LABEL[k]}</option>
-                  ))}
-                </Select>
-                <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
-                  {sec.id}
-                </span>
-                <Button
-                  onClick={() => removeSection(secIdx)}
-                  variant="destructive"
-                  size="sm"
-                  disabled={draft.sections.length <= 1}
-                  title={
-                    draft.sections.length <= 1
-                      ? "A song must keep at least one section"
-                      : "Delete section"
-                  }
-                >
-                  Delete section
-                </Button>
-              </div>
-              {sec.slides.map((slide, slideIdx) => {
-                const stats = lyricSlideStats(slide.lines);
-                const over = stats.overChars || stats.overLines;
-                const statsId = `slide-stats-${sec.id}-${slide.id}`;
-                return (
-                  <div key={slide.id} style={{ marginBottom: 6 }}>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <Textarea
-                        value={slide.lines.join("\n")}
-                        onChange={(e) => updateSlide(secIdx, slideIdx, e.target.value.split("\n"))}
-                        rows={2}
-                        mono
-                        invalid={over}
-                        aria-label={`${sec.label || "Section"}, slide ${slideIdx + 1}`}
-                        aria-describedby={statsId}
-                        style={{ flex: 1 }}
-                      />
-                      <Button
-                        onClick={() => removeSlide(secIdx, slideIdx)}
-                        size="sm"
-                        disabled={sec.slides.length <= 1}
-                        aria-label={`Remove slide ${slideIdx + 1} of ${sec.label || "section"}`}
-                        title={sec.slides.length <= 1 ? "A section must keep at least one slide" : "Remove slide"}
-                      >
-                        <X size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
-                      </Button>
-                    </div>
-                    <div
-                      id={statsId}
-                      style={{ fontSize: 10, marginTop: 2, color: over ? colors.errorText : colors.textDim }}
-                    >
-                      {stats.lines} line{stats.lines === 1 ? "" : "s"} · {stats.chars} chars
-                      {stats.overLines && ` · over ${LYRIC_SLIDE_BUDGET.maxLines} lines`}
-                      {stats.overChars && ` · over ${LYRIC_SLIDE_BUDGET.maxChars} chars`}
-                      {over && " — may not fit the lyric template"}
-                    </div>
-                  </div>
-                );
-              })}
-              <Button onClick={() => addSlide(secIdx)} size="sm">+ Slide</Button>
-            </Panel>
-          </div>
-        );
-      })}
-
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <Button onClick={() => addSection("verse")} size="sm">+ Verse</Button>
-        <Button onClick={() => addSection("chorus")} size="sm">+ Chorus</Button>
-        <Button onClick={() => addSection("bridge")} size="sm">+ Bridge</Button>
-        <Select
-          value=""
-          onChange={(e) => {
-            const v = e.target.value as Section["kind"] | "";
-            if (!v) return;
-            addSection(v);
-            e.currentTarget.value = "";
-          }}
-          aria-label="Add other section"
-          style={{ width: "auto" }}
-        >
-          <option value="">+ Other section…</option>
-          <option value="tag">Tag</option>
-          <option value="intro">Intro</option>
-          <option value="outro">Outro</option>
-          <option value="other">Other</option>
-        </Select>
+    <div style={{ display: "flex", flexDirection: "column", minWidth: 0, border: `1px solid ${colors.border}`, borderRadius: 6 }}>
+      <div style={{ borderBottom: `1px solid ${colors.border}` }}>{header}</div>
+      <ArrangementChips song={draft} onChange={onChange} />
+      <SectionsList song={draft} selectedId={section?.id ?? null} onSelect={selectSection} onChange={onChange} />
+      <div style={{ borderTop: `1px solid ${colors.border}` }}>{main}</div>
+      <div style={{ borderTop: `1px solid ${colors.border}` }}>
+        <SongDetails draft={draft} onChange={onChange} />
       </div>
-
-      <Panel title="Default Arrangement" padding="md" style={{ marginBottom: 16 }}>
-        <ArrangementEditor
-          arrangement={draft.defaultArrangement}
-          sections={draft.sections}
-          onChange={(next) => setMeta("defaultArrangement", next)}
-        />
-        <p style={{ fontSize: 10, color: colors.textDim, marginTop: 4 }}>
-          Sections can repeat. Drag chips or use the arrows to reorder.
-        </p>
-      </Panel>
-      {dialog}
-    </>
+    </div>
   );
 }
 
-const SECTION_KINDS: Section["kind"][] = ["verse", "chorus", "bridge", "tag", "intro", "outro", "other"];
-
-/** Kind names in the kind picker: Title Case, matching the + Verse / + Tag buttons. */
-const KIND_OPTION_LABEL: Record<Section["kind"], string> = {
-  verse: "Verse",
-  chorus: "Chorus",
-  bridge: "Bridge",
-  tag: "Tag",
-  intro: "Intro",
-  outro: "Outro",
-  other: "Other",
-};
-
-const KIND_LABEL: Record<Section["kind"], string> = {
-  verse: "Verse",
-  chorus: "Chorus",
-  bridge: "Bridge",
-  tag: "Tag",
-  intro: "Intro",
-  outro: "Outro",
-  other: "Section",
-};
-
-function ArrangementEditor({
-  arrangement,
-  sections,
+/** Main pane: the selected section's header, its slide thumbnails and the selected slide's text. */
+function SectionEditor({
+  song,
+  section,
+  slideId,
+  onSelectSlide,
+  onSelectSection,
   onChange,
 }: {
-  arrangement: string[];
-  sections: Section[];
-  onChange: (next: string[]) => void;
+  song: Song;
+  section: Section;
+  slideId: string | null;
+  onSelectSlide(id: string): void;
+  onSelectSection(id: string): void;
+  onChange: Dispatch<SetStateAction<Song>>;
 }) {
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dropZone, setDropZone] = useState<{ idx: number; pos: "before" | "after" } | null>(null);
+  const toast = useToast();
+  const [label, setLabel] = useState(section.label);
+  const [localText, setLocalText] = useState<{ slideId: string; text: string } | null>(null);
+  useEffect(() => setLabel(section.label), [section.label]);
 
-  function move(from: number, to: number) {
-    if (from === to) return;
-    const next = arrangement.slice();
-    const [removed] = next.splice(from, 1);
-    if (removed === undefined) return;
-    const adjustedTo = from < to ? to - 1 : to;
-    next.splice(adjustedTo, 0, removed);
-    onChange(next);
+  const lastSection = song.sections.length <= 1;
+  const singleSlide = section.slides.length <= 1;
+  const slideIdx = Math.max(0, section.slides.findIndex((s) => s.id === slideId));
+  const slide = section.slides[slideIdx] ?? null;
+  const color = sectionKindColor[section.kind];
+
+  function commitLabel() {
+    const want = label.trim() || SECTION_KIND_NAMES[section.kind];
+    onChange((d) => ({
+      ...d,
+      sections: d.sections.map((s) => (s.id === section.id ? { ...s, label: uniqueLabel(d, want, section.id) } : s)),
+    }));
   }
-  function remove(idx: number) {
-    onChange(arrangement.filter((_, i) => i !== idx));
+
+  function deleteSection() {
+    if (lastSection) return;
+    const r = removeSection(song, section.id);
+    const idx = song.sections.findIndex((s) => s.id === section.id);
+    const neighbour = song.sections[idx + 1] ?? song.sections[idx - 1];
+    onChange((d) => removeSection(d, section.id).song);
+    if (neighbour) onSelectSection(neighbour.id);
+    toast({
+      message: `Deleted “${section.label}”`,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          onChange((d) => restoreSection(d, r.removed));
+          onSelectSection(section.id);
+        },
+      },
+    });
   }
-  function add(sectionId: string) {
-    onChange([...arrangement, sectionId]);
+
+  function deleteSlide(id: string) {
+    const r = removeSlide(song, section.id, id);
+    if (!r.removed) return;
+    const removed = r.removed;
+    onChange((d) => removeSlide(d, section.id, id).song);
+    toast({
+      message: `Deleted slide ${removed.index + 1} of “${section.label}”`,
+      action: { label: "Undo", onClick: () => onChange((d) => restoreSlide(d, removed)) },
+    });
   }
+
+  function addSlide() {
+    const id = nextSlideId(song, section);
+    onChange((d) => ({
+      ...d,
+      sections: d.sections.map((s) => (s.id === section.id ? { ...s, slides: [...s.slides, { id, lines: [""] }] } : s)),
+    }));
+    onSelectSlide(id);
+  }
+
+  function setSlideText(text: string) {
+    if (!slide) return;
+    setLocalText({ slideId: slide.id, text });
+    const lines = linesFromText(text);
+    onChange((d) => ({
+      ...d,
+      sections: d.sections.map((s) =>
+        s.id === section.id ? { ...s, slides: s.slides.map((sl) => (sl.id === slide.id ? { ...sl, lines } : sl)) } : s,
+      ),
+    }));
+  }
+
+  const cards: SlideCard[] = section.slides.map((sl, i) => ({
+    id: sl.id,
+    templateId: song.defaultLyricTemplateId ?? null,
+    data: { text: slideText(sl) },
+    caption: `Slide ${i + 1}`,
+    group: i === 0 ? { label: section.label, color } : null,
+  }));
+
+  const menuItems = (id: string): MenuItem[] => [
+    {
+      id: "delete",
+      label: "Delete slide",
+      danger: true,
+      disabled: singleSlide ? "A section must keep at least one slide" : false,
+      onSelect: () => deleteSlide(id),
+    },
+  ];
+
+  const text = slide ? slideEditorText(localText?.slideId === slide.id ? localText.text : null, slide.lines) : "";
 
   return (
-    <div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-        {arrangement.length === 0 && (
-          <p style={{ color: colors.textDim, fontSize: 12, fontStyle: "italic" }}>
-            Empty arrangement. Add sections below.
-          </p>
-        )}
-        {arrangement.map((sectionId, i) => {
-          const section = sections.find((s) => s.id === sectionId);
-          const isDragging = dragIdx === i;
-          const dropAtMe = dropZone?.idx === i ? dropZone.pos : null;
-          return (
-            <div
-              key={`${sectionId}@${i}`}
-              draggable
-              onDragStart={(e) => {
-                setDragIdx(i);
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", String(i));
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                const pos: "before" | "after" = e.clientY < r.top + r.height / 2 ? "before" : "after";
-                setDropZone({ idx: i, pos });
-              }}
-              onDragLeave={() => setDropZone(null)}
-              onDrop={(e) => {
-                e.preventDefault();
-                const sourceIdxStr = e.dataTransfer.getData("text/plain");
-                const sourceIdx = Number(sourceIdxStr);
-                const z = dropZone;
-                setDropZone(null);
-                if (Number.isNaN(sourceIdx) || !z) return;
-                const target = z.pos === "before" ? z.idx : z.idx + 1;
-                move(sourceIdx, target);
-              }}
-              onDragEnd={() => { setDragIdx(null); setDropZone(null); }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 10px",
-                borderRadius: 4,
-                border: `1px solid ${colors.border}`,
-                background: colors.panel2,
-                opacity: isDragging ? 0.5 : 1,
-                // Raw 2px borders here are intentional drag indicators —
-                // not the standardized radius/border tokens.
-                borderTop: dropAtMe === "before" ? `2px solid ${colors.green}` : undefined,
-                borderBottom: dropAtMe === "after" ? `2px solid ${colors.green}` : `1px solid ${colors.border}`,
-                cursor: "grab",
-                fontSize: 12,
-              }}
-            >
-              <span style={{ color: colors.textDim, width: 24, textAlign: "right" }}>{i + 1}.</span>
-              <IconButton
-                onClick={() => onChange(moveByOne(arrangement, i, -1))}
-                disabled={i === 0}
-                size={22}
-                title="Move earlier"
-                aria-label={`Move ${section?.label ?? sectionId} (position ${i + 1}) earlier`}
-              >
-                <ArrowUp size={12} aria-hidden />
-              </IconButton>
-              <IconButton
-                onClick={() => onChange(moveByOne(arrangement, i, 1))}
-                disabled={i === arrangement.length - 1}
-                size={22}
-                title="Move later"
-                aria-label={`Move ${section?.label ?? sectionId} (position ${i + 1}) later`}
-              >
-                <ArrowDown size={12} aria-hidden />
-              </IconButton>
-              <span aria-hidden style={{ color: colors.textDim }}>⋮⋮</span>
-              <span style={{ fontWeight: 600 }}>{section?.label ?? sectionId}</span>
-              <span style={{ fontSize: 10, color: colors.textDim, fontFamily: "ui-monospace, monospace" }}>
-                {sectionId}{!section && " (missing)"}
-              </span>
-              <IconButton
-                onClick={() => remove(i)}
-                size={22}
-                title="Remove from arrangement"
-                aria-label={`Remove ${section?.label ?? sectionId} (position ${i + 1}) from arrangement`}
-                style={{ marginLeft: "auto", color: colors.textDim }}
-              >
-                <X size={12} aria-hidden />
-              </IconButton>
-            </div>
-          );
-        })}
+    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: `1px solid ${colors.border}` }}>
+        <span aria-hidden style={{ width: 3, height: 24, borderRadius: 2, background: color, flexShrink: 0 }} />
+        <h2 style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", margin: 0 }}>
+          {section.label}
+        </h2>
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={commitLabel}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          aria-label="Section label"
+          title={`Section id: ${section.id}`}
+          style={{ fontWeight: 600, flex: "1 1 auto", minWidth: 0, maxWidth: 320 }}
+        />
+        <Select
+          aria-label="Section kind"
+          value={section.kind}
+          onChange={(e) => onChange((d) => setSectionKind(d, section.id, e.target.value as SectionKind))}
+          style={{ width: "auto" }}
+        >
+          {(Object.keys(SECTION_KIND_NAMES) as SectionKind[]).map((k) => (
+            <option key={k} value={k}>
+              {SECTION_KIND_NAMES[k]}
+            </option>
+          ))}
+        </Select>
+        <span style={{ flex: 1 }} />
+        <IconButton
+          aria-label={`Delete ${section.label}`}
+          title={lastSection ? "A song must keep at least one section" : `Delete ${section.label}`}
+          tone="danger"
+          disabled={lastSection}
+          onClick={deleteSection}
+        >
+          <Trash2 size={14} aria-hidden />
+        </IconButton>
       </div>
-      <Select
-        value=""
-        aria-label="Add section to arrangement"
-        onChange={(e) => {
-          const v = e.target.value;
-          if (v) add(v);
-          e.currentTarget.value = "";
-        }}
-        style={{ width: "auto" }}
-      >
-        <option value="">+ Add section…</option>
-        {sections.map((s) => (
-          <option key={s.id} value={s.id}>{s.label} ({s.id})</option>
-        ))}
-      </Select>
+      <SlideThumbGrid
+        slides={cards}
+        selectedId={slide?.id ?? null}
+        onSelect={onSelectSlide}
+        onReorder={(from, to) => onChange((d) => moveSlideWithin(d, section.id, from, to))}
+        onAdd={addSlide}
+        addLabel="Add slide"
+        menuItems={menuItems}
+        minCardWidth={150}
+      />
+      {slide && (
+        <div style={{ borderTop: `1px solid ${colors.border}` }}>
+          <SlideTextEditor
+            key={slide.id}
+            heading={`Edit slide ${slideIdx + 1}`}
+            fields={LYRIC_FIELDS}
+            value={{ text }}
+            onChange={(v) => setSlideText(v.text ?? "")}
+            budget={LYRIC_SLIDE_BUDGET}
+          />
+        </div>
+      )}
     </div>
   );
 }

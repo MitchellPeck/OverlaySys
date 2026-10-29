@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { IconButton, Input, Pill, Select, colors } from "@overlaysys/ui";
 import type {
   FieldDescriptor,
@@ -46,13 +46,13 @@ export interface FieldMappingTableProps {
  * SongOverrideEditor, and the SongRow editor.
  *
  * Each row is in one of three states:
- *  - **Unmapped** — Select shows "(none)". Status cell may show a "suggested"
+ *  - **Unmapped** — Select shows "(none)". Status cell may show a "Suggested"
  *    pill if `suggestions[key]` carries an unconfirmed proposal.
  *  - **Mapped to song field** — Select shows the chosen song field. Status
- *    cell shows ✓ for exact-key matches.
- *  - **Literal** — Select shows "Literal value", a text input appears next to
- *    it for the literal template string, with a × to revert. Status cell is
- *    hidden in this mode (suggestions don't apply to literals).
+ *    cell shows a check for exact-key matches.
+ *  - **Custom text** — picked via "Custom text…"; a text input replaces the
+ *    Select for the literal template string, with an X button to revert.
+ *    Status cell is empty in this mode (suggestions don't apply to literals).
  *
  * Bindings: literal entries take priority over map entries when both exist for
  * the same template field. Matches resolveIntroTake / resolveOutroTake.
@@ -108,7 +108,7 @@ export function FieldMappingTable({
   if (templateFields.length === 0) {
     return (
       <p style={{ fontSize: 12, color: colors.textDim, fontStyle: "italic", margin: 0 }}>
-        This template has no fields to map.
+        This template has no fields to fill.
       </p>
     );
   }
@@ -117,18 +117,29 @@ export function FieldMappingTable({
     "Use {key} to insert song fields (e.g. {title}, {author}, {hymnNumber}). " +
     "Write {{ for a literal { character.";
 
+  const headStyle = { fontSize: 11, fontWeight: 600, color: colors.textMuted } as const;
+
   return (
     <div
       role="table"
+      aria-label="Template fields"
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(120px, 1fr) auto minmax(180px, 1.4fr) auto",
-        gap: 6,
+        gridTemplateColumns: "auto minmax(0, 1fr) auto",
+        columnGap: 8,
+        rowGap: 6,
         alignItems: "center",
         fontSize: 12,
+        minWidth: 0,
       }}
     >
+      <div role="row" style={{ display: "contents" }}>
+        <div role="columnheader" style={headStyle}>Template field</div>
+        <div role="columnheader" style={headStyle}>Filled with</div>
+        <div role="columnheader" aria-label="Match" />
+      </div>
       {templateFields.map((tf) => {
+        const label = tf.label || tf.key;
         const suggestion = suggestions[tf.key] ?? { kind: "none" as const };
         const current = value[tf.key] ?? "";
         const literal = literals[tf.key];
@@ -142,64 +153,43 @@ export function FieldMappingTable({
         const showExactCheck =
           !isLiteral && suggestion.kind === "exact" && current === suggestion.songFieldKey;
         return (
-          <div key={tf.key} style={{ display: "contents" }}>
+          <div key={tf.key} role="row" aria-label={label} style={{ display: "contents" }}>
             <div
               role="cell"
-              title={tf.key}
+              title={label}
               style={{
-                fontWeight: 600,
                 color: colors.text,
+                maxWidth: 140,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
             >
-              {tf.label || tf.key}
-              <span
-                style={{
-                  marginLeft: 6,
-                  color: colors.textDim,
-                  fontFamily: "ui-monospace, monospace",
-                  fontSize: 10,
-                  fontWeight: 400,
-                }}
-              >
-                {tf.key}
-              </span>
+              {label}
             </div>
-            <div role="cell" aria-hidden style={{ color: colors.textDim }}>
-              ←
-            </div>
-            <div role="cell">
+            <div role="cell" style={{ minWidth: 0 }}>
               {isLiteral ? (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <span
-                    style={{
-                      color: colors.textDim,
-                      fontSize: 11,
-                      fontStyle: "italic",
-                      flexShrink: 0,
-                    }}
-                  >
-                    Literal:
-                  </span>
+                <div style={{ display: "flex", gap: 4, alignItems: "center", minWidth: 0 }}>
                   <Input
                     value={literal}
                     onChange={(e) => setLiteralValue(tf.key, e.target.value)}
-                    placeholder="(empty)"
+                    placeholder="Custom text"
                     title={literalHint}
+                    aria-label={`Custom text for ${label}`}
                     style={{ flex: 1, minWidth: 0 }}
                   />
                   <IconButton
                     onClick={() => exitLiteralMode(tf.key)}
-                    title="Revert to song-field mapping"
+                    title="Use a song field instead"
+                    aria-label={`Use a song field for ${label}`}
                   >
-                    ×
+                    <X size={14} aria-hidden />
                   </IconButton>
                 </div>
               ) : (
                 <Select
                   value={current}
+                  aria-label={`${label} filled with`}
                   onChange={(e) => {
                     if (e.target.value === LITERAL_SENTINEL) {
                       enterLiteralMode(tf.key);
@@ -207,7 +197,7 @@ export function FieldMappingTable({
                       setMapping(tf.key, e.target.value);
                     }
                   }}
-                  style={{ width: "100%" }}
+                  style={{ width: "100%", minWidth: 0 }}
                 >
                   <option value="">(none)</option>
                   {/* Preserve out-of-list values rather than silently drop them
@@ -221,17 +211,14 @@ export function FieldMappingTable({
                       {sf.label}
                     </option>
                   ))}
-                  <option value={LITERAL_SENTINEL}>— Literal value…</option>
+                  <option value={LITERAL_SENTINEL}>Custom text…</option>
                 </Select>
               )}
             </div>
-            <div role="cell" style={{ minWidth: 90 }}>
+            <div role="cell" style={{ display: "flex", alignItems: "center" }}>
               {showExactCheck && (
-                <span
-                  title="Exact key match"
-                  style={{ color: colors.green, fontWeight: 700 }}
-                >
-                  <Check size={14} aria-hidden style={{ verticalAlign: "-2px" }} />
+                <span title="Same name as the song field" style={{ color: colors.textDim, display: "inline-flex" }}>
+                  <Check size={14} aria-label="Matched by name" />
                 </span>
               )}
               {showSuggestedPill && (
@@ -239,16 +226,10 @@ export function FieldMappingTable({
                   type="button"
                   onClick={() => onConfirm(tf.key)}
                   title="Click to confirm this suggestion"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
+                  aria-label={`Confirm the suggested match for ${label}`}
+                  style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
                 >
-                  <Pill tone="warn">
-                    suggested
-                  </Pill>
+                  <Pill tone="warn">Suggested</Pill>
                 </button>
               )}
             </div>
