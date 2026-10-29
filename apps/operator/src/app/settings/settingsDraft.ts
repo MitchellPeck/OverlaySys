@@ -1,10 +1,11 @@
 import { deepEqual } from "../../lib/diffEntity";
 
-export type DraftState<T> = { saved: T | null; draft: T | null; saving: boolean; error: string | null };
+export type DraftState<T> = { saved: T | null; draft: T | null; saving: boolean; error: string | null; changedElsewhere?: boolean };
 
 export type DraftAction<T> =
   | { type: "loaded"; value: T }
   | { type: "edit"; value: T }
+  | { type: "update"; fn: (p: T) => T }
   | { type: "saveStart" }
   | { type: "saveOk"; value: T }
   | { type: "saveFail"; error: string }
@@ -12,10 +13,17 @@ export type DraftAction<T> =
 
 export function draftReducer<T>(s: DraftState<T>, a: DraftAction<T>): DraftState<T> {
   switch (a.type) {
-    case "loaded":
+    case "loaded": {
+      // Dirty draft: take the new baseline but keep the operator's edits.
+      if (s.saved !== null && s.draft !== null && !deepEqual(s.saved, s.draft)) {
+        return { ...s, saved: a.value, changedElsewhere: !deepEqual(a.value, s.draft) };
+      }
       return { saved: a.value, draft: a.value, saving: false, error: null };
+    }
     case "edit":
       return { ...s, draft: a.value };
+    case "update":
+      return s.draft === null ? s : { ...s, draft: a.fn(s.draft) };
     case "saveStart":
       return { ...s, saving: true, error: null };
     case "saveOk":

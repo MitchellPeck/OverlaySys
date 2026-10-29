@@ -8,7 +8,7 @@ import { confirm } from "./Dialog";
 import { colors, fontSize } from "./tokens";
 import { saveBarState } from "./saveBarState";
 
-type Props = {
+export type SaveBarProps = {
   dirty: boolean;
   saving: boolean;
   onSave(): void;
@@ -20,7 +20,7 @@ function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
 }
 
-export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason }: Props) {
+export function SaveBar({ dirty, saving, onSave, onRevert, disabledReason }: SaveBarProps) {
   const [justSaved, setJustSaved] = useState(false);
   const wasSaving = useRef(false);
   useEffect(() => {

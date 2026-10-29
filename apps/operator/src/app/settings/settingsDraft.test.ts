@@ -52,4 +52,22 @@ describe("settingsDraft", () => {
     );
     expect(saveBarProps(s, { connected: true }).disabledReason).toBeUndefined();
   });
+  it("loaded while dirty keeps the draft, updates the baseline and flags it", () => {
+    const dirty = draftReducer(loaded, { type: "edit", value: { a: 2, b: "x" } });
+    const s = draftReducer(dirty, { type: "loaded", value: { a: 5, b: "x" } });
+    expect(s.draft).toEqual({ a: 2, b: "x" });
+    expect(s.saved).toEqual({ a: 5, b: "x" });
+    expect(s.changedElsewhere).toBe(true);
+    expect(isDirty(s)).toBe(true);
+  });
+  it("loaded while clean adopts the new value", () => {
+    const s = draftReducer(loaded, { type: "loaded", value: { a: 7, b: "q" } });
+    expect(s.draft).toEqual({ a: 7, b: "q" });
+    expect(s.changedElsewhere).toBeFalsy();
+  });
+  it("two functional updates in one tick both apply", () => {
+    let s = draftReducer(loaded, { type: "update", fn: (p) => ({ ...p, a: p.a + 1 }) });
+    s = draftReducer(s, { type: "update", fn: (p) => ({ ...p, a: p.a + 1 }) });
+    expect(s.draft).toEqual({ a: 3, b: "x" });
+  });
 });

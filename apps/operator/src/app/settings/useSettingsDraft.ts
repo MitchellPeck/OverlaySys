@@ -1,20 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { toast } from "@overlaysys/ui";
+import { toast, type SaveBarProps } from "@overlaysys/ui";
 import { ackErrorText } from "@/lib/awaitAck";
 import { deepEqual } from "@/lib/diffEntity";
 import { useConnection } from "@/lib/useConnection";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { draftReducer, isDirty, saveBarProps, type DraftAction, type DraftState } from "./settingsDraft";
 
-export type SettingsBar = {
-  dirty: boolean;
-  saving: boolean;
-  onSave: () => void;
-  onRevert: () => void;
-  disabledReason?: string;
-};
+export type SettingsBar = SaveBarProps;
 
 export type UseSettingsDraftOpts<T> = {
   load(): Promise<T>;
@@ -30,6 +24,8 @@ export function useSettingsDraft<T>(opts: UseSettingsDraftOpts<T>): {
   set(v: T | ((p: T) => T)): void;
   bar: SettingsBar;
   error: string | null;
+  /** True when the saved value changed remotely while the draft had unsaved edits. */
+  changedElsewhere: boolean;
   loading: boolean;
   reload(): void;
 } {
@@ -69,11 +65,8 @@ export function useSettingsDraft<T>(opts: UseSettingsDraftOpts<T>): {
   }, [nonce]);
 
   const set = useCallback((v: T | ((p: T) => T)) => {
-    if (typeof v === "function") {
-      const cur = stateRef.current.draft;
-      if (cur === null) return;
-      dispatch({ type: "edit", value: (v as (p: T) => T)(cur) });
-    } else dispatch({ type: "edit", value: v });
+    if (typeof v === "function") dispatch({ type: "update", fn: v as (p: T) => T });
+    else dispatch({ type: "edit", value: v });
   }, []);
 
   const invalidReason = state.draft !== null && opts.validate ? opts.validate(state.draft) : null;
@@ -123,5 +116,5 @@ export function useSettingsDraft<T>(opts: UseSettingsDraftOpts<T>): {
     [sb.dirty, sb.saving, sb.disabledReason, onSave, onRevert],
   );
 
-  return { value: state.draft, set, bar, error: state.error ?? loadError, loading, reload };
+  return { value: state.draft, set, bar, error: state.error ?? loadError, changedElsewhere: !!state.changedElsewhere, loading, reload };
 }
