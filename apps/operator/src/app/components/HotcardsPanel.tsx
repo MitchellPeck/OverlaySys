@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { hotkeyConflicts, type HotcardMeta } from "@overlaysys/core";
-import { Button, Kbd, PanelHeader, colors } from "@overlaysys/ui";
+import { Button, Kbd, OfflineState, colors } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { hotcardAirState, type AirState } from "@/lib/rowAirState";
 import { hotcardFireMessage } from "@/lib/shortcutGuards";
 import { useWs } from "@/lib/useWs";
+import { useConnection } from "@/lib/useConnection";
+import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { hotcardImageValue } from "@/lib/liveDrawerModel";
+import { useLivePrefs } from "../hooks/useLivePrefs";
 
 type View = "grid" | "list";
 const VIEW_STORAGE_KEY = "overlaysys:hotcardsView";
@@ -15,6 +19,8 @@ const VIEW_STORAGE_KEY = "overlaysys:hotcardsView";
 export function HotcardsPanel() {
   const { send } = useWs();
   const conn = useStore((s) => s.conn);
+  const { retry } = useConnection();
+  const { doubleClickTakes } = useLivePrefs();
   const allHotcards = useStore((s) => s.hotcards);
   const currentProjectId = useStore((s) => s.currentProjectId);
   // Only this project's cards: F-keys are scoped to the project too.
@@ -72,41 +78,43 @@ export function HotcardsPanel() {
   }
 
   const header = (
-    <PanelHeader
-      title={`Hotcards · ${hotcards.length}`}
-      right={
-        <>
-          <ViewToggleButton active={view === "list"} onClick={() => persistView("list")} label="List" />
-          <ViewToggleButton active={view === "grid"} onClick={() => persistView("grid")} label="Grid" />
-          <Link href="/hotcards" style={{ color: colors.textDim, fontSize: 11, textDecoration: "none" }}>
-            Manage
-          </Link>
-        </>
-      }
-    />
+    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 0" }}>
+      <span style={{ fontSize: 11, color: colors.textDim, flex: 1 }}>
+        {hotcards.length} {hotcards.length === 1 ? "card" : "cards"}
+      </span>
+      <ViewToggleButton active={view === "list"} onClick={() => persistView("list")} label="List" />
+      <ViewToggleButton active={view === "grid"} onClick={() => persistView("grid")} label="Grid" />
+      <Link href="/hotcards" style={{ color: colors.textDim, fontSize: 11, textDecoration: "none" }}>
+        Manage
+      </Link>
+    </div>
   );
 
   if (hotcards.length === 0) {
     return (
-      <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        {header}
-        <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
-          <p style={{ color: colors.textDim, fontSize: 12 }}>
-            No hotcards yet.{" "}
-            <Link href="/hotcards" style={{ color: colors.accent2 }}>
-              Create one
-            </Link>
-            {" "}to keep reusable graphics at hand.
-          </p>
+      <section style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: 8 }}>
+          {disconnected ? (
+            <OfflineState noun="hotcards" onRetry={retry} compact />
+          ) : (
+            <p style={{ color: colors.textDim, fontSize: 12, margin: 0 }}>
+              No hotcards yet.{" "}
+              <Link href="/hotcards" style={{ color: colors.accent2 }}>
+                Create one
+              </Link>{" "}
+              to keep reusable graphics at hand.
+            </p>
+          )}
         </div>
       </section>
     );
   }
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <section style={{ display: "flex", flexDirection: "column" }}>
       {header}
-      <div style={{ padding: 12, overflow: "auto", flex: 1, minHeight: 0 }}>
+      <div style={{ padding: 8 }}>
+        {disconnected && <OfflineState noun="hotcards" variant="stale" onRetry={retry} />}
         {view === "grid" ? (
           <GridView
             hotcards={hotcards}
@@ -115,6 +123,7 @@ export function HotcardsPanel() {
             onSelect={setSelectedHotcard}
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
+            onDouble={(h) => fire(h, doubleClickTakes ? "program" : "preview")}
             air={air}
             conflicted={conflicted}
             disconnected={disconnected}
@@ -127,6 +136,7 @@ export function HotcardsPanel() {
             onSelect={setSelectedHotcard}
             onCue={(h) => fire(h, "preview")}
             onTake={(h) => fire(h, "program")}
+            onDouble={(h) => fire(h, doubleClickTakes ? "program" : "preview")}
             air={air}
             conflicted={conflicted}
             disconnected={disconnected}
@@ -171,6 +181,7 @@ function GridView({
   onSelect,
   onCue,
   onTake,
+  onDouble,
   air,
   conflicted,
   disconnected,
@@ -181,6 +192,7 @@ function GridView({
   onSelect: (id: string) => void;
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
+  onDouble: (h: HotcardMeta) => void;
   air: Record<string, AirState>;
   conflicted: Set<string>;
   disconnected: boolean;
@@ -206,7 +218,7 @@ function GridView({
             onClick={() => onSelect(h.id)}
             onDoubleClick={() => {
               onSelect(h.id);
-              onTake(h);
+              onDouble(h);
             }}
             onKeyDown={(e) => {
               if (e.key === " " || e.key === "Enter") {
@@ -218,7 +230,7 @@ function GridView({
             }}
             style={{
               textAlign: "left",
-              background: selected ? "rgba(255, 58, 58, 0.12)" : colors.panel2,
+              background: selected ? colors.brandSubtle : colors.panel2,
               border: onAir === "program"
                 ? `2px solid ${colors.onair}`
                 : onAir === "preview"
@@ -244,14 +256,17 @@ function GridView({
             </div>
             <div
               style={{
-                fontSize: 10,
+                fontSize: 11,
                 color: colors.textDim,
-                fontFamily: "ui-monospace, monospace",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
               title={tplName}
             >
               {tplName}
             </div>
+            <HotcardThumb id={h.id} />
             <div style={{ display: "flex", gap: 4, marginTop: "auto", paddingTop: 6 }}>
               <Button
                 onClick={(e) => {
@@ -271,7 +286,7 @@ function GridView({
                   onSelect(h.id);
                   onTake(h);
                 }}
-                variant="primary"
+                variant="onair"
                 size="sm"
                 disabled={disconnected}
                 style={{ flex: 1, fontSize: 11 }}
@@ -293,6 +308,7 @@ function ListView({
   onSelect,
   onCue,
   onTake,
+  onDouble,
   air,
   conflicted,
   disconnected,
@@ -303,6 +319,7 @@ function ListView({
   onSelect: (id: string) => void;
   onCue: (h: HotcardMeta) => void;
   onTake: (h: HotcardMeta) => void;
+  onDouble: (h: HotcardMeta) => void;
   air: Record<string, AirState>;
   conflicted: Set<string>;
   disconnected: boolean;
@@ -321,10 +338,10 @@ function ListView({
               onClick={() => onSelect(h.id)}
               onDoubleClick={() => {
                 onSelect(h.id);
-                onTake(h);
+                onDouble(h);
               }}
               style={{
-                background: selected ? "rgba(255, 58, 58, 0.12)" : "transparent",
+                background: selected ? colors.brandSubtle : "transparent",
                 borderLeft: onAir === "program"
                   ? `3px solid ${colors.onair}`
                   : onAir === "preview"
@@ -342,14 +359,16 @@ function ListView({
                 </div>
                 <div
                   style={{
-                    fontSize: 10,
+                    fontSize: 11,
                     color: colors.textDim,
-                    fontFamily: "ui-monospace, monospace",
                     marginTop: 1,
                   }}
                 >
                   {tplName}
                 </div>
+              </td>
+              <td style={{ ...td(), width: 52 }}>
+                <HotcardThumb id={h.id} />
               </td>
               <td style={{ ...td(), width: 132, textAlign: "right" }}>
                 <div style={{ display: "inline-flex", gap: 4 }}>
@@ -371,7 +390,7 @@ function ListView({
                       onSelect(h.id);
                       onTake(h);
                     }}
-                    variant="primary"
+                    variant="onair"
                     size="sm"
                     disabled={disconnected}
                     style={{ width: 56, fontSize: 11 }}
@@ -385,6 +404,24 @@ function ListView({
         })}
       </tbody>
     </table>
+  );
+}
+
+/** 48 px thumbnail of the card's first image field; nothing when it has none. */
+function HotcardThumb({ id }: { id: string }) {
+  const card = useStore((s) => s.hotcardCache[id]);
+  const template = useStore((s) => (card ? s.templateCache[card.templateId] : undefined));
+  const value = hotcardImageValue(template?.fields, card?.data);
+  if (!value) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={resolveAssetUrl(value)}
+      alt=""
+      width={48}
+      height={48}
+      style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4, border: `1px solid ${colors.border}`, flexShrink: 0 }}
+    />
   );
 }
 

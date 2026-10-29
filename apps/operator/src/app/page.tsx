@@ -10,9 +10,9 @@ import { ShowPicker } from "./components/ShowPicker";
 import { Rundown } from "./components/Rundown";
 import { Monitors } from "./components/Monitors";
 import { StageArea } from "./components/StageArea";
-import { TimersRail } from "./components/TimersRail";
-import { HotcardsPanel } from "./components/HotcardsPanel";
-import { StagePanel } from "./components/StagePanel";
+import { LiveDrawer } from "./components/LiveDrawer";
+import { useLivePrefs } from "./hooks/useLivePrefs";
+import { DRAWER_COLLAPSED_WIDTH, DRAWER_OPEN_WIDTH } from "@/lib/liveDrawerModel";
 import { ConsoleBottomBar } from "./components/ConsoleBottomBar";
 import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { PageChrome } from "./shell/PageChrome";
@@ -65,6 +65,7 @@ function ShowPageLocal() {
   }, []);
 
   useGlobalShortcuts();
+  const { drawerOpen } = useLivePrefs();
 
   return (
     <div style={{ height: "100%", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", overflow: "hidden" }}>
@@ -72,7 +73,7 @@ function ShowPageLocal() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "320px minmax(0, 1fr) 300px",
+          gridTemplateColumns: `320px minmax(0, 1fr) ${drawerOpen ? DRAWER_OPEN_WIDTH : DRAWER_COLLAPSED_WIDTH}px`,
           gap: 1,
           background: colors.border,
           minHeight: 0,
@@ -88,15 +89,11 @@ function ShowPageLocal() {
           <Monitors />
           <StageArea />
         </section>
+        {/* [P2a.15] right drawer */}
         <section style={columnStyle}>
-          <div style={{ flex: "0 1 auto", maxHeight: "45%", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <TimersRail />
-          </div>
-          <StagePanel />
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <HotcardsPanel />
-          </div>
+          <LiveDrawer />
         </section>
+        {/* [/P2a.15] */}
       </div>
       <ConsoleBottomBar />
     </div>

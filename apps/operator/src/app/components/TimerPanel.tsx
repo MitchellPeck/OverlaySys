@@ -192,10 +192,6 @@ export function TimerPanel() {
     if (takesDisabled) return;
     send({ type: "clear", channel });
   }
-  function swap(): void {
-    if (takesDisabled) return;
-    send({ type: "take_pvw_to_pgm", fromChannel: pvwChannel, toChannel: pgmChannel });
-  }
 
   function channelLabel(id: string): string {
     return channelConfigs.find((c) => c.id === id)?.name ?? id;
@@ -299,59 +295,29 @@ export function TimerPanel() {
 
       <div style={{ ...rowStyle, marginTop: 12 }}>
         <Button
-          onClick={() => fire(pgmChannel, "take")}
-          variant="primary"
-          size="lg"
+          onClick={() => fire(pvwChannel, "cue")}
           style={{ flex: 1 }}
           disabled={takesDisabled || !templateId}
-          title={disabledTitle}
+          title={disabledTitle ?? `Cue to ${channelLabel(pvwChannel)}`}
         >
-          Start {channelLabel(pgmChannel)}
+          Cue
+        </Button>
+        <Button
+          onClick={() => fire(pgmChannel, "take")}
+          variant="onair"
+          style={{ flex: 1 }}
+          disabled={takesDisabled || !templateId}
+          title={disabledTitle ?? `Take to ${channelLabel(pgmChannel)}`}
+        >
+          Take
         </Button>
         <Button
           onClick={() => clear(pgmChannel)}
-          variant="danger"
-          size="lg"
           style={{ flex: 1 }}
           disabled={takesDisabled}
-          title={disabledTitle}
+          title={disabledTitle ?? `Clear ${channelLabel(pgmChannel)}`}
         >
-          Clear PGM
-        </Button>
-      </div>
-
-      <div style={rowStyle}>
-        <Button
-          onClick={() => fire(pvwChannel, "cue")}
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled || !templateId}
-          title={disabledTitle}
-        >
-          Cue {channelLabel(pvwChannel)}
-        </Button>
-        <Button
-          onClick={() => clear(pvwChannel)}
-          variant="danger"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          Clear PVW
-        </Button>
-      </div>
-
-      <div style={{ ...rowStyle, marginTop: 12 }}>
-        <Button
-          onClick={swap}
-          variant="primary"
-          size="lg"
-          style={{ flex: 1 }}
-          disabled={takesDisabled}
-          title={disabledTitle}
-        >
-          ⏎ TAKE (PVW → PGM)
+          Clear
         </Button>
       </div>
     </div>
@@ -384,7 +350,7 @@ function TimerFieldRow({
         marginBottom: 8,
       }}
     >
-      <Field label={`${field.label} (${mode})`}>
+      <Field label={field.label.trim().toLowerCase() === mode ? field.label : `${field.label} (${MODE_NAME[mode] ?? mode})`}>
         {mode === "countdown" ? (
           <Input
             value={duration}
@@ -493,5 +459,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
+const MODE_NAME: Record<string, string> = { countdown: "countdown", countup: "count up", clock: "clock" };
 
 const rowStyle: React.CSSProperties = { display: "flex", gap: 8, marginTop: 8 };

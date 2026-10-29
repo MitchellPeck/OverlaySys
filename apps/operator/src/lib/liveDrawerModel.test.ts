@@ -1,0 +1,73 @@
+import { describe, expect, it } from "vitest";
+import type { StageTimerInstance } from "@overlaysys/core";
+import {
+  hotcardImageValue,
+  orderStageTimers,
+  readBool,
+  showHasPcoItems,
+  stagePreviewWarnings,
+  stageTargetNames,
+} from "./liveDrawerModel";
+
+const t = (id: string, anchor: number | null, pausedAt: number | null = null) =>
+  ({ id, anchor, pausedAt }) as unknown as StageTimerInstance;
+
+describe("readBool", () => {
+  const st = (v: string | null) => ({ getItem: () => v });
+  it("uses the default when unset, malformed or storage missing", () => {
+    expect(readBool(st(null), "k", true)).toBe(true);
+    expect(readBool(st("yes"), "k", false)).toBe(false);
+    expect(readBool(null, "k", true)).toBe(true);
+  });
+  it("reads true/false", () => {
+    expect(readBool(st("false"), "k", true)).toBe(false);
+    expect(readBool(st("true"), "k", false)).toBe(true);
+  });
+});
+
+describe("orderStageTimers", () => {
+  it("lists running, then paused, then not started, stable within a group", () => {
+    const out = orderStageTimers([t("a", null), t("b", 1, 2), t("c", 1), t("d", null), t("e", 1)]);
+    expect(out.map((x) => x.id)).toEqual(["c", "e", "b", "a", "d"]);
+  });
+});
+
+describe("stagePreviewWarnings", () => {
+  it("names the channel, falling back to its id", () => {
+    const out = stagePreviewWarnings(
+      [
+        { channel: "s1", layoutId: "x" },
+        { channel: "zz", layoutId: "y" },
+      ],
+      [{ id: "s1", name: "Pastor" }],
+    );
+    expect(out.map((o) => o.text)).toEqual([
+      "Stage layout preview is showing on Pastor",
+      "Stage layout preview is showing on zz",
+    ]);
+  });
+});
+
+describe("hotcardImageValue", () => {
+  it("returns the first filled image field", () => {
+    const fields = [
+      { key: "t", type: "text" },
+      { key: "a", type: "image" },
+      { key: "b", type: "image" },
+    ];
+    expect(hotcardImageValue(fields, { t: "x", a: "", b: "/assets/b.png" })).toBe("/assets/b.png");
+    expect(hotcardImageValue(fields, { t: "x" })).toBeNull();
+    expect(hotcardImageValue(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("stageTargetNames / showHasPcoItems", () => {
+  it("keeps only stage channels", () => {
+    expect(stageTargetNames([{ id: "a", name: "A" }, { id: "b", name: "B", kind: "stage" }])).toEqual(["B"]);
+  });
+  it("detects sourceRef rows", () => {
+    expect(showHasPcoItems([{ kind: "song" }])).toBe(false);
+    expect(showHasPcoItems([{ kind: "song" }, { kind: "song", sourceRef: { provider: "pco" } }])).toBe(true);
+    expect(showHasPcoItems(undefined)).toBe(false);
+  });
+});

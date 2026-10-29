@@ -25,6 +25,7 @@ export function Monitors() {
   const pick = (id: string) => configs.find((c) => c.id === id) ?? null;
   return (
     <div
+      data-live-monitors
       style={{
         display: "grid",
         gridTemplateColumns: monitorColumns(),

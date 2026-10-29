@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Pause, Play, RotateCcw } from "lucide-react";
-import { Button, Input, Select, colors, radius } from "@overlaysys/ui";
+import { Button, Input, Select, Switch, colors, radius } from "@overlaysys/ui";
+import { orderStageTimers } from "@/lib/liveDrawerModel";
 import {
   CURRENT_ITEM_TIMER_ID,
   formatSignedTime,
@@ -19,7 +20,13 @@ import { useDialog } from "@/lib/dialog";
 const WARN_MS = 60_000;
 
 /** Standalone stage timers: the current item timer (pinned) plus manual ones. */
-export function StageTimersSection() {
+export function StageTimersSection({
+  formOpen = false,
+  onFormClose,
+}: {
+  formOpen?: boolean;
+  onFormClose?: () => void;
+}) {
   const timers = useStore((s) => s.stageTimers);
   const { send } = useWs();
   const offset = useStore((s) => s.serverTimeOffsetMs);
@@ -31,23 +38,19 @@ export function StageTimersSection() {
   // Timer anchors are server-clock timestamps, so project on the server clock.
   const now = localNow + offset;
 
-  const ordered = useMemo(
-    () => [
-      ...timers.filter((t) => t.id === CURRENT_ITEM_TIMER_ID),
-      ...timers.filter((t) => t.id !== CURRENT_ITEM_TIMER_ID),
-    ],
-    [timers],
-  );
+  // Running timers first, then paused, then not started.
+  const ordered = useMemo(() => orderStageTimers(timers), [timers]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>
-        Stage timers
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: colors.textDim }}>Stage timers</div>
+      {formOpen && <NewStageTimerForm send={send} onDone={onFormClose} />}
+      {ordered.length === 0 && !formOpen && (
+        <div style={{ fontSize: 12, color: colors.textDim }}>No stage timers. Use + Stage timer to add one.</div>
+      )}
       {ordered.map((t) => (
         <StageTimerRow key={t.id} timer={t} now={now} send={send} />
       ))}
-      <NewStageTimerForm send={send} />
     </div>
   );
 }
@@ -152,7 +155,7 @@ function StageTimerRow({ timer: t, now, send }: { timer: StageTimerInstance; now
   );
 }
 
-function NewStageTimerForm({ send }: { send: Send }) {
+function NewStageTimerForm({ send, onDone }: { send: Send; onDone?: (() => void) | undefined }) {
   const [label, setLabel] = useState("");
   const [mode, setMode] = useState<"countdown" | "countup">("countdown");
   const [duration, setDuration] = useState("5:00");
@@ -173,6 +176,7 @@ function NewStageTimerForm({ send }: { send: Send }) {
       overtime,
     });
     setLabel("");
+    onDone?.();
   }
 
   return (
@@ -194,13 +198,17 @@ function NewStageTimerForm({ send }: { send: Send }) {
           />
         )}
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-        <input type="checkbox" checked={overtime} onChange={(e) => setOvertime(e.target.checked)} />
-        Overtime
-      </label>
-      <Button size="sm" variant="primary" disabled={invalid} onClick={create}>
-        Create
-      </Button>
+      <Switch checked={overtime} onChange={setOvertime} label="Overtime" />
+      <div style={{ display: "flex", gap: 6 }}>
+        <Button size="sm" variant="primary" disabled={invalid} onClick={create}>
+          Create
+        </Button>
+        {onDone && (
+          <Button size="sm" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

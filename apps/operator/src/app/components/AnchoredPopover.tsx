@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { colors, radius, shadow } from "@overlaysys/ui";
-import { POPOVER_W, popoverPosition } from "@/lib/popoverPosition";
+import { POPOVER_W, popoverAvoiding, popoverPosition } from "@/lib/popoverPosition";
 
 /**
  * Portal popover hung from an anchor element. Esc is swallowed in the capture
@@ -18,11 +18,16 @@ export function AnchoredPopover({
   anchorEl,
   onClose,
   width = POPOVER_W,
+  placement = "below",
+  avoidSelector,
   children,
 }: {
   anchorEl: HTMLElement | null;
   onClose: () => void;
   width?: number;
+  placement?: "below" | "left";
+  /** CSS selector of an element the popover must not cover (it is nudged down instead). */
+  avoidSelector?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -33,7 +38,11 @@ export function AnchoredPopover({
     const place = () => {
       const r = anchorEl.getBoundingClientRect();
       const h = ref.current?.offsetHeight ?? 0;
-      setPos(popoverPosition(r, h, { width: window.innerWidth, height: window.innerHeight }, width));
+      const vp = { width: window.innerWidth, height: window.innerHeight };
+      let next = popoverPosition(r, h, vp, width, placement);
+      const avoidEl = avoidSelector ? document.querySelector(avoidSelector) : null;
+      if (avoidEl) next = popoverAvoiding(next, { width, height: h }, avoidEl.getBoundingClientRect(), vp.height);
+      setPos(next);
     };
     place();
     const ro = new ResizeObserver(place);
@@ -45,7 +54,7 @@ export function AnchoredPopover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [anchorEl, width]);
+  }, [anchorEl, width, placement, avoidSelector]);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
