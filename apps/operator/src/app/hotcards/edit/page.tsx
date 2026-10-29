@@ -1,28 +1,50 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { produce } from "immer";
-import { HOTKEYS, type ChannelConfig, type Hotcard, type Hotkey, type Template } from "@overlaysys/core";
+import { MoreHorizontal } from "lucide-react";
+import { v4 as uuid } from "uuid";
+import { type ChannelConfig, type Hotcard, type Template } from "@overlaysys/core";
+import {
+  Field,
+  IconButton,
+  Input,
+  Menu,
+  SaveBar,
+  Select,
+  colors,
+  confirm,
+  fontSize,
+  toast,
+  type MenuItem,
+} from "@overlaysys/ui";
 import { hotkeyConflictWarning, hotkeyOwners } from "@/lib/hotcardKeys";
-import { Button, Input, Select, colors } from "@overlaysys/ui";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
 import { FieldInput } from "@/lib/FieldInput";
-import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
+import { ackErrorText, sendAndAwaitAck } from "@/lib/awaitAck";
+import { useConnection } from "@/lib/useConnection";
+import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
+import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import {
   deleteHotcardCloud,
   getHotcardCloud,
   getHotcardUpdatedAtCloud,
   getTemplateCloud,
   refreshHotcardMetasCloud,
+  refreshProjectsCloud,
   refreshTemplateMetasCloud,
   saveHotcardCloud,
 } from "@/lib/cloudData";
+import { LAST_HOTCARD_TEMPLATE_KEY, hotcardEqual } from "./hotcardDraft";
+import { HotcardNewStep, HotkeySelect, TemplateSelect, type NewHotcardValues } from "./HotcardNewStep";
+
+const PREVIEW_WIDTH = 480;
 
 export default function HotcardEditPage() {
   return (
@@ -32,77 +54,103 @@ export default function HotcardEditPage() {
   );
 }
 
+function readLastTemplate(): string | undefined {
+  try {
+    return window.localStorage.getItem(LAST_HOTCARD_TEMPLATE_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function HotcardEditPageInner() {
   const searchParams = useSearchParams();
+  const isNew = searchParams?.get("new") === "1";
   const hotcardId = decodeURIComponent(searchParams?.get("id") ?? "");
   const { send } = useWs();
   const router = useRouter();
+  const { connected } = useConnection();
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
   const allHotcards = useStore((s) => s.hotcards);
+  const projects = useStore((s) => s.projects);
+  const currentProjectId = useStore((s) => s.currentProjectId);
   const setTemplate = useStore((s) => s.setTemplate);
   const channelConfigs = useResolvedChannelConfigs();
   const takeableChannels = useMemo(
     () => channelConfigs.filter((c) => !c.mirrorOf),
     [channelConfigs],
   );
+  const [saved, setSaved] = useState<Hotcard | null>(null);
   const [draft, setDraft] = useState<Hotcard | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const fetchedRef = useRef<string | null>(null);
   const loadedAtRef = useRef<string | null>(null);
-  const { alert, confirm, dialog } = useDialog();
   const cloud = isCloudMode();
 
-  async function showCloudError(action: string, err: unknown) {
-    const message = err instanceof Error ? err.message : JSON.stringify(err);
-    console.warn(`[hotcards/edit] cloud ${action} failed`, err);
-    await alert({
-      title: `Cloud ${action} failed`,
-      message: (
-        <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, margin: 0 }}>
-          {message}
-        </pre>
-      ),
-    });
-  }
+  const dirty = !!draft && !!saved && !hotcardEqual(draft, saved);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
+  // A new id (or the new flow) starts from nothing.
   useEffect(() => {
     fetchedRef.current = null;
+    setSaved(null);
     setDraft(null);
-    setDirty(false);
-    if (cloud) return;
+    if (cloud || isNew) return;
     const off = getClient().on((msg) => {
       if (msg.type === "hotcard" && msg.hotcard.id === hotcardId) {
-        if (!dirty) setDraft(msg.hotcard);
+        setSaved(msg.hotcard);
+        if (!dirtyRef.current) setDraft(msg.hotcard);
       }
     });
     return off;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotcardId, cloud]);
+  }, [hotcardId, cloud, isNew]);
 
+  // Lists the page needs (templates, projects) whatever the mode.
   useEffect(() => {
     if (cloud) {
-      if (fetchedRef.current === hotcardId) return;
-      fetchedRef.current = hotcardId;
-      Promise.all([
-        getHotcardCloud(hotcardId),
-        getHotcardUpdatedAtCloud(hotcardId),
-        refreshTemplateMetasCloud(),
-      ])
-        .then(([h, updatedAt]) => {
-          if (h) setDraft(h);
-          loadedAtRef.current = updatedAt;
-        })
-        .catch((err) => console.warn("[hotcards/edit] cloud load failed", err));
+      Promise.all([refreshTemplateMetasCloud(), refreshProjectsCloud(), refreshHotcardMetasCloud()]).catch((err) =>
+        console.warn("[hotcards/edit] cloud lists failed", err),
+      );
       return;
     }
     if (conn !== "open") return;
+    send({ type: "list_templates" });
+    send({ type: "list_projects" });
+    send({ type: "list_hotcards" });
+  }, [cloud, conn, send]);
+
+  const loadCard = useCallback(async () => {
+    if (!hotcardId) return;
+    if (cloud) {
+      try {
+        const [h, updatedAt] = await Promise.all([getHotcardCloud(hotcardId), getHotcardUpdatedAtCloud(hotcardId)]);
+        if (h) {
+          setSaved(h);
+          setDraft(h);
+        }
+        loadedAtRef.current = updatedAt;
+      } catch (err) {
+        console.warn("[hotcards/edit] cloud load failed", err);
+      }
+      return;
+    }
+    send({ type: "get_hotcard", hotcardId });
+  }, [cloud, hotcardId, send]);
+
+  useEffect(() => {
+    if (isNew || !hotcardId) return;
+    if (!cloud && conn !== "open") return;
     if (fetchedRef.current === hotcardId) return;
     fetchedRef.current = hotcardId;
-    send({ type: "get_hotcard", hotcardId });
-    send({ type: "list_templates" });
-  }, [cloud, conn, hotcardId, send]);
+    void loadCard();
+  }, [isNew, cloud, conn, hotcardId, loadCard]);
 
   useEffect(() => {
     if (!draft) return;
@@ -112,9 +160,7 @@ function HotcardEditPageInner() {
         .then((t) => {
           if (t) setTemplate(t);
         })
-        .catch((err) =>
-          console.warn(`[hotcards/edit] template ${draft.templateId}`, err),
-        );
+        .catch((err) => console.warn(`[hotcards/edit] template ${draft.templateId}`, err));
       return;
     }
     if (conn === "open") {
@@ -126,109 +172,168 @@ function HotcardEditPageInner() {
     setDraft((cur) => {
       if (!cur) return cur;
       const next = produce(cur, recipe);
-      if (next === cur) return cur;
-      setDirty(true);
-      return next;
+      return next === cur ? cur : next;
     });
   }
 
-  async function save() {
-    if (!draft) return;
+  /** Write `h`; throws on failure. Cloud asks before overwriting newer cloud edits. */
+  async function persist(h: Hotcard, opts: { checkNewer: boolean }): Promise<boolean> {
     if (cloud) {
-      try {
-        if (loadedAtRef.current) {
-          const cur = await getHotcardUpdatedAtCloud(draft.id);
-          if (cur && cur > loadedAtRef.current) {
-            const ok = await confirm({
-              title: "Cloud has newer changes",
-              message: (
-                <>
-                  This hotcard was updated in the cloud after you loaded it.
-                  Save anyway and overwrite their changes?
-                </>
-              ),
-              confirmLabel: "Overwrite",
-              destructive: true,
-            });
-            if (!ok) return;
-          }
+      if (opts.checkNewer && loadedAtRef.current) {
+        const cur = await getHotcardUpdatedAtCloud(h.id);
+        if (cur && cur > loadedAtRef.current) {
+          const ok = await confirm({
+            title: "Cloud has newer changes",
+            message: "This hotcard was updated in the cloud after you loaded it. Save anyway and overwrite their changes?",
+            confirmLabel: "Overwrite",
+            danger: true,
+          });
+          if (!ok) return false;
         }
-        await saveHotcardCloud(draft);
-        await refreshHotcardMetasCloud();
-        loadedAtRef.current = await getHotcardUpdatedAtCloud(draft.id);
-        setDirty(false);
-      } catch (err) {
-        await showCloudError("save", err);
       }
-      return;
+      await saveHotcardCloud(h);
+      await refreshHotcardMetasCloud();
+      loadedAtRef.current = await getHotcardUpdatedAtCloud(h.id);
+      return true;
     }
-    send({ type: "save_hotcard", hotcard: draft });
-    setDirty(false);
+    await sendAndAwaitAck(getClient(), { type: "save_hotcard", hotcard: h }, { op: "save_hotcard", id: h.id });
+    return true;
   }
 
-  async function revert() {
-    fetchedRef.current = null;
-    setDraft(null);
-    setDirty(false);
-    if (cloud) {
+  const save = useCallback(async (): Promise<boolean> => {
+    const h = draftRef.current;
+    if (!h || saving) return false;
+    setSaving(true);
+    try {
+      const ok = await persist(h, { checkNewer: true });
+      if (!ok) return false;
+      setSaved(h);
       try {
-        const h = await getHotcardCloud(hotcardId);
-        if (h) setDraft(h);
-      } catch (err) {
-        await showCloudError("revert", err);
+        window.localStorage.setItem(LAST_HOTCARD_TEMPLATE_KEY, h.templateId);
+      } catch {
+        /* storage unavailable */
       }
-      return;
+      toast({ tone: "ok", message: "Saved" });
+      return true;
+    } catch (e) {
+      toast({ tone: "error", message: `Not saved: ${ackErrorText(e)}` });
+      return false;
+    } finally {
+      setSaving(false);
     }
-    send({ type: "get_hotcard", hotcardId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving, cloud]);
+
+  function revert() {
+    setDraft(saved);
   }
+
+  useUnsavedGuard(dirty, {
+    onSave: save,
+    resetKey: hotcardId,
+    canArm: !!draft && draft.id === hotcardId,
+  });
 
   async function remove() {
     if (!draft) return;
     const ok = await confirm({
       title: "Delete hotcard",
-      message: (
-        <>
-          Delete <strong>{draft.name}</strong>?
-        </>
-      ),
+      message: `Delete "${draft.name}"?`,
       confirmLabel: "Delete",
-      destructive: true,
+      danger: true,
     });
     if (!ok) return;
-    if (cloud) {
-      try {
+    try {
+      if (cloud) {
         await deleteHotcardCloud(draft.id);
         await refreshHotcardMetasCloud();
-        router.push("/hotcards");
-      } catch (err) {
-        await showCloudError("delete", err);
+      } else {
+        await sendAndAwaitAck(getClient(), { type: "delete_hotcard", hotcardId: draft.id }, { op: "delete_hotcard", id: draft.id });
       }
-      return;
+      // Gone: nothing left to guard.
+      setSaved(draft);
+      router.push("/hotcards");
+    } catch (e) {
+      toast({ tone: "error", message: `Not deleted: ${ackErrorText(e)}` });
     }
-    send({ type: "delete_hotcard", hotcardId: draft.id });
-    setTimeout(() => router.push("/hotcards"), 150);
   }
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.code === "KeyS") {
-        e.preventDefault();
-        save();
-      }
+  async function duplicate() {
+    const src = saved;
+    if (!src) return;
+    const copy: Hotcard = { ...src, id: `hotcard-${uuid().slice(0, 8)}`, name: `${src.name} (copy)`, hotkey: null };
+    try {
+      await persist(copy, { checkNewer: false });
+      toast({
+        tone: "ok",
+        message: `Duplicated as "${copy.name}"`,
+        action: { label: "Open", onClick: () => router.push(`/hotcards/edit?id=${encodeURIComponent(copy.id)}`) },
+      });
+    } catch (e) {
+      toast({ tone: "error", message: `Not duplicated: ${ackErrorText(e)}` });
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
+  }
+
+  function copyId() {
+    if (!draft) return;
+    navigator.clipboard
+      ?.writeText(draft.id)
+      .then(() => toast({ tone: "ok", message: "Id copied" }))
+      .catch(() => toast({ tone: "error", message: "Could not copy the id" }));
+  }
+
+  async function create(v: NewHotcardValues) {
+    setCreating(true);
+    setCreateError(null);
+    const h: Hotcard = {
+      id: `hotcard-${uuid().slice(0, 8)}`,
+      name: v.name,
+      projectId: currentProjectId,
+      templateId: v.templateId,
+      data: {},
+      hotkey: v.hotkey,
+    };
+    try {
+      await persist(h, { checkNewer: false });
+      try {
+        window.localStorage.setItem(LAST_HOTCARD_TEMPLATE_KEY, h.templateId);
+      } catch {
+        /* storage unavailable */
+      }
+      router.replace(`/hotcards/edit?id=${encodeURIComponent(h.id)}`);
+    } catch (e) {
+      setCreateError(`Not created: ${ackErrorText(e)}`);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  if (isNew) {
+    return (
+      <>
+        <PageChrome title="New hotcard" />
+        <PageBody variant="form">
+          <HotcardNewStep
+            metas={templates}
+            existing={allHotcards}
+            projectId={currentProjectId}
+            lastUsedId={readLastTemplate()}
+            creating={creating}
+            error={createError}
+            onCreate={(v) => void create(v)}
+            onCancel={() => router.push("/hotcards")}
+          />
+        </PageBody>
+      </>
+    );
+  }
 
   if (!draft) {
     return (
       <>
         <PageChrome />
         <PageBody style={{ height: "100%" }}>
-          <p style={{ color: colors.textDim, marginTop: 12 }}>
-            Loading hotcard <code>{hotcardId}</code>…
-          </p>
+          <p style={{ color: colors.textDim, marginTop: 12 }}>Loading hotcard…</p>
         </PageBody>
       </>
     );
@@ -236,6 +341,32 @@ function HotcardEditPageInner() {
 
   const template = templateCache[draft.templateId] ?? null;
   const keyWarning = hotkeyConflictWarning(allHotcards, draft);
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+  const menuItems: MenuItem[] = [
+    { id: "duplicate", label: "Duplicate", onSelect: () => void duplicate() },
+    { id: "copy-id", label: "Copy id", onSelect: copyId },
+    { separator: true },
+    { id: "delete", label: "Delete", danger: true, onSelect: () => void remove() },
+  ];
+
+  function changeProject(next: string) {
+    const prev = draft!.projectId;
+    if (next === prev) return;
+    update((h) => {
+      h.projectId = next;
+    });
+    toast({
+      tone: "info",
+      message: `Moved to "${projectName(next)}"`,
+      action: {
+        label: "Undo",
+        onClick: () =>
+          update((h) => {
+            h.projectId = prev;
+          }),
+      },
+    });
+  }
 
   return (
     <div
@@ -247,179 +378,134 @@ function HotcardEditPageInner() {
       }}
     >
       <PageChrome
-        context={
-          <>
-            <input
-              value={draft.name}
-              onChange={(e) => update((h) => { h.name = e.target.value; })}
-              style={{
-                background: "transparent",
-                border: "1px solid transparent",
-                color: colors.text,
-                fontSize: 15,
-                fontWeight: 600,
-                padding: "2px 6px",
-                borderRadius: 4,
-                minWidth: 200,
-              }}
-            />
-            <span style={{ color: colors.textDim, fontSize: 11 }}>{draft.id}</span>
-            {dirty && (
-              <span style={{ color: colors.accent2, fontSize: 11, fontWeight: 600 }}>
-                <span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "currentColor", marginRight: 6, verticalAlign: "middle" }} />unsaved
-              </span>
-            )}
-          </>
-        }
+        title="Hotcard"
+        context={<NameInput value={draft.name} onChange={(v) => update((h) => { h.name = v; })} />}
         actions={
           <>
-            <Button onClick={remove} variant="danger" size="sm">Delete</Button>
-            <Button onClick={revert} variant="ghost" size="sm" disabled={!dirty}>Revert</Button>
-            <Button
-              onClick={save}
-              variant="primary"
-              size="sm"
-              disabled={!dirty || (!cloud && conn !== "open")}
-            >
-              Save (⌘S)
-            </Button>
+            <SaveBar
+              dirty={dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onRevert={revert}
+              disabledReason={connected ? undefined : "Reconnect to save"}
+            />
+            <IconButton aria-label={`More actions for ${draft.name}`} onClick={(e) => setMenuAnchor(e.currentTarget)}>
+              <MoreHorizontal size={16} />
+            </IconButton>
           </>
         }
       />
+      {menuAnchor && <Menu items={menuItems} anchor={menuAnchor} onClose={() => setMenuAnchor(null)} />}
 
       <div style={{ overflow: "auto", padding: "16px 24px" }}>
-        <div style={{ maxWidth: 720, margin: "0 auto", display: "grid", gap: 16 }}>
-          <Row label="Template">
-            <Select
-              value={draft.templateId}
-              onChange={(e) => update((h) => { h.templateId = e.target.value; })}
-            >
-              {!templates.some((t) => t.id === draft.templateId) && (
-                <option value={draft.templateId}>{draft.templateId} (missing)</option>
+        <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 420px", maxWidth: 640, minWidth: 0, display: "grid", gap: 14 }}>
+            <Field label="Template" layout="inline" labelWidth={110}>
+              <TemplateSelect
+                metas={templates}
+                value={draft.templateId}
+                onChange={(id) => update((h) => { h.templateId = id; })}
+              />
+            </Field>
+
+            <Field label="F-key" layout="inline" labelWidth={110}>
+              <HotkeySelect
+                value={draft.hotkey ?? null}
+                owners={hotkeyOwners(allHotcards, draft.projectId, draft.id)}
+                onChange={(v) => update((h) => { h.hotkey = v; })}
+              />
+              {keyWarning && (
+                <div role="alert" style={{ marginTop: 4, fontSize: fontSize.sm, color: colors.warn }}>
+                  {keyWarning}
+                </div>
               )}
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </Select>
-          </Row>
+            </Field>
 
-          <Row label="F-key">
-            <HotkeySelect
-              value={draft.hotkey ?? null}
-              owners={hotkeyOwners(allHotcards, draft.projectId, draft.id)}
-              onChange={(v) =>
-                update((h) => {
-                  h.hotkey = v;
-                })
-              }
-            />
-            {keyWarning && (
-              <div role="alert" style={{ marginTop: 4, fontSize: 11, color: colors.warn }}>
-                {keyWarning}
+            <Field label="Default output" layout="inline" labelWidth={110}>
+              <ChannelHintSelect
+                value={draft.channelHint}
+                onChange={(v) => update((h) => { h.channelHint = v; })}
+                channels={takeableChannels}
+              />
+              <div style={{ marginTop: 4, fontSize: fontSize.sm, color: colors.textDim }}>
+                Cue always goes to Preview; Take goes here (Program if unset).
               </div>
-            )}
-          </Row>
+            </Field>
 
-          <Row label="Default output">
-            <ChannelHintSelect
-              value={draft.channelHint}
-              onChange={(v) =>
-                update((h) => {
-                  h.channelHint = v;
-                })
-              }
-              channels={takeableChannels}
-            />
-            <div style={{ marginTop: 4, fontSize: 11, color: colors.textDim }}>
-              Cue always goes to Preview; Take goes here (Program if unset).
+            <Field label="Project" layout="inline" labelWidth={110}>
+              <Select aria-label="Project" value={draft.projectId} onChange={(e) => changeProject(e.target.value)}>
+                {!projects.some((p) => p.id === draft.projectId) && (
+                  <option value={draft.projectId}>{draft.projectId}</option>
+                )}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+
+            <Field label="Notes" layout="inline" labelWidth={110}>
+              <Input
+                aria-label="Notes"
+                value={draft.notes ?? ""}
+                onChange={(e) => update((h) => { h.notes = e.target.value || undefined; })}
+                placeholder="Optional note for operators"
+              />
+            </Field>
+
+            <div>
+              <h3 style={{ margin: "6px 0 8px", fontSize: fontSize.xs, fontWeight: 600, color: colors.textDim }}>
+                Fields
+              </h3>
+              <FieldsEditor
+                template={template}
+                data={draft.data}
+                onChange={(key, value) => update((h) => { h.data = { ...h.data, [key]: value }; })}
+              />
             </div>
-          </Row>
+          </div>
 
-          <Row label="Notes">
-            <Input
-              value={draft.notes ?? ""}
-              onChange={(e) =>
-                update((h) => {
-                  h.notes = e.target.value || undefined;
-                })
-              }
-              placeholder="—"
-            />
-          </Row>
-
-          <div>
-            <h3
-              style={{
-                margin: 0,
-                marginBottom: 8,
-                fontSize: 11,
-                fontWeight: 600,
-                color: colors.textDim,
-              }}
-            >
-              Fields
-            </h3>
-            <FieldsEditor
-              template={template}
-              data={draft.data}
-              onChange={(key, value) =>
-                update((h) => {
-                  h.data = { ...h.data, [key]: value };
-                })
-              }
-            />
+          <div style={{ flex: `0 0 ${PREVIEW_WIDTH}px`, maxWidth: "100%" }}>
+            <div style={{ fontSize: fontSize.xs, fontWeight: 600, color: colors.textDim, marginBottom: 8 }}>
+              Preview
+            </div>
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 6, overflow: "hidden", width: PREVIEW_WIDTH, maxWidth: "100%" }}>
+              <TemplateThumbnail templateId={draft.templateId} data={draft.data} width={PREVIEW_WIDTH} />
+            </div>
           </div>
         </div>
       </div>
-      {dialog}
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function NameInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-      <span
-        style={{
-          width: 110,
-          flexShrink: 0,
-          fontSize: 11,
-          fontWeight: 600,
-          color: colors.textDim,
-        }}
-      >
-        {label}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
-    </div>
-  );
-}
-
-function HotkeySelect({
-  value,
-  owners,
-  onChange,
-}: {
-  value: Hotkey | null;
-  owners: Partial<Record<Hotkey, string[]>>;
-  onChange: (v: Hotkey | null) => void;
-}) {
-  return (
-    <Select
-      aria-label="F-key"
-      value={value ?? ""}
-      onChange={(e) => onChange((e.target.value || null) as Hotkey | null)}
-    >
-      <option value="">None</option>
-      {HOTKEYS.map((k) => {
-        const taken = owners[k];
-        return (
-          <option key={k} value={k}>
-            {taken ? `${k} (used by ${taken.join(", ")})` : k}
-          </option>
-        );
-      })}
-    </Select>
+    <input
+      aria-label="Hotcard name"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setFocus(true)}
+      onBlur={() => setFocus(false)}
+      style={{
+        background: "transparent",
+        border: `1px solid ${focus ? colors.accent : hover ? colors.border : "transparent"}`,
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: 600,
+        padding: "2px 6px",
+        borderRadius: 4,
+        width: 380,
+        minWidth: 280,
+        maxWidth: 480,
+        outline: "none",
+      }}
+    />
   );
 }
 
