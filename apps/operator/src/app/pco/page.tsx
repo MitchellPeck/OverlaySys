@@ -7,16 +7,15 @@ import {
   buildImportedSong,
   effectiveLyricsArrangement,
   resolveImportedSongId,
-  type Field as TemplateField,
   type ItemPreview,
   type PcoPlan,
   type PcoPlanItem,
   type PcoServiceType,
   type Song,
-  type Template,
 } from "@overlaysys/core";
 import {
   Button,
+  Checkbox,
   Field,
   Inline,
   Input,
@@ -27,6 +26,7 @@ import {
   Stack,
   colors,
   StatusDot,
+  useConfirm,
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -36,13 +36,7 @@ import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud, refreshShowMetasCloud } from "@/lib/cloudData";
-import { FieldInput } from "@/lib/FieldInput";
-import {
-  ScriptureRefError,
-  guessScriptureReference,
-  parseReference,
-  type TranslationMeta,
-} from "@overlaysys/scripture";
+import { guessScriptureReference, type TranslationMeta } from "@overlaysys/scripture";
 import { listTranslations } from "@/lib/scriptureClient";
 import { useScriptureSettings } from "@/lib/scriptureSettings";
 import { budgetForPref, loadSlideSizePref } from "@/lib/slideSizePref";
@@ -60,9 +54,14 @@ import {
   type ImportPlanResult,
 } from "@/lib/pcoClient";
 
+import { PcoConnectForm } from "./PcoConnectForm";
+import { PcoPlanPicker, planLabel } from "./PcoPlanPicker";
+import { PcoItemList } from "./PcoItemList";
+import { PcoItemRow, importAsOf, referenceError, type ItemCfg, type RowKind } from "./PcoItemRow";
+import { PcoImportFooter } from "./PcoImportFooter";
+import { importSummary, type ImportAs } from "./importOptions";
+
 type Status = "checking" | "disconnected" | "connected";
-type SongAction = "link" | "create";
-type RowKind = "song" | "item" | "scripture";
 
 const SCRIPTURE_TRANSLATION_KEY = "overlaysys.pco.scriptureTranslation";
 
@@ -80,39 +79,6 @@ function rememberTranslation(id: string): void {
   } catch {
     // storage unavailable — the choice just isn't remembered
   }
-}
-
-/** Inline parse error for a scripture reference, or null when it parses. */
-function referenceError(reference: string): string | null {
-  if (!reference.trim()) return "Enter a reference";
-  try {
-    parseReference(reference);
-    return null;
-  } catch (e) {
-    return e instanceof ScriptureRefError ? e.hint ?? e.message : "Invalid reference";
-  }
-}
-
-interface ItemCfg {
-  include: boolean;
-  kind: RowKind;
-  songAction: SongAction;
-  songId?: string;
-  lyricTemplateId: string;
-  graphicTemplateId: string;
-  /** Scripture kind: reference text (pre-filled by guessing from the title). */
-  reference: string;
-  /** Scripture kind: "" means "use the page default translation". */
-  translation: string;
-  /** Scripture kind: "" means "use the default scripture template". */
-  scriptureTemplateId: string;
-  data: Record<string, string>;
-  /** Field keys the operator typed into — preserved across template changes. */
-  edited: Set<string>;
-}
-
-function planLabel(p: PcoPlan): string {
-  return p.dates || p.title || p.sortDate || p.id;
 }
 
 export default function PcoPage() {
@@ -161,6 +127,8 @@ export default function PcoPage() {
   const [serviceTypeId, setServiceTypeId] = useState("");
   const [plans, setPlans] = useState<PcoPlan[]>([]);
   const [planId, setPlanId] = useState("");
+  const [plansLoading, setPlansLoading] = useState(false);
+  const confirm = useConfirm();
 
   const [items, setItems] = useState<PcoPlanItem[]>([]);
   const [previews, setPreviews] = useState<Record<string, ItemPreview>>({});
@@ -329,6 +297,13 @@ export default function PcoPage() {
   }
 
   async function disconnect() {
+    const ok = await confirm({
+      title: "Disconnect Planning Center?",
+      message: "You will need to paste your Application ID and Secret again to import plans.",
+      confirmLabel: "Disconnect",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     try {
       const res = await fetch(`${httpBase()}/api/pco/tokens`, { method: "DELETE" });
@@ -358,13 +333,20 @@ export default function PcoPage() {
     setItems([]);
     setImported({});
     setLoadingItems(false);
-    if (!id) return;
+    setError(null);
     const stRequest = ++serviceTypeRequestRef.current;
+    if (!id) {
+      setPlansLoading(false);
+      return;
+    }
+    setPlansLoading(true);
     try {
       const fetched = await listPlans(id);
       if (stRequest === serviceTypeRequestRef.current) setPlans(fetched);
     } catch (err) {
       if (stRequest === serviceTypeRequestRef.current) setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (stRequest === serviceTypeRequestRef.current) setPlansLoading(false);
     }
   }
 
@@ -389,6 +371,8 @@ export default function PcoPage() {
       const def = templates[0]?.id ?? "";
       const nextCfgs: Record<string, ItemCfg> = {};
       for (const it of fetched) {
+        // Headers become show sections on the server; they have no row config.
+        if (it.itemType === "header") continue;
         const preview = map[it.id];
         const isSong = it.itemType === "song" && !!it.song;
         const guessed = isSong ? null : guessScriptureReference(it.title);
@@ -462,6 +446,25 @@ export default function PcoPage() {
     });
   }
 
+  /** Row "Import as" select: skip unchecks the row, song/graphic re-includes it. */
+  function setImportAs(item: PcoPlanItem, as: ImportAs) {
+    if (as === "skip") {
+      patch(item.id, (c) => ({ ...c, include: false }));
+      return;
+    }
+    patch(item.id, (c) => ({ ...c, include: true }));
+    if (as === "song") setKind(item, "song");
+    else setKind(item, guessScriptureReference(item.title) ? "scripture" : "item");
+  }
+
+  /** Flip a graphic row between a plain graphic and a scripture reading. */
+  function toggleScripture(item: PcoPlanItem) {
+    const cur = cfgs[item.id];
+    if (!cur) return;
+    setKind(item, cur.kind === "scripture" ? "item" : "scripture");
+  }
+
+  const selectableCount = Object.keys(cfgs).length;
   const includedCount = useMemo(
     () => items.filter((i) => cfgs[i.id]?.include).length,
     [items, cfgs],
@@ -636,6 +639,11 @@ export default function PcoPage() {
     }
   }
 
+  const titleOf = (itemId: string) => items.find((i) => i.id === itemId)?.title ?? "Unknown item";
+  const summary = importSummary(
+    Object.values(cfgs).map((c) => ({ include: c.include, importAs: importAsOf(c) })),
+  );
+
   return (
     <>
       <PageChrome title="Planning Center" />
@@ -643,176 +651,104 @@ export default function PcoPage() {
         {status === "checking" && <p style={{ color: colors.textDim }}>Checking connection…</p>}
 
         {status === "disconnected" && (
-          <Panel title="Connect to Planning Center">
-            <Stack gap={3}>
-              <p style={{ color: colors.textDim }}>
-                Import service plans from Planning Center into OverlaySys.
-              </p>
-
-              <div>
-                <div style={{ color: colors.textDim, fontSize: 13, marginBottom: 6 }}>
-                  Personal Access Token (recommended for now)
-                </div>
-                <Stack gap={2}>
-                  <Field
-                    label="Application ID"
-                    hint="The first value of your Personal Access Token (PCO may label it “Client ID”)."
-                  >
-                    <Input
-                      value={patAppId}
-                      onChange={(e) => setPatAppId(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field label="Secret">
-                    <Input
-                      type="password"
-                      value={patSecret}
-                      onChange={(e) => setPatSecret(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <div>
-                    <Button variant="primary" disabled={connectingPat} onClick={() => void connectWithPat()}>
-                      {connectingPat ? "Connecting…" : "Connect"}
-                    </Button>
-                  </div>
-                  <p style={{ color: colors.textDim, fontSize: 12 }}>
-                    Create one at api.planningcenteronline.com → Developer → Personal
-                    Access Tokens. Both values are required (used as HTTP Basic auth).
-                  </p>
-                </Stack>
-              </div>
-
-              <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12 }}>
-                <div style={{ color: colors.textDim, fontSize: 13, marginBottom: 6 }}>
-                  Or sign in with OAuth (desktop app)
-                </div>
-                <Button variant="secondary" onClick={() => void signIn()}>
-                  Sign in with Planning Center
-                </Button>
-              </div>
-
-              {error && <p style={{ color: colors.errorText }}>{error}</p>}
-            </Stack>
-          </Panel>
+          <PcoConnectForm
+            appId={patAppId}
+            secret={patSecret}
+            connecting={connectingPat}
+            error={error}
+            showOAuth={!cloud}
+            onAppId={setPatAppId}
+            onSecret={setPatSecret}
+            onSubmit={() => void connectWithPat()}
+            onOAuth={() => void signIn()}
+          />
         )}
 
         {status === "connected" && (
           <Stack gap={4}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, color: colors.textDim, fontSize: 13 }}>
-              <span>Connected</span>
-              <span aria-hidden>·</span>
-              <Button variant="secondary" onClick={() => void disconnect()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <strong style={{ color: colors.text, fontSize: 14 }}>Connected to Planning Center</strong>
+              <Button variant="danger" size="sm" onClick={() => void disconnect()}>
                 Disconnect
               </Button>
             </div>
             <Panel title="Select a plan">
-              <Stack gap={3}>
-                <Field label="Service type">
-                  <Select value={serviceTypeId} onChange={(e) => void onPickServiceType(e.target.value)}>
-                    <option value="">— choose —</option>
-                    {serviceTypes.map((st) => (
-                      <option key={st.id} value={st.id}>
-                        {st.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Plan">
-                  <Select
-                    value={planId}
-                    onChange={(e) => void onPickPlan(e.target.value)}
-                    disabled={plans.length === 0}
-                  >
-                    <option value="">— choose —</option>
-                    {plans.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {planLabel(p)}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </Stack>
+              <PcoPlanPicker
+                serviceTypes={serviceTypes}
+                serviceTypeId={serviceTypeId}
+                plans={plans}
+                plansLoading={plansLoading}
+                planId={planId}
+                onPickServiceType={(id) => void onPickServiceType(id)}
+                onPickPlan={(id) => void onPickPlan(id)}
+              />
             </Panel>
 
             {loadingItems && <p style={{ color: colors.textDim }}>Loading plan items…</p>}
 
             {items.length > 0 && (
-              <Panel title={`Items (${includedCount}/${items.length} selected)`}>
-                <Stack gap={2}>
-                  <Inline gap={2} align="center">
-                    <Button size="sm" onClick={() => setAllIncluded(true)} disabled={includedCount === items.length}>
-                      Select all
-                    </Button>
-                    <Button size="sm" onClick={() => setAllIncluded(false)} disabled={includedCount === 0}>
-                      Deselect all
-                    </Button>
-                    {Object.keys(imported).length > 0 && (
-                      <span style={{ color: colors.textDim, fontSize: 12 }}>
-                        {items.filter((i) => imported[i.id]?.length).length} of {items.length} already imported
-                      </span>
-                    )}
-                  </Inline>
-                  {items.map((item) => {
-                    const cfg = cfgs[item.id];
-                    if (!cfg) return null;
-                    return (
-                      <ItemConfigCard
-                        key={item.id}
-                        item={item}
-                        preview={previews[item.id]}
-                        importedIn={imported[item.id]}
-                        cfg={cfg}
-                        templates={templates}
-                        template={templateCache[cfg.graphicTemplateId] ?? null}
-                        onToggleInclude={() =>
-                          patch(item.id, (c) => ({ ...c, include: !c.include }))
-                        }
-                        translations={translations}
-                        scriptureTranslation={effTranslation(cfg)}
-                        scriptureTemplateId={effScriptureTemplate(cfg)}
-                        onKind={(k) => setKind(item, k)}
-                        onReference={(r) => patch(item.id, (c) => ({ ...c, reference: r }))}
-                        onScriptureTranslation={(id) => {
-                          setPickedTranslation(id);
-                          rememberTranslation(id);
-                          patch(item.id, (c) => ({ ...c, translation: id }));
-                        }}
-                        onScriptureTemplate={(id) =>
-                          patch(item.id, (c) => ({ ...c, scriptureTemplateId: id }))
-                        }
-                        onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
-                        onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
-                        onGraphicTemplate={(id) =>
-                          patch(item.id, (c) => {
-                            const tpl = templateCache[id];
-                            if (!tpl) return { ...c, graphicTemplateId: id };
-                            seededRef.current.add(`${item.id}:${id}`);
-                            return {
-                              ...c,
-                              graphicTemplateId: id,
-                              data: refillItemFields({
-                                item,
-                                templateFields: tpl.fields,
-                                data: c.data,
-                                edited: c.edited,
-                              }),
-                            };
-                          })
-                        }
-                        onFieldChange={(key, value) =>
-                          patch(item.id, (c) => ({
+              <PcoItemList
+                items={items}
+                selectedCount={includedCount}
+                selectableCount={selectableCount}
+                importedCount={items.filter((i) => imported[i.id]?.length).length}
+                onSelectAll={setAllIncluded}
+                renderItem={(item) => {
+                  const cfg = cfgs[item.id];
+                  if (!cfg) return null;
+                  return (
+                    <PcoItemRow
+                      key={item.id}
+                      item={item}
+                      preview={previews[item.id]}
+                      importedIn={imported[item.id]}
+                      cfg={cfg}
+                      templates={templates}
+                      template={templateCache[cfg.graphicTemplateId] ?? null}
+                      onToggleInclude={() => patch(item.id, (c) => ({ ...c, include: !c.include }))}
+                      translations={translations}
+                      scriptureTranslation={effTranslation(cfg)}
+                      onImportAs={(as) => setImportAs(item, as)}
+                      onScriptureToggle={() => toggleScripture(item)}
+                      onReference={(r) => patch(item.id, (c) => ({ ...c, reference: r }))}
+                      onScriptureTranslation={(id) => {
+                        setPickedTranslation(id);
+                        rememberTranslation(id);
+                        patch(item.id, (c) => ({ ...c, translation: id }));
+                      }}
+                      onScriptureTemplate={(id) =>
+                        patch(item.id, (c) => ({ ...c, scriptureTemplateId: id }))
+                      }
+                      onSongAction={(a) => patch(item.id, (c) => ({ ...c, songAction: a }))}
+                      onLyricTemplate={(id) => patch(item.id, (c) => ({ ...c, lyricTemplateId: id }))}
+                      onGraphicTemplate={(id) =>
+                        patch(item.id, (c) => {
+                          const tpl = templateCache[id];
+                          if (!tpl) return { ...c, graphicTemplateId: id };
+                          seededRef.current.add(`${item.id}:${id}`);
+                          return {
                             ...c,
-                            data: { ...c.data, [key]: value },
-                            edited: new Set(c.edited).add(key),
-                          }))
-                        }
-                      />
-                    );
-                  })}
-                </Stack>
-              </Panel>
+                            graphicTemplateId: id,
+                            data: refillItemFields({
+                              item,
+                              templateFields: tpl.fields,
+                              data: c.data,
+                              edited: c.edited,
+                            }),
+                          };
+                        })
+                      }
+                      onFieldChange={(key, value) =>
+                        patch(item.id, (c) => ({
+                          ...c,
+                          data: { ...c.data, [key]: value },
+                          edited: new Set(c.edited).add(key),
+                        }))
+                      }
+                    />
+                  );
+                }}
+              />
             )}
 
             {creatingSongItems.length > 0 && (
@@ -911,7 +847,7 @@ export default function PcoPage() {
                     <>
                       <Field label="Existing show">
                         <Select value={existingShowId} onChange={(e) => setExistingShowId(e.target.value)}>
-                          <option value="">— choose —</option>
+                          <option value="">Choose a show</option>
                           {showMetas.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name}
@@ -919,29 +855,22 @@ export default function PcoPage() {
                           ))}
                         </Select>
                       </Field>
-                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: colors.text }}>
-                        <input
-                          type="checkbox"
-                          checked={reorderToPlan}
-                          onChange={(e) => setReorderToPlan(e.target.checked)}
-                        />
-                        Reorder rows from this plan to match Planning Center
-                        <span style={{ color: colors.textDim, fontSize: 12 }}>
-                          (rows you added by hand keep their place)
-                        </span>
-                      </label>
+                      <Checkbox
+                        checked={reorderToPlan}
+                        onChange={setReorderToPlan}
+                        label="Reorder rows from this plan to match Planning Center (rows you added by hand keep their place)"
+                      />
                     </>
                   )}
-                  <div>
-                    <Button variant="primary" disabled={!canImport} onClick={() => void doImport()}>
-                      {importing ? "Importing…" : `Import ${includedCount} item(s)`}
-                    </Button>
-                  </div>
                 </Stack>
               </Panel>
             )}
 
-            {error && <p style={{ color: colors.errorText }}>{error}</p>}
+            {error && (
+              <p role="alert" style={{ color: colors.errorText }}>
+                {error}
+              </p>
+            )}
 
             {result && (
               <Panel title={result.ok ? "Import complete" : "Import finished with errors"}>
@@ -961,7 +890,7 @@ export default function PcoPage() {
                       the show for you to review:
                       <ul style={{ margin: "4px 0 0", paddingLeft: 20 }}>
                         {result.removedRows.map((r) => (
-                          <li key={r.rowId}>{r.label ?? r.itemId}</li>
+                          <li key={r.rowId}>{r.label ?? titleOf(r.itemId)}</li>
                         ))}
                       </ul>
                     </div>
@@ -975,7 +904,7 @@ export default function PcoPage() {
                   ))}
                   {result.errors.map((e, i) => (
                     <p key={i} style={{ color: colors.errorText, fontSize: 13 }}>
-                      {e.itemId}: {e.message}
+                      {titleOf(e.itemId)}: {e.message}
                     </p>
                   ))}
                   {/* Deliberately not gated on `!result.ok`: the success path
@@ -993,176 +922,19 @@ export default function PcoPage() {
                 </Stack>
               </Panel>
             )}
+
+            {items.length > 0 && (
+              <PcoImportFooter
+                summary={summary.label}
+                canImport={canImport}
+                importing={importing}
+                onImport={() => void doImport()}
+              />
+            )}
           </Stack>
         )}
       </PageBody>
     </>
-  );
-}
-
-function ItemConfigCard({
-  item,
-  preview,
-  importedIn,
-  cfg,
-  templates,
-  template,
-  translations,
-  scriptureTranslation,
-  scriptureTemplateId,
-  onToggleInclude,
-  onKind,
-  onReference,
-  onScriptureTranslation,
-  onScriptureTemplate,
-  onSongAction,
-  onLyricTemplate,
-  onGraphicTemplate,
-  onFieldChange,
-}: {
-  item: PcoPlanItem;
-  preview: ItemPreview | undefined;
-  importedIn: { showId: string; showName: string }[] | undefined;
-  cfg: ItemCfg;
-  templates: { id: string; name: string }[];
-  template: Template | null;
-  translations: TranslationMeta[];
-  scriptureTranslation: string;
-  scriptureTemplateId: string;
-  onToggleInclude: () => void;
-  onKind: (k: RowKind) => void;
-  onReference: (r: string) => void;
-  onScriptureTranslation: (id: string) => void;
-  onScriptureTemplate: (id: string) => void;
-  onSongAction: (a: SongAction) => void;
-  onLyricTemplate: (id: string) => void;
-  onGraphicTemplate: (id: string) => void;
-  onFieldChange: (key: string, value: string) => void;
-}) {
-  const isSong = item.itemType === "song" && !!item.song;
-  const hasMatch = !!preview?.match;
-  return (
-    <div
-      style={{
-        border: `1px solid ${colors.border}`,
-        borderRadius: 6,
-        padding: 12,
-        opacity: cfg.include ? 1 : 0.55,
-      }}
-    >
-      <Inline gap={2} align="center">
-        <input
-          type="checkbox"
-          checked={cfg.include}
-          onChange={onToggleInclude}
-          aria-label={`Include ${item.title}`}
-        />
-        <strong style={{ color: colors.text }}>{item.title}</strong>
-        <Pill tone={isSong ? "accent" : "dim"}>
-          {item.itemType}
-        </Pill>
-        {!!importedIn?.length && (
-          <Pill tone="good" title={`Already in: ${importedIn.map((s) => s.showName).join(", ")}`}>
-            already imported
-          </Pill>
-        )}
-      </Inline>
-
-      {cfg.include && (
-        <div style={{ marginTop: 10 }}>
-          <Field label="Import as">
-            <Select value={cfg.kind} onChange={(e) => onKind(e.target.value as RowKind)}>
-              {isSong && <option value="song">Song (lyrics)</option>}
-              <option value="item">Item (graphic)</option>
-              <option value="scripture">Scripture</option>
-            </Select>
-          </Field>
-
-          {isSong && cfg.kind === "song" ? (
-            <>
-              <Field label="Song">
-                <Select value={cfg.songAction} onChange={(e) => onSongAction(e.target.value as SongAction)}>
-                  {hasMatch && <option value="link">Link to “{preview!.match!.title}”</option>}
-                  <option value="create">Create new song</option>
-                </Select>
-              </Field>
-              {cfg.songAction === "create" && preview?.hasLyrics === false && (
-                <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
-                  No lyrics in arrangement — an empty stub will be created.
-                </p>
-              )}
-              {/* Only the create branch writes song content; linking leaves the
-                  library song untouched, so the promise would be false there. */}
-              {cfg.songAction === "create" && preview?.lyricsFromArrangement && (
-                <p style={{ color: colors.textDim, fontSize: 12, marginTop: -4 }}>
-                  Lyrics will come from the “{preview.lyricsFromArrangement}” arrangement —
-                  this item’s own arrangement has none.
-                </p>
-              )}
-              <Field label="Lyric template">
-                <Select value={cfg.lyricTemplateId} onChange={(e) => onLyricTemplate(e.target.value)}>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </>
-          ) : cfg.kind === "scripture" ? (
-            <>
-              <Field label="Reference">
-                <Input
-                  value={cfg.reference}
-                  onChange={(e) => onReference(e.target.value)}
-                  placeholder="John 3:16-18"
-                  invalid={!!referenceError(cfg.reference)}
-                />
-              </Field>
-              {referenceError(cfg.reference) && (
-                <p style={{ color: colors.errorText, fontSize: 12, marginTop: -4 }}>
-                  {referenceError(cfg.reference)}
-                </p>
-              )}
-              <Field label="Translation">
-                <Select
-                  value={scriptureTranslation}
-                  onChange={(e) => onScriptureTranslation(e.target.value)}
-                >
-                  {translations.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.abbreviation} — {t.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Template">
-                <Select value={scriptureTemplateId} onChange={(e) => onScriptureTemplate(e.target.value)}>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Template">
-                <Select value={cfg.graphicTemplateId} onChange={(e) => onGraphicTemplate(e.target.value)}>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <GraphicFields template={template} data={cfg.data} onChange={onFieldChange} />
-            </>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1239,28 +1011,5 @@ function SongDraftModal({
         <SongDraftEditor draft={local} onChange={setLocal} />
       </div>
     </Modal>
-  );
-}
-
-function GraphicFields({
-  template,
-  data,
-  onChange,
-}: {
-  template: Template | null;
-  data: Record<string, string>;
-  onChange: (key: string, value: string) => void;
-}) {
-  if (!template) return <p style={{ color: colors.textDim, fontSize: 12 }}>Loading template…</p>;
-  if (template.fields.length === 0)
-    return <p style={{ color: colors.textDim, fontSize: 12 }}>Template declares no fields.</p>;
-  return (
-    <Stack gap={2}>
-      {template.fields.map((f: TemplateField) => (
-        <Field key={f.key} label={f.label || f.key}>
-          <FieldInput field={f} value={data[f.key]} onChange={(v) => onChange(f.key, v)} />
-        </Field>
-      ))}
-    </Stack>
   );
 }
