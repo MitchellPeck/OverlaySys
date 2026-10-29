@@ -2,13 +2,17 @@
 
 import { useEffect, useId, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Modal, colors, fontSize, radius, useConfirm } from "@overlaysys/ui";
+import { Modal, colors, fontSize, radius, toast, useConfirm } from "@overlaysys/ui";
 import { isCloudMode } from "@/lib/mode";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { liveCommands } from "@/lib/liveCommands";
-import { buildPaletteEntries, rankEntries, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
+import { buildPaletteEntries, rankEntries, runPaletteEntry, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
+import { useHotcardHydration } from "../hooks/useHotcardHydration";
+
+/** Rows the palette renders at most; type more to narrow a long library. */
+const MAX_ROWS = 50;
 import { enterArea } from "./TopBar";
 import { OPEN_FIRST_RUN_EVENT } from "./FirstRunChecklist";
 import { AREAS, LAST_NON_LIVE_KEY, areasFor, destinationsFor, liveToggleTarget, routeToArea } from "./areas";
@@ -69,6 +73,8 @@ export function CommandPalette() {
   // Re-list once a card's body loads: liveCommands omits unloaded cards.
   const hotcardCache = useStore((s) => s.hotcardCache);
   const projectId = useStore((s) => s.currentProjectId);
+  // Hotcard verbs need the card bodies: load them while the palette is open (desktop only).
+  useHotcardHydration(open && !isCloudMode());
 
   const entries: PaletteEntry[] = useMemo(() => {
     const cloud = isCloudMode();
@@ -88,12 +94,14 @@ export function CommandPalette() {
       if (api.revealLogs) extras.push({ id: "app:reveal-logs", label: "Reveal logs", group: "App", run: () => void api.revealLogs?.() });
     }
     // Built from a getter: each verb's messages() re-reads the store when sent.
-    if (!cloud) extras.push(...liveCommands(useStore.getState).map((c) => toPaletteEntry(c, send)));
+    // Nothing to send at send time (preview emptied meanwhile, card gone): say so.
+    const onEmpty = (c: { label: string }) => toast({ message: `${c.label}: nothing to send`, tone: "warn" });
+    if (!cloud) extras.push(...liveCommands(useStore.getState).map((c) => toPaletteEntry(c, send, onEmpty)));
     return buildPaletteEntries({ destinations, shows, songs, templates, stageLayouts, hotcards, projectId, cloud, extras });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hotcardCache only re-triggers the listing
   }, [router, send, shows, songs, templates, stageLayouts, hotcards, hotcardCache, projectId]);
 
-  const filtered = useMemo(() => rankEntries(query, entries), [entries, query]);
+  const filtered = useMemo(() => rankEntries(query, entries, MAX_ROWS), [entries, query]);
 
   const clampedIndex = Math.min(index, Math.max(0, filtered.length - 1));
 
@@ -108,13 +116,8 @@ export function CommandPalette() {
     const entry = filtered[i];
     if (!entry) return;
     setOpen(false);
-    if (entry.href) {
-      router.push(entry.href);
-      return;
-    }
     // On-air verbs: nothing is read or sent until the operator confirms.
-    if (entry.confirm && !(await confirm(entry.confirm))) return;
-    entry.run?.();
+    await runPaletteEntry(entry, { confirm, navigate: (href) => router.push(href) });
   }
 
   return (

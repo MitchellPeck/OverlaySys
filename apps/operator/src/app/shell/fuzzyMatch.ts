@@ -8,11 +8,23 @@
  * An empty (or blank) query scores 1, so it matches everything equally.
  */
 export function fuzzyScore(query: string, text: string): number {
-  const q = query.trim().toLowerCase();
+  return fuzzyScorePrepared(query.trim().toLowerCase(), prepareText(text));
+}
+
+/** A text lowercased with its word initials, computed once and scored many times. */
+export type PreparedText = { lower: string; initials: string };
+
+export function prepareText(text: string): PreparedText {
+  const lower = text.toLowerCase();
+  return { lower, initials: initials(lower) };
+}
+
+/** fuzzyScore with an already-lowercased, trimmed query and a prepared text. */
+export function fuzzyScorePrepared(q: string, p: PreparedText): number {
   if (!q) return 1;
-  const t = text.toLowerCase();
+  const t = p.lower;
   if (t.startsWith(q)) return 3;
-  if (startsAWord(q, t) || initials(t).startsWith(q)) return 2;
+  if (startsAWord(q, t) || p.initials.startsWith(q)) return 2;
   return isSubsequence(q, t) ? 1 : 0;
 }
 

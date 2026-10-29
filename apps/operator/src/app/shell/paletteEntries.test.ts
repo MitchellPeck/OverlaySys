@@ -3,7 +3,7 @@ import type { ChannelState, Hotcard, HotcardMeta, TemplateMeta } from "@overlays
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import type { ShowMeta } from "../../lib/store";
 import { liveCommands, type PaletteCommand } from "../../lib/liveCommands";
-import { SYNONYMS, buildPaletteEntries, rankEntries, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
+import { SYNONYMS, buildPaletteEntries, rankEntries, runPaletteEntry, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
 
 const welcome: Hotcard = { id: "h1", name: "Welcome", projectId: "p1", templateId: "l3", data: { title: "Line one" }, channelHint: "program" };
 const hotcardMetas: HotcardMeta[] = [
@@ -59,10 +59,20 @@ describe("rankEntries", () => {
   it("puts Speech-to-text first for 'stt'", () => {
     expect(rankEntries("stt", build(false, onAirExtras()))[0]?.label).toBe("Settings · Speech-to-text");
   });
-  it("orders by score, then group, then label", () => {
+  it("orders by score, then group; Go to / App / On air keep their given (nav) order", () => {
     const e = (label: string, group: PaletteEntry["group"]): PaletteEntry => ({ id: label + group, label, group });
     const ranked = rankEntries("so", [e("Zed so", "App"), e("Songs", "Go to"), e("Sonic", "Songs"), e("Also", "Go to"), e("Solo", "Go to")]);
-    expect(ranked.map((r) => r.label)).toEqual(["Solo", "Songs", "Sonic", "Zed so", "Also"]);
+    expect(ranked.map((r) => r.label)).toEqual(["Songs", "Solo", "Sonic", "Zed so", "Also"]);
+  });
+  it("library groups sort by label within a score", () => {
+    const e = (label: string, group: PaletteEntry["group"]): PaletteEntry => ({ id: label + group, label, group });
+    const ranked = rankEntries("", [e("Settings", "Go to"), e("Live", "Go to"), e("Zion", "Songs"), e("Amazing", "Songs"), e("Take", "On air"), e("Clear", "On air")]);
+    expect(ranked.map((r) => r.label)).toEqual(["Settings", "Live", "Amazing", "Zion", "Take", "Clear"]);
+  });
+  it("caps the result list", () => {
+    const many = Array.from({ length: 120 }, (_, i): PaletteEntry => ({ id: String(i), label: "Song " + i, group: "Songs" }));
+    expect(rankEntries("song", many, 50)).toHaveLength(50);
+    expect(rankEntries("song", many)).toHaveLength(120);
   });
   it("drops entries that don't match and matches keywords", () => {
     const ranked = rankEntries("pgm", build(false, onAirExtras()));
@@ -113,5 +123,47 @@ describe("toPaletteEntry", () => {
     entry.run?.();
     expect(calls).toBe(1);
     expect(sent).toEqual(msgs);
+  });
+
+  it("reports an empty send instead of doing nothing silently", () => {
+    const cmd: PaletteCommand = {
+      id: "take-pvw", label: "Take preview to program", group: "On air", keywords: [],
+      confirm: { title: "t", message: "m", confirmLabel: "Take" },
+      messages: () => [],
+    };
+    const empty: string[] = [];
+    toPaletteEntry(cmd, () => { throw new Error("nothing should be sent"); }, (c) => empty.push(c.id)).run?.();
+    expect(empty).toEqual(["take-pvw"]);
+  });
+});
+
+describe("runPaletteEntry", () => {
+  const cmd = (msgs: () => ClientMessage[]): PaletteCommand => ({
+    id: "clear-all", label: "Clear all outputs", group: "On air", keywords: [],
+    confirm: { title: "Clear all outputs?", message: "m", confirmLabel: "Clear all", danger: true },
+    messages: msgs,
+  });
+
+  it("cancel at the confirm sends nothing and never reads messages()", async () => {
+    let reads = 0;
+    const sent: ClientMessage[] = [];
+    const entry = toPaletteEntry(cmd(() => { reads++; return [{ type: "clear", channel: "program" } as ClientMessage]; }), (m) => sent.push(m));
+    const asked: unknown[] = [];
+    const r = await runPaletteEntry(entry, { confirm: async (c) => { asked.push(c); return false; }, navigate: () => { throw new Error("no nav"); } });
+    expect(r).toBe("cancelled");
+    expect(asked).toEqual([entry.confirm]);
+    expect(reads).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  it("confirm then sends; links navigate without a confirm", async () => {
+    const sent: ClientMessage[] = [];
+    const entry = toPaletteEntry(cmd(() => [{ type: "clear", channel: "program" } as ClientMessage]), (m) => sent.push(m));
+    expect(await runPaletteEntry(entry, { confirm: async () => true, navigate: () => {} })).toBe("ran");
+    expect(sent).toHaveLength(1);
+    const went: string[] = [];
+    const link: PaletteEntry = { id: "go", label: "Songs", group: "Go to", href: "/songs" };
+    expect(await runPaletteEntry(link, { confirm: async () => { throw new Error("no confirm"); }, navigate: (h) => went.push(h) })).toBe("navigated");
+    expect(went).toEqual(["/songs"]);
   });
 });
