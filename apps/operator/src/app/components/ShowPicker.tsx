@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { List, Pencil } from "lucide-react";
-import { Dialog, IconButton, LibraryList, Select, colors, useConfirm, type SortSpec } from "@overlaysys/ui";
+import { useRouter } from "next/navigation";
+import { ArrowRightLeft, List, Pencil } from "lucide-react";
+import { Dialog, IconButton, LibraryList, Select, colors, useConfirm, type Column, type MenuItem, type SortSpec } from "@overlaysys/ui";
 import { useStore, type ShowMeta } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
@@ -13,6 +14,19 @@ import { metaDate, showSorts } from "../shows/showListModel";
 
 /** The picker offers service date (newest first, the default) and name. */
 const PICKER_SORTS: SortSpec<ShowMeta>[] = showSorts.filter((s) => s.id === "date-desc" || s.id === "name-asc");
+
+/** The service date as a column, so the list header isn't a lone "Name". */
+const PICKER_COLUMNS: Column<ShowMeta>[] = [
+  {
+    id: "date",
+    label: "Service date",
+    width: "130px",
+    render: (s) => {
+      const d = metaDate(s);
+      return d ? formatServiceDate(d, new Date()) : "—";
+    },
+  },
+];
 
 /**
  * The Live page's show picker (top bar context): the current show, an edit
@@ -24,7 +38,31 @@ export function ShowPicker() {
   const showMetas = useStore((s) => s.showMetas);
   const show = useStore((s) => s.show);
   const confirm = useConfirm();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  // Every row's "⋯" menu has real actions: switch to it, or edit it.
+  const menuItems = (s: ShowMeta): MenuItem[] => [
+    {
+      id: "switch",
+      label: "Switch to this show",
+      icon: <ArrowRightLeft size={14} />,
+      disabled: s.id === show?.id ? "Already the current show" : false,
+      onSelect: () => {
+        setOpen(false);
+        void switchTo(s.id);
+      },
+    },
+    {
+      id: "edit",
+      label: "Edit show",
+      icon: <Pencil size={14} />,
+      onSelect: () => {
+        setOpen(false);
+        router.push(`/shows/edit?id=${encodeURIComponent(s.id)}`);
+      },
+    },
+  ];
 
   async function switchTo(id: string) {
     if (!id || id === show?.id) return;
@@ -86,14 +124,11 @@ export function ShowPicker() {
           primary={(s) => (
             <span style={{ color: s.id === show?.id ? colors.brand : undefined }}>{s.name || "Untitled show"}</span>
           )}
-          secondary={(s) => {
-            const d = metaDate(s);
-            return d ? formatServiceDate(d, new Date()) : null;
-          }}
+          columns={PICKER_COLUMNS}
           searchText={(s) => s.name}
           sorts={PICKER_SORTS}
           defaultSort="date-desc"
-          menuItems={() => []}
+          menuItems={menuItems}
           onOpen={(s) => {
             setOpen(false);
             void switchTo(s.id);

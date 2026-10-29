@@ -75,7 +75,8 @@ function LivePageLocal() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "300px minmax(0, 1fr) auto",
+          // 300px rundown; narrows to 240px on small screens (1024) so the centre keeps room.
+          gridTemplateColumns: "clamp(240px, 22vw, 300px) minmax(0, 1fr) auto",
           gap: 1,
           background: colors.border,
           minHeight: 0,
