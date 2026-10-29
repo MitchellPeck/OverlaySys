@@ -95,6 +95,22 @@ export function slidesRowView(
   };
 }
 
+/**
+ * The field data a slides-row slide is rendered with (program, preview and
+ * every thumbnail): each text field the design declares but the slide doesn't
+ * supply is set to "", so the template's sample/default text never shows.
+ * Non-text fields (image, colour, …) keep the design's defaults.
+ */
+export function slideAirData(
+  data: Record<string, string>,
+  template: Pick<Template, "fields"> | null | undefined,
+): Record<string, string> {
+  if (!template) return data;
+  const out = { ...data };
+  for (const f of template.fields) if (f.type === "text" && out[f.key] === undefined) out[f.key] = "";
+  return out;
+}
+
 export function slideTextLines(
   data: Record<string, string>,
   template?: Pick<Template, "fields">,

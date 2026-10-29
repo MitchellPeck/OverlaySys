@@ -1,5 +1,5 @@
 import type { ChannelState, SectionKind, Song, SongRow, SongSessionSummary } from "@overlaysys/core";
-import { resolveArrangement } from "@overlaysys/core";
+import { resolveArrangement, slideAirData } from "@overlaysys/core";
 import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { posterPathFor } from "./mediaTake";
@@ -221,7 +221,7 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
           key: s.key,
           label: s.label ?? `Slide ${i + 1}`,
           group: null,
-          render: { kind: "template" as const, templateId: s.templateId, data: s.data },
+          render: { kind: "template" as const, templateId: s.templateId, data: slideAirData(s.data, ctx.templateCache[s.templateId]) },
           state: slidesThumbState(row, i, ctx.channelStates),
           blanked: false,
         }));

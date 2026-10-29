@@ -119,6 +119,23 @@ describe("thumbsFor", () => {
     expect(t.map((x) => x.label)).toEqual(["Slide 1", "Hi"]);
     slidesMock.mockReset();
   });
+
+  it("slides thumbs match program: unsupplied text fields render \"\", not the design's sample", () => {
+    slidesMock.mockReturnValue({
+      slides: [{ key: "k1", slideId: "a", position: 0, templateId: "LT", data: { subtitle: "Line D" } }],
+    });
+    const lt = {
+      id: "LT",
+      fields: [
+        { key: "header", type: "text", label: "Header", default: "Rev Sample Name" },
+        { key: "subtitle", type: "text", label: "Subtitle", default: "Sample title" },
+      ],
+    };
+    const row = { kind: "slides", id: "s1", deckId: "d" };
+    const t = thumbsFor(row as never, mkCtx({ templateCache: { LT: lt } as never }));
+    expect(t[0]!.render).toEqual({ kind: "template", templateId: "LT", data: { header: "", subtitle: "Line D" } });
+    slidesMock.mockReset();
+  });
 });
 
 describe("thumbActivate", () => {

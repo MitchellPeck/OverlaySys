@@ -89,6 +89,27 @@ export function unshownValues(data: Record<string, string>, fieldKeys: string[])
     .map(([key, value]) => ({ key, value }));
 }
 
+/**
+ * True when the slide stores non-empty text its design has no field for and
+ * that text hasn't been copied into the design's first multiline (else first)
+ * field. Same rule as the per-slide "Copy into …" block.
+ */
+export function slideTextHidden(
+  data: Record<string, string>,
+  fields: { key: string; multiline?: boolean }[],
+): boolean {
+  const unshown = unshownValues(data, fields.map((f) => f.key));
+  if (unshown.length === 0) return false;
+  const target = fields.find((f) => f.multiline) ?? fields[0];
+  return !(target && data[target.key] === unshown.map((u) => u.value).join("\n"));
+}
+
+/** Row warning under "Design": "N slides' text isn't shown by this design"; null when every slide's text shows. */
+export function hiddenTextWarning(n: number): string | null {
+  if (n <= 0) return null;
+  return n === 1 ? "1 slide's text isn't shown by this design" : `${n} slides' text isn't shown by this design`;
+}
+
 /** True when the slides have text and the design's text keys share none of the keys it is stored under. */
 export function designMissesSlideText(fieldKeys: string[], slides: Pick<DeckSlide, "data">[]): boolean {
   const used = new Set<string>();

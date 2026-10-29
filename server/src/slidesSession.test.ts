@@ -201,4 +201,29 @@ describe("slidesSession", () => {
       songSession.endAll();
     });
   });
+
+  it("text fields the slide doesn't supply air as \"\" (never the design's sample text), also on advance", () => {
+    const lt = {
+      id: "LT",
+      fields: [
+        { key: "header", type: "text", label: "Header", default: "Rev Sample Name" },
+        { key: "subtitle", type: "text", label: "Subtitle", default: "Sample title" },
+      ],
+    } as unknown as Template;
+    const only = (position: number, data: Record<string, string>): ResolvedSlide => ({
+      key: `k${position}`,
+      slideId: `s${position}`,
+      position,
+      templateId: "LT",
+      data,
+    });
+    slidesSession.start(
+      "program",
+      { ...args({ slides: [only(0, { subtitle: "Line D" }), only(1, { header: "Line A" })] }), templates: new Map([["LT", lt]]) },
+      0,
+    );
+    expect(channels.getState("program").active?.data).toEqual({ header: "", subtitle: "Line D" });
+    slidesSession.advance("program", 1);
+    expect(channels.getState("program").active?.data).toMatchObject({ header: "Line A", subtitle: "" });
+  });
 });

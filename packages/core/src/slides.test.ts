@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vitest";
 import type { Deck, SlidesRowFields } from "./deck";
-import { deckTextToSlides, resolveSlidesRow, slidesRowView, slideTextLines } from "./slides";
+import { deckTextToSlides, resolveSlidesRow, slideAirData, slidesRowView, slideTextLines } from "./slides";
+
+describe("slideAirData", () => {
+  const lowerThird = {
+    fields: [
+      { key: "header", type: "text", label: "Header", default: "Rev Sample Name" },
+      { key: "subtitle", type: "text", label: "Subtitle", default: "Sample title" },
+      { key: "logo", type: "image", label: "Logo", default: "/logo.png" },
+    ],
+  };
+  it("a slide storing only subtitle airs header \"\" (never the sample), keeps its own values", () => {
+    expect(slideAirData({ subtitle: "Line D" }, lowerThird as never)).toEqual({ header: "", subtitle: "Line D" });
+  });
+  it("keeps explicit values and non-text fields alone; no template → data unchanged", () => {
+    expect(slideAirData({ header: "Line A", extra: "x" }, lowerThird as never)).toEqual({
+      header: "Line A",
+      subtitle: "",
+      extra: "x",
+    });
+    expect(slideAirData({ text: "Line A" }, null)).toEqual({ text: "Line A" });
+  });
+});
 
 const deck = { id: "d", name: "Gloria", defaultTemplateId: "deckT", tags: [], licensing: { kind: "own" },
   createdAt: "x", slides: [

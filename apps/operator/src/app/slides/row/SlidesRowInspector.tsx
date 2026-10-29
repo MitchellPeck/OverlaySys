@@ -12,6 +12,8 @@ import {
   removeAt,
   removeLocalSlide,
   resolveSlideTemplateId,
+  resolveSlidesRow,
+  slideAirData,
   setDeck,
   setFieldOverride,
   setLocalSlideField,
@@ -35,7 +37,8 @@ import { TemplateSelect } from "@/app/shows/edit/TemplateSelect";
 import { DeckPicker } from "./DeckPicker";
 import {
   deckDefaultLabel,
-  designMissesSlideText,
+  hiddenTextWarning,
+  slideTextHidden,
   detachConfirm,
   overrideValue,
   ownDesignCount,
@@ -470,21 +473,42 @@ function DesignRow({
             {own === 1 ? "1 slide uses its own design" : `${own} slides use their own design`}
           </span>
         )}
-        {row.templateId && <DesignTextWarning templateId={row.templateId} source={source} />}
+        {row.templateId && <LoadTemplate templateId={row.templateId} />}
+        <HiddenTextWarning row={row} deck={oneOff ? null : deck} />
       </div>
     </FormRow>
   );
 }
 
-/** Warns when the chosen design has no field for any key the slides store their text under. */
-function DesignTextWarning({ templateId, source }: { templateId: string; source: Pick<Deck, "slides"> }) {
-  const { template } = useTemplateBody(templateId);
-  if (!template) return null;
-  const keys = slideFieldsFor(template).map((f) => f.key);
-  if (!designMissesSlideText(keys, source.slides)) return null;
+/** Fetches a template body into the cache (the row design), so the warning below can count against it. */
+function LoadTemplate({ templateId }: { templateId: string }) {
+  useTemplateBody(templateId);
+  return null;
+}
+
+/**
+ * "N slides' text isn't shown by this design": any playing slide (with this
+ * week's text) storing non-empty text its effective design has no field for.
+ * Slides whose design hasn't loaded yet aren't counted.
+ */
+function HiddenTextWarning({ row, deck }: { row: SlidesRow; deck: Deck | null }) {
+  const templateCache = useStore((s) => s.templateCache);
+  const n = useMemo(() => {
+    const seen = new Set<string>();
+    let count = 0;
+    for (const s of resolveSlidesRow(row, deck).slides) {
+      if (seen.has(s.slideId)) continue;
+      seen.add(s.slideId);
+      const t = templateCache[s.templateId];
+      if (t && slideTextHidden(s.data, slideFieldsFor(t))) count++;
+    }
+    return count;
+  }, [row, deck, templateCache]);
+  const text = hiddenTextWarning(n);
+  if (!text) return null;
   return (
     <span role="status" style={{ fontSize: fontSize.xs, color: colors.warn }}>
-      This design doesn&apos;t show the slides&apos; text. Pick another design, or copy the text into its fields below.
+      {text}. Pick another design, or use &quot;Copy into …&quot; on each slide.
     </span>
   );
 }
@@ -566,7 +590,7 @@ function SlideTextView({
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
           {templateId ? (
-            <TemplateThumbnail templateId={templateId} data={data} width={160} label={`Slide ${position + 1} preview`} />
+            <TemplateThumbnail templateId={templateId} data={slideAirData(data, template)} width={160} label={`Slide ${position + 1} preview`} />
           ) : null}
           <div style={{ fontSize: fontSize.xs, color: colors.textMuted, paddingTop: 2 }}>
             Slide {position + 1}

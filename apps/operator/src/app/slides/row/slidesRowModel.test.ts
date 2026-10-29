@@ -5,6 +5,8 @@ import {
   deckPickerList,
   designMissesSlideText,
   detachConfirm,
+  hiddenTextWarning,
+  slideTextHidden,
   overrideValue,
   ownDesignCount,
   slideCaption,
@@ -12,6 +14,24 @@ import {
   slideListEntries,
   unshownValues,
 } from "./slidesRowModel";
+
+describe("fix round 2 helpers", () => {
+  const lt = [
+    { key: "header", multiline: true },
+    { key: "subtitle", multiline: true },
+  ];
+  it("slideTextHidden: text under a key the design lacks, until copied", () => {
+    expect(slideTextHidden({ text: "Line A" }, lt)).toBe(true);
+    expect(slideTextHidden({ subtitle: "Line D" }, lt)).toBe(false);
+    expect(slideTextHidden({ text: "Line A", header: "Line A" }, lt)).toBe(false);
+    expect(slideTextHidden({ text: "" }, lt)).toBe(false);
+  });
+  it("hiddenTextWarning copy", () => {
+    expect(hiddenTextWarning(0)).toBeNull();
+    expect(hiddenTextWarning(1)).toBe("1 slide's text isn't shown by this design");
+    expect(hiddenTextWarning(3)).toBe("3 slides' text isn't shown by this design");
+  });
+});
 
 describe("fix round 1 helpers", () => {
   it("deckDefaultLabel: no Missing-template flash while loading", () => {

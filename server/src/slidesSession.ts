@@ -1,5 +1,5 @@
 import type { DeckLicensing, ResolvedSlide, SlidesSessionSummary, Template } from "@overlaysys/core";
-import { slideTextLines } from "@overlaysys/core";
+import { slideAirData, slideTextLines } from "@overlaysys/core";
 import * as channels from "./channels";
 import { recordSongUse } from "./songUsage";
 import * as songSession from "./songSession";
@@ -57,12 +57,14 @@ function render(s: Session, forceMount: boolean): void {
     return;
   }
   const slide = s.args.slides[s.idx]!;
+  // Unsupplied text fields go out as "": the design's sample text never airs.
+  const data = slideAirData(slide.data, s.args.templates.get(slide.templateId));
   const cur = channels.getState(s.channel).active;
   if (!forceMount && cur && cur.templateId === slide.templateId && cur.phase === "in") {
-    channels.update(s.channel, slide.data);
+    channels.update(s.channel, data);
     return;
   }
-  channels.takeInternal(s.channel, slide.templateId, slide.data);
+  channels.takeInternal(s.channel, slide.templateId, data);
 }
 
 function noteUse(args: StartArgs, channel: string): void {
