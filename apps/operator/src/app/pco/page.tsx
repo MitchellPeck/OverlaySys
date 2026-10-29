@@ -26,7 +26,6 @@ import {
   Stack,
   colors,
   StatusDot,
-  useConfirm,
 } from "@overlaysys/ui";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -47,7 +46,6 @@ import {
   importPlan,
   listPlans,
   listServiceTypes,
-  disconnectPco,
   PcoNotConnectedError,
   setPcoCredentials,
   type ImportItemConfig,
@@ -138,7 +136,6 @@ export default function PcoPage() {
   const [plans, setPlans] = useState<PcoPlan[]>([]);
   const [planId, setPlanId] = useState("");
   const [plansLoading, setPlansLoading] = useState(false);
-  const confirm = useConfirm();
 
   const [items, setItems] = useState<PcoPlanItem[]>([]);
   const [previews, setPreviews] = useState<Record<string, ItemPreview>>({});
@@ -304,30 +301,6 @@ export default function PcoPage() {
     } finally {
       setConnectingPat(false);
     }
-  }
-
-  async function disconnect() {
-    const ok = await confirm({
-      title: "Disconnect Planning Center?",
-      message: "You will need to paste your Application ID and Secret again to import plans.",
-      confirmLabel: "Disconnect",
-      danger: true,
-    });
-    if (!ok) return;
-    setError(null);
-    try {
-      await disconnectPco(() => getDesktopApi()?.pcoSignOut?.());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      await checkStatus();
-      return;
-    }
-    setServiceTypes([]);
-    setServiceTypeId("");
-    setPlans([]);
-    setPlanId("");
-    setItems([]);
-    setStatus("disconnected");
   }
 
   async function onPickServiceType(id: string) {
@@ -722,9 +695,6 @@ export default function PcoPage() {
           <Stack gap={4}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <strong style={{ color: colors.text, fontSize: 14 }}>Connected to Planning Center</strong>
-              <Button variant="danger" size="sm" onClick={() => void disconnect()}>
-                Disconnect
-              </Button>
             </div>
             <Panel title="Select a plan">
               <PcoPlanPicker
