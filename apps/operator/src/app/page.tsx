@@ -70,7 +70,16 @@ function LivePageLocal() {
   const { drawerOpen } = useLivePrefs();
 
   return (
-    <div style={{ height: "100%", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", overflow: "hidden" }}>
+    <div
+      style={{
+        height: "100%",
+        display: "grid",
+        gridTemplateRows: "minmax(0,1fr) auto",
+        // One column bounded by the viewport: wide content (a video transport) can't grow the page.
+        gridTemplateColumns: "minmax(0, 1fr)",
+        overflow: "hidden",
+      }}
+    >
       <PageChrome title="Live" context={<ShowPicker />} />
       <div
         style={{

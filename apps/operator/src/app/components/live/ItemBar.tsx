@@ -118,7 +118,8 @@ export function ItemBar({ row, hotcardId = null, quickTake = false, onQuickTakeC
           )}
         </div>
         {!quickTake && (
-          <div style={{ display: "flex", alignItems: "center", gap: space[2], flexShrink: 0 }}>
+          // A video's transport may shrink (its seek bar narrows); buttons never do.
+          <div style={{ display: "flex", alignItems: "center", gap: space[2], flexShrink: row?.kind === "video" ? 1 : 0, minWidth: 0 }}>
             {row && ctx ? (
               <RowControls row={row} editOpen={editOpen} onEditToggle={() => setEditOpen((v) => !v)} noText={noText} />
             ) : hotcardId ? (

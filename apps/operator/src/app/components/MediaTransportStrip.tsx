@@ -46,7 +46,7 @@ export function MediaTransportStrip({ inline = false, size = "sm" }: { inline?: 
   if (entries.length === 0) return null;
   if (inline) {
     return (
-      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, overflowX: "auto" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: "0 1 auto", overflowX: "auto" }}>
         {entries.map((s) => (
           <CompactTransport key={s.channel} channel={s.channel} media={s.media} size={size} />
         ))}
@@ -179,18 +179,22 @@ function CompactTransport({ channel, media, size }: { channel: string; media: Ch
   return (
     <div
       title={media.playback.error ?? undefined}
-      style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flexShrink: 0, whiteSpace: "nowrap" }}
+      // Shrinks (the seek bar first) rather than push the Live layout past the viewport.
+      style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}
     >
-      <Film size={14} aria-hidden />
-      <span
-        title={`${media.label || "Video"} · ${channel}`}
-        style={{ fontWeight: 600, fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}
-      >
-        {media.label || "Video"}
-      </span>
+      {/* In the Live item bar (lg) the row title already names the video. */}
+      {size !== "lg" && <Film size={14} aria-hidden />}
+      {size !== "lg" && (
+        <span
+          title={`${media.label || "Video"} · ${channel}`}
+          style={{ fontWeight: 600, fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}
+        >
+          {media.label || "Video"}
+        </span>
+      )}
       <StatusDot tone={STATUS_TONE[tr.status]} label={STATUS_LABEL[tr.status]} />
       <span style={{ fontSize: 12, color: colors.textDim, fontVariantNumeric: "tabular-nums" }}>{elapsedLabel(tr)}</span>
-      <SeekBar tr={tr} height={6} style={{ width: 140, flexShrink: 0 }} />
+      <SeekBar tr={tr} height={6} style={{ flex: "1 1 140px", minWidth: 48, maxWidth: 140 }} />
       {/* The number the operator watches before the next cue: big, and amber/red near the end. */}
       <span
         title="Time remaining"

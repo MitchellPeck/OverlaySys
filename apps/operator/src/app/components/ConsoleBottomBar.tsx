@@ -30,7 +30,8 @@ export function ConsoleBottomBar() {
         <Pill tone="dim">{label}</Pill>
       </span>
       <MediaTransportStrip inline size="sm" />
-      <div style={{ marginLeft: "auto" }}>
+      {/* Shrinks and scrolls rather than widen the page while a video plays. */}
+      <div style={{ marginLeft: "auto", minWidth: 0, flex: "0 100 auto", overflowX: "auto" }}>
         <ChannelDots />
       </div>
     </div>
