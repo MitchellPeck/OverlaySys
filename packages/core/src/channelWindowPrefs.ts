@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_FORMAT_ID } from "./deckLinkOutput";
 
 /**
  * Per-machine channel window preferences. Lives in
@@ -27,6 +28,17 @@ export const CachedDisplaySchema = z.object({
 });
 export type CachedDisplay = z.infer<typeof CachedDisplaySchema>;
 
+/**
+ * A channel sent to a Blackmagic output device instead of a display. The
+ * device is an object so a field telling identical units apart (serial,
+ * persistent id) can be added later without migrating prefs.
+ */
+export const DeckLinkOutputPrefSchema = z.object({
+  device: z.object({ name: z.string().min(1) }),
+  format: z.string().default(DEFAULT_FORMAT_ID),
+});
+export type DeckLinkOutputPref = z.infer<typeof DeckLinkOutputPrefSchema>;
+
 export const ChannelWindowPrefsSchema = z.object({
   autoOpen: z.boolean().default(false),
   /** Electron `Display.id` of the target display when the pref was saved.
@@ -40,6 +52,8 @@ export const ChannelWindowPrefsSchema = z.object({
   /** Output device for media audio in this window (per-machine; never synced).
    *  `label` is the fallback match — device ids are per-origin hashes. */
   audioOutput: z.object({ deviceId: z.string(), label: z.string() }).optional(),
+  /** Set: this channel goes to a Blackmagic device; the display fields are ignored. */
+  decklink: DeckLinkOutputPrefSchema.optional(),
 });
 export type ChannelWindowPrefs = z.infer<typeof ChannelWindowPrefsSchema>;
 
@@ -47,5 +61,7 @@ export const WindowPrefsFileSchema = z.object({
   version: z.literal(1).default(1),
   displays: z.array(CachedDisplaySchema).default([]),
   channels: z.record(z.string(), ChannelWindowPrefsSchema).default({}),
+  /** ffmpeg built with Blackmagic support; unset = ~/.local/bin/ffmpeg-decklink. */
+  decklinkFfmpegPath: z.string().optional(),
 });
 export type WindowPrefsFile = z.infer<typeof WindowPrefsFileSchema>;

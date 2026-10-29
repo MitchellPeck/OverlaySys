@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ChannelWindowPrefsSchema,
   WindowPrefsFileSchema,
   type WindowPrefsFile,
 } from "./channelWindowPrefs";
@@ -57,5 +58,22 @@ describe("WindowPrefsFileSchema", () => {
         ],
       }),
     ).toThrow();
+  });
+});
+
+describe("decklink output prefs", () => {
+  it("accepts a decklink output and defaults its format", () => {
+    const p = ChannelWindowPrefsSchema.parse({ decklink: { device: { name: "UltraStudio Express Monitor 3G" } } });
+    expect(p.decklink).toEqual({ device: { name: "UltraStudio Express Monitor 3G" }, format: "1080p59.94" });
+  });
+
+  it("old prefs files without decklink still parse", () => {
+    const f = WindowPrefsFileSchema.parse({ channels: { stage: { autoOpen: true } } });
+    expect(f.channels.stage!.decklink).toBeUndefined();
+    expect(f.decklinkFfmpegPath).toBeUndefined();
+  });
+
+  it("keeps a configured ffmpeg path", () => {
+    expect(WindowPrefsFileSchema.parse({ decklinkFfmpegPath: "/opt/ff" }).decklinkFfmpegPath).toBe("/opt/ff");
   });
 });
