@@ -99,6 +99,7 @@ class OverlaySysInstance extends InstanceBase<ModuleConfig> {
           this.connection?.send({ type: "list_templates" });
           this.connection?.send({ type: "list_shows" });
           this.connection?.send({ type: "list_songs" });
+          this.connection?.send({ type: "list_decks" });
           this.connection?.send({ type: "list_hotcards" });
           this.connection?.send({ type: "list_channels" });
           this.connection?.send({ type: "list_stage_layouts" }); // [P2b.34]
@@ -288,6 +289,7 @@ function mutatesDropdownSources(evt: ReducerEvent): boolean {
     case "stage_layout_list": // [P2b.34]
     case "template_list":
     case "song_list":
+    case "deck_list":
     case "show":
     case "hotcard":
     case "template":

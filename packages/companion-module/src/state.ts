@@ -97,6 +97,8 @@ export function apply(
     }
     case "song_list":
       return { ...state, songs: evt.songs };
+    case "deck_list":
+      return { ...state, decks: evt.decks.map((d) => ({ id: d.id, name: d.name })) };
     case "channel_list":
       return { ...state, channels: evt.configs };
 

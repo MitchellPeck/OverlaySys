@@ -11,8 +11,10 @@ export function rowDisplayLabel(
   }
   if (row.kind === "scripture") return row.reference;
   if (row.kind === "video") return row.label || "Video";
-  // [P3.21] deck titles are not cached in Companion, so slides rows read "Slides"
-  if (row.kind === "slides") return "Slides";
+  if (row.kind === "slides") {
+    const deck = row.deckId ? state.decks.find((d) => d.id === row.deckId) : undefined;
+    return deck?.name || row.notes?.trim() || "Slides";
+  }
   if (row.notes && row.notes.trim().length > 0) return row.notes;
   const tpl = state.templates.find((t) => t.id === row.templateId);
   return tpl?.name ?? row.templateId;

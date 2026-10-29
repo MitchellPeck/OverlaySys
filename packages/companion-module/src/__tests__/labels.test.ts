@@ -5,7 +5,8 @@ import {
   sectionDisplayLabel,
   songTitleForChannel,
 } from "../labels";
-import type { GraphicRow, SongRow, Song } from "@overlaysys/core";
+import type { GraphicRow, RundownRow, SongRow, Song } from "@overlaysys/core";
+import { apply } from "../state";
 
 describe("rowDisplayLabel", () => {
   it("returns song title for a song row", () => {
@@ -133,5 +134,21 @@ describe("songTitleForChannel", () => {
       active: null,
     });
     expect(songTitleForChannel(state, "program")).toBe("");
+  });
+});
+
+describe("rowDisplayLabel — slides", () => {
+  const deckMeta = (id: string, name: string) =>
+    ({ id, name, tags: [], slideCount: 3, licensing: "own", usedBy: 1, createdAt: "2026-01-01" }) as const;
+
+  it("shows the deck's name once the deck list has arrived", () => {
+    const state = apply(initialState(), { type: "deck_list", decks: [deckMeta("d1", "Announcements")] });
+    expect(rowDisplayLabel(state, { kind: "slides", id: "r1", deckId: "d1" } as RundownRow)).toBe("Announcements");
+  });
+
+  it("falls back to the row's notes, then 'Slides'", () => {
+    const state = initialState();
+    expect(rowDisplayLabel(state, { kind: "slides", id: "r1", deckId: "gone", notes: "Welcome loop" } as RundownRow)).toBe("Welcome loop");
+    expect(rowDisplayLabel(state, { kind: "slides", id: "r1" } as RundownRow)).toBe("Slides");
   });
 });

@@ -40,6 +40,8 @@ export interface CompanionState {
   templates: TemplateMeta[];
   shows: ShowMeta[];
   songs: SongMeta[];
+  /** Deck names for slides-row labels (from `deck_list`). */
+  decks: { id: string; name: string }[];
   hotcards: HotcardMeta[];
   hotcardCache: Map<string, Hotcard>;
   channels: ChannelConfig[];
@@ -94,6 +96,7 @@ export function initialState(): CompanionState {
     templates: [],
     shows: [],
     songs: [],
+    decks: [],
     hotcards: [],
     hotcardCache: new Map(),
     channels: [],
