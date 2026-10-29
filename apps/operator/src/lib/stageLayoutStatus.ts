@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import type { StageLayoutReason, StageLayoutStatus } from "@overlaysys/core";
 import type { ClientMessage, ServerMessage } from "@overlaysys/ws-protocol";
-import { getClient } from "./useWs";
 
 const EMPTY: StageLayoutStatus[] = [];
 let cache: StageLayoutStatus[] = EMPTY;
@@ -40,11 +39,9 @@ export function resetStageLayoutStatusForTests(): void {
   listeners.clear();
 }
 
-/** Latest per-screen layout status; a late-mounted panel still sees the last value. */
+/** Latest per-screen (the feed is attached at WS bootstrap in useWs.ts).
+ * layout status; a late-mounted panel still sees the last value. */
 export function useStageLayoutStatus(): StageLayoutStatus[] {
-  useEffect(() => {
-    attachStageLayoutStatusFeed(getClient());
-  }, []);
   return useSyncExternalStore(subscribeStageLayoutStatus, getStageLayoutStatuses, () => EMPTY);
 }
 

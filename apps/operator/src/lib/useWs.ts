@@ -7,6 +7,9 @@ import { useStore } from "./store";
 import { requestedDecks } from "./deckRequests";
 // [/P3.13]
 import { isCloudMode } from "./mode";
+// [P2a.22]
+import { attachStageLayoutStatusFeed } from "./stageLayoutStatus";
+// [/P2a.22]
 import type { ClientMessage, OutputsState } from "@overlaysys/ws-protocol";
 
 const CHANNELS_TO_WATCH = ["program", "preview"] as const;
@@ -84,6 +87,9 @@ function bootstrap(): void {
   }
   bootstrapped = true;
   const client = getClient();
+  // [P2a.22]
+  attachStageLayoutStatusFeed(client);
+  // [/P2a.22]
 
   client.onStatus((s) => {
     useStore.getState().setConn(s);
