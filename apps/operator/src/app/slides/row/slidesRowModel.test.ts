@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Deck, DeckMeta, SlidesRowFields } from "@overlaysys/core";
 import {
+  canDeleteLocalSlide,
   deckDefaultLabel,
   deckPickerList,
   designMissesSlideText,
@@ -12,6 +13,7 @@ import {
   slideCaption,
   slideCountText,
   slideListEntries,
+  suggestDeckName,
   unshownValues,
 } from "./slidesRowModel";
 
@@ -147,5 +149,35 @@ describe("copy helpers", () => {
   it("overrideValue drops edits equal to the deck text", () => {
     expect(overrideValue("x", "x")).toBeUndefined();
     expect(overrideValue("y", "x")).toBe("y");
+  });
+});
+
+describe("one-off slides (P3.17)", () => {
+  const local = (p: Partial<SlidesRowFields> = {}): SlidesRowFields => ({
+    kind: "slides",
+    id: "r",
+    templateId: "t",
+    localSlides: [
+      { id: "s1", data: { header: "", text: "  \n First line\nSecond" } },
+      { id: "s2", data: { text: "Other" } },
+    ],
+    ...p,
+  });
+
+  it("canDeleteLocalSlide: not the last slide, and not the last one that plays", () => {
+    expect(canDeleteLocalSlide(local(), "s1")).toBe(true);
+    expect(canDeleteLocalSlide(local({ localSlides: [{ id: "s1", data: {} }] }), "s1")).toBe(false);
+    // A subset that plays only s1 would end up empty.
+    expect(canDeleteLocalSlide(local({ slideIds: ["s1", "s1"] }), "s1")).toBe(false);
+    expect(canDeleteLocalSlide(local({ slideIds: ["s1", "s1"] }), "s2")).toBe(true);
+    // A stale id in the subset doesn't count as something that plays.
+    expect(canDeleteLocalSlide(local({ slideIds: ["s1", "gone"] }), "s1")).toBe(false);
+  });
+
+  it("suggestDeckName: first non-empty line of the first playing slide, capped; else empty", () => {
+    expect(suggestDeckName(local())).toBe("First line");
+    expect(suggestDeckName(local({ slideIds: ["s2"] }))).toBe("Other");
+    expect(suggestDeckName(local({ localSlides: [{ id: "s1", data: { text: "" } }] }))).toBe("");
+    expect(suggestDeckName(local({ localSlides: [{ id: "s1", data: { text: "x".repeat(80) } }] }))).toHaveLength(60);
   });
 });

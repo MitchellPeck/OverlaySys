@@ -22,11 +22,18 @@ export function NewDeckDialog({
   onClose,
   onCreate,
   initialName = "",
+  initialTemplateId,
+  title = "New deck",
+  createLabel = "Create",
 }: {
   open: boolean;
   onClose(): void;
   onCreate(deck: Deck): void | Promise<void>;
   initialName?: string;
+  /** Preselected design (e.g. a one-off row's design for "Save to library…"). */
+  initialTemplateId?: string;
+  title?: string;
+  createLabel?: string;
 }) {
   const templates = useStore((s) => s.templates);
   const templatesLoaded = useStore((s) => s.templatesLoaded);
@@ -40,12 +47,12 @@ export function NewDeckDialog({
     if (!open) return;
     setName(initialName);
     setLicensing(null);
-    setTemplateId(null);
+    setTemplateId(initialTemplateId ?? null);
     setBusy(false);
     if (!useStore.getState().templatesLoaded && getClient().getStatus() === "open") {
       getClient().send({ type: "list_templates" });
     }
-  }, [open, initialName]);
+  }, [open, initialName, initialTemplateId]);
 
   const groups = useMemo(() => templatesFor(templates, "lyric"), [templates]);
   const chosen = templateId ?? defaultDeckTemplateId(templates) ?? FALLBACK_TEMPLATE_ID;
@@ -78,7 +85,7 @@ export function NewDeckDialog({
       onClick={() => void create()}
       style={blocker ? { pointerEvents: "none" } : undefined}
     >
-      {busy ? "Creating…" : "Create"}
+      {busy ? (createLabel === "Create" ? "Creating…" : "Saving…") : createLabel}
     </Button>
   );
 
@@ -86,7 +93,7 @@ export function NewDeckDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="New deck"
+      title={title}
       size="sm"
       onConfirm={() => void create()}
       footer={

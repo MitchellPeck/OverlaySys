@@ -8,14 +8,17 @@ import {
   moveAt,
   newOneOffSlidesRow,
   newSlidesRow,
+  pasteLocalSlides,
   removeAt,
   removeLocalSlide,
+  saveRowToLibrary,
   rowSlideIds,
   setDeck,
   setFieldOverride,
   setLocalSlideField,
   setRowTemplate,
   setSubset,
+  splitPastedSlides,
   useAllSlides,
 } from "./slidesRowOps";
 
@@ -187,5 +190,94 @@ describe("slidesRowOps", () => {
     expect(out.localSlides).toEqual([{ id: "s2", data: {} }]);
     expect(out.slideIds).toEqual(["s2"]);
     expect(out.extra).toBe("keep");
+  });
+
+  describe("saveRowToLibrary", () => {
+    const oneOff = (): Row => ({
+      kind: "slides",
+      id: "r",
+      extra: "keep",
+      sectionId: "sec",
+      stageLayouts: { band: "lay" },
+      templateId: "rowT",
+      slideIds: ["s2", "s1", "s2"],
+      localSlides: [
+        { id: "s1", data: { text: "Placeholder one" }, label: "Call" },
+        { id: "s2", templateId: "ownT", data: { text: "" }, futureSlideKey: "keep" } as never,
+      ],
+    });
+    const a = { deckId: "deck-1", name: "Placeholder deck", licensing: { kind: "own" } as const, now: "2026-10-28T00:00:00.000Z" };
+
+    it("saveRowToLibrary keeps slide ids so nothing re-keys", () => {
+      const { deck: d, row: out } = saveRowToLibrary(oneOff(), a);
+      expect(d).toEqual({
+        id: "deck-1",
+        name: "Placeholder deck",
+        tags: [],
+        defaultTemplateId: "rowT",
+        licensing: { kind: "own" },
+        slides: oneOff().localSlides,
+        createdAt: a.now,
+      });
+      expect(out).toEqual({
+        kind: "slides",
+        id: "r",
+        extra: "keep",
+        sectionId: "sec",
+        stageLayouts: { band: "lay" },
+        slideIds: ["s2", "s1", "s2"],
+        deckId: "deck-1",
+      });
+    });
+
+    it("the row afterwards resolves to the same slides through the deck", () => {
+      const before = resolveSlidesRow(oneOff(), null);
+      const { deck: d, row: out } = saveRowToLibrary(oneOff(), a);
+      const after = resolveSlidesRow(out, d);
+      expect(after).toEqual(before);
+    });
+
+    it("keeps this show's text edits on the row", () => {
+      const src = { ...oneOff(), fieldOverrides: { s1: { text: "Edited" } } };
+      const { deck: d, row: out } = saveRowToLibrary(src, a);
+      expect(out.fieldOverrides).toEqual({ s1: { text: "Edited" } });
+      expect(resolveSlidesRow(out, d)).toEqual(resolveSlidesRow(src, null));
+    });
+
+    it("trims the name and drops a blank CCLI number", () => {
+      const { deck: d } = saveRowToLibrary(oneOff(), { ...a, name: "  Name  ", licensing: { kind: "ccli", ccliNumber: " " } });
+      expect(d.name).toBe("Name");
+      expect(d.licensing).toEqual({ kind: "ccli" });
+    });
+  });
+
+  describe("paste text", () => {
+    it("splitPastedSlides splits on blank lines and trims", () => {
+      expect(splitPastedSlides("Line A\nLine B\n\n \n\nLine C  \r\n\r\nLine D\n")).toEqual(["Line A\nLine B", "Line C", "Line D"]);
+      expect(splitPastedSlides("  \n\n ")).toEqual([]);
+    });
+
+    it("fills the lone empty slide first (same id) and appends the rest with \"\" for other fields", () => {
+      let n = 0;
+      const start = newOneOffSlidesRow("r", "t", "s1", ["header", "text"]);
+      const out = pasteLocalSlides(start, ["P1", "P2"], { newId: () => `n${++n}`, fieldKeys: ["header", "text"], targetKey: "text" });
+      expect(out.localSlides).toEqual([
+        { id: "s1", data: { header: "", text: "P1" } },
+        { id: "n1", data: { header: "", text: "P2" } },
+      ]);
+    });
+
+    it("appends after slides that have text, and to the subset when one is set", () => {
+      const start = { ...setLocalSlideField(newOneOffSlidesRow("r", "t", "s1", ["text"]), "s1", "text", "Kept"), slideIds: ["s1"] };
+      const out = pasteLocalSlides(start, ["P1"], { newId: () => "n1", fieldKeys: ["text"], targetKey: "text" });
+      expect(out.localSlides?.map((s) => s.id)).toEqual(["s1", "n1"]);
+      expect(out.localSlides?.[0]?.data).toEqual({ text: "Kept" });
+      expect(out.slideIds).toEqual(["s1", "n1"]);
+    });
+
+    it("no chunks: row unchanged", () => {
+      const start = newOneOffSlidesRow("r", "t", "s1", ["text"]);
+      expect(pasteLocalSlides(start, [], { newId: () => "x", fieldKeys: ["text"], targetKey: "text" })).toBe(start);
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { Deck, DeckSlide, SlidesRowFields } from "./deck";
+import type { Deck, DeckLicensing, DeckSlide, SlidesRowFields } from "./deck";
 import { resolveSlidesRow } from "./slides";
 
 /**
@@ -160,4 +160,61 @@ export function setLocalSlideField<R extends SlidesRowFields>(
     return { ...s, data };
   });
   return patch(row, { localSlides });
+}
+
+/**
+ * "Save to library": the row's one-off slides become a new global deck and the
+ * row points at it. Slide ids, labels and unknown slide keys go into the deck
+ * unchanged (nothing re-keys), so the subset, repeats and this show's text
+ * edits on the row still apply. The row's design becomes the deck default.
+ */
+export function saveRowToLibrary<R extends SlidesRowFields>(
+  row: R,
+  a: { deckId: string; name: string; licensing: DeckLicensing; now: string },
+): { deck: Deck; row: R } {
+  let licensing = a.licensing;
+  if (licensing.kind === "ccli") {
+    const n = licensing.ccliNumber?.trim();
+    licensing = n ? { kind: "ccli", ccliNumber: n } : { kind: "ccli" };
+  }
+  const deck: Deck = {
+    id: a.deckId,
+    name: a.name.trim(),
+    tags: [],
+    defaultTemplateId: row.templateId ?? "",
+    licensing,
+    slides: (row.localSlides ?? []).map((s) => ({ ...s, data: { ...s.data } })),
+    createdAt: a.now,
+  };
+  return { deck, row: patch(row, { deckId: a.deckId, localSlides: undefined, templateId: undefined }) };
+}
+
+/** Pasted text → one slide per blank-line-separated block (trimmed; empty blocks dropped). */
+export function splitPastedSlides(text: string): string[] {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n/)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+}
+
+/**
+ * One-off rows: adds a slide per chunk, the chunk in `targetKey` and "" in the
+ * other `fieldKeys`. A row whose only slide is still empty has that slide
+ * filled first (its id kept). New slides join the subset when one is set.
+ */
+export function pasteLocalSlides<R extends SlidesRowFields>(
+  row: R,
+  chunks: string[],
+  o: { newId: () => string; fieldKeys: string[]; targetKey: string },
+): R {
+  if (chunks.length === 0) return row;
+  const fill = (text: string) => ({ ...blankData(o.fieldKeys), [o.targetKey]: text });
+  const existing = row.localSlides ?? [];
+  const lone = existing.length === 1 && Object.values(existing[0]!.data).every((v) => v === "") ? existing[0]! : null;
+  const rest = lone ? chunks.slice(1) : chunks;
+  const added: DeckSlide[] = rest.map((c) => ({ id: o.newId(), data: fill(c) }));
+  const localSlides = lone ? [{ ...lone, data: { ...lone.data, ...fill(chunks[0]!) } }, ...added] : [...existing, ...added];
+  const newIds = added.map((s) => s.id);
+  return patch(row, { localSlides, slideIds: row.slideIds ? [...row.slideIds, ...newIds] : undefined });
 }

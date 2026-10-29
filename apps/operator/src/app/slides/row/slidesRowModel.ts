@@ -123,3 +123,32 @@ export function ownDesignCount(row: SlidesRowFields, deck: Pick<Deck, "slides">)
   const byId = new Map(deck.slides.map((s) => [s.id, s] as const));
   return rowSlideIds(row, deck).filter((id) => !!byId.get(id)?.templateId).length;
 }
+
+/**
+ * One-off rows: a slide can be deleted unless it is the last slide, or the
+ * last one the row actually plays (a subset could otherwise end up empty).
+ */
+export function canDeleteLocalSlide(row: SlidesRowFields, slideId: string): boolean {
+  const slides = row.localSlides ?? [];
+  if (slides.length <= 1) return false;
+  const known = new Set(slides.map((s) => s.id));
+  return rowSlideIds(row, { slides }).some((id) => id !== slideId && known.has(id));
+}
+
+/** "Save to library…" name: the first non-empty line of the first playing slide (max 60 chars), else "". */
+export function suggestDeckName(row: SlidesRowFields): string {
+  const slides = row.localSlides ?? [];
+  const byId = new Map(slides.map((s) => [s.id, s] as const));
+  for (const id of rowSlideIds(row, { slides })) {
+    const s = byId.get(id);
+    if (!s) continue;
+    for (const v of Object.values(s.data)) {
+      const line = v
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.length > 0);
+      if (line) return line.slice(0, 60);
+    }
+  }
+  return "";
+}
