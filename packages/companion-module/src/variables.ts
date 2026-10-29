@@ -188,6 +188,7 @@ function rowMatchesPgm(
   pgmSongId: string | undefined,
   row: RundownRow,
   pgmScriptureRowId: string | undefined,
+  pgmSlidesRowId?: string, // [P3.21]
 ): boolean {
   if (row.kind === "song") {
     return Boolean(pgmSongId && pgmSongId === row.songId);
@@ -196,8 +197,8 @@ function rowMatchesPgm(
     return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
   if (row.kind === "video") return false;
-  // [P3.8] slides rows are not driven from Companion yet
-  if (row.kind === "slides") return false;
+  // [P3.21]
+  if (row.kind === "slides") return pgmSlidesRowId === row.id;
   if (!active) return false;
   if (active.templateId !== row.templateId) return false;
   const a = active.data;
@@ -331,13 +332,14 @@ export function projectVariables(
 
   const pgmSongId = state.channelStates.get("program")?.songSession?.songId;
   const pgmScriptureRowId = state.channelStates.get("program")?.scriptureSession?.rowId;
+  const pgmSlidesRowId = state.channelStates.get("program")?.slidesSession?.rowId; // [P3.21]
   const pgmActive = state.channelStates.get("program")?.active ?? null;
   for (let n = 1; n <= RUNDOWN_LIMIT; n++) {
     const row = loadedShow?.rows[n - 1];
     out[`rundown_${n}_name`] = row ? rowDisplayLabel(state, row) : "";
     out[`rundown_${n}_kind`] = row?.kind ?? "";
     out[`rundown_${n}_is_active`] =
-      row && rowMatchesPgm(pgmActive, pgmSongId, row, pgmScriptureRowId) ? "yes" : "no";
+      row && rowMatchesPgm(pgmActive, pgmSongId, row, pgmScriptureRowId, pgmSlidesRowId) ? "yes" : "no";
   }
 
   for (const e of rundownFieldEntries(state)) {

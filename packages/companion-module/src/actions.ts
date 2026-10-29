@@ -151,8 +151,11 @@ function rowMessages(
       },
     ];
   }
-  // [P3.8] slides rows are not driven from Companion yet
-  if (row.kind === "slides") return [];
+  // [P3.21]
+  if (row.kind === "slides") {
+    return [{ type: "slides_take", showId: state.loadedShowId ?? "", rowId: row.id, channel }];
+  }
+  // [/P3.21]
   return [
     {
       type: "take",
@@ -191,8 +194,11 @@ function rowPvwPgmMessages(
     // No PVW stage for video (would double audio).
     return [];
   }
-  // [P3.8] slides rows are not driven from Companion yet
-  if (row.kind === "slides") return [];
+  // [P3.21] the server's takePvwToPgm carries a slides session; Companion sends a take to the To channel like scripture
+  if (row.kind === "slides") {
+    return [{ type: "slides_take", showId: state.loadedShowId ?? "", rowId: row.id, channel: toChannel }];
+  }
+  // [/P3.21]
   return [
     {
       type: "cue",

@@ -401,6 +401,7 @@ function rowMatchesPgm(
   pgmSongId: string | undefined,
   row: RundownRow,
   pgmScriptureRowId: string | undefined,
+  pgmSlidesRowId?: string, // [P3.21]
 ): boolean {
   if (row.kind === "song") {
     return Boolean(pgmSongId && pgmSongId === row.songId);
@@ -409,8 +410,8 @@ function rowMatchesPgm(
     return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
   if (row.kind === "video") return false;
-  // [P3.8] slides rows are not driven from Companion yet
-  if (row.kind === "slides") return false;
+  // [P3.21]
+  if (row.kind === "slides") return pgmSlidesRowId === row.id;
   if (!active) return false;
   if (active.templateId !== row.templateId) return false;
   const a = active.data;
@@ -572,7 +573,7 @@ export function feedbackPredicate(
       const row = show.rows.find((r) => r.id === String(options.rowId ?? ""));
       if (!row) return false;
       const pgm = state.channelStates.get("program");
-      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId);
+      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId, pgm?.slidesSession?.rowId);
     }
     case "row_at_index_is_cursor": {
       if (state.loadedShowId == null || state.loadedShowRowCursor == null)
@@ -588,7 +589,7 @@ export function feedbackPredicate(
       const row = show.rows[idx];
       if (!row) return false;
       const pgm = state.channelStates.get("program");
-      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId);
+      return rowMatchesPgm(pgm?.active ?? null, pgm?.songSession?.songId, row, pgm?.scriptureSession?.rowId, pgm?.slidesSession?.rowId);
     }
     case "cursor_row_kind_is": {
       if (state.loadedShowId == null || state.loadedShowRowCursor == null)

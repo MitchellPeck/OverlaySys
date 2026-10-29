@@ -86,3 +86,47 @@ describe("slides variables and feedback", () => {
     expect(feedbackPredicate(withSession(), "slides_on_air", { channel: "program" })).toBe(true);
   });
 });
+
+describe("slides rows from the rundown", () => {
+  const withShow = (hint?: string) => {
+    const s = initialState();
+    s.loadedShowId = "show1";
+    s.showCache.set("show1", {
+      id: "show1",
+      name: "S",
+      rows: [{ kind: "slides", id: "sr1", deckId: "d1", ...(hint ? { channelHint: hint } : {}) }],
+    } as never);
+    return s;
+  };
+
+  it("take_row sends slides_take to the channel option, else the hint, else program", () => {
+    expect(dispatchAction(withShow(), "take_row", { rowId: "sr1" }).messages).toEqual([
+      { type: "slides_take", showId: "show1", rowId: "sr1", channel: "program" },
+    ]);
+    expect(dispatchAction(withShow("stage"), "take_row", { rowId: "sr1" }).messages[0]).toMatchObject({ channel: "stage" });
+    expect(dispatchAction(withShow("stage"), "take_row", { rowId: "sr1", channel: "program" }).messages[0]).toMatchObject({
+      channel: "program",
+    });
+  });
+
+  it("take_row_by_index with channel preview cues the slides row", () => {
+    const r = dispatchAction(withShow(), "take_row_by_index", { rowIndex: 1, channel: "preview" });
+    expect(r.messages).toEqual([{ type: "slides_take", showId: "show1", rowId: "sr1", channel: "preview" }]);
+  });
+
+  it("PVW to PGM sends slides_take to the To channel", () => {
+    const r = dispatchAction(withShow(), "take_row_pvw_pgm", { rowId: "sr1", fromChannel: "preview", toChannel: "program" });
+    expect(r.messages).toEqual([{ type: "slides_take", showId: "show1", rowId: "sr1", channel: "program" }]);
+  });
+
+  it("row_is_active is true while the row's slides session is on program", () => {
+    const s = withShow();
+    expect(feedbackPredicate(s, "row_is_active", { rowId: "sr1" })).toBe(false);
+    s.channelStates.set("program", {
+      channel: "program",
+      active: null,
+      slidesSession: { rowId: "sr1", title: "D", slideIdx: 0, slideCount: 2, lines: [], blanked: false, atEnd: false },
+    } as never);
+    expect(feedbackPredicate(s, "row_is_active", { rowId: "sr1" })).toBe(true);
+  });
+});
