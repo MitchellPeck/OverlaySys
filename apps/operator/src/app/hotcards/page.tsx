@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { AlertTriangle, Copy, Download, FolderInput, Files, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { hotkeyConflicts, type Hotcard, type HotcardMeta } from "@overlaysys/core";
-import { Button, Kbd, colors } from "@overlaysys/ui";
-import { useWs } from "@/lib/useWs";
+import { Kbd, LibraryList, Tooltip, colors, confirm, toast, type Column, type MenuItem } from "@overlaysys/ui";
+import { getClient, useWs } from "@/lib/useWs";
+import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
+import { listLoadState } from "@/lib/listLoadState";
 import { useStore } from "@/lib/store";
 import { useDialog } from "@/lib/dialog";
-import { ManagementList } from "@/app/components/ManagementList";
+import { exportFileName } from "@/lib/exportName";
 import { downloadJson } from "@/lib/download";
-import { getCurrentProjectId } from "@/lib/currentProject";
 import { isCloudMode } from "@/lib/mode";
+import { hotcardSorts } from "./hotcardListModel";
 import {
   deleteHotcardCloud,
   getHotcardCloud,
@@ -29,11 +32,12 @@ export default function HotcardsIndexPage() {
   const templates = useStore((s) => s.templates);
   const currentProjectId = useStore((s) => s.currentProjectId);
   const projects = useStore((s) => s.projects);
-  const { alert, dialog } = useDialog();
+  const { alert } = useDialog();
   const hotcards = allHotcards.filter((h) => h.projectId === currentProjectId);
   const conflicts = hotkeyConflicts(hotcards, currentProjectId);
-  const currentProject = projects.find((p) => p.id === currentProjectId);
   const cloud = isCloudMode();
+  const hotcardsLoaded = useStore((s) => s.hotcardsLoaded);
+  const load = listLoadState({ cloud, conn, loaded: hotcardsLoaded });
   const disabled = !cloud && conn !== "open";
 
   async function showError(action: string, err: unknown) {
@@ -62,31 +66,6 @@ export default function HotcardsIndexPage() {
     }
   }, [cloud, conn, send]);
 
-  async function createHotcard(name: string): Promise<string> {
-    const firstTpl = templates[0]?.id;
-    if (!firstTpl) {
-      // No templates means an empty editor is useless — bail with a hint.
-      router.push("/design");
-      throw new Error("No templates exist yet — create one in Design first.");
-    }
-    const id = `hotcard-${uuid().slice(0, 8)}`;
-    const hotcard: Hotcard = {
-      id,
-      name,
-      projectId: getCurrentProjectId(),
-      templateId: firstTpl,
-      data: {},
-    };
-    if (cloud) {
-      await saveHotcardCloud(hotcard);
-      await refreshHotcardMetasCloud();
-      return id;
-    }
-    if (conn !== "open") throw new Error("WS not connected");
-    send({ type: "save_hotcard", hotcard });
-    return id;
-  }
-
   async function duplicate(id: string) {
     if (cloud) {
       try {
@@ -105,15 +84,19 @@ export default function HotcardsIndexPage() {
       }
       return;
     }
-    if (conn !== "open") return;
-    send({ type: "duplicate_hotcard", hotcardId: id });
+    try {
+      // The ack carries the copy's id, so match on the op alone.
+      await sendAndAwaitAck(getClient(), { type: "duplicate_hotcard", hotcardId: id }, { op: "duplicate_hotcard" });
+    } catch (err) {
+      toast({ message: `Not duplicated: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
   async function exportHotcard(id: string) {
     if (cloud) {
       try {
         const h = await getHotcardCloud(id);
-        if (h) downloadJson(`${id}.json`, h);
+        if (h) downloadJson(exportFileName("hotcard", h), h);
       } catch (err) {
         await showError("export", err);
       }
@@ -121,7 +104,7 @@ export default function HotcardsIndexPage() {
     }
     const cached = useStore.getState().hotcardCache[id];
     if (cached) {
-      downloadJson(`${id}.json`, cached);
+      downloadJson(exportFileName("hotcard", cached), cached);
       return;
     }
     if (conn !== "open") return;
@@ -129,7 +112,7 @@ export default function HotcardsIndexPage() {
     const start = Date.now();
     const tick = () => {
       const c = useStore.getState().hotcardCache[id];
-      if (c) { downloadJson(`${id}.json`, c); return; }
+      if (c) { downloadJson(exportFileName("hotcard", c), c); return; }
       if (Date.now() - start > 2000) return;
       setTimeout(tick, 50);
     };
@@ -142,138 +125,165 @@ export default function HotcardsIndexPage() {
       await refreshHotcardMetasCloud();
       return;
     }
-    send({ type: "delete_hotcard", hotcardId: h.id });
+    try {
+      await sendAndAwaitAck(getClient(), { type: "delete_hotcard", hotcardId: h.id }, { op: "delete_hotcard", id: h.id });
+    } catch (err) {
+      toast({ message: `Not deleted: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
-  async function moveToProject(id: string, nextProjectId: string) {
+  /** Throws when the move did not happen. `hotkey` is applied in local mode only (a moved card drops its F-key, which would likely clash). */
+  async function moveToProject(id: string, nextProjectId: string, hotkey: HotcardMeta["hotkey"] = null): Promise<void> {
     if (cloud) {
-      try {
-        const src = await getHotcardCloud(id);
-        if (!src) throw new Error("hotcard not found");
-        await saveHotcardCloud({ ...src, projectId: nextProjectId });
-        await refreshHotcardMetasCloud();
-      } catch (err) {
-        await showError("move", err);
-      }
+      const src = await getHotcardCloud(id);
+      if (!src) throw new Error("Hotcard not found.");
+      await saveHotcardCloud({ ...src, projectId: nextProjectId });
+      await refreshHotcardMetasCloud();
       return;
     }
-    if (conn !== "open") return;
-    // A moved card drops its F-key: it would likely clash in the new project.
     const cached = useStore.getState().hotcardCache[id];
-    if (cached) {
-      send({
-        type: "save_hotcard",
-        hotcard: { ...cached, projectId: nextProjectId, hotkey: null },
-      });
-      return;
-    }
-    send({ type: "get_hotcard", hotcardId: id });
-    const start = Date.now();
-    const tick = () => {
-      const fresh = useStore.getState().hotcardCache[id];
-      if (fresh) {
-        send({
-          type: "save_hotcard",
-          hotcard: { ...fresh, projectId: nextProjectId, hotkey: null },
-        });
-        return;
-      }
-      if (Date.now() - start > 2000) return;
-      setTimeout(tick, 50);
-    };
-    setTimeout(tick, 50);
+    const card =
+      cached ??
+      (await requestOne(getClient(), { type: "get_hotcard", hotcardId: id }, (m) =>
+        m.type === "hotcard" && m.hotcard.id === id ? m.hotcard : undefined,
+      ));
+    await sendAndAwaitAck(
+      getClient(),
+      { type: "save_hotcard", hotcard: { ...card, projectId: nextProjectId, hotkey } },
+      { op: "save_hotcard", id },
+    );
   }
 
-  return (
-    <>
-      <ManagementList<HotcardMeta>
-        title="Hotcards"
-        entityNoun="hotcard"
-        context={
-          currentProject && (
-            <span>
-              in <strong style={{ color: "var(--text)" }}>{currentProject.name}</strong>
-            </span>
-          )
-        }
-        items={hotcards}
-        disabled={disabled}
-        createFn={createHotcard}
-        onCreated={(id) => router.push(`/hotcards/edit?id=${encodeURIComponent(id)}`)}
-        deleteFn={deleteHotcard}
-        rowKey={(h) => h.id}
-        rowHref={(h) => `/hotcards/edit?id=${encodeURIComponent(h.id)}`}
-        rowPrimary={(h) => {
+  const templateName = (h: HotcardMeta) => templates.find((t) => t.id === h.templateId)?.name;
+
+  const columns: Column<HotcardMeta>[] = useMemo(
+    () => [
+      {
+        id: "key",
+        label: "F-key",
+        width: "64px",
+        render: (h) => {
           const clash = h.hotkey ? conflicts[h.hotkey] : undefined;
+          if (!h.hotkey) return <span style={{ color: colors.textDim }}>—</span>;
           return (
-            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 10 }}>
-              <span
-                style={{ display: "inline-block", width: 34, flexShrink: 0 }}
-                title={
-                  clash
-                    ? `${h.hotkey} is assigned to ${clash.length} cards in this project; only one fires`
-                    : h.hotkey
-                      ? `${h.hotkey} takes this card on Live · Shift+${h.hotkey} cues it`
-                      : "No F-key: set one in the editor"
-                }
-              >
-                {h.hotkey ? (
-                  <Kbd>{h.hotkey}</Kbd>
-                ) : (
-                  <span aria-label="No F-key" style={{ color: colors.textDim }}>—</span>
-                )}
-                {clash && <span aria-label="F-key conflict" style={{ color: colors.warn, marginLeft: 2 }}>!</span>}
-              </span>
-              {h.name}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <Kbd>{h.hotkey}</Kbd>
+              {clash && (
+                <Tooltip content={`${h.hotkey} is assigned to ${clash.length} cards in this project; only one fires`}>
+                  <span aria-label="F-key conflict" style={{ display: "inline-flex", color: colors.warn }}>
+                    <AlertTriangle size={14} aria-hidden />
+                  </span>
+                </Tooltip>
+              )}
             </span>
           );
-        }}
-        rowSecondary={(h) => {
-          const tplName = templates.find((t) => t.id === h.templateId)?.name ?? h.templateId;
-          return `${h.id} · ${tplName}`;
-        }}
-        rowActions={(h) => (
-          <>
-            {projects.length > 1 && (
-              <select
-                value={h.projectId}
-                onChange={(e) => moveToProject(h.id, e.target.value)}
-                title="Move to project"
-                style={{
-                  background: "var(--panel-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 4,
-                  padding: "3px 6px",
-                  fontSize: 12,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Button onClick={() => duplicate(h.id)} size="sm" style={{ width: 84 }}>
-              Duplicate
-            </Button>
-            <Button onClick={() => exportHotcard(h.id)} size="sm" style={{ width: 64 }}>
-              Export
-            </Button>
-          </>
-        )}
-        itemDisplayName={(h) => h.name || h.id}
-        emptyMessage={
-          <span style={{ color: colors.textDim, fontSize: 13 }}>
-            No hotcards in this project yet. Hotcards are reusable graphics (titles,
-            lower-thirds, stings, etc.) you can fire from the main rundown page without
-            putting them in any specific show.
-          </span>
-        }
-      />
-      {dialog}
-    </>
+        },
+      },
+      {
+        id: "output",
+        label: "Output",
+        width: "140px",
+        render: (h) => (h as HotcardMeta & { channelHint?: string }).channelHint || "Program",
+      },
+      {
+        id: "template",
+        label: "Template",
+        width: "200px",
+        render: (h) => templates.find((t) => t.id === h.templateId)?.name ?? <span style={{ color: colors.warn }}>Missing template</span>,
+      },
+    ],
+    [conflicts, templates],
+  );
+
+  function newHotcard() {
+    router.push("/hotcards/edit?new=1");
+  }
+
+  async function removeHotcard(h: HotcardMeta) {
+    const ok = await confirm({
+      title: `Delete ${h.name || "this hotcard"}?`,
+      message: "This removes the hotcard. It can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (ok) await deleteHotcard(h);
+  }
+
+  async function moveWithUndo(h: HotcardMeta, target: { id: string; name: string }) {
+    const from = projects.find((p) => p.id === h.projectId);
+    try {
+      await moveToProject(h.id, target.id);
+    } catch (err) {
+      toast({ message: `Not moved: ${ackErrorText(err)}`, tone: "error" });
+      return;
+    }
+    const undo = async () => {
+      try {
+        await moveToProject(h.id, from!.id, h.hotkey ?? null);
+      } catch (err) {
+        toast({ message: `Not moved back: ${ackErrorText(err)}`, tone: "error" });
+      }
+    };
+    toast({
+      message: `Moved to ${target.name}`,
+      tone: "ok",
+      action: from ? { label: "Undo", onClick: () => void undo() } : undefined,
+    });
+  }
+
+  const offline = disabled ? "Not connected to the server" : false;
+  const menuItems = (h: HotcardMeta): MenuItem[] => {
+    const others = projects.filter((p) => p.id !== h.projectId);
+    const items: MenuItem[] = [
+      { id: "open", label: "Open", onSelect: () => router.push(`/hotcards/edit?id=${encodeURIComponent(h.id)}`) },
+      { id: "duplicate", label: "Duplicate", icon: <Files size={14} />, disabled: offline, onSelect: () => void duplicate(h.id) },
+      { id: "export", label: "Export", icon: <Download size={14} />, disabled: offline, onSelect: () => void exportHotcard(h.id) },
+    ];
+    if (others.length > 0) {
+      items.push({ separator: true });
+      for (const p of others) {
+        items.push({
+          id: `move-${p.id}`,
+          label: `Move to ${p.name}`,
+          icon: <FolderInput size={14} />,
+          disabled: offline,
+          onSelect: () => void moveWithUndo(h, p),
+        });
+      }
+    }
+    items.push(
+      { separator: true },
+      { id: "copy-id", label: "Copy id", icon: <Copy size={14} />, onSelect: () => void navigator.clipboard?.writeText(h.id) },
+      { id: "delete", label: "Delete", icon: <Trash2 size={14} />, danger: true, disabled: offline, onSelect: () => void removeHotcard(h) },
+    );
+    return items;
+  };
+
+  return (
+    <LibraryList<HotcardMeta>
+      items={hotcards}
+      getId={(h) => h.id}
+      primary={(h) => h.name || "Untitled hotcard"}
+      kind={() => "graphic"}
+      columns={columns}
+      searchText={(h) => `${h.name} ${templates.find((t) => t.id === h.templateId)?.name ?? ""}`}
+      sorts={hotcardSorts}
+      defaultSort="key-asc"
+      menuItems={menuItems}
+      onOpen={(h) => router.push(`/hotcards/edit?id=${encodeURIComponent(h.id)}`)}
+      primaryAction={{
+        label: "New hotcard",
+        onClick: newHotcard,
+        disabledReason: disabled ? "Not connected to the server" : undefined,
+      }}
+      storageKey="hotcards"
+      emptyState={{
+        title: "No hotcards in this project",
+        body: "Hotcards are reusable graphics you can take from the Live page with Cue / Take or F1–F12.",
+        action: { label: "New hotcard", onClick: newHotcard },
+      }}
+      loading={load.loading}
+      error={load.error ? "Not connected to the server" : null}
+    />
   );
 }
