@@ -22,7 +22,7 @@ import { isCloudMode } from "@/lib/mode";
 import { getTemplateCloud } from "@/lib/cloudData";
 import { ArrangementModal, arrangementSummary } from "./ArrangementModal";
 import { TemplateSelect as GroupedTemplateSelect } from "./TemplateSelect";
-import { songIntroOutroChip } from "./forms/itemFormModel";
+import { overrideSeed, songIntroOutroChip } from "./forms/itemFormModel";
 
 /**
  * Inline override editor for a single {@link ShowSong} entry. Owns per-editor
@@ -287,11 +287,11 @@ export function SongOverrideEditor({
             : "(none)"
         }
         onRevert={() => onChange({ lyricTemplateId: undefined })}
-        onOverride={() =>
-          onChange({
-            lyricTemplateId: song.defaultLyricTemplateId ?? templates[0]?.id ?? "",
-          })
-        }
+        canOverride={!!overrideSeed(song.defaultLyricTemplateId, templates[0]?.id)}
+        onOverride={() => {
+          const seed = overrideSeed(song.defaultLyricTemplateId, templates[0]?.id);
+          if (seed) onChange({ lyricTemplateId: seed });
+        }}
       >
         <GroupedTemplateSelect
           label="Lyric template"
@@ -306,12 +306,11 @@ export function SongOverrideEditor({
         isOverridden={entry.introTemplateId !== undefined}
         defaultText={songIntroOutroChip("intro", {}, undefined, song, templates)}
         onRevert={() => overrideTemplate("intro", undefined)}
-        onOverride={() =>
-          overrideTemplate(
-            "intro",
-            song.defaultIntroTemplateId ?? templates[0]?.id ?? "",
-          )
-        }
+        canOverride={!!overrideSeed(song.defaultIntroTemplateId, templates[0]?.id)}
+        onOverride={() => {
+          const seed = overrideSeed(song.defaultIntroTemplateId, templates[0]?.id);
+          if (seed) overrideTemplate("intro", seed);
+        }}
       >
         <GroupedTemplateSelect
           label="Intro template"
@@ -348,12 +347,11 @@ export function SongOverrideEditor({
         isOverridden={entry.outroTemplateId !== undefined}
         defaultText={songIntroOutroChip("outro", {}, undefined, song, templates)}
         onRevert={() => overrideTemplate("outro", undefined)}
-        onOverride={() =>
-          overrideTemplate(
-            "outro",
-            song.defaultOutroTemplateId ?? templates[0]?.id ?? "",
-          )
-        }
+        canOverride={!!overrideSeed(song.defaultOutroTemplateId, templates[0]?.id)}
+        onOverride={() => {
+          const seed = overrideSeed(song.defaultOutroTemplateId, templates[0]?.id);
+          if (seed) overrideTemplate("outro", seed);
+        }}
       >
         <GroupedTemplateSelect
           label="Outro template"
@@ -486,6 +484,7 @@ function OverrideRow({
   defaultText,
   onRevert,
   onOverride,
+  canOverride = true,
   children,
 }: {
   label: string;
@@ -493,6 +492,8 @@ function OverrideRow({
   defaultText: string;
   onRevert: () => void;
   onOverride: () => void;
+  /** False while there is no template to start from (e.g. templates not loaded). */
+  canOverride?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -530,7 +531,9 @@ function OverrideRow({
       <button
         type="button"
         onClick={isOverridden ? onRevert : onOverride}
-        style={linkBtn}
+        disabled={!isOverridden && !canOverride}
+        title={!isOverridden && !canOverride ? "No templates loaded yet" : undefined}
+        style={{ ...linkBtn, ...(!isOverridden && !canOverride ? { opacity: 0.5, cursor: "default" } : {}) }}
       >
         {isOverridden ? "Use song default" : "Override"}
       </button>
@@ -578,6 +581,7 @@ export function SongRowIntroOutro({
             ? showSong?.introTemplateId ?? song?.defaultIntroTemplateId
             : showSong?.outroTemplateId ?? song?.defaultOutroTemplateId;
         const overridden = p.tpl !== undefined;
+        const seed = overrideSeed(inherited, templates[0]?.id);
         const clear = { [`${p.which}FieldMap`]: undefined, [`${p.which}FieldLiterals`]: undefined };
         return (
           <div key={p.which} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -608,12 +612,11 @@ export function SongRowIntroOutro({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() =>
-                    onPatch({
-                      [`${p.which}TemplateId`]: overridden ? undefined : inherited ?? templates[0]?.id ?? "",
-                      ...clear,
-                    })
-                  }
+                  disabled={!overridden && !seed}
+                  onClick={() => {
+                    if (!overridden && !seed) return;
+                    onPatch({ [`${p.which}TemplateId`]: overridden ? undefined : seed, ...clear });
+                  }}
                 >
                   {overridden ? "Use show value" : `Choose ${p.which} for this item`}
                 </Button>

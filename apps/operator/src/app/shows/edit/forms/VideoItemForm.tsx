@@ -7,7 +7,7 @@ import { Input, Select, colors, fontSize } from "@overlaysys/ui";
 import { TransitionField, probeDuration } from "@/app/components/VideoRowModal";
 import { formatClock } from "@/lib/mediaTake";
 import { resolveAssetUrl, uploadAsset } from "@/lib/uploadAsset";
-import type { ItemFormProps } from "./GraphicItemForm";
+import type { ItemFormProps } from "./types";
 import { FormRow, ItemCommonFields, ItemFormFrame } from "./ItemCommonFields";
 import { patchRow, withVideoLengthPrefill } from "./itemFormModel";
 

@@ -240,6 +240,8 @@ function SlidesAddFlow(p: { open: boolean; onClose(): void; onAdd(row: RowLike):
 ```
 The show editor's `+ Add item` menu shows "Slides" (disabled with reason "Needs Slides decks" while `slidesAddItemEnabled` is false, and "Coming soon" while `slidesAddFlowReady` — exported from `SlidesItemForm.tsx`, added by P2a.17 fix1 — is false; P3.16 sets it true) and opens `SlidesAddFlow`.
 
+`ItemFormProps` lives in `apps/operator/src/app/shows/edit/forms/types.ts` (P2a.18 fix1): `type ItemFormProps<R> = { row: R; show: Show; onChange(next: R): void }`. `onChange` receives the whole edited row (same id, unknown keys kept). P3.16 imports it from there for `SlidesItemForm` and drops the placeholder's local `SlidesItemFormProps`.
+
 ## 10. Live palette commands — owner P2a
 
 `apps/operator/src/lib/liveCommands.ts` (P2a.16):
@@ -335,3 +337,5 @@ type StageLayoutStatus = { channel: string; layoutId: string | undefined; reason
 | `packages/core/src/index.ts` | Append-only: one export line per new module. |
 | Controller addition: stage screens choose their layout dynamically | §16; core P1.22, server P2b.33, settings P2b.18, Live and row editors P2a.22, slides rows P3.22, Companion P2b.34. Core function keeps the requested name `resolveStageLayout`; the server's existing loader of that name becomes `loadStageLayout`. |
 | `/projects` still on `ManagementList` | P2b.29 converts it to `LibraryList`; P1.16 then deletes `EntityList` and `ManagementList` (no adapter). |
+| P2a.18 additive props on its show-editor pieces (recorded in fix1) | All optional. `SongPickerDialog` `single?` (click/Enter picks one), `recentIds?`, `title?`. `TemplateSelect` `emptyLabel?` (empty first option), `style?`; a `""` value shows as "None". `ItemCommonFields` `outputHint?`. `ScriptureRowModal` `changePassageOf?: ScriptureRow` (opens at step 1, title "Edit scripture"; the caller keeps id/length/notes via `applyPassage`). `VideoRowModal.tsx` also exports `TransitionField` and `probeDuration`. `ItemFormProps` in `forms/types.ts` (§9). |
+| `VideoInput` `resolveUrl` (packages/editor-kit, P2b-owned) | P2a.18 added `resolveUrl?: (v: string) => string` (preview `<video src>` only; the field still shows `value`) in a marked `[P2a.18]` block. Controller ruling: it stays; P2b.9 keeps it and only adds the lucide `FolderOpen` icon. |

@@ -11,7 +11,7 @@ import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { SongPickerDialog } from "../SongPickerDialog";
 import { SongRowIntroOutro } from "../SongOverrideEditor";
 import { TemplateSelect } from "../TemplateSelect";
-import type { ItemFormProps } from "./GraphicItemForm";
+import type { ItemFormProps } from "./types";
 import { FormRow, ItemCommonFields, ItemFormFrame } from "./ItemCommonFields";
 import {
   arrangementAppend,

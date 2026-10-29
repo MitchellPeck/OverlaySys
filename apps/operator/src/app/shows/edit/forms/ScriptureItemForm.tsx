@@ -11,7 +11,7 @@ import { useScriptureSettings } from "@/lib/scriptureSettings";
 import { budgetForPref, loadSlideSizePref } from "@/lib/slideSizePref";
 import { useStore } from "@/lib/store";
 import { TemplateSelect } from "../TemplateSelect";
-import type { ItemFormProps } from "./GraphicItemForm";
+import type { ItemFormProps } from "./types";
 import { FormRow, ItemCommonFields, ItemFormFrame } from "./ItemCommonFields";
 import { applyPassage, patchRow, recentTemplateIds } from "./itemFormModel";
 

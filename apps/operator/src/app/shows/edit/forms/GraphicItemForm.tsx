@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import type { GraphicRow, Show, Template } from "@overlaysys/core";
+import type { GraphicRow, Template } from "@overlaysys/core";
 import { Input, colors, fontSize } from "@overlaysys/ui";
 import { FieldInput } from "@/lib/FieldInput";
 import { isCloudMode } from "@/lib/mode";
@@ -9,8 +9,7 @@ import { useStore } from "@/lib/store";
 import { TemplateSelect } from "../TemplateSelect";
 import { FormRow, ItemCommonFields, ItemFormFrame } from "./ItemCommonFields";
 import { patchRow, recentTemplateIds } from "./itemFormModel";
-
-export type ItemFormProps<R> = { row: R; show: Show; onChange(next: R): void };
+import type { ItemFormProps } from "./types";
 
 export function GraphicItemForm({ row, show, onChange }: ItemFormProps<GraphicRow>) {
   const metas = useStore((s) => s.templates);

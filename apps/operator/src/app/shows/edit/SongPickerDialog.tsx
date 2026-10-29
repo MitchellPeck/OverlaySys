@@ -12,12 +12,15 @@ import { addSongsLabel, pickRange, toggleSongPick } from "./forms/itemFormModel"
  * row) and "Add N songs" inserts them in the picked order. Single mode: a
  * click or Enter picks the song at once.
  */
+// Stable default so the ranking memo doesn't recompute every render.
+const NO_RECENT: string[] = [];
+
 export function SongPickerDialog({
   open,
   onClose,
   onAdd,
   single = false,
-  recentIds = [],
+  recentIds = NO_RECENT,
   title,
 }: {
   open: boolean;
@@ -32,8 +35,9 @@ export function SongPickerDialog({
   const [picked, setPicked] = useState<string[]>([]);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
-  // Last picked row: shift-click (or shift-Enter) picks the range from it.
-  const anchorRef = useRef<number | null>(null);
+  // Last picked song (by id, so a new search can't shift it): shift-click
+  // or shift-Enter picks the range from it within the current results.
+  const anchorRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -56,14 +60,14 @@ export function SongPickerDialog({
       onAdd([id]);
       return;
     }
-    const anchor = anchorRef.current;
-    if (shift && anchor !== null && anchor !== index) {
-      const ids = results.map((s) => s.id);
+    const ids = results.map((s) => s.id);
+    const anchor = anchorRef.current ? ids.indexOf(anchorRef.current) : -1;
+    if (shift && anchor >= 0 && anchor !== index) {
       setPicked((p) => pickRange(p, ids, anchor, index));
     } else {
       setPicked((p) => toggleSongPick(p, id));
     }
-    anchorRef.current = index;
+    anchorRef.current = id;
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -147,8 +151,13 @@ export function SongPickerDialog({
                 role="option"
                 aria-selected={single ? isActive : order >= 0}
                 onMouseEnter={() => setActive(i)}
+                // Shift-click picks a range; keep it from also selecting page text.
+                onMouseDown={(e) => {
+                  if (e.shiftKey) e.preventDefault();
+                }}
                 onClick={(e) => choose(s.id, i, e.shiftKey)}
                 style={{
+                  userSelect: "none",
                   display: "flex",
                   alignItems: "center",
                   gap: 10,

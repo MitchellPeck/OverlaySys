@@ -9,7 +9,8 @@ import { templateGroups } from "./forms/itemFormModel";
 /**
  * Template picker grouped by use: "Suggested" (recent first, then by name)
  * and "Other templates". Nothing is hidden; a value naming no known template
- * stays selectable as "Missing template".
+ * stays selectable as "Missing template", and "" shows as "None" (or as
+ * `emptyLabel` when one is given).
  */
 export function TemplateSelect({
   value,
@@ -34,6 +35,8 @@ export function TemplateSelect({
   return (
     <Select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} style={{ maxWidth: 320, ...style }}>
       {emptyLabel !== undefined && <option value="">{emptyLabel}</option>}
+      {/* A stored "" (no intro/outro) reads as None, never as the first real template. */}
+      {emptyLabel === undefined && value === "" && <option value="">None</option>}
       {missing && <option value={value}>Missing template</option>}
       {suggested.length > 0 && (
         <optgroup label="Suggested">

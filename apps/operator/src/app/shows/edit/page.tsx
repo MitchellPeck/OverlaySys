@@ -631,7 +631,20 @@ function ShowEditPageInner() {
     ]);
   }
 
-  if (!draft) {
+  // Stable per draft, so the picker's ranking memo and the Add graphic dialog's reset don't churn.
+  const addPickers = useMemo(
+    () =>
+      draft
+        ? {
+            recentSongs: recentSongIds(draft),
+            recentGraphic: recentTemplateIds(draft, "graphic"),
+            lastGraphicId: lastUsedGraphicTemplate(draft, templates)?.id ?? "",
+          }
+        : null,
+    [draft, templates],
+  );
+
+  if (!draft || !addPickers) {
     return (
       <>
         <PageChrome />
@@ -729,14 +742,14 @@ function ShowEditPageInner() {
       <VideoRowModal open={videoModalOpen} channels={takeableChannels} onClose={() => setVideoModalOpen(false)} onSave={saveVideoRow} />
       <SongPickerDialog
         open={songPickerOpen}
-        recentIds={recentSongIds(draft)}
+        recentIds={addPickers.recentSongs}
         onClose={() => setSongPickerOpen(false)}
         onAdd={addSongs}
       />
       <AddGraphicDialog
         open={graphicAddOpen}
-        initialId={lastUsedGraphicTemplate(draft, templates)?.id ?? ""}
-        recentIds={recentTemplateIds(draft, "graphic")}
+        initialId={addPickers.lastGraphicId}
+        recentIds={addPickers.recentGraphic}
         onClose={() => setGraphicAddOpen(false)}
         onAdd={addGraphic}
       />

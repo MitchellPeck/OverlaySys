@@ -209,6 +209,15 @@ export function songIntroOutroChip(
   return `${label}: none`;
 }
 
+/**
+ * Template id to start an override from: the first non-empty candidate.
+ * Undefined when there is none (no templates loaded yet), so an Override
+ * button never writes "" (which means "no intro/outro") by accident.
+ */
+export function overrideSeed(...candidates: (string | undefined)[]): string | undefined {
+  return candidates.find((c): c is string => !!c);
+}
+
 // --- Video -----------------------------------------------------------------
 
 /** Fill Length from the probed duration when the item has none. */

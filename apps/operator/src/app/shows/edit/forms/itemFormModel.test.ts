@@ -12,6 +12,7 @@ import {
   lengthFieldHint,
   newSongRows,
   outputOptions,
+  overrideSeed,
   patchRow,
   pickRange,
   recentSongIds,
@@ -145,6 +146,14 @@ describe("intro / outro chips", () => {
     expect(songIntroOutroChip("intro", { introTemplateId: "sc" }, undefined, song, metas)).toBe("Intro: Scripture Card (item)");
     expect(songIntroOutroChip("outro", {}, undefined, song, metas)).toBe("Outro: none");
     expect(songIntroOutroChip("intro", { skipIntro: true }, undefined, song, metas)).toBe("Intro: skipped (item)");
+  });
+});
+
+describe("override seed", () => {
+  it("first real template id; never an empty string", () => {
+    expect(overrideSeed("", undefined, "a")).toBe("a");
+    expect(overrideSeed(undefined, "b")).toBe("b");
+    expect(overrideSeed("", undefined)).toBeUndefined();
   });
 });
 
