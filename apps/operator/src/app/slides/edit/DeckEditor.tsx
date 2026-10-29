@@ -100,6 +100,45 @@ function TemplateOptions({ templates, current }: { templates: TemplateMeta[]; cu
   );
 }
 
+/**
+ * Slide preview that fills the available width up to PREVIEW_WIDTH. The
+ * thumbnail renders at the measured inner width so its 16:9 box and text
+ * placement match the grid thumbnails instead of being clipped by the frame.
+ */
+function FittedPreview({ templateId, data }: { templateId: string; data: Record<string, string> }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(PREVIEW_WIDTH - 2);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const cw = el.clientWidth;
+      if (cw > 0) setW(cw);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div
+      ref={ref}
+      style={{
+        width: "100%",
+        maxWidth: PREVIEW_WIDTH,
+        boxSizing: "border-box",
+        border: `1px solid ${colors.border}`,
+        borderRadius: radius.md,
+        overflow: "hidden",
+        background: "#000",
+      }}
+    >
+      <TemplateThumbnail templateId={templateId} data={data} width={w} />
+    </div>
+  );
+}
+
 function MissingDeck() {
   const router = useRouter();
   return (
@@ -359,18 +398,7 @@ export function DeckEditor({ deckId }: { deckId: string }) {
 
   const main = selected ? (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div
-        style={{
-          width: PREVIEW_WIDTH,
-          maxWidth: "100%",
-          border: `1px solid ${colors.border}`,
-          borderRadius: radius.md,
-          overflow: "hidden",
-          background: "#000",
-        }}
-      >
-        <TemplateThumbnail templateId={effectiveId} data={selected.data} width={PREVIEW_WIDTH} />
-      </div>
+      <FittedPreview templateId={effectiveId} data={selected.data} />
       <div style={{ maxWidth: PREVIEW_WIDTH }}>
         <SlideFieldsForTemplate
           key={selected.id}

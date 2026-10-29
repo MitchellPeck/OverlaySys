@@ -73,7 +73,7 @@ export function LocalSlidesEditor({
     useStore.getState().upsertDeck(deck);
     setSaveOpen(false);
     onChange(next);
-    toast({ tone: "ok", message: `Saved "${deck.name}" to the slides library` });
+    toast({ tone: "ok", message: `Saved "${deck.name}" to the slides library. Save the show to keep this item linked.` });
   };
 
   return (

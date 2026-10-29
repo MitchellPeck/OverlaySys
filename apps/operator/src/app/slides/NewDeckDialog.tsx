@@ -140,6 +140,9 @@ export function NewDeckDialog({
               onChange={(e) => setTemplateId(e.target.value)}
             >
               {templates.length === 0 ? <option value={chosen}>Default lyric design</option> : null}
+              {templates.length > 0 && !templates.some((t) => t.id === chosen) ? (
+                <option value={chosen}>(missing design)</option>
+              ) : null}
               {groups.suggested.length > 0 ? (
                 <optgroup label="Suggested">
                   {groups.suggested.map((t) => (
