@@ -198,6 +198,25 @@ describe("thumbActivate", () => {
     }
   });
 
+  it("song live on program with liveRow on a video (lyrics over video) still advances program", () => {
+    const video = { kind: "video", id: "vid", assetUrl: "/assets/a.mp4" };
+    const ctx = mkCtx({
+      rows: [songRowA, video],
+      channelStates: liveState("vid"),
+      songSessions: { program: session("A", arr, { sectionIdx: 1, slideIdx: 0 }) },
+    });
+    expect(thumbActivate(songRowA as never, 3, ctx).messages).toEqual([{ type: "song_advance", channel: "program", delta: 1 }]);
+  });
+
+  it("scripture live with liveRow on a video still goes to the slide", () => {
+    const row = { kind: "scripture", id: "sc", reference: "R", translation: "kjv", slides: [{ verses: [] }, { verses: [] }], templateId: "st" };
+    const ctx = mkCtx({
+      rows: [row, { kind: "video", id: "vid", assetUrl: "/assets/a.mp4" }],
+      channelStates: { program: { scriptureSession: { rowId: "sc", slideIdx: 0 }, liveRow: { showId: "show1", rowId: "vid" } } as unknown as ChannelState },
+    });
+    expect(thumbActivate(row as never, 1, ctx).messages).toEqual([{ type: "scripture_goto", channel: "program", slideIdx: 1 }]);
+  });
+
   it("scripture live from another show cues preview", () => {
     const row = { kind: "scripture", id: "sc", reference: "R", translation: "kjv", slides: [{ verses: [] }, { verses: [] }], templateId: "st" };
     const ctx = mkCtx({

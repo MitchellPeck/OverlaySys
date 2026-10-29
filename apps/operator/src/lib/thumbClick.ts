@@ -60,10 +60,20 @@ function placeholder(key: string, text: string): ThumbSpec {
   return { key, label: "", group: null, render: { kind: "placeholder", text }, state: null, blanked: false };
 }
 
-/** True only when the channel's live row is exactly this row of this show. */
-function exactRowOn(ch: string | undefined, row: { id: string }, ctx: ThumbCtx): boolean {
+/**
+ * Whether the channel's session is this row's. The session itself already
+ * matches by song / row id; this rules out a session taken from another show
+ * or from another row of the same song. An absent liveRow, or one pointing at
+ * a different kind of row (a video over lyrics), still counts as this row.
+ */
+function exactRowOn(ch: string | undefined, row: { id: string; kind: string; songId?: string }, ctx: ThumbCtx): boolean {
   const lr = ch ? ctx.channelStates[ch]?.liveRow : undefined;
-  return !!lr && lr.showId === ctx.show.id && lr.rowId === row.id;
+  if (!lr) return true;
+  if (lr.showId !== ctx.show.id) return false;
+  if (lr.rowId === row.id) return true;
+  const taken = ctx.show.rows.find((r) => r.id === lr.rowId) as { kind?: string; songId?: string } | undefined;
+  if (!taken || taken.kind !== row.kind) return true;
+  return row.kind === "song" ? taken.songId !== row.songId : false;
 }
 
 function songModel(row: SongRow, ctx: ThumbCtx): SongModel | null {
