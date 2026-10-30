@@ -3,6 +3,7 @@ import * as store from "./mediaStore";
 import { isLive, liveOnly, stampWrite, tombstone } from "./lifecycle";
 import { listShowMetas, getShow } from "./shows";
 import { listDecks } from "./decks";
+import { rewriteMediaRefs } from "./mediaRefs";
 
 const REGISTRY = new Map<string, MediaItem>();
 let loaded = false;
@@ -62,6 +63,10 @@ export async function saveMediaItem(item: MediaItem): Promise<MediaItem> {
   const stamped = stampWrite({ ...item, createdAt });
   await store.writeMediaItem(stamped);
   REGISTRY.set(stamped.id, stamped);
+  // Replacing the file updates every show row and deck slide that uses this item.
+  if (existing && stamped.assetUrl && stamped.mediaType && existing.assetUrl !== stamped.assetUrl) {
+    await rewriteMediaRefs(stamped.id, stamped.assetUrl, stamped.mediaType);
+  }
   return stamped;
 }
 
