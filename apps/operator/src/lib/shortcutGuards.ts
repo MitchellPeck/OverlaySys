@@ -34,6 +34,9 @@ export function isTextEntryTarget(t: TargetLike): boolean {
 }
 
 const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"], dialog[open]';
+// Only modal dialogs block from anywhere in the document; a non-modal
+// popover (the timeline easing picker) leaves the shortcuts working.
+const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], dialog[open]';
 // Elements that hand Enter/Space to the show keys even when keyboard-focused.
 const SHOW_KEYS_SELECTOR = "[data-show-keys]";
 const ACTIVATABLE_SELECTOR = 'button, a[href], summary, [role="button"], input[type="checkbox"], input[type="radio"], select';
@@ -55,7 +58,7 @@ function isFormFieldTarget(t: TargetLike): boolean {
  */
 export function isShortcutBlocked(target: TargetLike, active: TargetLike = null): boolean {
   // Focus can fall to <body> while a dialog is open, so check the document too.
-  if (typeof document !== "undefined" && document.querySelector(DIALOG_SELECTOR)) return true;
+  if (typeof document !== "undefined" && document.querySelector(MODAL_SELECTOR)) return true;
   return isFormFieldTarget(target) || isFormFieldTarget(active) || isInsideDialog(target) || isInsideDialog(active);
 }
 

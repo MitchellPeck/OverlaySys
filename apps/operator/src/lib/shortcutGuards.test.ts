@@ -265,6 +265,21 @@ describe("keyboard focus and open dialogs", () => {
     const card = { tagName: "DIV", closest: (s: string) => (s.includes("data-show-keys") || s.includes('role="button"') ? {} : null) };
     expect(isActivatableTarget(card, true)).toBe(false);
   });
+  it("a non-modal popover (role=dialog without aria-modal) does not block", () => {
+    const g = globalThis as { document?: unknown };
+    const prev = g.document;
+    try {
+      // A document that only has a non-modal [role="dialog"] popover open.
+      g.document = {
+        querySelector: (sel: string) =>
+          sel.split(",").some((part) => part.trim() === '[role="dialog"]') ? {} : null,
+      };
+      expect(isShortcutBlocked({ tagName: "BODY" })).toBe(false);
+    } finally {
+      if (prev === undefined) delete g.document;
+      else g.document = prev;
+    }
+  });
   it("blocks when a dialog is open anywhere in the document, even with focus on body", () => {
     const g = globalThis as { document?: unknown };
     const prev = g.document;
