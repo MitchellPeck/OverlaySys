@@ -255,11 +255,24 @@ describe("photos, loops and mutes", () => {
 });
 
 describe("takePvwToPgm", () => {
-  it("does not promote media", () => {
+  it("promotes a cued video to program and clears it from preview", () => {
     const pvw = `${ch}-pvw`;
-    channels.mediaTake(pvw, ARGS, 1000);
-    channels.take(pvw, "lower-third", {});
+    channels.mediaTake(pvw, { ...ARGS, fit: "cover", position: "top", muted: true }, 1000);
     channels.takePvwToPgm(pvw, ch);
-    expect(channels.getState(ch).media ?? null).toBeNull();
+    expect(media()).toMatchObject({
+      rowId: "row-1", assetUrl: "/assets/give.mp4", label: "Giving", mediaType: "video", fit: "cover", position: "top",
+      muted: true, endAction: "clear", paused: false, playback: { status: "loading" },
+    });
+    expect(channels.getState(pvw).media).toBeNull();
+  });
+
+  it("a cued photo and a cued graphic both promote", () => {
+    const pvw = `${ch}-pvw`;
+    channels.mediaTake(pvw, { ...ARGS, assetUrl: "/assets/p.png", mediaType: "image", endAction: "hold", fit: "contain" }, 1000);
+    channels.take(pvw, "lower-third", { name: "Pastor" });
+    channels.takePvwToPgm(pvw, ch);
+    expect(media()).toMatchObject({ assetUrl: "/assets/p.png", mediaType: "image", fit: "contain" });
+    expect(channels.getState(ch).active).toMatchObject({ templateId: "lower-third", phase: "in", data: { name: "Pastor" } });
+    expect(channels.getState(pvw).media).toBeNull();
   });
 });

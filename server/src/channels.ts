@@ -453,8 +453,11 @@ export function setActiveNull(channel: string): void {
 export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // A media deck on preview goes to program's media slot; a graphic on
   // preview (if any) still promotes below.
+  const hadMediaDeck = mediaDeckSession.has(fromChannel);
   mediaDeckSession.promote(fromChannel, toChannel);
   const src = states.get(fromChannel);
+  // A cued photo/video (not a deck's: a deck moves its own) goes to program, like a cued graphic.
+  if (src?.media && !hadMediaDeck && !slidesSession.ownsMediaOn(fromChannel)) promoteMedia(src, toChannel);
   // [P3.5] slides session: up as a graphic, or (a photo/video slide) as its own media
   if (src && slidesSession.getSession(fromChannel) && (src.active || slidesSession.ownsMediaOn(fromChannel))) {
     // [P2b.11] draft guard
@@ -542,6 +545,28 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   maybeScheduleAutoOut(toChannel, queued.templateId, pgm.active.takenAt).catch((err) =>
     console.warn("[channels] maybeScheduleAutoOut failed", err),
   );
+}
+
+/** Take preview's media on `toChannel` as a fresh take (stopping any media deck there), then clear it from preview. */
+function promoteMedia(src: ChannelState, toChannel: string): void {
+  const m = src.media!;
+  const showId = src.liveRow?.rowId === m.rowId ? src.liveRow.showId : undefined;
+  mediaTake(toChannel, {
+    rowId: m.rowId,
+    ...(showId ? { showId } : {}),
+    assetUrl: m.assetUrl,
+    ...(m.label !== undefined ? { label: m.label } : {}),
+    volume: m.volume,
+    endAction: m.endAction,
+    mediaType: m.mediaType,
+    fit: m.fit,
+    position: m.position,
+    loop: m.loop,
+    muted: m.muted,
+    transitionIn: m.transitionIn,
+    transitionOut: m.transitionOut,
+  });
+  mediaClear(src.channel);
 }
 
 // ───── Media slot ──────────────────────────────────────────────────────────
