@@ -15,6 +15,7 @@ import {
 } from "@overlaysys/core";
 import { Button, FileDrop, Panel, SegmentedControl, Select, colors, useConfirm, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { latestOnly } from "@/lib/latestOnly";
 import { findLikelySongDuplicate, setAllFlagged, type LikelyDuplicate } from "./bundleDuplicates";
 import { buildImportRequest } from "./importRequest";
 import { planImport, summarizePlan, type ImportDecision } from "./planImport";
@@ -108,6 +109,8 @@ export function ImportPreview() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  // Only the latest pick's read may set the preview; a slow earlier read is dropped.
+  const [fileReads] = useState(latestOnly);
 
   function buildPreview(
     songs: Song[],
@@ -174,6 +177,7 @@ export function ImportPreview() {
   }
 
   async function readFile(f: File) {
+    const isLatest = fileReads.begin();
     setFile(f);
     setParseError(null);
     setPreview(null);
@@ -183,9 +187,10 @@ export function ImportPreview() {
     try {
       text = await f.text();
     } catch (err) {
-      setParseError(`could not read file: ${String(err)}`);
+      if (isLatest()) setParseError(`could not read file: ${String(err)}`);
       return;
     }
+    if (!isLatest()) return;
     let json: unknown;
     try {
       json = JSON.parse(text);
