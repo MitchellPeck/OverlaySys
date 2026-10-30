@@ -26,6 +26,7 @@ import { listSongMetas, reloadSongs } from "./songs";
 import { listProjects, reloadProjects } from "./projects";
 import { listHotcardMetas, reloadHotcards } from "./hotcards";
 import { listDeckMetas, reloadDecks } from "./decks";
+import { listMediaMetas, reloadMedia } from "./media";
 import * as stageFeedHub from "./stageFeedHub";
 import * as stageState from "./stageState";
 
@@ -274,6 +275,10 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
     if (touched("decks")) {
       await reloadDecks();
       broadcast({ type: "deck_list", decks: await listDeckMetas() });
+    }
+    if (touched("media")) {
+      await reloadMedia();
+      broadcast({ type: "media_list", items: await listMediaMetas() });
     }
     // PCO item mappings need no reload: FsStorageAdapter writes through the
     // store's cache, and a reload racing an operator save could drop it.

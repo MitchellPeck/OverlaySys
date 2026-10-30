@@ -6,6 +6,7 @@ import type { Template } from "./template";
 import type { StageLayout } from "./stageLayout";
 import type { ChannelConfig, ProjectChannelOverride } from "./channelConfig";
 import type { Deck } from "./deck";
+import type { MediaItem } from "./mediaItem";
 import type { PcoItemMapping } from "./slidesMapping";
 
 /**
@@ -83,6 +84,13 @@ export interface StorageAdapter {
   getDeck(orgId: string, id: string): Promise<Deck | null>;
   saveDeck(orgId: string, d: Deck): Promise<void>;
   deleteDeck(orgId: string, id: string): Promise<boolean>;
+
+  // ── Media library (org library — global, no project scoping) ───────────
+  listMediaItems(orgId: string): Promise<MediaItem[]>;
+  listMediaItemsSince(orgId: string, watermark: string): Promise<MediaItem[]>;
+  getMediaItem(orgId: string, id: string): Promise<MediaItem | null>;
+  saveMediaItem(orgId: string, m: MediaItem): Promise<void>;
+  deleteMediaItem(orgId: string, id: string): Promise<boolean>;
 
   // ── PCO item mappings (remembered PCO item -> deck choices) ───────────
   listPcoItemMappings(orgId: string): Promise<PcoItemMapping[]>;
@@ -165,6 +173,7 @@ export interface SyncCursor {
   projectChannelOverrides: string;
   decks: string;
   pcoItemMappings: string;
+  media: string;
 }
 
 /**
@@ -181,6 +190,7 @@ export const EMPTY_SYNC_CURSOR: SyncCursor = {
   projectChannelOverrides: "",
   decks: "",
   pcoItemMappings: "",
+  media: "",
 };
 
 /**
@@ -202,7 +212,8 @@ export type PendingWriteKind =
   | "channelConfig"
   | "projectChannelOverride"
   | "deck"
-  | "pcoItemMapping";
+  | "pcoItemMapping"
+  | "mediaItem";
 
 export interface PendingWrite {
   kind: PendingWriteKind;

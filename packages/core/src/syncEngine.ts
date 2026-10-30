@@ -18,6 +18,7 @@
 import type {
   ChannelConfig,
   Deck,
+  MediaItem,
   Hotcard,
   PcoItemMapping,
   Project,
@@ -94,7 +95,8 @@ export type SyncEntityKind =
   | "channelConfigs"
   | "projectChannelOverrides"
   | "decks"
-  | "pcoItemMappings";
+  | "pcoItemMappings"
+  | "media";
 
 /**
  * Epoch millis for an ISO timestamp; 0 for missing/unparseable so a
@@ -181,6 +183,7 @@ export async function sync(
       projectChannelOverrides: { pulled: 0, pushed: 0 },
       decks: { pulled: 0, pushed: 0 },
       pcoItemMappings: { pulled: 0, pushed: 0 },
+      media: { pulled: 0, pushed: 0 },
     },
   };
 
@@ -259,6 +262,16 @@ export async function sync(
     result,
   });
 
+  await reconcileTable<MediaItem>({
+    kind: "media",
+    listLocal: () => local.listMediaItemsSince(orgId, ""),
+    listRemote: () => remote.listMediaItemsSince(orgId, ""),
+    keyOf: (m) => m.id,
+    pushToRemote: (m) => remote.saveMediaItem(orgId, m),
+    pushToLocal: (m) => local.saveMediaItem(orgId, m),
+    result,
+  });
+
   await reconcileTable<PcoItemMapping>({
     kind: "pcoItemMappings",
     listLocal: () => local.listPcoItemMappingsSince(orgId, ""),
@@ -295,10 +308,11 @@ export async function sync(
 /**
  * Tables that may not exist remotely yet (each needs an apps-portal
  * migration: stage_layouts in docs/cloud-stage-layouts-migration.md; decks
- * and pco_item_mappings in docs/cloud-slides-sync-migration.md). A missing
+ * and pco_item_mappings in docs/cloud-slides-sync-migration.md; media_items in
+ * docs/cloud-media-sync-migration.md). A missing
  * table there is skipped rather than counted as an error.
  */
-const OPTIONAL_TABLES = new Set<SyncEntityKind>(["stageLayouts", "decks", "pcoItemMappings"]);
+const OPTIONAL_TABLES = new Set<SyncEntityKind>(["stageLayouts", "decks", "pcoItemMappings", "media"]);
 const loggedMissing = new Set<SyncEntityKind>();
 
 export function _resetSyncEngineForTest(): void {

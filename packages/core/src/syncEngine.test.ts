@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 import type {
   ChannelConfig,
   Deck,
+  MediaItem,
   Hotcard,
   PcoItemMapping,
   Project,
@@ -31,6 +32,7 @@ function makeMemAdapter(): StorageAdapter {
   const channels = new Map<string, ChannelConfig>();
   const overrides = new Map<string, ProjectChannelOverride>();
   const decks = new Map<string, Deck>();
+  const media = new Map<string, MediaItem>();
   const mappings = new Map<string, PcoItemMapping>();
 
   const live = <T extends { deletedAt?: string }>(items: T[]): T[] =>
@@ -108,6 +110,14 @@ function makeMemAdapter(): StorageAdapter {
       decks.set(d.id, d);
     },
     deleteDeck: async (_, id) => decks.delete(id),
+
+    listMediaItems: async () => live([...media.values()]),
+    listMediaItemsSince: async () => [...media.values()],
+    getMediaItem: async (_, id) => media.get(id) ?? null,
+    saveMediaItem: async (_, m) => {
+      media.set(m.id, m);
+    },
+    deleteMediaItem: async (_, id) => media.delete(id),
 
     listPcoItemMappings: async () => live([...mappings.values()]),
     listPcoItemMappingsSince: async () => [...mappings.values()],
@@ -382,6 +392,48 @@ describe("syncEngine.sync", () => {
     expect(await local.listDecks(ORG)).toEqual([]);
     const [row] = await local.listDecksSince(ORG, "");
     expect(row?.deletedAt).toBe("2026-05-03T00:00:00Z");
+  });
+
+  it("pushes a local media item and pulls a remote one", async () => {
+    const item = (id: string, updatedAt: string): MediaItem => ({
+      id,
+      name: id,
+      kind: "file",
+      mediaType: "image",
+      assetUrl: `/assets/${id}.png`,
+      createdAt: "2026-05-01T00:00:00Z",
+      updatedAt,
+    });
+    await local.saveMediaItem(ORG, item("m-local", "2026-05-02T00:00:00Z"));
+    await remote.saveMediaItem(ORG, item("m-remote", "2026-05-02T00:00:00Z"));
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([]);
+    expect(r.perTable.media).toEqual({ pulled: 1, pushed: 1 });
+    expect((await remote.getMediaItem(ORG, "m-local"))?.name).toBe("m-local");
+    expect((await local.getMediaItem(ORG, "m-remote"))?.name).toBe("m-remote");
+  });
+
+  it("a missing media_items table is skipped quietly", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    _resetSyncEngineForTest();
+    remote.listMediaItemsSince = async () => {
+      throw { code: "42P01", message: 'relation "overlaysys.media_items" does not exist' };
+    };
+    await local.saveMediaItem(ORG, {
+      id: "m1",
+      name: "A",
+      kind: "file",
+      mediaType: "image",
+      assetUrl: "/assets/a.png",
+      createdAt: "2026-05-01T00:00:00Z",
+      updatedAt: "2026-05-01T00:00:00Z",
+    });
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([]);
+    expect(r.perTable.media).toEqual({ pulled: 0, pushed: 0 });
+    expect(await local.getMediaItem(ORG, "m1")).not.toBeNull();
+    expect(info).toHaveBeenCalledWith("[sync] remote media table unavailable; skipping until it is migrated");
+    info.mockRestore();
   });
 
   it("pcoItemMappings: LWW by updatedAt on the mapping id", async () => {

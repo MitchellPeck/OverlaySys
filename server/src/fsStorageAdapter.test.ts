@@ -8,6 +8,7 @@ import {
   StageLayoutSchema,
   type Deck,
   type Hotcard,
+  type MediaItem,
   type PcoItemMapping,
   type Show,
 } from "@overlaysys/core";
@@ -219,6 +220,37 @@ describe("FsStorageAdapter decks", () => {
     await adapter.saveDeck("org", deck({ name: "Stale pull", updatedAt: "2026-10-04T00:00:00+00:00" }));
     const stored = await adapter.getDeck("org", "deck-a");
     expect(stored).toMatchObject({ name: "Local edit", updatedAt: "2026-10-05T00:00:00.000Z" });
+  });
+});
+
+describe("FsStorageAdapter media items", () => {
+  const item = (extra: Partial<MediaItem> = {}): MediaItem => ({
+    id: "media-a",
+    name: "Logo",
+    kind: "file",
+    mediaType: "image",
+    assetUrl: "/assets/logo.png",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    ...extra,
+  });
+
+  it("media item round-trip keeps the newer stored copy", async () => {
+    const adapter = new FsStorageAdapter();
+    await adapter.saveMediaItem("org", item({ name: "Local edit", updatedAt: "2026-10-05T00:00:00.000Z" }));
+    await adapter.saveMediaItem("org", item({ name: "Stale pull", updatedAt: "2026-10-04T00:00:00+00:00" }));
+    expect(await adapter.getMediaItem("org", "media-a")).toMatchObject({
+      name: "Local edit",
+      updatedAt: "2026-10-05T00:00:00.000Z",
+    });
+
+    await adapter.saveMediaItem("org", item({ id: "media-b", updatedAt: "2026-10-02T00:00:00.000Z" }));
+    expect(await adapter.deleteMediaItem("org", "media-b")).toBe(true);
+    expect((await adapter.listMediaItems("org")).map((m) => m.id)).toEqual(["media-a"]);
+    const since = await adapter.listMediaItemsSince("org", "");
+    expect(since.map((m) => m.id).sort()).toEqual(["media-a", "media-b"]);
+    expect(since.find((m) => m.id === "media-b")?.deletedAt).toBeTruthy();
+    expect(await adapter.getMediaItem("org", "media-b")).toBeNull();
+    expect(await adapter.deleteMediaItem("org", "nope")).toBe(false);
   });
 });
 

@@ -9,6 +9,7 @@
 import {
   ChannelConfigSchema,
   DeckSchema,
+  MediaItemSchema,
   HotcardSchema,
   PcoItemMappingSchema,
   ProjectChannelOverrideSchema,
@@ -19,6 +20,7 @@ import {
   TemplateSchema,
   type ChannelConfig,
   type Deck,
+  type MediaItem,
   type Hotcard,
   type PcoItemMapping,
   type Project,
@@ -47,7 +49,8 @@ type PayloadTable =
   | "stage_layouts"
   | "channel_configs"
   | "decks"
-  | "pco_item_mappings";
+  | "pco_item_mappings"
+  | "media_items";
 
 const SHOW_COLUMNS = "id, project_id, name, rows, updated_at, deleted_at";
 const HOTCARD_COLUMNS = "id, project_id, name, template_id, data, channel_hint, notes, updated_at, deleted_at";
@@ -342,6 +345,23 @@ export class CloudStorageAdapter implements StorageAdapter {
   }
   async deleteDeck(orgId: string, id: string): Promise<boolean> {
     return this.softDeletePayload(orgId, "decks", id);
+  }
+
+  // ── Media library (optional table; docs/cloud-media-sync-migration.md) ──
+  async listMediaItems(orgId: string): Promise<MediaItem[]> {
+    return this.queryPayloadTable(orgId, "media_items", false, MediaItemSchema);
+  }
+  async listMediaItemsSince(orgId: string, _watermark: string): Promise<MediaItem[]> {
+    return this.queryPayloadTable(orgId, "media_items", true, MediaItemSchema);
+  }
+  async getMediaItem(orgId: string, id: string): Promise<MediaItem | null> {
+    return this.getPayload(orgId, "media_items", id, MediaItemSchema);
+  }
+  async saveMediaItem(orgId: string, m: MediaItem): Promise<void> {
+    return this.savePayload(orgId, "media_items", m);
+  }
+  async deleteMediaItem(orgId: string, id: string): Promise<boolean> {
+    return this.softDeletePayload(orgId, "media_items", id);
   }
 
   async listPcoItemMappings(orgId: string): Promise<PcoItemMapping[]> {

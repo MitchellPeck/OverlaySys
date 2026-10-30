@@ -20,6 +20,7 @@ import {
   ProjectChannelOverrideSchema,
   type ChannelConfig,
   type Deck,
+  type MediaItem,
   type Hotcard,
   type PcoItemMapping,
   type Project,
@@ -33,6 +34,7 @@ import {
 } from "@overlaysys/core";
 import { withoutBuiltIn } from "./stageLayouts";
 import { loadAllDecks, loadDeck, writeDeck } from "./decksStore";
+import { loadAllMedia, loadMediaItem, writeMediaItem } from "./mediaStore";
 import {
   deleteItemMapping,
   listItemMappings,
@@ -310,6 +312,31 @@ export class FsStorageAdapter implements StorageAdapter {
     const current = await loadDeck(id);
     if (!current || current.deletedAt) return false;
     return softDeleteVia(current, (d) => writeDeck(d));
+  }
+
+  // ── Media library ──────────────────────────────────────────────────────
+  //
+  // Like decks, writes go straight to mediaStore so a pulled item keeps its
+  // incoming `updatedAt`.
+  async listMediaItems(_org: string): Promise<MediaItem[]> {
+    return live(await loadAllMedia());
+  }
+  async listMediaItemsSince(_org: string, _watermark: string): Promise<MediaItem[]> {
+    return loadAllMedia();
+  }
+  async getMediaItem(_org: string, id: string): Promise<MediaItem | null> {
+    const m = await loadMediaItem(id);
+    return m && !m.deletedAt ? m : null;
+  }
+  async saveMediaItem(_org: string, item: MediaItem): Promise<void> {
+    const updatedAt = item.updatedAt ?? new Date().toISOString();
+    if (storedIsNewer(await loadMediaItem(item.id), updatedAt)) return;
+    await writeMediaItem({ ...item, updatedAt });
+  }
+  async deleteMediaItem(_org: string, id: string): Promise<boolean> {
+    const current = await loadMediaItem(id);
+    if (!current || current.deletedAt) return false;
+    return softDeleteVia(current, (m) => writeMediaItem(m));
   }
 
   // ── PCO item mappings ──────────────────────────────────────────────────

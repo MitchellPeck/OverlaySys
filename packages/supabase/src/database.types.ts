@@ -209,6 +209,28 @@ export interface Database {
         };
         Relationships: [];
       };
+      /** Media library items (JSON payload). Optional table; see docs/cloud-media-sync-migration.md. */
+      media_items: {
+        Row: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id: string;
+          org_id: string;
+          payload: Json;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          payload?: Json;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       /** Remembered PCO item -> deck choices (JSON payload; id = mapping key). Optional table; see docs/cloud-slides-sync-migration.md. */
       pco_item_mappings: {
         Row: {

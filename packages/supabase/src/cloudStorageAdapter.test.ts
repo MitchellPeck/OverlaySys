@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ShowSchema, type Deck, type Hotcard, type PcoItemMapping, type Project, type Show } from "@overlaysys/core";
+import { ShowSchema, type Deck, type Hotcard, type MediaItem, type PcoItemMapping, type Project, type Show } from "@overlaysys/core";
 import { CloudStorageAdapter } from "./cloudStorageAdapter";
 import { _resetOptionalColumnsForTest, showExtra } from "./optionalColumns";
 import type { OverlaySysSupabaseClient } from "./index";
@@ -392,6 +392,32 @@ describe("CloudStorageAdapter decks and PCO item mappings", () => {
     await adapter.saveDeck(ORG, { ...deck, id: "deck-2", deletedAt: "2026-10-28T11:00:00.000Z" });
     expect((await adapter.listDecks(ORG)).map((d) => d.id)).toEqual(["deck-1"]);
     expect((await adapter.listDecksSince(ORG, "")).map((d) => d.id)).toEqual(["deck-1", "deck-2"]);
+  });
+
+  it("media_items save/list maps payload rows", async () => {
+    const tables = { media_items: new FakeTable("media_items", new Set(PAYLOAD_COLS)) };
+    const adapter = new CloudStorageAdapter(makeMultiClient(tables));
+    const item: MediaItem = {
+      id: "m-1",
+      name: "Logo",
+      kind: "file",
+      mediaType: "image",
+      assetUrl: "/assets/logo.png",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-28T10:00:00.000Z",
+    };
+    await adapter.saveMediaItem(ORG, item);
+    const [stored] = tables.media_items.rows;
+    expect(stored).toMatchObject({ id: "m-1", org_id: ORG, updated_at: item.updatedAt, deleted_at: null });
+    expect(stored!["payload"]).toEqual(item);
+
+    stored!["updated_at"] = "2026-10-28T10:00:00+00:00";
+    expect((await adapter.listMediaItemsSince(ORG, ""))[0]).toEqual(item);
+    expect(await adapter.getMediaItem(ORG, "m-1")).toMatchObject({ name: "Logo" });
+
+    await adapter.saveMediaItem(ORG, { ...item, id: "m-2", deletedAt: "2026-10-28T11:00:00.000Z" });
+    expect((await adapter.listMediaItems(ORG)).map((m) => m.id)).toEqual(["m-1"]);
+    expect((await adapter.listMediaItemsSince(ORG, "")).map((m) => m.id)).toEqual(["m-1", "m-2"]);
   });
 
   it("savePcoItemMapping round-trips through pco_item_mappings", async () => {
