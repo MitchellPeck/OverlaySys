@@ -17,6 +17,7 @@ import {
   spaceAction,
   type EscArm,
 } from "@/lib/liveKeys";
+import { createKeyboardFocusTracker } from "@/lib/keyboardFocus";
 import { rowView } from "@/lib/rowView";
 import { slidesRowViewFor } from "@/lib/slidesRowView";
 import { rowCanFire } from "../components/rundown/rundownModel";
@@ -72,12 +73,18 @@ export function useGlobalShortcuts(): void {
     // Esc Esc: the arming press (when, and what it promised), and its toast.
     let escArmed: EscArm = null;
     let armToast: string | null = null;
+    // Which element Tab focused: only that one keeps Enter/Space for itself.
+    const focusTracker = createKeyboardFocusTracker();
+    const onTrackKey = (e: KeyboardEvent) => focusTracker.onKeyDown(e);
+    const onFocusIn = (e: FocusEvent) => focusTracker.onFocusIn(e.target);
+    const onPointerDown = () => focusTracker.onPointerDown();
     function onKey(e: KeyboardEvent) {
       const dialogOpen = !!document.querySelector('[role="dialog"], [aria-modal="true"], dialog[open]');
       if (shouldIgnoreGlobalKey(e, e.target as TargetLike, dialogOpen)) return;
       if (isIgnoredRepeat(e)) return;
       // A focused button/link/checkbox/etc. takes plain Enter and Space itself.
-      if ((e.code === "Enter" || e.code === "Space") && !hasCommandModifier(e) && isActivatableTarget(e.target as TargetLike)) return;
+      const keyboardFocused = focusTracker.isKeyboardFocused(e.target) || focusTracker.isKeyboardFocused(document.activeElement);
+      if ((e.code === "Enter" || e.code === "Space") && !hasCommandModifier(e) && isActivatableTarget(e.target as TargetLike, keyboardFocused)) return;
 
       const store = useStore.getState();
       const client = getClient();
@@ -229,8 +236,16 @@ export function useGlobalShortcuts(): void {
       }
     }
 
+    window.addEventListener("keydown", onTrackKey, true);
+    window.addEventListener("focusin", onFocusIn, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onTrackKey, true);
+      window.removeEventListener("focusin", onFocusIn, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 }
 

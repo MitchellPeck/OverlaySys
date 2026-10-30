@@ -15,6 +15,9 @@ import { useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 
+// Clicking a timer button must not keep focus, so Space/Enter still drive the show.
+const keepFocus = (e: React.MouseEvent) => e.preventDefault();
+
 /**
  * Manage timers that are currently on air. Reads from the existing
  * channelStates store (no new server-side state) and sends `update`
@@ -284,25 +287,26 @@ function ActiveTimerRow({
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <Button
+          onMouseDown={keepFocus}
           onClick={togglePause}
           variant={allPaused ? "primary" : "ghost"}
           size="sm"
         >
           {allPaused ? <><Play size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Resume</> : <><Pause size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Pause</>}
         </Button>
-        <Button onClick={() => nudge(-60)} variant="ghost" size="sm">
+        <Button onMouseDown={keepFocus} onClick={() => nudge(-60)} variant="ghost" size="sm">
           −1m
         </Button>
-        <Button onClick={() => nudge(-30)} variant="ghost" size="sm">
+        <Button onMouseDown={keepFocus} onClick={() => nudge(-30)} variant="ghost" size="sm">
           −30s
         </Button>
-        <Button onClick={() => nudge(30)} variant="ghost" size="sm">
+        <Button onMouseDown={keepFocus} onClick={() => nudge(30)} variant="ghost" size="sm">
           +30s
         </Button>
-        <Button onClick={() => nudge(60)} variant="ghost" size="sm">
+        <Button onMouseDown={keepFocus} onClick={() => nudge(60)} variant="ghost" size="sm">
           +1m
         </Button>
-        <Button onClick={() => void confirmReset()} variant="ghost" size="sm" title="Restart from the original duration">
+        <Button onMouseDown={keepFocus} onClick={() => void confirmReset()} variant="ghost" size="sm" title="Restart from the original duration">
           <RotateCcw size={14} aria-hidden style={{ verticalAlign: "-2px" }} /> Reset
         </Button>
       </div>

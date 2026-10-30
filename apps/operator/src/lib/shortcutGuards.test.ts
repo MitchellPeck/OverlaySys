@@ -245,20 +245,25 @@ describe("isShortcutBlocked / isActivatableTarget", () => {
   });
   it("treats buttons, links, checkboxes, selects, summaries and role=button as activatable", () => {
     for (const t of [{ tagName: "BUTTON" }, { tagName: "A" }, { tagName: "SUMMARY" }, { tagName: "SELECT" }, { tagName: "INPUT", type: "checkbox" }])
-      expect(isActivatableTarget(t)).toBe(true);
-    expect(isActivatableTarget({ tagName: "SPAN", closest: (s: string) => (s.includes('role="button"') ? {} : null) })).toBe(true);
-    expect(isActivatableTarget({ tagName: "DIV", closest: () => null })).toBe(false);
-    expect(isActivatableTarget({ tagName: "BODY" })).toBe(false);
-    expect(isActivatableTarget(null)).toBe(false);
+      expect(isActivatableTarget(t, true)).toBe(true);
+    expect(isActivatableTarget({ tagName: "SPAN", closest: (s: string) => (s.includes('role="button"') ? {} : null) }, true)).toBe(true);
+    expect(isActivatableTarget({ tagName: "DIV", closest: () => null }, true)).toBe(false);
+    expect(isActivatableTarget({ tagName: "BODY" }, true)).toBe(false);
+    expect(isActivatableTarget(null, true)).toBe(false);
   });
 });
 
 describe("keyboard focus and open dialogs", () => {
-  it("only exempts activatable targets that match :focus-visible", () => {
-    const btn = (visible: boolean) => ({ tagName: "BUTTON", matches: (s: string) => s === ":focus-visible" && visible });
-    expect(isActivatableTarget(btn(true))).toBe(true);
-    expect(isActivatableTarget(btn(false))).toBe(false);
-    expect(isActivatableTarget({ tagName: "BUTTON", matches: () => { throw new Error("bad selector"); } })).toBe(false);
+  it("only exempts activatable targets the keyboard focused", () => {
+    // :focus-visible is not consulted: Chromium flips it on for a
+    // mouse-focused button as soon as a key is pressed.
+    const btn = { tagName: "BUTTON", matches: (s: string) => s === ":focus-visible" };
+    expect(isActivatableTarget(btn, true)).toBe(true);
+    expect(isActivatableTarget(btn, false)).toBe(false);
+  });
+  it("never exempts an element that opts in to the show keys", () => {
+    const card = { tagName: "DIV", closest: (s: string) => (s.includes("data-show-keys") || s.includes('role="button"') ? {} : null) };
+    expect(isActivatableTarget(card, true)).toBe(false);
   });
   it("blocks when a dialog is open anywhere in the document, even with focus on body", () => {
     const g = globalThis as { document?: unknown };

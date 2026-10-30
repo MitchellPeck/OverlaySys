@@ -13,7 +13,6 @@ export type TargetLike = {
   type?: string;
   isContentEditable?: boolean;
   closest?: (selector: string) => unknown;
-  matches?: (selector: string) => boolean;
 } | null;
 
 // Input types that don't take typed text. Keys on these belong to the show,
@@ -35,6 +34,8 @@ export function isTextEntryTarget(t: TargetLike): boolean {
 }
 
 const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"], dialog[open]';
+// Elements that hand Enter/Space to the show keys even when keyboard-focused.
+const SHOW_KEYS_SELECTOR = "[data-show-keys]";
 const ACTIVATABLE_SELECTOR = 'button, a[href], summary, [role="button"], input[type="checkbox"], input[type="radio"], select';
 
 /** True when the element sits inside an open dialog / modal. */
@@ -61,19 +62,16 @@ export function isShortcutBlocked(target: TargetLike, active: TargetLike = null)
 /**
  * True when the focused element is something Enter/Space activates itself
  * (button, link, [role=button], checkbox/radio, select, summary) and was
- * focused via keyboard, so the show shortcuts must leave those two keys to it.
+ * focused via keyboard (`keyboardFocused`, from the keyboard focus tracker),
+ * so the show shortcuts must leave those two keys to it. Elements inside
+ * [data-show-keys] opt out and are never exempt.
  */
-export function isActivatableTarget(t: TargetLike): boolean {
+export function isActivatableTarget(t: TargetLike, keyboardFocused: boolean): boolean {
   if (!t) return false;
   // Only keyboard-focused elements: a button the mouse just clicked keeps
   // focus, and Space/Enter must still drive the show then.
-  if (typeof t.matches === "function") {
-    try {
-      if (!t.matches(":focus-visible")) return false;
-    } catch {
-      return false;
-    }
-  }
+  if (!keyboardFocused) return false;
+  if (t.closest?.(SHOW_KEYS_SELECTOR)) return false;
   if (t.closest?.(ACTIVATABLE_SELECTOR)) return true;
   const tag = t.tagName;
   if (tag === "BUTTON" || tag === "SELECT" || tag === "SUMMARY" || tag === "A") return true;

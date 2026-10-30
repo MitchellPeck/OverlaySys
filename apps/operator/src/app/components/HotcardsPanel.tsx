@@ -210,6 +210,7 @@ function GridView({
             key={h.id}
             role="button"
             tabIndex={0}
+            data-show-keys
             onMouseDown={noFocus}
             onClick={() => onSelect(h.id)}
             onDoubleClick={() => {
