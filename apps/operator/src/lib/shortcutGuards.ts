@@ -13,6 +13,7 @@ export type TargetLike = {
   type?: string;
   isContentEditable?: boolean;
   closest?: (selector: string) => unknown;
+  hasAttribute?: (name: string) => boolean;
 } | null;
 
 // Input types that don't take typed text. Keys on these belong to the show,
@@ -37,8 +38,10 @@ const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"], dialog[open]';
 // Only modal dialogs block from anywhere in the document; a non-modal
 // popover (the timeline easing picker) leaves the shortcuts working.
 const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], dialog[open]';
-// Elements that hand Enter/Space to the show keys even when keyboard-focused.
-const SHOW_KEYS_SELECTOR = "[data-show-keys]";
+// Elements carrying this attribute hand Enter/Space to the show keys even
+// when keyboard-focused. Only the element itself: buttons nested inside it
+// (a hotcard card's Cue/Take) keep their own keys.
+const SHOW_KEYS_ATTR = "data-show-keys";
 const ACTIVATABLE_SELECTOR = 'button, a[href], summary, [role="button"], input[type="checkbox"], input[type="radio"], select';
 
 /** True when the element sits inside an open dialog / modal. */
@@ -66,16 +69,17 @@ export function isShortcutBlocked(target: TargetLike, active: TargetLike = null)
  * True when the focused element is something Enter/Space activates itself
  * (button, link, [role=button], checkbox/radio, select, summary) and was
  * focused via keyboard (`keyboardFocused`, from the keyboard focus tracker),
- * so the show shortcuts must leave those two keys to it. Elements inside
- * [data-show-keys] opt out and are never exempt.
+ * so the show shortcuts must leave those two keys to it. An activatable
+ * element that itself carries data-show-keys opts out and is never exempt.
  */
 export function isActivatableTarget(t: TargetLike, keyboardFocused: boolean): boolean {
   if (!t) return false;
   // Only keyboard-focused elements: a button the mouse just clicked keeps
   // focus, and Space/Enter must still drive the show then.
   if (!keyboardFocused) return false;
-  if (t.closest?.(SHOW_KEYS_SELECTOR)) return false;
-  if (t.closest?.(ACTIVATABLE_SELECTOR)) return true;
+  const activatable = t.closest?.(ACTIVATABLE_SELECTOR) as TargetLike | undefined;
+  if (activatable) return !activatable.hasAttribute?.(SHOW_KEYS_ATTR);
+  if (t.hasAttribute?.(SHOW_KEYS_ATTR)) return false;
   const tag = t.tagName;
   if (tag === "BUTTON" || tag === "SELECT" || tag === "SUMMARY" || tag === "A") return true;
   return tag === "INPUT" && NON_TEXT_INPUTS.has((t.type ?? "text").toLowerCase());

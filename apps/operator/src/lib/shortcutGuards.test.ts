@@ -20,6 +20,7 @@ import {
   songEscapeMessages,
   songKeyChannel,
   type KeyLike,
+  type TargetLike,
 } from "./shortcutGuards";
 
 const key = (code: string, extra: Partial<KeyLike> = {}): KeyLike => ({
@@ -261,9 +262,20 @@ describe("keyboard focus and open dialogs", () => {
     expect(isActivatableTarget(btn, true)).toBe(true);
     expect(isActivatableTarget(btn, false)).toBe(false);
   });
-  it("never exempts an element that opts in to the show keys", () => {
-    const card = { tagName: "DIV", closest: (s: string) => (s.includes("data-show-keys") || s.includes('role="button"') ? {} : null) };
+  it("never exempts an element that opts in to the show keys, but a button nested in it still is", () => {
+    const card: TargetLike = {
+      tagName: "DIV",
+      hasAttribute: (n: string) => n === "data-show-keys",
+      closest: (s: string) => (s.includes('role="button"') ? card : null),
+    };
     expect(isActivatableTarget(card, true)).toBe(false);
+    // The card's own Cue/Take button: its closest activatable is itself.
+    const cue: TargetLike = {
+      tagName: "BUTTON",
+      hasAttribute: () => false,
+      closest: (s: string) => (s.includes("button") ? cue : s.includes("data-show-keys") ? card : null),
+    };
+    expect(isActivatableTarget(cue, true)).toBe(true);
   });
   it("a non-modal popover (role=dialog without aria-modal) does not block", () => {
     const g = globalThis as { document?: unknown };
