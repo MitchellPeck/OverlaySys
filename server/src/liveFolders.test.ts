@@ -7,6 +7,7 @@ import type { LiveFolderFile } from "@overlaysys/core";
 import {
   LIVE_FOLDER_SETTLE_MS,
   getLiveFolderPath,
+  liveFolderMediaType,
   listLiveFolderFiles,
   onLiveFolderChange,
   registerLiveFolderRoutes,
@@ -229,6 +230,34 @@ describe("live folders", () => {
     await setLiveFolderPath("f1", null);
     expect(seen).toEqual([["f1", []]]);
     off();
+  });
+
+  it("names with a double dot inside are listed and served; '.', '..' and '../x' are refused", async () => {
+    await fs.writeFile(path.join(folder, "Easter..png"), "egg");
+    await fs.writeFile(path.join(folder, "Sale...jpg"), "sale");
+    expect(scanLiveFolderDir(folder).map((f) => f.name)).toEqual(["Easter..png", "Sale...jpg"]);
+    await setLiveFolderPath("f1", folder);
+    for (const bad of [".", "..", "../x", "../x.png"]) {
+      expect(liveFolderMediaType(bad)).toBeNull();
+      expect(await resolveLiveFolderFile("f1", bad)).toBeNull();
+    }
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    restoreDeps = setLiveFolderDeps({ watch: () => () => {}, folderIds: async () => ["f1"] });
+    await startLiveFolderWatchers();
+    await vi.advanceTimersByTimeAsync(LIVE_FOLDER_SETTLE_MS);
+    vi.useRealTimers();
+    expect(listLiveFolderFiles("f1").map((f) => f.name)).toEqual(["Easter..png", "Sale...jpg"]);
+
+    const app = Fastify();
+    await registerLiveFolderRoutes(app);
+    await app.ready();
+    const egg = await app.inject({ method: "GET", url: "/media-folders/f1/Easter..png" });
+    expect(egg.statusCode).toBe(200);
+    expect(egg.body).toBe("egg");
+    expect((await app.inject({ method: "GET", url: "/media-folders/f1/Sale...jpg" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/media-folders/f1/..%2Fx" })).statusCode).toBe(404);
+    await app.close();
   });
 
   it("PUT path rejects a relative path and a non-directory with 400", async () => {

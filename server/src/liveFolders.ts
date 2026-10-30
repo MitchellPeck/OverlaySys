@@ -28,9 +28,14 @@ const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v"]);
 
 export type ScannedFile = LiveFolderFile;
 
-/** The media type of a live-folder file name, or null when it is not listed (dotfile or other extension). */
+/**
+ * The one name rule for live folders, shared by the scanner and the file
+ * route: the media type of a file name, or null when it is not listed or
+ * served — a path separator, NUL, a leading "." (dotfiles, "." and ".."),
+ * or an extension that is not an image or video. "Easter..png" is fine.
+ */
 export function liveFolderMediaType(name: string): "image" | "video" | null {
-  if (name.startsWith(".")) return null;
+  if (!name || name.startsWith(".") || name.includes("/") || name.includes("\\") || name.includes("\0")) return null;
   const ext = path.extname(name).slice(1).toLowerCase();
   if (IMAGE_EXT.has(ext)) return "image";
   if (VIDEO_EXT.has(ext)) return "video";
@@ -152,8 +157,7 @@ export async function setLiveFolderPath(id: string, dir: string | null): Promise
 
 /** Absolute real path of a live-folder file, or null when the name is unsafe, unlisted or outside the folder. */
 export async function resolveLiveFolderFile(id: string, name: string): Promise<string | null> {
-  if (!name || name.includes("/") || name.includes("\\") || name.includes("..") || name.includes("\0")) return null;
-  if (!liveFolderMediaType(name)) return null; // also rejects a leading "."
+  if (!liveFolderMediaType(name)) return null;
   const dir = await getLiveFolderPath(id);
   if (!dir) return null;
   try {
