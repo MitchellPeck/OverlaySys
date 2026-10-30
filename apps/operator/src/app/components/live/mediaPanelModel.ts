@@ -53,3 +53,20 @@ export function panelAirState(
   if (channelStates["preview"]?.media?.rowId === rowId) return "preview";
   return null;
 }
+
+/**
+ * Cue/Take hand the keyboard back to the show shortcuts: true when focus sits
+ * in the panel (its search or folder box), where Space/Enter would type or
+ * pick instead of driving the show.
+ */
+export function shouldReleaseFocus<T>(active: T | null, panel: { contains(node: T): boolean } | null): boolean {
+  return !!active && !!panel && panel.contains(active);
+}
+
+/** Keys in the search box that hand the keyboard back to the show. */
+export const searchKeyReleasesFocus = (key: string): boolean => key === "Escape" || key === "Enter";
+
+/** A double-click that landed on Cue or Take: never a card double-click (which may take to program). */
+export function dblClickFromButton(target: { closest?(selector: string): unknown } | null): boolean {
+  return !!target?.closest?.("button");
+}

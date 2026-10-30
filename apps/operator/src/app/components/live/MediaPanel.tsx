@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { LiveFolderFile, MediaItemMeta } from "@overlaysys/core";
 import { Button, Input, OfflineState, Select, colors, fontSize, radius, useToast } from "@overlaysys/ui";
@@ -11,10 +11,13 @@ import { MediaThumb } from "../../media/MediaCard";
 import { NO_FOLDER, folderNames, liveFolderCountText } from "../../media/libraryConfig";
 import { useLivePrefs } from "../../hooks/useLivePrefs";
 import {
+  dblClickFromButton,
   filterPanelItems,
   mediaFolderTakeMessage,
   mediaItemTakeMessage,
   panelAirState,
+  searchKeyReleasesFocus,
+  shouldReleaseFocus,
   type PanelChannel,
 } from "./mediaPanelModel";
 
@@ -38,6 +41,7 @@ export function MediaPanel() {
   const channelStates = useStore((s) => s.channelStates);
   const [query, setQuery] = useState("");
   const [folder, setFolder] = useState("");
+  const panelRef = useRef<HTMLElement>(null);
   const disconnected = conn !== "open";
 
   useEffect(() => {
@@ -65,6 +69,10 @@ export function MediaPanel() {
   const hasAny = filterPanelItems(items, "", "").length > 0;
 
   function fire(m: MediaItemMeta, channel: PanelChannel) {
+    // Cue/Take keep focus off the button, but it may still sit in the search or
+    // folder box: hand the keyboard back so Space/Enter drive the show.
+    const active = typeof document === "undefined" ? null : document.activeElement;
+    if (shouldReleaseFocus(active, panelRef.current) && active instanceof HTMLElement) active.blur();
     send(m.kind === "live-folder" ? mediaFolderTakeMessage(m, channel) : mediaItemTakeMessage(m, channel));
   }
 
@@ -87,15 +95,32 @@ export function MediaPanel() {
   }
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8 }}>
+    <section ref={panelRef} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <Input aria-label="Search Media" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: 1 }} />
+        <Input
+          aria-label="Search Media"
+          placeholder="Search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (searchKeyReleasesFocus(e.key)) e.currentTarget.blur();
+          }}
+          style={{ flex: 1 }}
+        />
         <Link href="/media" style={{ color: colors.textDim, fontSize: 11, textDecoration: "none" }}>
           Manage
         </Link>
       </div>
       {folders.length > 0 && (
-        <Select aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value)}>
+        <Select
+          aria-label="Folder"
+          value={folder}
+          onChange={(e) => {
+            // Hand the keyboard back to the show shortcuts once a folder is picked.
+            e.currentTarget.blur();
+            setFolder(e.target.value);
+          }}
+        >
           <option value="">All folders</option>
           {folders.map((f) => (
             <option key={f} value={f}>
@@ -149,7 +174,11 @@ function PanelCard({
   return (
     <div
       onMouseDown={noFocus}
-      onDoubleClick={() => !blocked && onDouble()}
+      onDoubleClick={(e) => {
+        // A double-click on Cue must never take to program.
+        if (blocked || dblClickFromButton(e.target as Element)) return;
+        onDouble();
+      }}
       aria-label={`${item.name}${air === "program" ? " (on air)" : air === "preview" ? " (on preview)" : ""}`}
       style={{
         display: "flex",

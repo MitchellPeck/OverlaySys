@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, MediaItemMeta } from "@overlaysys/core";
 import { NO_FOLDER } from "../../media/libraryConfig";
-import { filterPanelItems, mediaFolderTakeMessage, mediaItemTakeMessage, panelAirState } from "./mediaPanelModel";
+import {
+  dblClickFromButton,
+  filterPanelItems,
+  mediaFolderTakeMessage,
+  mediaItemTakeMessage,
+  panelAirState,
+  searchKeyReleasesFocus,
+  shouldReleaseFocus,
+} from "./mediaPanelModel";
 
 const item = (over: Partial<MediaItemMeta> = {}): MediaItemMeta => ({
   id: "m1",
@@ -79,5 +87,36 @@ describe("panelAirState", () => {
     expect(panelAirState(item({ id: "a" }), states)).toBe("program");
     expect(panelAirState(item({ id: "c", kind: "live-folder" }), states)).toBe("preview");
     expect(panelAirState(item({ id: "b" }), states)).toBeNull();
+  });
+});
+
+describe("focus hand-back", () => {
+  const search = { id: "search" };
+  const outside = { id: "outside" };
+  const panel = { contains: (n: unknown) => n === search };
+
+  it("a Cue/Take releases focus held by the panel's search or folder box, nothing else", () => {
+    expect(shouldReleaseFocus(search, panel)).toBe(true);
+    expect(shouldReleaseFocus(outside, panel)).toBe(false);
+    expect(shouldReleaseFocus(null, panel)).toBe(false);
+    expect(shouldReleaseFocus(search, null)).toBe(false);
+  });
+
+  it("Escape and Enter in the search box hand the keyboard back", () => {
+    expect(searchKeyReleasesFocus("Escape")).toBe(true);
+    expect(searchKeyReleasesFocus("Enter")).toBe(true);
+    expect(searchKeyReleasesFocus(" ")).toBe(false);
+    expect(searchKeyReleasesFocus("a")).toBe(false);
+  });
+});
+
+describe("dblClickFromButton", () => {
+  const el = (inButton: boolean) => ({ closest: (sel: string) => (sel === "button" && inButton ? {} : null) });
+
+  it("a double-click on Cue or Take is not a card double-click", () => {
+    expect(dblClickFromButton(el(true))).toBe(true);
+    expect(dblClickFromButton(el(false))).toBe(false);
+    expect(dblClickFromButton(null)).toBe(false);
+    expect(dblClickFromButton({})).toBe(false);
   });
 });

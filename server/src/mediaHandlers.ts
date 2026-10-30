@@ -28,7 +28,7 @@ async function takeFolder(msg: Extract<MediaMessage, { type: "media_folder_take"
   const refuse = (code: string, message: string) => send({ type: "error", code, message, op: msg.type, id: msg.id });
   const item = await media.getMediaItem(msg.id);
   if (!item || item.kind !== "live-folder") {
-    refuse("not_found", msg.id);
+    refuse("not_found", "That live folder is gone.");
     return;
   }
   const linked = (await decks.listDecks()).find((d) => d.liveFolderId === msg.id && d.folderOrder);
@@ -37,7 +37,8 @@ async function takeFolder(msg: Extract<MediaMessage, { type: "media_folder_take"
     name: item.name,
     ...(linked?.folderOrder ? { folderOrder: linked.folderOrder } : {}),
   });
-  if (!res.ok) refuse("not_found", res.error);
+  // The only refusal for a folder started at its first file: nothing to play.
+  if (!res.ok) refuse("empty", res.error);
 }
 
 export async function handleMediaMessage(msg: MediaMessage, send: Send): Promise<void> {

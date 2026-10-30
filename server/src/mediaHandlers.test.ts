@@ -100,7 +100,7 @@ describe("media_folder_take", () => {
     channels.mediaTake("program", { rowId: "r0", assetUrl: "/assets/keep.png", volume: 1, endAction: "hold", mediaType: "image" });
     await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
     expect(sent).toEqual([
-      expect.objectContaining({ type: "error", message: "This folder has no photos or videos yet.", op: "media_folder_take", id: "lf1" }),
+      { type: "error", code: "empty", message: "This folder has no photos or videos yet.", op: "media_folder_take", id: "lf1" },
     ]);
     expect(onAir()).toBe("/assets/keep.png");
     expect(mediaDeckSession.has("program")).toBe(false);
@@ -110,7 +110,10 @@ describe("media_folder_take", () => {
     fx.items.set("m1", { id: "m1", name: "Photo", kind: "file", mediaType: "image", assetUrl: "/assets/p.png", createdAt: "" });
     await handleMediaMessage({ type: "media_folder_take", id: "m1", channel: "program" }, send);
     await handleMediaMessage({ type: "media_folder_take", id: "gone", channel: "program" }, send);
-    expect(sent.map((m) => m.type)).toEqual(["error", "error"]);
+    expect(sent).toEqual([
+      { type: "error", code: "not_found", message: "That live folder is gone.", op: "media_folder_take", id: "m1" },
+      { type: "error", code: "not_found", message: "That live folder is gone.", op: "media_folder_take", id: "gone" },
+    ]);
     expect(mediaDeckSession.has("program")).toBe(false);
   });
 
