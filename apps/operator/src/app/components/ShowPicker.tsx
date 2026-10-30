@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRightLeft, List, Pencil } from "lucide-react";
-import { Dialog, IconButton, LibraryList, Select, colors, useConfirm, type Column, type MenuItem, type SortSpec } from "@overlaysys/ui";
+import { ArrowRightLeft, ChevronDown, Pencil } from "lucide-react";
+import { Dialog, LibraryList, colors, fontSize, useConfirm, type Column, type MenuItem, type SortSpec } from "@overlaysys/ui";
 import { useStore, type ShowMeta } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
@@ -29,8 +29,8 @@ const PICKER_COLUMNS: Column<ShowMeta>[] = [
 ];
 
 /**
- * The Live page's show picker (top bar context): the current show, an edit
- * link, and a "Shows" button that opens the show library to switch from.
+ * The Live page's show picker (top bar context): the current show's name —
+ * pressing it opens the show library to switch from — and an edit link.
  */
 export function ShowPicker() {
   const { send } = useWs();
@@ -79,31 +79,29 @@ export function ShowPicker() {
     send({ type: "get_show", showId: id });
   }
 
-  // Offline keeps the last show's name, dimmed, even if the list is gone.
-  const options = showMetas.some((m) => m.id === show?.id) || !show ? showMetas : [{ id: show.id, name: show.name } as ShowMeta, ...showMetas];
+  // Offline keeps the last show's name, dimmed.
+  const currentName = show ? show.name || "Untitled show" : showMetas.length === 0 ? "No shows" : "Choose a show";
 
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", opacity: connected ? 1 : 0.55 }}>
-      <div style={{ width: 220 }}>
-        <Select
-          aria-label="Show"
-          value={show?.id ?? ""}
-          disabled={!connected}
-          title={connected ? undefined : "Not connected to the server"}
-          onChange={(e) => {
-            // Hand the keyboard back to the show shortcuts once a show is picked.
-            e.currentTarget.blur();
-            void switchTo(e.target.value);
-          }}
-        >
-          {options.length === 0 && <option value="">No shows</option>}
-          {options.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </Select>
-      </div>
+      <button
+        type="button"
+        aria-label={show ? `Show: ${currentName}. Choose another show` : "Choose a show"}
+        aria-haspopup="dialog"
+        title={connected ? "Shows" : "Not connected to the server"}
+        disabled={!connected}
+        onClick={(e) => {
+          // Hand the keyboard back to the show shortcuts.
+          e.currentTarget.blur();
+          setOpen(true);
+        }}
+        style={showButton}
+      >
+        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
+          {currentName}
+        </span>
+        <ChevronDown size={14} aria-hidden style={{ flexShrink: 0, color: colors.textDim }} />
+      </button>
       {show && (
         <Link
           href={`/shows/edit?id=${encodeURIComponent(show.id)}`}
@@ -114,9 +112,6 @@ export function ShowPicker() {
           <Pencil size={14} aria-hidden />
         </Link>
       )}
-      <IconButton aria-label="Shows" title="Shows" disabled={!connected} onClick={() => setOpen(true)}>
-        <List size={16} aria-hidden />
-      </IconButton>
       <Dialog open={open} onClose={() => setOpen(false)} title="Shows" size="lg" bodyStyle={{ height: "min(60vh, 560px)", display: "flex", flexDirection: "column" }}>
         <LibraryList<ShowMeta>
           items={showMetas}
@@ -140,6 +135,22 @@ export function ShowPicker() {
     </div>
   );
 }
+
+const showButton: React.CSSProperties = {
+  width: 220,
+  height: 28,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "0 8px",
+  border: `1px solid ${colors.border}`,
+  borderRadius: 6,
+  background: colors.surface,
+  color: colors.text,
+  font: "inherit",
+  fontSize: fontSize.sm,
+  cursor: "pointer",
+};
 
 const iconLink: React.CSSProperties = {
   width: 28,
