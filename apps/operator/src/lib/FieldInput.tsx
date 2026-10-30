@@ -3,8 +3,10 @@
 import { ColorInput, ImageInput, VideoInput } from "@overlaysys/editor-kit";
 import { Input, colors } from "@overlaysys/ui";
 import type { Field } from "@overlaysys/core";
-import { decodeTimerValue, encodeTimerValue, parseDuration } from "@overlaysys/core";
+import { decodeTimerValue, encodeTimerValue } from "@overlaysys/core";
 import { useEffect, useState } from "react";
+import { useStore } from "./store";
+import { countdownTimerValue, remainingDurationText } from "./timeFieldValue";
 import { uploadAsset, resolveAssetUrl } from "./uploadAsset";
 
 type Props = {
@@ -60,11 +62,12 @@ export function FieldInput({ field, value, onChange }: Props) {
 
 /**
  * Mode-aware UI for a time field. The stored value is always an epoch-ms
- * timestamp as a string (so the renderer can subtract `Date.now()` directly
- * at tick time). What the operator *types* depends on mode:
+ * timestamp on the server clock (local Date.now() + serverTimeOffsetMs, as
+ * the stage timers and Active timers panel use), as a string. What the
+ * operator *types* depends on mode:
  *
  *  - countdown: a duration like "10:00" or "1:30:00" — converted to
- *    `Date.now() + ms` only when the operator confirms.
+ *    `serverNow + ms` only when the operator confirms.
  *  - countup:   a "Use now" button stamps the current time. We don't expose
  *    a free-text past-time picker for v1 — it's almost never useful and
  *    invites bad input.
@@ -76,6 +79,7 @@ export function FieldInput({ field, value, onChange }: Props) {
  */
 function TimeFieldInput({ field, value, onChange }: Props) {
   const mode = field.timeMode ?? "countdown";
+  const offset = useStore((s) => s.serverTimeOffsetMs);
 
   if (mode === "clock") {
     return (
@@ -87,11 +91,12 @@ function TimeFieldInput({ field, value, onChange }: Props) {
 
   if (mode === "countup") {
     const { anchor } = decodeTimerValue(value);
-    const stamp = Number.isFinite(anchor) ? new Date(anchor).toLocaleTimeString() : "(unset)";
+    // The anchor is server time; show it on this console's wall clock.
+    const stamp = Number.isFinite(anchor) ? new Date(anchor - offset).toLocaleTimeString() : "(unset)";
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <button
-          onClick={() => onChange(encodeTimerValue({ anchor: Date.now() }))}
+          onClick={() => onChange(encodeTimerValue({ anchor: Date.now() + offset }))}
           style={smallBtnStyle}
           title="Set the count-up start to right now"
         >
@@ -103,7 +108,7 @@ function TimeFieldInput({ field, value, onChange }: Props) {
   }
 
   // countdown
-  return <DurationInput value={value} onChange={onChange} />;
+  return <DurationInput value={value} onChange={onChange} offset={offset} />;
 }
 
 /**
@@ -114,28 +119,27 @@ function TimeFieldInput({ field, value, onChange }: Props) {
 function DurationInput({
   value,
   onChange,
+  offset,
 }: {
   value: string | undefined;
   onChange: (v: string) => void;
+  /** serverTimeOffsetMs: anchors are read and stamped on the server clock. */
+  offset: number;
 }) {
-  const [text, setText] = useState<string>(() => deriveDurationText(value));
+  const [text, setText] = useState<string>(() => remainingDurationText(value, Date.now() + offset));
 
   // If the parent rotates the stored anchor (e.g. switching rows), pull the
   // new derived text in. We don't sync while the user is mid-edit since
   // that would erase their keystrokes every time the parent re-rendered.
   useEffect(() => {
-    setText(deriveDurationText(value));
+    setText(remainingDurationText(value, Date.now() + offset));
     // Only re-derive when the anchor actually changes — text edits don't.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   function commit(): void {
-    const ms = parseDuration(text);
-    if (ms == null) return;
-    // Always encode durationMs so the Active timers panel's Reset can
-    // re-derive the original duration without falling back to "current
-    // remaining" (which would lock in any ±N nudges).
-    onChange(encodeTimerValue({ anchor: Date.now() + ms, durationMs: ms }));
+    const next = countdownTimerValue(text, Date.now() + offset);
+    if (next != null) onChange(next);
   }
 
   return (
@@ -153,26 +157,6 @@ function DurationInput({
       title="Duration to count down. Format: SS, MM:SS, or HH:MM:SS. Press Enter or blur to set."
     />
   );
-}
-
-/**
- * If `value` encodes a countdown anchor in the future, render it as a
- * remaining duration string ("10:00"). Past anchors and unset values
- * render empty so the field reads as "ready to type." Handles both the
- * bare-number and JSON-object encodings.
- */
-function deriveDurationText(value: string | undefined): string {
-  if (!value) return "";
-  const { anchor } = decodeTimerValue(value);
-  if (!Number.isFinite(anchor)) return "";
-  const remainingMs = anchor - Date.now();
-  if (remainingMs <= 0) return "";
-  const totalSec = Math.round(remainingMs / 1000);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 const smallBtnStyle: React.CSSProperties = {
