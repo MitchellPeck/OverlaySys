@@ -1,5 +1,5 @@
 import { importErrorText } from "./libraryConfig";
-import { importMediaFile, mediaTypeOf, type ImportDeps } from "./importMedia";
+import { importMediaFile, mediaTypeOf, mediaTypeOfFile, type ImportDeps } from "./importMedia";
 import { pickFromItem, type PickAccept, type PickedMedia } from "./pickerModel";
 
 /**
@@ -25,8 +25,8 @@ export function urlFromPick(pick: PickedMedia | null, accept: PickAccept): { url
 }
 
 /** Why a file can't be used for `accept`, in plain words; null when it can. */
-export function uploadRefusal(mime: string, accept: PickAccept): string | null {
-  const type = mediaTypeOf(mime);
+export function uploadRefusal(file: Pick<File, "name" | "type">, accept: PickAccept): string | null {
+  const type = mediaTypeOfFile(file);
   if (type && (accept === "any" || type === accept)) return null;
   return accept === "video" ? "Choose a video file." : accept === "image" ? "Choose a photo." : "Choose a photo or video.";
 }
@@ -39,11 +39,11 @@ export type SourceUploadDeps = ImportDeps & { cloud: boolean };
  * Throws the refusal sentence for the wrong kind of file.
  */
 export async function uploadMediaSource(file: File, accept: PickAccept, deps: SourceUploadDeps): Promise<SourcePick> {
-  const refusal = uploadRefusal(file.type, accept);
+  const refusal = uploadRefusal(file, accept);
   if (refusal) throw new Error(refusal);
   if (deps.cloud) {
     const up = await deps.upload(file);
-    const mediaType = mediaTypeOf(up.mime) ?? mediaTypeOf(file.type);
+    const mediaType = mediaTypeOf(up.mime) ?? mediaTypeOfFile(file);
     if (!mediaType) throw new Error("That file isn't a photo or video.");
     return { assetUrl: up.url, mediaType, name: file.name };
   }
@@ -53,7 +53,7 @@ export async function uploadMediaSource(file: File, accept: PickAccept, deps: So
 
 /** Upload for a plain-string field (template data, layer src): the stored URL, or a plain-language error. */
 export async function uploadFieldFile(file: File, accept: PickAccept, deps: SourceUploadDeps): Promise<string> {
-  const refusal = uploadRefusal(file.type, accept);
+  const refusal = uploadRefusal(file, accept);
   if (refusal) throw new Error(refusal);
   try {
     return (await uploadMediaSource(file, accept, deps)).assetUrl;
@@ -67,6 +67,6 @@ export async function uploadFieldFile(file: File, accept: PickAccept, deps: Sour
  * photos and videos join Media; anything else (fonts) uploads as before.
  */
 export async function uploadAnyFile(file: File, deps: SourceUploadDeps): Promise<string> {
-  if (mediaTypeOf(file.type)) return uploadFieldFile(file, "any", deps);
+  if (mediaTypeOfFile(file)) return uploadFieldFile(file, "any", deps);
   return (await deps.upload(file)).url;
 }

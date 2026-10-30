@@ -8,6 +8,25 @@ export function mediaTypeOf(mime: string): "image" | "video" | null {
   return null;
 }
 
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "m4v"]);
+
+/**
+ * Photo or video for a picked/dropped file: the browser's type first, then the
+ * extension (browsers often leave `type` empty for .mov / .m4v).
+ */
+export function mediaTypeOfFile(file: Pick<File, "name" | "type">): "image" | "video" | null {
+  const byType = mediaTypeOf(file.type ?? "");
+  if (byType) return byType;
+  const dot = file.name.lastIndexOf(".");
+  if (dot < 0) return null;
+  const ext = file.name.slice(dot + 1).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext) ? "image" : VIDEO_EXTENSIONS.has(ext) ? "video" : null;
+}
+
+/** Which element `probeMedia` loads the file into. */
+export const probeKind = mediaTypeOfFile;
+
 /** "a.b.mov" -> "a.b"; names with no extension (or only a leading dot) are unchanged. */
 export function stripExtension(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
@@ -29,8 +48,10 @@ export function buildImportedItem(i: {
   height?: number;
   durationSec?: number;
   folder?: string;
+  /** The file's own kind, used when the server's mime is generic (typeless .mov). */
+  fileType?: "image" | "video" | null;
 }): MediaItem | null {
-  const mediaType = mediaTypeOf(i.upload.mime);
+  const mediaType = mediaTypeOf(i.upload.mime) ?? i.fileType ?? null;
   if (!mediaType) return null;
   const folder = i.folder?.trim();
   return {
@@ -55,12 +76,13 @@ export function probeMedia(file: File): Promise<{ width?: number; height?: numbe
       URL.revokeObjectURL(url);
       resolve(v);
     };
-    if (file.type.startsWith("image/")) {
+    const kind = probeKind(file);
+    if (kind === "image") {
       const img = new Image();
       img.onload = () => done({ width: img.naturalWidth, height: img.naturalHeight });
       img.onerror = () => done({});
       img.src = url;
-    } else if (file.type.startsWith("video/")) {
+    } else if (kind === "video") {
       const v = document.createElement("video");
       v.preload = "metadata";
       v.onloadedmetadata = () =>
@@ -84,7 +106,7 @@ export type ImportDeps = {
 /** Upload one file and add it to the library; throws a plain message for anything that isn't a photo or video. */
 export async function importMediaFile(file: File, deps: ImportDeps, now = new Date().toISOString()): Promise<MediaItem> {
   const [upload, probe] = await Promise.all([deps.upload(file), deps.probe(file)]);
-  const item = buildImportedItem({ fileName: file.name, upload, id: newMediaId(), now, ...probe });
+  const item = buildImportedItem({ fileName: file.name, upload, id: newMediaId(), now, fileType: mediaTypeOfFile(file), ...probe });
   if (!item) throw new Error("That file isn't a photo or video.");
   await deps.save(item);
   return item;

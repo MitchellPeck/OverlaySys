@@ -139,7 +139,7 @@ export function MediaSourceField({
 
   async function upload(file: File) {
     setError(null);
-    const refusal = uploadRefusal(file.type, accept);
+    const refusal = uploadRefusal(file, accept);
     if (refusal) {
       setError(refusal);
       return;

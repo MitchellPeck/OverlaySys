@@ -55,13 +55,41 @@ describe("urlFromPick", () => {
 
 describe("uploadRefusal", () => {
   it("refuses the wrong kind of file in plain words", () => {
-    expect(uploadRefusal("video/mp4", "image")).toBe("Choose a photo.");
-    expect(uploadRefusal("image/png", "video")).toBe("Choose a video file.");
-    expect(uploadRefusal("application/pdf", "any")).toBe("Choose a photo or video.");
+    expect(uploadRefusal(file("a.mp4", "video/mp4"), "image")).toBe("Choose a photo.");
+    expect(uploadRefusal(file("a.png", "image/png"), "video")).toBe("Choose a video file.");
+    expect(uploadRefusal(file("a.pdf", "application/pdf"), "any")).toBe("Choose a photo or video.");
   });
   it("accepts a matching file", () => {
-    expect(uploadRefusal("image/png", "image")).toBeNull();
-    expect(uploadRefusal("video/mp4", "any")).toBeNull();
+    expect(uploadRefusal(file("a.png", "image/png"), "image")).toBeNull();
+    expect(uploadRefusal(file("a.mp4", "video/mp4"), "any")).toBeNull();
+  });
+});
+
+describe("typeless files (empty browser type, e.g. .mov)", () => {
+  const typeless = (name: string) => file(name, "");
+  it("a typeless .mov is accepted for video and any, refused for image", () => {
+    expect(uploadRefusal(typeless("clip.mov"), "video")).toBeNull();
+    expect(uploadRefusal(typeless("clip.mov"), "any")).toBeNull();
+    expect(uploadRefusal(typeless("clip.mov"), "image")).toBe("Choose a photo.");
+  });
+  it("a typeless .png is accepted for image; a typeless .txt is refused", () => {
+    expect(uploadRefusal(typeless("Logo.PNG"), "image")).toBeNull();
+    expect(uploadRefusal(typeless("notes.txt"), "any")).toBe("Choose a photo or video.");
+  });
+  it("a typeless .mov uploaded for a video field joins Media as a video", async () => {
+    const { d, saved } = deps(false, { upload: vi.fn(async (f: File) => ({ url: `/assets/${f.name}`, mime: "application/octet-stream" })) });
+    const pick = await uploadMediaSource(typeless("clip.mov"), "video", d);
+    expect(saved[0]).toMatchObject({ mediaType: "video", assetUrl: "/assets/clip.mov" });
+    expect(pick.mediaType).toBe("video");
+  });
+  it("a typeless .mov in cloud mode is a video", async () => {
+    const { d } = deps(true, { upload: vi.fn(async (f: File) => ({ url: `/assets/${f.name}`, mime: "" })) });
+    await expect(uploadMediaSource(typeless("clip.mov"), "video", d)).resolves.toMatchObject({ mediaType: "video" });
+  });
+  it("the designer sends a typeless .mov to Media", async () => {
+    const { d, saved } = deps(false, { upload: vi.fn(async (f: File) => ({ url: `/assets/${f.name}`, mime: "" })) });
+    await expect(uploadAnyFile(typeless("clip.mov"), d)).resolves.toBe("/assets/clip.mov");
+    expect(saved).toHaveLength(1);
   });
 });
 

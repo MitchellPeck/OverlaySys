@@ -19,7 +19,7 @@ type Props = {
 /**
  * Video source input. Mirrors ImageInput's UX: a small thumbnail-ish
  * preview, a path/URL field, a file-picker button, and a clear button.
- * Adds drag-and-drop — drop a video file anywhere on the control to
+ * Adds drag-and-drop — drop a video file anywhere on the control (buttons included) to
  * upload it (or embed as a data URL when onUpload isn't wired).
  */
 export function VideoInput({ value, onChange, onUpload, resolveUrl, id, onPickFromLibrary }: Props) {
@@ -53,40 +53,47 @@ export function VideoInput({ value, onChange, onUpload, resolveUrl, id, onPickFr
   const previewSrc = value ? (resolveUrl ? resolveUrl(value) : value) : "";
 
   return (
-    <div style={{ position: "relative", minWidth: 0 }}>
+    <div
+      onDragOver={(e) => {
+        // Has to happen on dragover (not just drop) for the drop event to fire.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!dragOver) setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Moving between the control's own children isn't leaving it.
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+        setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragOver(false);
+        const f = e.dataTransfer?.files?.[0];
+        if (f && (f.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name))) {
+          onFile(f);
+        }
+      }}
+      style={{
+        position: "relative",
+        minWidth: 0,
+        boxSizing: "border-box",
+        padding: dragOver ? 3 : 0,
+        background: dragOver ? colors.brandSubtle : "transparent",
+        border: dragOver ? `1px dashed ${colors.accent}` : "1px solid transparent",
+        borderRadius: radius.md,
+        transition: "background 80ms, border-color 80ms",
+      }}
+    >
       <div
-        onDragOver={(e) => {
-          // Has to happen on dragover (not just drop) for the drop event to fire.
-          e.preventDefault();
-          e.stopPropagation();
-          if (!dragOver) setDragOver(true);
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setDragOver(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setDragOver(false);
-          const f = e.dataTransfer?.files?.[0];
-          if (f && (f.type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name))) {
-            onFile(f);
-          }
-        }}
         style={{
           display: "flex",
           gap: 4,
           alignItems: "center",
           width: "100%",
           minWidth: 0,
-          boxSizing: "border-box",
-          padding: dragOver ? 3 : 0,
-          background: dragOver ? colors.brandSubtle : "transparent",
-          border: dragOver ? `1px dashed ${colors.accent}` : "1px solid transparent",
-          borderRadius: radius.md,
-          transition: "background 80ms, border-color 80ms",
         }}
       >
         <div

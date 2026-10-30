@@ -14,7 +14,7 @@ import { PageBody } from "../components/PageShell";
 import { PageChrome } from "../shell/PageChrome";
 import { LiveFolderDialog } from "./LiveFolderDialog";
 import { MediaCard } from "./MediaCard";
-import { importMediaFile, mediaTypeOf, probeMedia } from "./importMedia";
+import { importMediaFile, mediaTypeOf, mediaTypeOfFile, probeMedia } from "./importMedia";
 import {
   DEFAULT_MEDIA_SORT,
   MEDIA_LIST_STORAGE_KEY,
@@ -66,7 +66,7 @@ export default function MediaLibraryPage() {
   const failed = (e: unknown) => toast({ tone: "error", message: `Not saved: ${displayServerError(e)}` });
 
   const importFiles = async (files: File[]) => {
-    const usable = files.filter((f) => mediaTypeOf(f.type));
+    const usable = files.filter((f) => mediaTypeOfFile(f));
     if (usable.length < files.length) toast({ tone: "error", message: "Only photos and videos can be added to Media." });
     if (usable.length === 0) return;
     setImporting((n) => n + usable.length);
@@ -91,7 +91,7 @@ export default function MediaLibraryPage() {
     try {
       const [upload, probe] = await Promise.all([uploadAsset(file), probeMedia(file)]);
       // Same type only; the server refuses a photo-for-video swap with a plain message.
-      const next = { ...target, assetUrl: upload.url, mediaType: mediaTypeOf(upload.mime) ?? target.mediaType, ...probe };
+      const next = { ...target, assetUrl: upload.url, mediaType: mediaTypeOf(upload.mime) ?? mediaTypeOfFile(file) ?? target.mediaType, ...probe };
       const { usedBy: _usedBy, ...item } = next;
       await saveMediaItem(item);
       toast({ tone: "ok", message: target.usedBy > 0 ? `Replaced. Updated ${plural(target.usedBy, "place")}.` : "File replaced" });

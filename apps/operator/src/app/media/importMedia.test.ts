@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportedItem, importMediaFile, mediaTypeOf, stripExtension } from "./importMedia";
+import { buildImportedItem, importMediaFile, mediaTypeOf, mediaTypeOfFile, probeKind, stripExtension } from "./importMedia";
 
 const up = (url: string, mime: string) => ({ url, sha256: "abc", size: 10, mime });
 const now = "2026-10-30T10:00:00.000Z";
@@ -55,5 +55,30 @@ describe("importMediaFile", () => {
     const deps = { upload: async () => up("/assets/a.pdf", "application/pdf"), probe: async () => ({}), save: async () => void saves++ };
     await expect(importMediaFile(file("a.pdf"), deps, now)).rejects.toThrow("That file isn't a photo or video.");
     expect(saves).toBe(0);
+  });
+});
+
+describe("mediaTypeOfFile", () => {
+  const f = (name: string, type: string) => new File(["x"], name, { type });
+  it("uses the browser type first", () => {
+    expect(mediaTypeOfFile(f("odd.bin", "video/mp4"))).toBe("video");
+  });
+  it("falls back to the extension when the type is empty", () => {
+    for (const ext of ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]) expect(mediaTypeOfFile(f(`a.${ext.toUpperCase()}`, ""))).toBe("image");
+    for (const ext of ["mp4", "webm", "mov", "m4v"]) expect(mediaTypeOfFile(f(`a.${ext}`, ""))).toBe("video");
+    expect(mediaTypeOfFile(f("a.txt", ""))).toBeNull();
+    expect(mediaTypeOfFile(f("a.ogv", ""))).toBeNull();
+  });
+  it("probeMedia reads a typeless .mov as a video", () => {
+    expect(probeKind(f("clip.mov", ""))).toBe("video");
+    expect(probeKind(f("notes.txt", ""))).toBeNull();
+  });
+  it("importMediaFile keeps a typeless .mov as a video when the server's mime is generic", async () => {
+    const item = await importMediaFile(f("clip.mov", ""), {
+      upload: async () => ({ url: "/assets/c.mov", mime: "application/octet-stream" }),
+      probe: async () => ({}),
+      save: async () => {},
+    });
+    expect(item.mediaType).toBe("video");
   });
 });
