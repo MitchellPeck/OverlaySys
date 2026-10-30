@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
 import { handleConnection, replyTo } from "./ws";
 import * as channels from "./channels";
+import * as outputs from "./outputs";
 import * as shows from "./shows";
 import * as songs from "./songs";
 import * as songSession from "./songSession";
@@ -19,6 +20,33 @@ import { ChannelConfigSchema, SPEAKER_LAYOUT, ShowSchema, SongSchema, StageLayou
 
 // CCLI usage logging writes to the data dir; keep tests off disk.
 vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
+
+// Capture the module-scope level listener ws.ts registers at import, so a test
+// can fire a meter update without a real spawner.
+const spawnerHooks = vi.hoisted(() => ({
+  levels: null as null | ((l: number[], c: number[]) => void),
+  match: null as null | ((...a: unknown[]) => void),
+}));
+vi.mock("./songSession", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./songSession")>();
+  return {
+    ...real,
+    onMatch: (fn: never) => {
+      spawnerHooks.match = fn;
+      return real.onMatch(fn);
+    },
+  };
+});
+vi.mock("./sttSpawner", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./sttSpawner")>();
+  return {
+    ...real,
+    subscribeLevels: (fn: (l: number[], c: number[]) => void) => {
+      spawnerHooks.levels = fn;
+      return real.subscribeLevels(fn);
+    },
+  };
+});
 
 // Hermetic: the whole file runs against a temp data dir (connect() lazily
 // seeds storage, so the env must stay fixed until everything has settled).
@@ -592,5 +620,52 @@ describe("ws: record ids can't escape their directory", () => {
     await vi.waitFor(() =>
       expect(sock.sent).toContainEqual({ type: "ack", op: "save_song", id: "be-thou-my-vision" }),
     );
+  });
+});
+
+describe("ws: stream subscriptions don't leak", () => {
+  const levelsSeen = (sock: FakeSocket) => sock.sent.filter((m) => m.type === "stt_levels").length;
+
+  it("subscribing twice then unsubscribing stops stt_levels", async () => {
+    const sock = connect();
+    await sock.client({ type: "stt_levels_subscribe", on: true });
+    await sock.client({ type: "stt_levels_subscribe", on: true });
+    spawnerHooks.levels?.([0.5], [1]);
+    expect(levelsSeen(sock)).toBe(1);
+    await sock.client({ type: "stt_levels_subscribe", on: false });
+    spawnerHooks.levels?.([0.5], [1]);
+    expect(levelsSeen(sock)).toBe(1);
+  });
+
+  it("closing the socket drops its stt_levels and stt_match subscribers", async () => {
+    const sock = connect();
+    await sock.client({ type: "stt_levels_subscribe", on: true });
+    await sock.client({ type: "stt_match_subscribe", on: true });
+    sock.emit("close");
+    const sendSpy = vi.spyOn(sock, "send");
+    spawnerHooks.levels?.([0.5], [1]);
+    spawnerHooks.match?.("ch", null, "x", { latencyMs: 1, isFinal: true });
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it("subscribing stt_match twice then unsubscribing stops stt_match", async () => {
+    const sock = connect();
+    const matches = () => sock.sent.filter((m) => m.type === "stt_match").length;
+    await sock.client({ type: "stt_match_subscribe", on: true });
+    await sock.client({ type: "stt_match_subscribe", on: true });
+    spawnerHooks.match?.("ch", null, "x", { latencyMs: 1, isFinal: true });
+    expect(matches()).toBe(1);
+    await sock.client({ type: "stt_match_subscribe", on: false });
+    spawnerHooks.match?.("ch", null, "x", { latencyMs: 1, isFinal: true });
+    expect(matches()).toBe(1);
+  });
+
+  it("a subscribe that runs after close adds no output", async () => {
+    const addOutput = vi.spyOn(outputs, "addOutput");
+    const sock = connect();
+    sock.emit("close");
+    await sock.client({ type: "subscribe", channel: `t-${Date.now()}-late`, role: "renderer" });
+    expect(addOutput).not.toHaveBeenCalled();
+    addOutput.mockRestore();
   });
 });

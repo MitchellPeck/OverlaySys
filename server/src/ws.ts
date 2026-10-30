@@ -361,6 +361,9 @@ export function handleConnection(
     try {
       switch (parsed.type) {
         case "subscribe": {
+          // The socket closed while this was queued: nothing to register,
+          // and nothing would ever remove it (same guard as stage_layout_preview).
+          if (closed) break;
           // A renderer window on its own channel is an output of it; a
           // mirror's subscription to its source is not.
           if (parsed.role === "renderer" && !parsed.mirrorFor) {
@@ -1146,13 +1149,17 @@ export function handleConnection(
           break;
         }
         case "stt_match_subscribe": {
-          if (parsed.on) sttMatchSubscribers.add(send);
-          else sttMatchSubscribers.delete(send);
+          // sendRaw, not the per-message reply wrapper: one stable callback
+          // per connection, so unsubscribe and close can remove it.
+          if (parsed.on) sttMatchSubscribers.add(sendRaw);
+          else sttMatchSubscribers.delete(sendRaw);
           break;
         }
         case "stt_levels_subscribe": {
-          if (parsed.on) levelSubscribers.add(send);
-          else levelSubscribers.delete(send);
+          // sendRaw, not the per-message reply wrapper: one stable callback
+          // per connection, so unsubscribe and close can remove it.
+          if (parsed.on) levelSubscribers.add(sendRaw);
+          else levelSubscribers.delete(sendRaw);
           break;
         }
         case "stt_spawner_stop": {
@@ -1304,8 +1311,8 @@ export function handleConnection(
     for (const unsub of subscriptions.values()) unsub();
     subscriptions.clear();
     offBroadcast();
-    levelSubscribers.delete(send);
-    sttMatchSubscribers.delete(send);
+    levelSubscribers.delete(sendRaw);
+    sttMatchSubscribers.delete(sendRaw);
     log.info("ws closed");
   });
 
