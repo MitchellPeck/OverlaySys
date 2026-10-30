@@ -12,6 +12,8 @@ export type StartArgs = {
   slides: ResolvedSlide[];
   licensing: DeckLicensing | null;
   templates: Map<string, Template>;
+  /** Auto-advance: seconds each slide holds (undefined waits for the operator), and whether the deck wraps. */
+  timing?: { holdSecs: (number | undefined)[]; loop: boolean };
 };
 
 interface Session {
@@ -20,9 +22,15 @@ interface Session {
   idx: number;
   blanked: boolean;
   atEnd: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  nextAdvanceAt?: number;
 }
 
+const PREVIEW = "preview";
+
 const sessions = new Map<string, Session>();
+
+const loops = (s: Session): boolean => s.args.timing?.loop === true;
 
 function summarize(s: Session): SlidesSessionSummary {
   const { slides, templates } = s.args;
@@ -45,7 +53,47 @@ function summarize(s: Session): SlidesSessionSummary {
       : {}),
     blanked: s.blanked,
     atEnd: s.atEnd,
+    ...(s.nextAdvanceAt !== undefined ? { nextAdvanceAt: s.nextAdvanceAt } : {}),
+    loops: loops(s),
+    slot: "graphics",
   };
+}
+
+function stopTimer(s: Session): void {
+  if (s.timer) clearTimeout(s.timer);
+  s.timer = null;
+  delete s.nextAdvanceAt;
+}
+
+/** (Re)start the current slide's hold. Never on preview, while blanked, or at the end. */
+function arm(s: Session): void {
+  stopTimer(s);
+  if (s.channel === PREVIEW || s.blanked || s.atEnd) return;
+  const sec = s.args.timing?.holdSecs[s.idx];
+  if (sec === undefined || !(sec > 0)) return;
+  const ms = sec * 1000;
+  s.nextAdvanceAt = Date.now() + ms;
+  s.timer = setTimeout(() => {
+    s.timer = null;
+    delete s.nextAdvanceAt;
+    if (sessions.get(s.channel) !== s) return;
+    autoAdvance(s);
+  }, ms);
+}
+
+/** The hold ran out: next slide, wrap when the deck loops, else hold the last slide at the end. */
+function autoAdvance(s: Session): void {
+  if (s.idx < s.args.slides.length - 1) {
+    s.idx += 1;
+  } else if (loops(s)) {
+    s.idx = 0;
+  } else {
+    s.atEnd = true;
+    channels.setSlidesSessionSummary(s.channel, summarize(s));
+    return;
+  }
+  arm(s);
+  render(s, false);
 }
 
 function render(s: Session, forceMount: boolean): void {
@@ -82,8 +130,11 @@ export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
   // A song session on this channel (STT binding, timers) must not outlive the takeover.
   songSession.endSessionOnly(channel);
   songSession.clearQueued(channel);
-  const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false };
+  const prev = sessions.get(channel);
+  if (prev) stopTimer(prev);
+  const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false, timer: null };
   sessions.set(channel, s);
+  arm(s);
   render(s, true);
   channels.setLiveRow(channel, { showId: args.showId, rowId: args.rowId });
   noteUse(args, channel);
@@ -98,8 +149,12 @@ export function advance(channel: string, delta: -1 | 1): void {
     if (s.idx < last) {
       s.idx += 1;
       s.atEnd = false;
+    } else if (loops(s)) {
+      s.idx = 0;
+      s.atEnd = false;
     } else if (!s.atEnd) {
       s.atEnd = true;
+      stopTimer(s);
       channels.setSlidesSessionSummary(channel, summarize(s));
       return;
     } else {
@@ -114,6 +169,7 @@ export function advance(channel: string, delta: -1 | 1): void {
   }
   const wasBlanked = s.blanked;
   s.blanked = false;
+  arm(s);
   render(s, wasBlanked);
 }
 
@@ -124,6 +180,7 @@ export function goTo(channel: string, slideIdx: number): boolean {
   s.idx = slideIdx;
   s.atEnd = false;
   s.blanked = false;
+  arm(s);
   render(s, wasBlanked);
   return true;
 }
@@ -132,11 +189,16 @@ export function blank(channel: string): void {
   const s = sessions.get(channel);
   if (!s) return;
   s.blanked = !s.blanked;
+  // Blanked holds the deck where it is; showing it again restarts the slide's hold.
+  arm(s);
   render(s, true);
 }
 
 export function end(channel: string): void {
-  if (!sessions.delete(channel)) return;
+  const s = sessions.get(channel);
+  if (!s) return;
+  stopTimer(s);
+  sessions.delete(channel);
   channels.setSlidesSessionSummary(channel, null, { deferEmit: true });
   channels.clear(channel);
   // Blanked: active is already null so clear() emitted nothing.
@@ -146,8 +208,12 @@ export function end(channel: string): void {
 export function promote(from: string, to: string): boolean {
   const src = sessions.get(from);
   if (!src) return false;
-  const s: Session = { channel: to, args: src.args, idx: src.idx, blanked: false, atEnd: src.atEnd };
+  const prev = sessions.get(to);
+  if (prev) stopTimer(prev);
+  const s: Session = { channel: to, args: src.args, idx: src.idx, blanked: false, atEnd: src.atEnd, timer: null };
   sessions.set(to, s);
+  // The timer starts from the promoted slide.
+  arm(s);
   render(s, true);
   channels.setLiveRow(to, { showId: s.args.showId, rowId: s.args.rowId });
   noteUse(s.args, to);
@@ -163,9 +229,13 @@ export function getSession(channel: string): SlidesSessionSummary | null {
 
 /** Forget the session without touching channel state (external take/clear). */
 export function dropAll(channel: string): boolean {
+  const s = sessions.get(channel);
+  if (!s) return false;
+  stopTimer(s);
   return sessions.delete(channel);
 }
 
 export function resetAll(): void {
+  for (const s of sessions.values()) stopTimer(s);
   sessions.clear();
 }

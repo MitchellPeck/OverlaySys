@@ -95,6 +95,14 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
     }
     tpls.set(id, t);
   }
+  // Each slide holds for its own holdSec, else the deck's default; neither means it waits for the operator.
+  const sourceSlides = row.deckId ? (deck?.slides ?? []) : (row.localSlides ?? []);
+  const holdById = new Map(sourceSlides.map((sl) => [sl.id, sl.holdSec] as const));
+  const defaultHoldSec = row.deckId ? deck?.defaultHoldSec : undefined;
+  const timing = {
+    holdSecs: view.slides.map((sl) => holdById.get(sl.slideId) ?? defaultHoldSec),
+    loop: row.deckId ? deck?.loop === true : false,
+  };
   const channel = msg.channel ?? row.channelHint ?? "program";
   slidesSession.start(
     channel,
@@ -106,6 +114,7 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
       slides: view.slides,
       licensing: row.deckId && deck ? deck.licensing : null,
       templates: tpls,
+      timing,
     },
     slideIdx,
   );

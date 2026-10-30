@@ -304,6 +304,35 @@ describe("slides live handlers", () => {
     expect(channels.getState("program").active?.phase).toBe("out");
   });
 
+  it("slides_take passes each slide's hold (slide holdSec, else the deck's) and the deck's loop", async () => {
+    await decks.saveDeck(
+      deck({
+        id: "dTimed",
+        defaultHoldSec: 4,
+        loop: true,
+        slides: [
+          { id: "s1", data: { text: "Line A" } },
+          { id: "s2", data: { text: "Line B" }, holdSec: 9 },
+        ],
+      }),
+    );
+    const timedShow = {
+      ...show,
+      rows: [
+        { kind: "slides", id: "rowTimed", deckId: "dTimed", slideIds: ["s2", "s1"] },
+        { kind: "slides", id: "rowLocal", localSlides: [{ id: "a", templateId: "t", data: {} }, { id: "b", templateId: "t", data: {}, holdSec: 3 }] },
+      ],
+    } as unknown as Show;
+    vi.mocked(shows.getShow).mockImplementation(async () => timedShow);
+    const spy = vi.spyOn(slidesSession, "start");
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowTimed" }, send);
+    expect(spy.mock.calls[0]![1].timing).toEqual({ holdSecs: [9, 4], loop: true });
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowLocal" }, send);
+    expect(spy.mock.calls[1]![1].timing).toEqual({ holdSecs: [undefined, 3], loop: false });
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowTimed", channel: "preview" }, send);
+    expect(sent).toEqual([]);
+  });
+
   it("slides_take of a media-only deck plays it in the media slot and leaves graphics alone", async () => {
     await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMedia", slideIdx: 1 }, send);
     expect(sent).toEqual([]);

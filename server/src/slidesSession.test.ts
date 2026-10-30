@@ -224,6 +224,155 @@ describe("slidesSession", () => {
     });
   });
 
+  describe("auto-advance", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    const timed = (holdSecs: (number | undefined)[], loop: boolean) => ({ ...args(), timing: { holdSecs, loop } });
+    const idx = (ch = "program") => channels.getState(ch).slidesSession?.slideIdx;
+
+    it("auto-advances on hold and wraps when loop", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      vi.advanceTimersByTime(4999);
+      expect(idx()).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(idx()).toBe(1);
+      expect(channels.getState("program").active!.data.text).toBe("Line B");
+      vi.advanceTimersByTime(5000);
+      expect(idx()).toBe(2);
+      vi.advanceTimersByTime(5000);
+      expect(idx()).toBe(0);
+      expect(channels.getState("program").active).toMatchObject({ templateId: "T1", data: { text: "Line A" } });
+      expect(channels.getState("program").slidesSession!.atEnd).toBe(false);
+    });
+
+    it("non-looping deck stops at the last slide with atEnd", () => {
+      slidesSession.start("program", timed([5, 5, 5], false), 0);
+      vi.advanceTimersByTime(10000);
+      expect(idx()).toBe(2);
+      expect(channels.getState("program").slidesSession!.atEnd).toBe(false);
+      vi.advanceTimersByTime(5000);
+      const st = channels.getState("program");
+      expect(st.slidesSession).toMatchObject({ slideIdx: 2, atEnd: true });
+      expect(st.slidesSession!.nextAdvanceAt).toBeUndefined();
+      expect(st.active).toMatchObject({ phase: "in", data: { text: "Line C" } });
+      vi.advanceTimersByTime(60000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2, atEnd: true });
+      expect(channels.getState("program").active!.data.text).toBe("Line C");
+    });
+
+    it("a slide without a hold waits for the operator", () => {
+      slidesSession.start("program", timed([5, undefined, 5], true), 0);
+      vi.advanceTimersByTime(5000);
+      expect(idx()).toBe(1);
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(idx()).toBe(1);
+      slidesSession.advance("program", 1);
+      expect(idx()).toBe(2);
+      vi.advanceTimersByTime(5000);
+      expect(idx()).toBe(0);
+    });
+
+    it("no timer on preview; promote starts it", () => {
+      slidesSession.start("preview", timed([5, 5, 5], true), 1);
+      expect(channels.getState("preview").slidesSession!.nextAdvanceAt).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(idx("preview")).toBe(1);
+      channels.takePvwToPgm("preview", "program");
+      const now = Date.now();
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, nextAdvanceAt: now + 5000 });
+      vi.advanceTimersByTime(5000);
+      expect(idx()).toBe(2);
+      expect(channels.getState("program").active!.data.text).toBe("Line C");
+    });
+
+    it("dropAll cancels the timer", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      const before = vi.getTimerCount();
+      expect(slidesSession.dropAll("program")).toBe(true);
+      expect(vi.getTimerCount()).toBe(before - 1);
+      // An external take (which drops the session) leaves the new graphic alone.
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      channels.take("program", "gfx", { a: "1" });
+      vi.advanceTimersByTime(60000);
+      expect(channels.getState("program").active).toMatchObject({ templateId: "gfx", data: { a: "1" } });
+      expect(slidesSession.getSession("program")).toBeNull();
+    });
+
+    it("end cancels the timer", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      slidesSession.end("program");
+      vi.advanceTimersByTime(60000);
+      expect(slidesSession.getSession("program")).toBeNull();
+      expect(channels.getState("program").slidesSession).toBeUndefined();
+    });
+
+    it("manual goTo restarts the timer", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      vi.advanceTimersByTime(3000);
+      expect(slidesSession.goTo("program", 2)).toBe(true);
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBe(Date.now() + 5000);
+      vi.advanceTimersByTime(3000);
+      expect(idx()).toBe(2);
+      vi.advanceTimersByTime(2000);
+      expect(idx()).toBe(0);
+    });
+
+    it("manual next/previous restarts the timer; next on the last slide of a looping deck wraps", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      vi.advanceTimersByTime(4000);
+      slidesSession.advance("program", 1);
+      vi.advanceTimersByTime(4000);
+      expect(idx()).toBe(1);
+      slidesSession.advance("program", -1);
+      vi.advanceTimersByTime(4000);
+      expect(idx()).toBe(0);
+      slidesSession.goTo("program", 2);
+      slidesSession.advance("program", 1);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 0, atEnd: false });
+    });
+
+    it("a re-take on the same channel replaces the old timer", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      vi.advanceTimersByTime(3000);
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      vi.advanceTimersByTime(3000);
+      expect(idx()).toBe(0);
+      vi.advanceTimersByTime(2000);
+      expect(idx()).toBe(1);
+    });
+
+    it("blank pauses the timer; unblank restarts the hold", () => {
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      slidesSession.blank("program");
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBeUndefined();
+      vi.advanceTimersByTime(60000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 0, blanked: true });
+      slidesSession.blank("program");
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, blanked: false });
+    });
+
+    it("summary carries nextAdvanceAt and loops", () => {
+      slidesSession.start("program", timed([5, 8, 5], true), 0);
+      const t0 = Date.now();
+      expect(channels.getState("program").slidesSession).toMatchObject({
+        nextAdvanceAt: t0 + 5000, loops: true, slot: "graphics",
+      });
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, nextAdvanceAt: t0 + 13000 });
+      expect(slidesSession.getSession("program")).toMatchObject({ nextAdvanceAt: t0 + 13000, loops: true });
+    });
+
+    it("a deck without timing never auto-advances and reports no nextAdvanceAt", () => {
+      slidesSession.start("program", args(), 0);
+      expect(channels.getState("program").slidesSession).toMatchObject({ loops: false, slot: "graphics" });
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBeUndefined();
+      vi.advanceTimersByTime(600000);
+      expect(idx()).toBe(0);
+    });
+  });
+
   it("text fields the slide doesn't supply air as \"\" (never the design's sample text), also on advance", () => {
     const lt = {
       id: "LT",
