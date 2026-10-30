@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ImagePlus, MoreHorizontal } from "lucide-react";
+import { ImagePlus, MoreHorizontal, Upload } from "lucide-react";
 import { v4 as uuid } from "uuid";
 import { liveFolderFileUrl, nextFolderOrder, resolveSlideTemplateId, type Deck, type DeckSlide, type MediaRef, type TemplateMeta } from "@overlaysys/core";
 import {
@@ -36,7 +36,8 @@ import { plural } from "@/lib/listFormat";
 import { isCloudMode } from "@/lib/mode";
 import { requestLiveFolder } from "@/lib/mediaRequests";
 import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
-import { useLibraryPicker } from "@/app/media/MediaPicker";
+import { uploadToLibrary, useLibraryPicker, type SourcePick } from "@/app/media/MediaPicker";
+import { importErrorText } from "@/app/media/libraryConfig";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { EditorFrame, SlideThumbGrid, slideFieldsFor, type SlideCard } from "@/app/songs/edit/slides";
 import { useDeck } from "../useDeck";
@@ -218,6 +219,8 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const library = useLibraryPicker();
+  const mediaFileRef = useRef<HTMLInputElement>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const folderId = draft?.liveFolderId;
   const folderState = useStore((s) => (folderId ? s.liveFolderFiles[folderId] : undefined));
   const folderItem = useStore((s) => (folderId ? s.mediaItems.find((m) => m.id === folderId) : undefined));
@@ -356,14 +359,29 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   const placedOrder = (d: Deck) => nextFolderOrder(d.folderOrder, folderConfigured ? folderFiles : []);
   const selectedFile = isFolderDeck ? (folderEntries.find((e) => e.file === selectedId) ?? folderEntries[0] ?? null) : null;
 
-  async function addMedia() {
-    const pick = await library.pick("any");
+  function addMediaFromPick(pick: SourcePick) {
     const d = draftRef.current;
-    if (!pick || !d) return;
+    if (!d) return;
     const nid = newSlideId(d);
-    const { name: _name, ...ref } = pick;
+    const { name: _name, durationSec: _duration, ...ref } = pick;
     setDraft((cur) => (cur ? addMediaSlide(cur, ref, nid) : cur));
     setSelectedId(nid);
+  }
+
+  async function addMedia() {
+    const pick = await library.pick("any");
+    if (pick) addMediaFromPick(pick);
+  }
+
+  async function uploadMedia(file: File) {
+    setUploadingMedia(true);
+    try {
+      addMediaFromPick(await uploadToLibrary(file, "any"));
+    } catch (e) {
+      toast({ tone: "error", message: `Couldn't upload ${file.name}: ${importErrorText(e)}` });
+    } finally {
+      setUploadingMedia(false);
+    }
   }
 
   const meta = deckMetas.find((m) => m.id === draft.id);
@@ -528,9 +546,39 @@ export function DeckEditor({ deckId }: { deckId: string }) {
       addLabel="Add slide"
       extraActions={
         isCloudMode() ? null : (
-          <Button size="sm" variant="secondary" onClick={() => void addMedia()} icon={<ImagePlus size={14} />}>
-            Add photo or video
-          </Button>
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void addMedia()}
+              icon={<ImagePlus size={14} />}
+              title="Add a photo or video slide from Media"
+              disabled={uploadingMedia}
+            >
+              Choose from Media
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => mediaFileRef.current?.click()}
+              icon={<Upload size={14} />}
+              title="Add a photo or video slide from a file (it's added to Media too)"
+              disabled={uploadingMedia}
+            >
+              {uploadingMedia ? "Uploading…" : "Upload"}
+            </Button>
+            <input
+              ref={mediaFileRef}
+              type="file"
+              accept="image/*,video/*"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void uploadMedia(f);
+              }}
+            />
+          </>
         )
       }
       menuItems={slideMenu}

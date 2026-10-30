@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { FolderOpen, Library, Play, X } from "lucide-react";
-import { IconButton, Input, colors, fontFamily, radius } from "@overlaysys/ui";
+import { Play, X } from "lucide-react";
+import { Button, IconButton, Input, colors, fontFamily, radius } from "@overlaysys/ui";
 
 type Props = {
   value: string;
@@ -12,7 +12,7 @@ type Props = {
   // [/P2a.18]
   /** Id for the path field, so a FieldRow label focuses it. */
   id?: string;
-  /** When provided, a "From library" button sets the value to the picked video's URL (null = cancelled). */
+  /** When provided, a "Choose from Media" button sets the value to the picked video's URL (null = cancelled). */
   onPickFromLibrary?: () => Promise<{ url: string } | null>;
 };
 
@@ -137,28 +137,6 @@ export function VideoInput({ value, onChange, onUpload, resolveUrl, id, onPickFr
             fontFamily: isDataUrl ? fontFamily.mono : undefined,
           }}
         />
-        {onPickFromLibrary && (
-          <IconButton
-            size={24}
-            onClick={async () => {
-              const picked = await onPickFromLibrary();
-              if (picked) onChange(picked.url);
-            }}
-            aria-label="From library"
-            title="From library"
-          >
-            <Library size={14} aria-hidden />
-          </IconButton>
-        )}
-        <IconButton
-          size={24}
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          aria-label={onUpload ? "Upload video" : "Embed video file"}
-          title={onUpload ? "Upload video" : "Embed as data URL"}
-        >
-          {uploading ? "…" : <FolderOpen size={14} aria-hidden />}
-        </IconButton>
         {value && (
           <IconButton size={24} onClick={() => onChange("")} aria-label="Clear video" title="Clear">
             <X size={14} aria-hidden />
@@ -175,6 +153,31 @@ export function VideoInput({ value, onChange, onUpload, resolveUrl, id, onPickFr
             e.target.value = "";
           }}
         />
+      </div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+        {onPickFromLibrary && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={uploading}
+            onClick={async () => {
+              setError(null);
+              const picked = await onPickFromLibrary();
+              if (picked) onChange(picked.url);
+            }}
+          >
+            Choose from Media
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          title={onUpload ? undefined : "Embed as data URL"}
+        >
+          {uploading ? "Uploading…" : "Upload"}
+        </Button>
       </div>
       {error && (
         <div role="alert" style={{ marginTop: 4, fontSize: 11, color: colors.dangerText }}>

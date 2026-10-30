@@ -7,15 +7,14 @@ import { decodeTimerValue, encodeTimerValue } from "@overlaysys/core";
 import { useEffect, useState } from "react";
 import { useStore } from "./store";
 import { countdownTimerValue, remainingDurationText } from "./timeFieldValue";
-import { uploadAsset, resolveAssetUrl } from "./uploadAsset";
+import { resolveAssetUrl } from "./uploadAsset";
+import { useMediaSourceChoice } from "../app/media/useMediaSourceChoice";
 
 type Props = {
   field: Field;
   value: string | undefined;
   onChange: (v: string) => void;
 };
-
-const upload = async (file: File): Promise<string> => (await uploadAsset(file)).url;
 
 /**
  * Renders the right input control for a Field's declared type. Used by both
@@ -33,9 +32,9 @@ export function FieldInput({ field, value, onChange }: Props) {
       // server @ :4000). In Electron production the operator is served by
       // the asset server itself so this is a no-op.
       // [P2b.9] resolve for the preview only, so the stored path is shown and kept as is.
-      return <ImageInput value={v} resolveUrl={resolveAssetUrl} onChange={onChange} onUpload={upload} />;
+      return <MediaFieldInput kind="image" value={v} onChange={onChange} />;
     case "video":
-      return <VideoInput value={v} resolveUrl={resolveAssetUrl} onChange={onChange} onUpload={upload} />;
+      return <MediaFieldInput kind="video" value={v} onChange={onChange} />;
     // [/P2b.9]
     case "number":
       return (
@@ -58,6 +57,27 @@ export function FieldInput({ field, value, onChange }: Props) {
         />
       );
   }
+}
+
+/**
+ * An image or video field: "Choose from Media" (show computer) and "Upload"
+ * (joins Media, then used). The stored value stays the asset URL string.
+ */
+function MediaFieldInput({ kind, value, onChange }: { kind: "image" | "video"; value: string; onChange: (v: string) => void }) {
+  const { pickFromLibrary, uploadFor, picker } = useMediaSourceChoice();
+  const Control = kind === "image" ? ImageInput : VideoInput;
+  return (
+    <>
+      <Control
+        value={value}
+        resolveUrl={resolveAssetUrl}
+        onChange={onChange}
+        onUpload={uploadFor(kind)}
+        onPickFromLibrary={pickFromLibrary && (() => pickFromLibrary(kind))}
+      />
+      {picker}
+    </>
+  );
 }
 
 /**

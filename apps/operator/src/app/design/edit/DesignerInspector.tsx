@@ -65,7 +65,7 @@ export function DesignerInspector({
   onPushHistory: () => void;
   onUpload: (file: File) => Promise<string>;
   resolveUrl?: (src: string) => string;
-  /** Opens the Media library for a photo or video source; absent hides "From library". */
+  /** Opens the Media library for a photo or video source; absent hides "Choose from Media". */
   onPickFromLibrary?: PickFromLibraryFn;
   onAlign: (mode: AlignMode) => void;
   onDistribute: (axis: "x" | "y") => void;

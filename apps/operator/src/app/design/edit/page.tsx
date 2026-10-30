@@ -32,7 +32,7 @@ import { useStore } from "@/lib/store";
 import { useEditor } from "@/lib/editorStore";
 import { isLocalDraftEdit, shouldAdoptIncoming } from "@/lib/stageDesigner";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
-import { resolveAssetUrl, uploadAsset } from "@/lib/uploadAsset";
+import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { ackErrorText, errorMatches, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { downloadJson } from "@/lib/download";
 import { exportFileName } from "@/lib/exportName";
@@ -50,14 +50,11 @@ import { DesignerHeader } from "./DesignerHeader";
 import { PreviewOnPvwButton } from "./PreviewOnPvwButton"; // [P2b.11]
 import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
 import { DesignerInspector } from "./DesignerInspector";
-import { useLibraryPicker } from "@/app/media/MediaPicker";
+import { useMediaSourceChoice } from "@/app/media/useMediaSourceChoice";
 import { timelineRowCount } from "./timelineSize";
 import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
 type Recipe = (d: Draft<Template>) => void;
-
-const uploadInspector = async (file: File): Promise<string> =>
-  (await uploadAsset(file)).url;
 
 const UNSAVED_PROMPT = "You have unsaved changes to this template. Leave anyway?";
 /** A save with no ack after this long is reported as failed (the draft stays dirty). */
@@ -126,15 +123,10 @@ function DesignPageInner() {
   const [error, setError] = useState<string | null>(null);
   const cloud = isCloudMode();
   const { alert, dialog } = useDialog();
-  const library = useLibraryPicker();
-  // The library lives on the show computer; cloud designs keep upload-only sources.
-  const pickFromLibrary = useMemo<PickFromLibraryFn | undefined>(
-    () => (cloud ? undefined : async (kind) => {
-      const picked = await library.pick(kind);
-      return picked ? { url: picked.assetUrl } : null;
-    }),
-    [cloud, library.pick],
-  );
+  // "Choose from Media" (show computer only) and "Upload" for layer sources and
+  // field defaults; uploaded photos and videos join Media, fonts don't.
+  const media = useMediaSourceChoice();
+  const pickFromLibrary: PickFromLibraryFn | undefined = media.pickFromLibrary;
 
   async function showCloudError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -675,7 +667,7 @@ function DesignPageInner() {
             onCommit={commit}
             onLive={applyLive}
             onPushHistory={pushHistory}
-            onUpload={uploadInspector}
+            onUpload={media.uploadAny}
             resolveUrl={resolveAssetUrl}
             onPickFromLibrary={pickFromLibrary}
             onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
@@ -705,7 +697,7 @@ function DesignPageInner() {
         }
       />
       {dialog}
-      {library.picker}
+      {media.picker}
     </>
   );
 }

@@ -62,7 +62,7 @@ type Props = {
   onUpload?: UploadFn;
   /** Turns a stored asset path into a URL this page can load (previews only). */
   resolveUrl?: (src: string) => string;
-  /** When provided, image and video sources offer "From library". */
+  /** When provided, image and video sources offer "Choose from Media". */
   onPickFromLibrary?: PickFromLibraryFn;
 };
 

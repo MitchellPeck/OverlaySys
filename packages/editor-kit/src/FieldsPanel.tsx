@@ -23,7 +23,7 @@ type Props = {
   onUpload?: (file: File) => Promise<string>;
   /** Turns a stored asset path into a URL this page can load (previews only). */
   resolveUrl?: (src: string) => string;
-  /** When provided, image and video defaults offer "From library". */
+  /** When provided, image and video defaults offer "Choose from Media". */
   onPickFromLibrary?: PickFromLibraryFn;
 };
 

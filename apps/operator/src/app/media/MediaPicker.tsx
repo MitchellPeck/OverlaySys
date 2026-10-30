@@ -10,7 +10,8 @@ import { resolveAssetUrl, uploadAsset, videoPosterUrl } from "../../lib/uploadAs
 import { saveMediaItem } from "../../lib/mediaRequests";
 import { importErrorText } from "./libraryConfig";
 import { MediaCard } from "./MediaCard";
-import { importMediaFile, mediaTypeOf, probeMedia } from "./importMedia";
+import { probeMedia } from "./importMedia";
+import { sourceActions, uploadMediaSource, uploadRefusal, type SourcePick, type SourceUploadDeps } from "./mediaSourceChoice";
 import { pickFromItem, pickableItems, type PickAccept, type PickedMedia } from "./pickerModel";
 
 const TITLES: Record<PickAccept, string> = {
@@ -94,29 +95,26 @@ export function MediaPicker({
   );
 }
 
+/** What every upload needs: the asset store, a probe, and Media's save (unused in cloud mode). */
+export function sourceUploadDeps(): SourceUploadDeps {
+  return { cloud: isCloudMode(), upload: uploadAsset, probe: probeMedia, save: saveMediaItem };
+}
+
 /**
  * Upload a file for a row or layer. On the show computer it also joins the
  * library (so the row links to it); in cloud mode it's a plain upload.
  */
-export async function uploadToLibrary(file: File): Promise<SourcePick> {
-  if (isCloudMode()) {
-    const up = await uploadAsset(file);
-    const mediaType = mediaTypeOf(up.mime);
-    if (!mediaType) throw new Error("That file isn't a photo or video.");
-    return { assetUrl: up.url, mediaType, name: file.name };
-  }
-  const item = await importMediaFile(file, { upload: uploadAsset, probe: probeMedia, save: saveMediaItem });
-  return { ...pickFromItem(item), ...(item.durationSec ? { durationSec: item.durationSec } : {}) };
+export function uploadToLibrary(file: File, accept: PickAccept = "any"): Promise<SourcePick> {
+  return uploadMediaSource(file, accept, sourceUploadDeps());
 }
 
-/** A pick or upload for a row's source; uploads carry the duration read while importing. */
-export type SourcePick = PickedMedia & { durationSec?: number };
+export type { SourcePick };
 
 const ACCEPT_FILES: Record<PickAccept, string> = { image: "image/*", video: "video/*", any: "image/*,video/*" };
 
 /**
  * A Media row's source: a preview with the item's name, "Choose from Media"
- * (show computer only) and "Upload file". Uploads join the library.
+ * (show computer only) and "Upload". Uploads join the library.
  */
 export function MediaSourceField({
   assetUrl,
@@ -132,7 +130,7 @@ export function MediaSourceField({
   accept: PickAccept;
   onChange: (pick: SourcePick) => void;
 }) {
-  const cloud = isCloudMode();
+  const canChoose = sourceActions(isCloudMode()).includes("library");
   const fileRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -141,14 +139,14 @@ export function MediaSourceField({
 
   async function upload(file: File) {
     setError(null);
-    const type = mediaTypeOf(file.type);
-    if (!type || (accept !== "any" && type !== accept)) {
-      setError(accept === "video" ? "Choose a video file." : accept === "image" ? "Choose a photo." : "Choose a photo or video.");
+    const refusal = uploadRefusal(file.type, accept);
+    if (refusal) {
+      setError(refusal);
       return;
     }
     setUploading(true);
     try {
-      onChange(await uploadToLibrary(file));
+      onChange(await uploadToLibrary(file, accept));
     } catch (e) {
       setError(`Couldn't upload ${file.name}: ${importErrorText(e)}`);
     } finally {
@@ -190,13 +188,13 @@ export function MediaSourceField({
         </span>
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {!cloud && (
+        {canChoose && (
           <Button size="sm" variant="secondary" onClick={() => setPicking(true)} disabled={uploading}>
             Choose from Media
           </Button>
         )}
         <Button size="sm" variant="ghost" onClick={() => fileRef.current?.click()} disabled={uploading}>
-          {uploading ? "Uploading…" : "Upload file"}
+          {uploading ? "Uploading…" : "Upload"}
         </Button>
       </div>
       {error && (
