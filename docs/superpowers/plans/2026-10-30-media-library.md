@@ -563,3 +563,18 @@
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4:** Run `npx vitest run packages/core packages/ws-protocol server apps/renderer apps/operator` + tsc for each. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(media): size and position for photos and videos; photos are see-through`.
+
+### Task 20: Every image/video choice offers "Choose from Media" and "Upload" (user-approved addition; runs before Task 18)
+
+**Files:**
+- Modify: `apps/operator/src/lib/FieldInput.tsx` (image and video field types), and every caller that renders an image/video field or source picker so the library option is wired: `apps/operator/src/app/pco/PcoItemRow.tsx`, `app/slides/edit/DeckSlideFields.tsx`, `app/components/TakePanel.tsx`, `app/components/TimerPanel.tsx`, `app/components/live/ItemBar.tsx`, `app/hotcards/edit/page.tsx`, `app/shows/edit/forms/GraphicItemForm.tsx`, `app/songs/edit/slides/SlideThumbGrid.tsx`, `app/slides/edit/DeckEditor.tsx`; editor-kit `ImageInput.tsx` / `VideoInput.tsx` / `PropertyInspector.tsx` / `FieldsPanel.tsx` callers (designer and stage designer) — grep for any other `ImageInput`/`VideoInput`/image-or-video upload site and include it.
+- Create: one shared operator hook/component (e.g. `apps/operator/src/app/media/useMediaSourceChoice.ts` building on `useLibraryPicker` from `MediaPicker.tsx` and `importMediaFile` from `importMedia.ts`) so every site gets identical behaviour.
+- Test: pure helpers beside them.
+
+**Behaviour (user-approved):** anywhere an image or video is chosen — template fields (graphic rows, row overrides on Live, Take panel, timers, hotcards, slide fields, PCO items), designer layers and field defaults (graphics and stage designers), Media rows, deck media slides, song slide backgrounds — the control offers exactly two actions, **Choose from Media** (library picker filtered to the field's type) and **Upload** (file picker; the upload is added to the Media library, then used). Existing values still display and can be cleared. The stored value stays the asset URL string where the field is a plain string (template data, layer src); rows/slides that already store `mediaItemId` keep doing so. Plain-language errors via `importErrorText` / `displayServerError`. Works in local mode; in cloud mode the library option is hidden (no cloud media data path yet — see Task 12 ruling) and Upload behaves as today.
+
+- [ ] **Step 1: Write failing tests** for the shared helper: picking returns the item's assetUrl for an image field and refuses a video item; upload path calls importMediaFile and returns its url; cloud mode exposes only Upload.
+- [ ] **Step 2:** Run them. Expected: FAIL.
+- [ ] **Step 3: Implement** the shared hook/component and wire every site listed (grep to confirm none is missed; list them all in the report).
+- [ ] **Step 4:** Run `npx vitest run apps/operator packages/editor-kit` + tsc for operator and editor-kit. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(operator): every image and video choice offers Choose from Media or Upload`.
