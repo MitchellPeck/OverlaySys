@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportedItem, mediaTypeOf, stripExtension } from "./importMedia";
+import { buildImportedItem, importMediaFile, mediaTypeOf, stripExtension } from "./importMedia";
 
 const up = (url: string, mime: string) => ({ url, sha256: "abc", size: 10, mime });
 const now = "2026-10-30T10:00:00.000Z";
@@ -34,5 +34,26 @@ describe("importMedia", () => {
     const id = newMediaId();
     expect(id).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
     expect(newMediaId()).not.toBe(id);
+  });
+});
+
+describe("importMediaFile", () => {
+  const file = (name: string) => ({ name }) as File;
+  it("uploads, probes and saves one library item", async () => {
+    const saved: unknown[] = [];
+    const item = await importMediaFile(file("Intro.mp4"), {
+      upload: async () => up("/assets/i.mp4", "video/mp4"),
+      probe: async () => ({ durationSec: 4 }),
+      save: async (m) => void saved.push(m),
+    }, now);
+    expect(item).toMatchObject({ name: "Intro", mediaType: "video", assetUrl: "/assets/i.mp4", durationSec: 4, createdAt: now });
+    expect(item.id).toMatch(/^[A-Za-z0-9_-]{1,64}$/);
+    expect(saved).toEqual([item]);
+  });
+  it("refuses a file that isn't a photo or video, saving nothing", async () => {
+    let saves = 0;
+    const deps = { upload: async () => up("/assets/a.pdf", "application/pdf"), probe: async () => ({}), save: async () => void saves++ };
+    await expect(importMediaFile(file("a.pdf"), deps, now)).rejects.toThrow("That file isn't a photo or video.");
+    expect(saves).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 import type {
   Deck,
+  MediaItem,
   Section,
   Show,
   ShowSong,
@@ -27,7 +28,21 @@ export type RowViewCtx = {
   deckCache: Record<string, Deck>;
   /** Decks the server answered "not found" for: shown as missing, not loading. */
   deckNotFound?: Record<string, true>;
+  /** Media library, so a row picked from it shows the item's name. */
+  mediaItems?: Pick<MediaItem, "id" | "name">[];
 };
+
+/** A Media row's name: its label, else its library item's name, else the file name. */
+export function mediaRowName(
+  row: { label?: string; mediaItemId?: string; assetUrl: string },
+  mediaItems: Pick<MediaItem, "id" | "name">[] = [],
+): string {
+  const label = row.label?.trim();
+  if (label) return label;
+  const item = row.mediaItemId ? mediaItems.find((m) => m.id === row.mediaItemId) : undefined;
+  if (item?.name) return item.name;
+  return row.assetUrl.split("/").pop() ?? row.assetUrl;
+}
 
 export type RowView = {
   kind: ItemKind;
@@ -122,10 +137,9 @@ function rowViewInner(row: RowLike, ctx: RowViewCtx): RowView {
     }
     case "video": {
       const r = row as Extract<RowLike, { kind: "video" }>;
-      const file = r.assetUrl.split("/").pop() ?? r.assetUrl;
       return {
         ...base(row, "video"),
-        title: r.label?.trim() || file || "Video",
+        title: mediaRowName(r, ctx.mediaItems) || "Video",
         detail: typeof r.durationSec === "number" ? formatClock(r.durationSec) : null,
       };
     }

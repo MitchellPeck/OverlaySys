@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FolderOpen, Play, X } from "lucide-react";
+import { FolderOpen, Library, Play, X } from "lucide-react";
 import { IconButton, Input, colors, fontFamily, radius } from "@overlaysys/ui";
 
 type Props = {
@@ -12,6 +12,8 @@ type Props = {
   // [/P2a.18]
   /** Id for the path field, so a FieldRow label focuses it. */
   id?: string;
+  /** When provided, a "From library" button sets the value to the picked video's URL (null = cancelled). */
+  onPickFromLibrary?: () => Promise<{ url: string } | null>;
 };
 
 /**
@@ -20,7 +22,7 @@ type Props = {
  * Adds drag-and-drop — drop a video file anywhere on the control to
  * upload it (or embed as a data URL when onUpload isn't wired).
  */
-export function VideoInput({ value, onChange, onUpload, resolveUrl, id }: Props) {
+export function VideoInput({ value, onChange, onUpload, resolveUrl, id, onPickFromLibrary }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -135,6 +137,19 @@ export function VideoInput({ value, onChange, onUpload, resolveUrl, id }: Props)
             fontFamily: isDataUrl ? fontFamily.mono : undefined,
           }}
         />
+        {onPickFromLibrary && (
+          <IconButton
+            size={24}
+            onClick={async () => {
+              const picked = await onPickFromLibrary();
+              if (picked) onChange(picked.url);
+            }}
+            aria-label="From library"
+            title="From library"
+          >
+            <Library size={14} aria-hidden />
+          </IconButton>
+        )}
         <IconButton
           size={24}
           onClick={() => fileRef.current?.click()}

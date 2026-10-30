@@ -8,6 +8,7 @@ import { Button, IconButton, Input, NumberInput, Select, colors, fontFamily, fon
 import { ColorInput } from "./ColorInput";
 import { ImageInput } from "./ImageInput";
 import { VideoInput } from "./VideoInput";
+import type { PickFromLibraryFn } from "./PropertyInspector";
 import { AutoTextarea } from "./AutoTextarea";
 import { useEditCoalescer } from "./editCoalescer";
 import { fieldKeyError, fieldUsage, removeField, renameFieldKey } from "./templateOps";
@@ -22,6 +23,8 @@ type Props = {
   onUpload?: (file: File) => Promise<string>;
   /** Turns a stored asset path into a URL this page can load (previews only). */
   resolveUrl?: (src: string) => string;
+  /** When provided, image and video defaults offer "From library". */
+  onPickFromLibrary?: PickFromLibraryFn;
 };
 
 /** Key | label | type | delete. The key and label columns share what's left of a 300 px inspector. */
@@ -36,7 +39,7 @@ const TYPE_OPTIONS: { value: Field["type"]; label: string }[] = [
   { value: "time", label: "Time" },
 ];
 
-export function FieldsPanel({ template, onCommit: commitStep, onLive, onUpload, resolveUrl }: Props) {
+export function FieldsPanel({ template, onCommit: commitStep, onLive, onUpload, resolveUrl, onPickFromLibrary }: Props) {
   const { commit: onCommit, handlers } = useEditCoalescer(commitStep, onLive);
   function add() {
     const key = uniqueKey(template.fields);
@@ -175,7 +178,13 @@ export function FieldsPanel({ template, onCommit: commitStep, onLive, onUpload, 
                   )}
                   <div style={{ display: "grid", gridTemplateColumns: "48px minmax(0, 1fr)", gap: 4, alignItems: "start" }}>
                     <span style={{ ...rowLabel, lineHeight: "24px" }}>Default</span>
-                    <DefaultEditor field={f} onChange={(v) => patch(f.key, { default: v })} onUpload={onUpload} resolveUrl={resolveUrl} />
+                    <DefaultEditor
+                      field={f}
+                      onChange={(v) => patch(f.key, { default: v })}
+                      onUpload={onUpload}
+                      resolveUrl={resolveUrl}
+                      onPickFromLibrary={onPickFromLibrary}
+                    />
                   </div>
                   {usedBy.length > 0 && (
                     <div style={{ fontSize: fontSize["2xs"], color: colors.textMuted, overflowWrap: "anywhere" }}>Used by {usedBy.join(", ")}</div>
@@ -271,11 +280,13 @@ function DefaultEditor({
   onChange,
   onUpload,
   resolveUrl,
+  onPickFromLibrary,
 }: {
   field: Field;
   onChange: (v: string) => void;
   onUpload?: (file: File) => Promise<string>;
   resolveUrl?: (src: string) => string;
+  onPickFromLibrary?: PickFromLibraryFn;
 }) {
   const v = field.default ?? "";
   const label = `Default of field ${field.key}`;
@@ -283,9 +294,9 @@ function DefaultEditor({
     case "color":
       return <ColorInput label={label} value={v || "#ffffff"} onChange={onChange} />;
     case "image":
-      return <ImageInput value={v} onChange={onChange} onUpload={onUpload} resolveUrl={resolveUrl} />;
+      return <ImageInput value={v} onChange={onChange} onUpload={onUpload} resolveUrl={resolveUrl} onPickFromLibrary={onPickFromLibrary && (() => onPickFromLibrary("image"))} />;
     case "video":
-      return <VideoInput value={v} onChange={onChange} onUpload={onUpload} resolveUrl={resolveUrl} />;
+      return <VideoInput value={v} onChange={onChange} onUpload={onUpload} resolveUrl={resolveUrl} onPickFromLibrary={onPickFromLibrary && (() => onPickFromLibrary("video"))} />;
     case "number":
       return (
         <NumberInput

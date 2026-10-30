@@ -4,7 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { produce } from "immer";
-import type { Show, RundownRow, ScriptureRow, VideoRow, SongRow } from "@overlaysys/core";
+import type { Show, RundownRow, ScriptureRow, SongRow } from "@overlaysys/core";
 import { addSection, deleteSection, moveRow, renameSection } from "@overlaysys/core";
 import { BookOpen, ChevronDown, Copy, Film, FolderInput, Music, Plus, Presentation, Rows3, Trash2, Type } from "lucide-react";
 import {
@@ -34,7 +34,8 @@ import { RundownList } from "@/app/components/rundown/RundownList";
 import { rowDomId } from "@/app/components/rundown/RundownRow";
 import { isCloudMode } from "@/lib/mode";
 import type { RowLike } from "@/lib/rowLike";
-import { VideoRowModal, type VideoRowSaveArgs } from "@/app/components/VideoRowModal";
+import { MediaRowModal, type MediaRowSaveArgs } from "@/app/components/MediaRowModal";
+import { newMediaRowFromPick } from "@/app/media/pickerModel";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import { canSave, removeRowAt } from "./showEditOps";
 import {
@@ -56,13 +57,14 @@ import { SlidesAddFlow, SlidesItemForm, slidesAddFlowReady } from "./forms/Slide
 import { GraphicItemForm } from "./forms/GraphicItemForm";
 import { SongItemForm } from "./forms/SongItemForm";
 import { ScriptureItemForm } from "./forms/ScriptureItemForm";
-import { VideoItemForm } from "./forms/VideoItemForm";
+import { MediaItemForm } from "./forms/MediaItemForm";
 import {
   applyPassage,
   lastUsedGraphicTemplate,
   newSongRows,
   recentSongIds,
   recentTemplateIds,
+  patchRow,
   withSongDefaults,
   withVideoLengthPrefill,
 } from "./forms/itemFormModel";
@@ -134,7 +136,7 @@ function ShowEditPageInner() {
   const requestRename = (id: string) => setRenameRequest((r) => ({ id, n: (r?.n ?? 0) + 1 }));
   // Add flows only: existing items are edited in their form (forms/*).
   const [scriptureModalOpen, setScriptureModalOpen] = useState(false);
-  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [mediaModalOpen, setMediaModalOpen] = useState(false);
   const [songPickerOpen, setSongPickerOpen] = useState(false);
   const [graphicAddOpen, setGraphicAddOpen] = useState(false);
   const [slidesAddOpen, setSlidesAddOpen] = useState(false);
@@ -469,21 +471,28 @@ function ShowEditPageInner() {
     setScriptureModalOpen(false);
   }
 
-  function saveVideoRow(args: VideoRowSaveArgs) {
-    const row: VideoRow = {
-      kind: "video",
-      id: uuid(),
-      assetUrl: args.assetUrl,
-      ...(args.label ? { label: args.label } : {}),
-      ...(args.durationSec !== undefined ? { durationSec: args.durationSec } : {}),
-      volume: args.volume,
-      endAction: args.endAction,
+  function saveMediaRow(args: MediaRowSaveArgs) {
+    const common = {
+      label: args.label || undefined,
       transitionIn: args.transitionIn,
       transitionOut: args.transitionOut,
       channelHint: args.channelHint,
     };
-    addRows([withVideoLengthPrefill(row)]);
-    setVideoModalOpen(false);
+    const row = newMediaRowFromPick(args.source, uuid());
+    if (row.kind === "video") {
+      const video = patchRow(row, {
+        ...common,
+        durationSec: args.durationSec,
+        volume: args.volume,
+        endAction: args.endAction,
+        loop: args.loop || undefined,
+        muted: args.muted || undefined,
+      });
+      addRows([withVideoLengthPrefill(video)]);
+    } else {
+      addRows([patchRow(row, { ...common, fit: args.fit })]);
+    }
+    setMediaModalOpen(false);
   }
 
   function addSectionHere() {
@@ -627,10 +636,10 @@ function ShowEditPageInner() {
         onSelect: () => setScriptureModalOpen(true),
       },
       {
-        id: "video",
-        label: "Video",
+        id: "media",
+        label: "Media",
         icon: <Film size={14} />,
-        onSelect: () => setVideoModalOpen(true),
+        onSelect: () => setMediaModalOpen(true),
       },
       // Slides decks load over the local server only, so cloud mode can't offer them.
       ...(cloud
@@ -758,7 +767,7 @@ function ShowEditPageInner() {
         </div>
       </div>
       <ScriptureRowModal open={scriptureModalOpen} onClose={() => setScriptureModalOpen(false)} onSave={saveScriptureRow} />
-      <VideoRowModal open={videoModalOpen} channels={takeableChannels} onClose={() => setVideoModalOpen(false)} onSave={saveVideoRow} />
+      <MediaRowModal open={mediaModalOpen} channels={takeableChannels} onClose={() => setMediaModalOpen(false)} onSave={saveMediaRow} />
       <SongPickerDialog
         open={songPickerOpen}
         recentIds={addPickers.recentSongs}
@@ -828,7 +837,8 @@ function ItemPane({ row, draft, onReplaceRow }: { row: RundownRow; draft: Show; 
     case "scripture":
       return <ScriptureItemForm row={row} show={draft} onChange={onReplaceRow} />;
     case "video":
-      return <VideoItemForm row={row} show={draft} onChange={onReplaceRow} />;
+    case "media":
+      return <MediaItemForm row={row} show={draft} onChange={onReplaceRow} />;
     case "slides":
       // [P3.8] placeholder for slides rows; P3.16 fills in SlidesItemForm.
       return <SlidesItemForm row={row} show={draft} onChange={onReplaceRow} />;

@@ -21,6 +21,7 @@ import {
   pasteLayers,
   removeLayers,
   type LayerClipboard,
+  type PickFromLibraryFn,
   type ZMove,
 } from "@overlaysys/editor-kit";
 import type { Draft } from "immer";
@@ -49,6 +50,7 @@ import { DesignerHeader } from "./DesignerHeader";
 import { PreviewOnPvwButton } from "./PreviewOnPvwButton"; // [P2b.11]
 import { DesignerLayout, DesignerPanel } from "./DesignerLayout";
 import { DesignerInspector } from "./DesignerInspector";
+import { useLibraryPicker } from "@/app/media/MediaPicker";
 import { timelineRowCount } from "./timelineSize";
 import { PROTECTED_TEMPLATE_IDS, fetchTemplateUsage, templateDeleteConfirm } from "./templateUsage";
 
@@ -124,6 +126,15 @@ function DesignPageInner() {
   const [error, setError] = useState<string | null>(null);
   const cloud = isCloudMode();
   const { alert, dialog } = useDialog();
+  const library = useLibraryPicker();
+  // The library lives on the show computer; cloud designs keep upload-only sources.
+  const pickFromLibrary = useMemo<PickFromLibraryFn | undefined>(
+    () => (cloud ? undefined : async (kind) => {
+      const picked = await library.pick(kind);
+      return picked ? { url: picked.assetUrl } : null;
+    }),
+    [cloud, library.pick],
+  );
 
   async function showCloudError(action: string, err: unknown) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
@@ -666,6 +677,7 @@ function DesignPageInner() {
             onPushHistory={pushHistory}
             onUpload={uploadInspector}
             resolveUrl={resolveAssetUrl}
+            onPickFromLibrary={pickFromLibrary}
             onAlign={(mode) => commit(alignLayers(useEditor.getState().selectedLayerIds, mode))}
             onDistribute={(axis) => commit(distributeLayers(useEditor.getState().selectedLayerIds, axis))}
             onZ={moveZ}
@@ -693,6 +705,7 @@ function DesignPageInner() {
         }
       />
       {dialog}
+      {library.picker}
     </>
   );
 }

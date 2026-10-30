@@ -21,6 +21,7 @@ import {
   templateGroups,
   toggleSongPick,
   withSongDefaults,
+  withLibraryDuration,
   withVideoLengthPrefill,
 } from "./itemFormModel";
 
@@ -163,6 +164,25 @@ describe("video", () => {
     expect(withVideoLengthPrefill(v).lengthSec).toBe(62);
     expect(withVideoLengthPrefill({ ...v, lengthSec: 10 }).lengthSec).toBe(10);
     expect(withVideoLengthPrefill({ ...v, durationSec: undefined }).lengthSec).toBeUndefined();
+  });
+
+  it("prefills a video row's length from its library duration", () => {
+    const v = { id: "v", kind: "video", assetUrl: "/assets/a.mp4", mediaItemId: "m1" } as VideoRow;
+    const items = [{ id: "m0", durationSec: 5 }, { id: "m1", durationSec: 90.4 }];
+    expect(withLibraryDuration(v, items)).toMatchObject({ durationSec: 90.4, lengthSec: 90 });
+    // A set length and a known duration are the operator's.
+    expect(withLibraryDuration({ ...v, lengthSec: 30 }, items).lengthSec).toBe(30);
+    expect(withLibraryDuration({ ...v, durationSec: 12 }, items)).toMatchObject({ durationSec: 12, lengthSec: 12 });
+    // No library item (or no duration on it): unchanged.
+    expect(withLibraryDuration({ ...v, mediaItemId: "nope" }, items)).toEqual({ ...v, mediaItemId: "nope" });
+    expect(withLibraryDuration(v, [{ id: "m1" }])).toEqual(v);
+  });
+});
+
+describe("media heading", () => {
+  it("photo and video rows are both called Media", () => {
+    expect(itemHeading("video", "Countdown")).toBe("Media · Countdown");
+    expect(itemHeading("media", "Banner")).toBe("Media · Banner");
   });
 });
 

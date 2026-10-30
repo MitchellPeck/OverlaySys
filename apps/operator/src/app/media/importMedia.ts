@@ -74,3 +74,18 @@ export function probeMedia(file: File): Promise<{ width?: number; height?: numbe
     } else done({});
   });
 }
+
+export type ImportDeps = {
+  upload(file: File): Promise<Pick<UploadResult, "url" | "mime">>;
+  probe(file: File): Promise<{ width?: number; height?: number; durationSec?: number }>;
+  save(item: MediaItem): Promise<void>;
+};
+
+/** Upload one file and add it to the library; throws a plain message for anything that isn't a photo or video. */
+export async function importMediaFile(file: File, deps: ImportDeps, now = new Date().toISOString()): Promise<MediaItem> {
+  const [upload, probe] = await Promise.all([deps.upload(file), deps.probe(file)]);
+  const item = buildImportedItem({ fileName: file.name, upload, id: newMediaId(), now, ...probe });
+  if (!item) throw new Error("That file isn't a photo or video.");
+  await deps.save(item);
+  return item;
+}

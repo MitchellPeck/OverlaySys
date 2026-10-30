@@ -14,7 +14,7 @@ import { PageBody } from "../components/PageShell";
 import { PageChrome } from "../shell/PageChrome";
 import { LiveFolderDialog } from "./LiveFolderDialog";
 import { MediaCard } from "./MediaCard";
-import { buildImportedItem, mediaTypeOf, newMediaId, probeMedia } from "./importMedia";
+import { importMediaFile, mediaTypeOf, probeMedia } from "./importMedia";
 import {
   DEFAULT_MEDIA_SORT,
   MEDIA_LIST_STORAGE_KEY,
@@ -73,10 +73,7 @@ export default function MediaLibraryPage() {
     let added = 0;
     for (const file of usable) {
       try {
-        const [upload, probe] = await Promise.all([uploadAsset(file), probeMedia(file)]);
-        const item = buildImportedItem({ fileName: file.name, upload, id: newMediaId(), now: new Date().toISOString(), ...probe });
-        if (!item) throw new Error("That file isn't a photo or video.");
-        await saveMediaItem(item);
+        await importMediaFile(file, { upload: uploadAsset, probe: probeMedia, save: saveMediaItem });
         added++;
       } catch (e) {
         toast({ tone: "error", message: `Couldn't add ${file.name}: ${importErrorText(e)}` });

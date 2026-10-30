@@ -1,4 +1,4 @@
-import type { ScriptureRow, Show, ShowSong, Song, SongRow, TemplateMeta, VideoRow } from "@overlaysys/core";
+import type { MediaItem, ScriptureRow, Show, ShowSong, Song, SongRow, TemplateMeta, VideoRow } from "@overlaysys/core";
 import { lengthEcho, parseRowLength } from "../../../../lib/rowLength";
 import { templatesFor, type TemplateUse } from "../../../../lib/templateRoles";
 
@@ -8,7 +8,9 @@ const KIND_LABEL: Record<string, string> = {
   graphic: "Graphic",
   song: "Song",
   scripture: "Scripture",
-  video: "Video",
+  // Photo and video rows are both "Media" to the operator.
+  video: "Media",
+  media: "Media",
   slides: "Slides",
 };
 
@@ -224,6 +226,14 @@ export function overrideSeed(...candidates: (string | undefined)[]): string | un
 export function withVideoLengthPrefill(row: VideoRow): VideoRow {
   if (row.lengthSec !== undefined || typeof row.durationSec !== "number" || !(row.durationSec > 0)) return row;
   return { ...row, lengthSec: Math.round(row.durationSec) };
+}
+
+/** Take an unknown duration from the row's library item, then fill Length from it when unset. */
+export function withLibraryDuration(row: VideoRow, items: Pick<MediaItem, "id" | "durationSec">[]): VideoRow {
+  if (typeof row.durationSec === "number" || !row.mediaItemId) return withVideoLengthPrefill(row);
+  const durationSec = items.find((m) => m.id === row.mediaItemId)?.durationSec;
+  if (typeof durationSec !== "number") return row;
+  return withVideoLengthPrefill({ ...row, durationSec });
 }
 
 // --- Scripture -------------------------------------------------------------

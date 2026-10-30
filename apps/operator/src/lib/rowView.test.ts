@@ -92,6 +92,13 @@ describe("rowView", () => {
       detail: "0:32",
     });
   });
+  it("a video row from the library shows the item's name; a label still wins", () => {
+    const row = { kind: "video", id: "v", assetUrl: "/assets/a/b.mp4", mediaItemId: "m1" };
+    const mediaItems = [{ id: "m1", name: "Countdown" }];
+    expect(rowView(row as never, ctx({ mediaItems }))).toMatchObject({ title: "Countdown" });
+    expect(rowView({ ...row, label: "Walk-in" } as never, ctx({ mediaItems }))).toMatchObject({ title: "Walk-in" });
+    expect(rowView(row as never, ctx())).toMatchObject({ title: "b.mp4" });
+  });
   it("an unknown kind renders as unsupported, never throws", () => {
     expect(rowView({ kind: "future", id: "x" }, ctx())).toMatchObject({ supported: false, title: "Unsupported item" });
   });

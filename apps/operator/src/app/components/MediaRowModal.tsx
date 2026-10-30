@@ -4,24 +4,37 @@ import { useEffect, useRef, useState } from "react";
 import {
   DEFAULT_MEDIA_TRANSITION,
   type ChannelConfig,
+  type MediaRef,
   type MediaTransition,
   type MediaTransitionStyle,
-  type VideoRow,
 } from "@overlaysys/core";
-import { VideoInput } from "@overlaysys/editor-kit";
-import { Button, Field, Input, Modal, Select } from "@overlaysys/ui";
-import { resolveAssetUrl, uploadAsset } from "@/lib/uploadAsset";
+import { Button, Field, Input, Modal, SegmentedControl, Select, Switch } from "@overlaysys/ui";
+import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { useStore } from "@/lib/store";
+import { MediaSourceField, type SourcePick } from "@/app/media/MediaPicker";
 
-export type VideoRowSaveArgs = {
-  assetUrl: string;
+export type PhotoFit = "cover" | "contain" | "fill";
+
+/** Everything the Add media dialog chose. Video-only and photo-only settings are ignored for the other type. */
+export type MediaRowSaveArgs = {
+  source: MediaRef;
   label: string;
   durationSec?: number;
-  volume: number;
-  endAction: "clear" | "hold";
+  channelHint: string;
   transitionIn: MediaTransition;
   transitionOut: MediaTransition;
-  channelHint: string;
+  volume: number;
+  endAction: "clear" | "hold";
+  loop: boolean;
+  muted: boolean;
+  fit: PhotoFit;
 };
+
+export const PHOTO_FIT_OPTIONS: { value: PhotoFit; label: string; title: string }[] = [
+  { value: "cover", label: "Cover", title: "Fill the frame; edges may be cropped" },
+  { value: "contain", label: "Contain", title: "Show the whole photo" },
+  { value: "fill", label: "Stretch", title: "Stretch to the frame" },
+];
 
 const STYLE_LABELS: Record<MediaTransitionStyle, string> = {
   cut: "Cut",
@@ -94,23 +107,26 @@ export function probeDuration(url: string): Promise<number | undefined> {
   });
 }
 
-export function VideoRowModal({
+export function MediaRowModal({
   open,
-  editingRow,
   channels,
   onClose,
   onSave,
 }: {
   open: boolean;
-  editingRow?: VideoRow;
   channels: ChannelConfig[];
   onClose: () => void;
-  onSave: (args: VideoRowSaveArgs) => void;
+  onSave: (args: MediaRowSaveArgs) => void;
 }) {
-  const [assetUrl, setAssetUrl] = useState("");
+  const mediaItems = useStore((s) => s.mediaItems);
+  const [source, setSource] = useState<SourcePick | null>(null);
   const [label, setLabel] = useState("");
   const [volume, setVolume] = useState(1);
-  const [endAction, setEndAction] = useState<"clear" | "hold">("clear");
+  // New rows hold the last frame; the schema default stays "clear" for older rows.
+  const [endAction, setEndAction] = useState<"clear" | "hold">("hold");
+  const [loop, setLoop] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [fit, setFit] = useState<PhotoFit>("cover");
   const [transitionIn, setTransitionIn] = useState<MediaTransition>(DEFAULT_MEDIA_TRANSITION);
   const [transitionOut, setTransitionOut] = useState<MediaTransition>(DEFAULT_MEDIA_TRANSITION);
   const [channelHint, setChannelHint] = useState("program");
@@ -124,33 +140,45 @@ export function VideoRowModal({
     }
     cancelledRef.current = false;
     setSaving(false);
-    setAssetUrl(editingRow?.assetUrl ?? "");
-    setLabel(editingRow?.label ?? "");
-    setVolume(editingRow?.volume ?? 1);
-    setEndAction(editingRow?.endAction ?? "clear");
-    setTransitionIn(editingRow?.transitionIn ?? DEFAULT_MEDIA_TRANSITION);
-    setTransitionOut(editingRow?.transitionOut ?? DEFAULT_MEDIA_TRANSITION);
-    setChannelHint(editingRow?.channelHint ?? "program");
-  }, [open, editingRow]);
+    setSource(null);
+    setLabel("");
+    setVolume(1);
+    setEndAction("hold");
+    setLoop(false);
+    setMuted(false);
+    setFit("cover");
+    setTransitionIn(DEFAULT_MEDIA_TRANSITION);
+    setTransitionOut(DEFAULT_MEDIA_TRANSITION);
+    setChannelHint("program");
+  }, [open]);
+
+  const isVideo = source?.mediaType === "video";
 
   async function save() {
-    if (!assetUrl) return;
+    if (!source) return;
     setSaving(true);
     try {
-      const unchanged = editingRow !== undefined && assetUrl === editingRow.assetUrl && editingRow.durationSec !== undefined;
-      const durationSec = unchanged
-        ? editingRow.durationSec
-        : await probeDuration(resolveAssetUrl(assetUrl));
+      const libraryDuration = mediaItems.find((m) => m.id === source.mediaItemId)?.durationSec;
+      const durationSec = !isVideo
+        ? undefined
+        : (source.durationSec ?? libraryDuration ?? (await probeDuration(resolveAssetUrl(source.assetUrl))));
       if (cancelledRef.current) return;
       onSave({
-        assetUrl,
+        source: {
+          ...(source.mediaItemId ? { mediaItemId: source.mediaItemId } : {}),
+          assetUrl: source.assetUrl,
+          mediaType: source.mediaType,
+        },
         label: label.trim(),
         ...(durationSec !== undefined ? { durationSec } : {}),
-        volume,
-        endAction,
+        channelHint,
         transitionIn,
         transitionOut,
-        channelHint,
+        volume,
+        endAction,
+        loop,
+        muted,
+        fit,
       });
     } finally {
       setSaving(false);
@@ -162,27 +190,28 @@ export function VideoRowModal({
       open={open}
       onClose={onClose}
       closeOnBackdrop={false}
-      title={editingRow ? "Edit video" : "Add video"}
+      title="Add media"
       size="md"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={() => void save()} disabled={!assetUrl || saving}>
+          <Button variant="primary" onClick={() => void save()} disabled={!source || saving}>
             {saving ? "Saving…" : "Save"}
           </Button>
         </>
       }
     >
-      <Field label="Video">
-        <VideoInput
-          value={assetUrl}
-          onChange={setAssetUrl}
-          onUpload={async (file) => (await uploadAsset(file)).url}
-          resolveUrl={resolveAssetUrl}
+      <Field label="Photo or video">
+        <MediaSourceField
+          assetUrl={source?.assetUrl ?? ""}
+          mediaType={source?.mediaType ?? null}
+          name={source?.name ?? ""}
+          accept="any"
+          onChange={setSource}
         />
       </Field>
       <Field label="Label">
-        <Input value={label} placeholder="Giving video" onChange={(e) => setLabel(e.target.value)} />
+        <Input value={label} placeholder={source?.name || "Giving video"} onChange={(e) => setLabel(e.target.value)} />
       </Field>
       <Field label="Channel">
         <Select value={channelHint} onChange={(e) => setChannelHint(e.target.value)}>
@@ -192,23 +221,42 @@ export function VideoRowModal({
           ))}
         </Select>
       </Field>
-      <Field label={`Volume — ${Math.round(volume * 100)}%`}>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={volume}
-          onChange={(e) => setVolume(Number(e.target.value))}
-          style={{ width: "100%" }}
-        />
-      </Field>
-      <Field label="When the video ends">
-        <Select value={endAction} onChange={(e) => setEndAction(e.target.value as "clear" | "hold")}>
-          <option value="clear">Clear when finished</option>
-          <option value="hold">Hold last frame</option>
-        </Select>
-      </Field>
+      {source && !isVideo && (
+        <Field label="Fit">
+          <SegmentedControl<PhotoFit> size="sm" aria-label="Fit" value={fit} options={PHOTO_FIT_OPTIONS} onChange={setFit} />
+        </Field>
+      )}
+      {isVideo && (
+        <>
+          <Field label="Playback">
+            <div style={{ display: "flex", gap: 16 }}>
+              <Switch checked={loop} onChange={setLoop} label="Loop" />
+              <Switch checked={muted} onChange={setMuted} label="Mute" />
+            </div>
+          </Field>
+          {!muted && (
+            <Field label={`Volume — ${Math.round(volume * 100)}%`}>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={volume}
+                onChange={(e) => setVolume(Number(e.target.value))}
+                style={{ width: "100%" }}
+              />
+            </Field>
+          )}
+          {!loop && (
+            <Field label="When the video ends">
+              <Select value={endAction} onChange={(e) => setEndAction(e.target.value as "clear" | "hold")}>
+                <option value="hold">Hold last frame</option>
+                <option value="clear">Clear</option>
+              </Select>
+            </Field>
+          )}
+        </>
+      )}
       <TransitionField label="Transition in" value={transitionIn} onChange={setTransitionIn} />
       <TransitionField label="Transition out" value={transitionOut} onChange={setTransitionOut} />
     </Modal>

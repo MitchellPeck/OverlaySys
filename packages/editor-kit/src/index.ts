@@ -1,6 +1,6 @@
 export { Canvas } from "./Canvas";
 export { LayerTree } from "./LayerTree";
-export { PropertyInspector } from "./PropertyInspector";
+export { PropertyInspector, type PickFromLibraryFn } from "./PropertyInspector";
 export { TimelinePanel } from "./TimelinePanel";
 export { FieldsPanel } from "./FieldsPanel";
 export { EasingPicker } from "./EasingPicker";

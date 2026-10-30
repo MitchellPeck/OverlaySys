@@ -28,6 +28,7 @@ import {
   templateSizePresetKey,
   useEditCoalescer,
   type AlignMode,
+  type PickFromLibraryFn,
   type ZMove,
 } from "@overlaysys/editor-kit";
 import { Button, IconButton, NumberInput, Select, Switch, colors, fontSize } from "@overlaysys/ui";
@@ -51,6 +52,7 @@ export function DesignerInspector({
   onPushHistory,
   onUpload,
   resolveUrl,
+  onPickFromLibrary,
   onAlign,
   onDistribute,
   onZ,
@@ -63,6 +65,8 @@ export function DesignerInspector({
   onPushHistory: () => void;
   onUpload: (file: File) => Promise<string>;
   resolveUrl?: (src: string) => string;
+  /** Opens the Media library for a photo or video source; absent hides "From library". */
+  onPickFromLibrary?: PickFromLibraryFn;
   onAlign: (mode: AlignMode) => void;
   onDistribute: (axis: "x" | "y") => void;
   onZ: (to: ZMove) => void;
@@ -115,6 +119,7 @@ export function DesignerInspector({
                   onPushHistory={onPushHistory}
                   onUpload={onUpload}
                   resolveUrl={resolveUrl}
+                  onPickFromLibrary={onPickFromLibrary}
                 />
               ) : (
                 <p style={{ margin: 0, fontSize: fontSize.xs, color: colors.textDim, lineHeight: 1.5 }}>
@@ -128,7 +133,14 @@ export function DesignerInspector({
             <TemplateSettings template={draft} onCommit={onCommit} onLive={onLive} />
             <EmbeddedFonts template={draft} onCommit={onCommit} />
             <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 10 }}>
-              <FieldsPanel template={draft} onCommit={onCommit} onLive={onLive} onUpload={onUpload} resolveUrl={resolveUrl} />
+              <FieldsPanel
+                template={draft}
+                onCommit={onCommit}
+                onLive={onLive}
+                onUpload={onUpload}
+                resolveUrl={resolveUrl}
+                onPickFromLibrary={onPickFromLibrary}
+              />
             </div>
           </>
         )}

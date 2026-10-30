@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FolderOpen, Image as ImageIcon, X } from "lucide-react";
+import { FolderOpen, Image as ImageIcon, Library, X } from "lucide-react";
 import { IconButton, Input, colors, fontFamily, radius } from "@overlaysys/ui";
 
 type Props = {
@@ -15,6 +15,8 @@ type Props = {
   resolveUrl?: (src: string) => string;
   /** Id for the path field, so a FieldRow label focuses it. */
   id?: string;
+  /** When provided, a "From library" button sets the value to the picked image's URL (null = cancelled). */
+  onPickFromLibrary?: () => Promise<{ url: string } | null>;
 };
 
 /**
@@ -22,7 +24,7 @@ type Props = {
  * data:, or relative paths). When `onUpload` is wired, picked files go through
  * that path; otherwise the file is embedded inline as a data URL.
  */
-export function ImageInput({ value, onChange, onUpload, resolveUrl, id }: Props) {
+export function ImageInput({ value, onChange, onUpload, resolveUrl, id, onPickFromLibrary }: Props) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +98,19 @@ export function ImageInput({ value, onChange, onUpload, resolveUrl, id }: Props)
             fontFamily: isDataUrl ? fontFamily.mono : undefined,
           }}
         />
+        {onPickFromLibrary && (
+          <IconButton
+            size={24}
+            onClick={async () => {
+              const picked = await onPickFromLibrary();
+              if (picked) onChange(picked.url);
+            }}
+            aria-label="From library"
+            title="From library"
+          >
+            <Library size={14} aria-hidden />
+          </IconButton>
+        )}
         <IconButton
           size={24}
           onClick={() => fileRef.current?.click()}

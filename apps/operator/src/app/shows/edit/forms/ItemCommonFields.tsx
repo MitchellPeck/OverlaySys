@@ -41,7 +41,7 @@ export function ItemFormFrame({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <h2 style={{ margin: 0, fontSize: fontSize.base, fontWeight: 600, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <KindBar kind={(KIND_BARS.includes(row.kind) ? row.kind : "graphic") as ItemKind} />
+        <KindBar kind={(row.kind === "media" ? "video" : KIND_BARS.includes(row.kind) ? row.kind : "graphic") as ItemKind} />
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{itemHeading(row.kind, name)}</span>
       </h2>
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", minWidth: 0 }}>

@@ -44,6 +44,8 @@ import { useEditCoalescer } from "./editCoalescer";
 type CommitFn = (recipe: (d: Draft<Template>) => void) => void;
 type PushHistoryFn = () => void;
 type UploadFn = (file: File) => Promise<string>;
+/** Opens the host's media library for a photo or video; resolves with its URL, or null when cancelled. */
+export type PickFromLibraryFn = (kind: "image" | "video") => Promise<{ url: string } | null>;
 
 type Props = {
   template: Template;
@@ -60,6 +62,8 @@ type Props = {
   onUpload?: UploadFn;
   /** Turns a stored asset path into a URL this page can load (previews only). */
   resolveUrl?: (src: string) => string;
+  /** When provided, image and video sources offer "From library". */
+  onPickFromLibrary?: PickFromLibraryFn;
 };
 
 type ClipHide = ClipBy["hide"];
@@ -69,7 +73,7 @@ type ClipHide = ClipBy["hide"];
  * Layer, Content, Text, Transform, Appearance, Clip. Built to fit a 300 px
  * column: nothing scrolls sideways.
  */
-export function PropertyInspector({ template, selectedId, onCommit: commitStep, onLive, onPushHistory, onUpload, resolveUrl }: Props) {
+export function PropertyInspector({ template, selectedId, onCommit: commitStep, onLive, onPushHistory, onUpload, resolveUrl, onPickFromLibrary }: Props) {
   const { commit: onCommit, handlers } = useEditCoalescer(commitStep, onLive);
   if (!selectedId) {
     return <p style={{ color: colors.textDim, fontSize: fontSize.sm, margin: 0, padding: "8px 0" }}>Select a layer to inspect.</p>;
@@ -135,6 +139,7 @@ export function PropertyInspector({ template, selectedId, onCommit: commitStep, 
           patchLayer={patchLayer}
           onUpload={onUpload}
           resolveUrl={resolveUrl}
+          onPickFromLibrary={onPickFromLibrary}
         />
       </Section>
 
@@ -207,12 +212,14 @@ function ContentSection({
   patchLayer,
   onUpload,
   resolveUrl,
+  onPickFromLibrary,
 }: {
   layer: Layer;
   template: Template;
   patchLayer: PatchLayerFn;
   onUpload?: UploadFn;
   resolveUrl?: (src: string) => string;
+  onPickFromLibrary?: PickFromLibraryFn;
 }) {
   switch (layer.type) {
     case "text":
@@ -239,6 +246,7 @@ function ContentSection({
             literalKind="image"
             onUpload={onUpload}
             resolveUrl={resolveUrl}
+            onPickFromLibrary={onPickFromLibrary}
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <FitRow value={layer.fit} onChange={(fit) => patchLayer({ fit } as Partial<Layer>)} />
@@ -255,6 +263,7 @@ function ContentSection({
             literalKind="video"
             onUpload={onUpload}
             resolveUrl={resolveUrl}
+            onPickFromLibrary={onPickFromLibrary}
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <FitRow value={layer.fit} onChange={(fit) => patchLayer({ fit } as Partial<Layer>)} />
@@ -835,6 +844,7 @@ function BindingControl({
   onChange,
   onUpload,
   resolveUrl,
+  onPickFromLibrary,
 }: {
   template: Template;
   label: string;
@@ -845,6 +855,7 @@ function BindingControl({
   onChange: (v: string | { fieldKey: string }) => void;
   onUpload?: UploadFn;
   resolveUrl?: (src: string) => string;
+  onPickFromLibrary?: PickFromLibraryFn;
 }) {
   const isBound = typeof value !== "string";
   const candidates = template.fields.filter((f) => allowedTypes.includes(f.type));
@@ -881,9 +892,23 @@ function BindingControl({
             ) : literalKind === "color" ? (
               <ColorInput id={id} label={label} value={value} onChange={(c) => onChange(c)} />
             ) : literalKind === "image" ? (
-              <ImageInput id={id} value={value} onChange={(s) => onChange(s)} onUpload={onUpload} resolveUrl={resolveUrl} />
+              <ImageInput
+                id={id}
+                value={value}
+                onChange={(s) => onChange(s)}
+                onUpload={onUpload}
+                resolveUrl={resolveUrl}
+                onPickFromLibrary={onPickFromLibrary && (() => onPickFromLibrary("image"))}
+              />
             ) : literalKind === "video" ? (
-              <VideoInput id={id} value={value} onChange={(s) => onChange(s)} onUpload={onUpload} resolveUrl={resolveUrl} />
+              <VideoInput
+                id={id}
+                value={value}
+                onChange={(s) => onChange(s)}
+                onUpload={onUpload}
+                resolveUrl={resolveUrl}
+                onPickFromLibrary={onPickFromLibrary && (() => onPickFromLibrary("video"))}
+              />
             ) : (
               <AutoTextarea id={id} value={value} onChange={(s) => onChange(s)} />
             )}
