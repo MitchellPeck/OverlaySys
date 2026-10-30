@@ -22,6 +22,7 @@ export * from "./song";
 export * from "./songResolution";
 export * from "./songParser";
 export * from "./songSelectParser";
+export * from "./recordIdLength";
 export * from "./parsePlainLyrics";
 export * from "./sectionEmit";
 export * from "./pco";

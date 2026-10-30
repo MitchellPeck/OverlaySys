@@ -30,6 +30,17 @@ describe("record id guard", () => {
     expect(() => assertSafeRecordId(id)).not.toThrow();
   });
 
+  it("accepts up to 64 characters and rejects longer ids with a 400", () => {
+    expect(isSafeRecordId("a".repeat(64))).toBe(true);
+    expect(isSafeRecordId("a".repeat(65))).toBe(false);
+    try {
+      recordFile(path.resolve("/data/songs"), "a".repeat(300));
+      expect.unreachable();
+    } catch (err) {
+      expect((err as { statusCode?: number }).statusCode).toBe(400);
+    }
+  });
+
   it("rejects non-strings", () => {
     expect(isSafeRecordId(undefined)).toBe(false);
     expect(isSafeRecordId(42)).toBe(false);

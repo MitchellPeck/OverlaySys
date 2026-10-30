@@ -108,6 +108,16 @@ describe("POST /api/import", () => {
     expect(b.statusCode).toBe(400);
   });
 
+  it("rejects an over-long id with 400 instead of a filesystem error", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/import",
+      payload: { songs: [song("x".repeat(300))] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(await jsonFiles("songs")).toEqual([]);
+  });
+
   it("rejects an unsafe id with 400 and saves nothing", async () => {
     const res = await app.inject({
       method: "POST",

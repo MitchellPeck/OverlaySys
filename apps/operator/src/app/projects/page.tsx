@@ -40,9 +40,11 @@ import { publishProjectToCloud } from "@/lib/projectPublish";
 import { CustomFieldSchemaModal } from "./CustomFieldSchemaModal";
 import {
   projectMenuItems,
+  projectIdSlug,
   projectNameError,
   projectSecondary,
   projectSorts,
+  uniqueProjectId,
   unassignedItems,
   type ProjectActions,
   type ProjectRow,
@@ -165,10 +167,10 @@ export default function ProjectsIndexPage() {
       message: "Name the project",
       confirmLabel: "Create",
       required: true,
-      validate: (v) => projectNameError(v, names) ?? (slugify(v) ? null : "Use at least one letter or number"),
+      validate: (v) => projectNameError(v, names) ?? (projectIdSlug(v) ? null : "Use at least one letter or number"),
     });
     if (!name) return;
-    const id = uniqueId(slugify(name), projects.map((p) => p.id));
+    const id = uniqueProjectId(projectIdSlug(name), projects.map((p) => p.id));
     const now = new Date().toISOString();
     const project: Project = {
       id,
@@ -522,15 +524,3 @@ export default function ProjectsIndexPage() {
   );
 }
 
-function uniqueId(base: string, taken: string[]): string {
-  if (!taken.includes(base)) return base;
-  for (let n = 2; ; n++) if (!taken.includes(`${base}-${n}`)) return `${base}-${n}`;
-}
-
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}

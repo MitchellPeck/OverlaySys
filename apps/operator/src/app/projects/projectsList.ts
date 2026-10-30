@@ -1,3 +1,4 @@
+import { fitRecordId } from "@overlaysys/core";
 import type { MenuItem, SortSpec } from "@overlaysys/ui";
 
 export type ProjectRow = {
@@ -102,4 +103,24 @@ export function unassignedItems<S extends { projectId: string }, H extends { pro
     shows: shows.filter((s) => !live.has(s.projectId)),
     hotcards: hotcards.filter((h) => !live.has(h.projectId)),
   };
+}
+
+/** A project name as an id slug, cut to the server's id length limit. */
+export function projectIdSlug(s: string): string {
+  return fitRecordId(
+    s
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, ""),
+  );
+}
+
+/** `base`, or `base-2`, `base-3`… — the first id not in `taken`, within the id length limit. */
+export function uniqueProjectId(base: string, taken: string[]): string {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n++) {
+    const id = fitRecordId(base, `-${n}`);
+    if (!taken.includes(id)) return id;
+  }
 }

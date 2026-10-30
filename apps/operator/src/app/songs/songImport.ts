@@ -1,17 +1,22 @@
-import { SongSchema, type Song, type SongMeta } from "@overlaysys/core";
+import { RECORD_ID_MAX_LENGTH, SongSchema, fitRecordId, type Song, type SongMeta } from "@overlaysys/core";
 
-/** `base`, or `base-2`, `base-3`… — the first one not in `taken`. */
+/**
+ * `base`, or `base-2`, `base-3`… — the first one not in `taken`, cut to the
+ * server's id length limit.
+ */
 export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
-  if (!taken.has(base)) return base;
+  const first = fitRecordId(base);
+  if (!taken.has(first)) return first;
   let n = 2;
-  while (taken.has(`${base}-${n}`)) n++;
-  return `${base}-${n}`;
+  while (taken.has(fitRecordId(base, `-${n}`))) n++;
+  return fitRecordId(base, `-${n}`);
 }
 
 /**
  * Make typed text safe as a song id (the server only accepts letters, digits,
  * `_` and `-`): lowercase, accents stripped, anything else becomes a dash.
  * A trailing dash stays so one can be typed; `finalSlug` trims it on save.
+ * Capped at the server's id length limit.
  */
 export function slugInput(raw: string): string {
   return raw
@@ -19,7 +24,8 @@ export function slugInput(raw: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/-{2,}/g, "-");
+    .replace(/-{2,}/g, "-")
+    .slice(0, RECORD_ID_MAX_LENGTH);
 }
 
 /** The slug to save with; empty when nothing usable is left. */

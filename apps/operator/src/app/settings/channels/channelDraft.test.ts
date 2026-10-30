@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelConfig } from "@overlaysys/core";
-import { channelConfigEqual, deleteImpact, draftAfterSave, newChannelDefaults, setLayoutRule, sortChannels } from "./channelDraft";
+import { channelConfigEqual, channelIdFromName, deleteImpact, draftAfterSave, newChannelDefaults, setLayoutRule, sortChannels } from "./channelDraft";
 
 const g = (o: Partial<ChannelConfig> & { id: string; name: string }): ChannelConfig =>
   ({ kind: "graphics", renderMode: "normal", background: "transparent", ...o }) as ChannelConfig;
@@ -98,5 +98,16 @@ describe("deleteImpact", () => {
   it("lists mirrors and followers", () => {
     expect(deleteImpact("program", cs, false).dependents).toEqual(["Alpha", "Stage"]);
     expect(deleteImpact("alpha", cs, false)).toEqual({ blocked: null, onAir: false, dependents: [] });
+  });
+});
+
+describe("channelIdFromName length", () => {
+  it("keeps ids (and their -N suffix) within the server's 64-character limit", () => {
+    const name = "a very long hymn title that goes on and on and on and on forever and ever amen";
+    const first = channelIdFromName(name, []);
+    expect(first.length).toBeLessThanOrEqual(64);
+    const second = channelIdFromName(name, [first]);
+    expect(second.length).toBeLessThanOrEqual(64);
+    expect(second.endsWith("-2")).toBe(true);
   });
 });

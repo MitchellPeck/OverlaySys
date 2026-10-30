@@ -6,6 +6,7 @@ import {
   stripChords,
   tokenizeBody,
 } from "./parsePlainLyrics";
+import { fitRecordId } from "./recordIdLength";
 
 export interface SongSelectMeta {
   title?: string;
@@ -27,7 +28,8 @@ export function slugifyTitle(input: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "untitled";
+  // Titles become song ids; keep them within the server's id limit.
+  return fitRecordId(slug) || "untitled";
 }
 
 const FOOTER_MARKER_RE =

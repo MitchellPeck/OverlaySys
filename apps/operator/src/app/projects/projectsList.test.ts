@@ -4,6 +4,8 @@ import {
   projectNameError,
   projectSecondary,
   projectSorts,
+  projectIdSlug,
+  uniqueProjectId,
   unassignedItems,
   type ProjectActions,
   type ProjectRow,
@@ -93,5 +95,17 @@ describe("unassignedItems", () => {
     );
     expect(r.shows).toEqual([{ projectId: "gone" }]);
     expect(r.hotcards).toEqual([{ projectId: "gone" }]);
+  });
+});
+
+describe("project ids from names", () => {
+  it("slug the name and suffix a taken id, within the server's 64-character limit", () => {
+    expect(projectIdSlug("  Easter Sunday! ")).toBe("easter-sunday");
+    expect(uniqueProjectId("easter-sunday", ["easter-sunday"])).toBe("easter-sunday-2");
+    const base = projectIdSlug("a very long hymn title that goes on and on and on and on forever and ever amen");
+    expect(base.length).toBeLessThanOrEqual(64);
+    const next = uniqueProjectId(base, [base]);
+    expect(next.length).toBeLessThanOrEqual(64);
+    expect(next.endsWith("-2")).toBe(true);
   });
 });

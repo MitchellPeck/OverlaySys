@@ -6,6 +6,7 @@ import type {
   SongRow,
 } from "../show";
 import { slugifyTitle } from "../songSelectParser";
+import { fitRecordId } from "../recordIdLength";
 import { parsePlainLyrics } from "../parsePlainLyrics";
 import {
   suggestFieldMap,
@@ -82,7 +83,7 @@ export function resolveImportedSongId(
   const base = slugifyTitle(pcoSong.title);
   if (!existingIds.has(base)) return base;
   for (let n = 2; ; n++) {
-    const candidate = `${base}-${n}`;
+    const candidate = fitRecordId(base, `-${n}`);
     if (!existingIds.has(candidate)) return candidate;
   }
 }

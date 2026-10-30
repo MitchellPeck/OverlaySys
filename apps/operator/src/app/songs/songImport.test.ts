@@ -95,3 +95,17 @@ describe("slugInput / finalSlug", () => {
     expect(finalSlug("日本語 !!")).toBe("");
   });
 });
+
+describe("song ids stay within the server's 64-character limit", () => {
+  const long = "a very long hymn title that goes on and on and on and on forever and ever amen";
+  it("slugInput / finalSlug cap typed text", () => {
+    expect(slugInput(long).length).toBeLessThanOrEqual(64);
+    expect(finalSlug(long).length).toBeLessThanOrEqual(64);
+  });
+  it("uniqueSlug keeps the suffix within the limit", () => {
+    const base = finalSlug(long);
+    const next = uniqueSlug(base, new Set([base]));
+    expect(next.length).toBeLessThanOrEqual(64);
+    expect(next.endsWith("-2")).toBe(true);
+  });
+});
