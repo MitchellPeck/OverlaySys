@@ -167,6 +167,8 @@ interface OverlaysysApi {
   getDiagnostics?(): Promise<DesktopDiagnostics>;
   copyDiagnostics?(): Promise<string>;
   revealLogs?(): Promise<void>;
+  /** Native folder chooser; resolves with the chosen path, or null if canceled. */
+  pickFolder?(): Promise<string | null>;
   /** Server respawns, window auto-reloads, outputs closed on display loss. */
   onDesktopEvent?(fn: (event: DesktopEvent) => void): () => void;
 }

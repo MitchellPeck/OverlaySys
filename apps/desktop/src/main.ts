@@ -76,6 +76,7 @@ import { outputsOnRemovedDisplays } from "./displayGuard";
 import { createDeckLinkHost } from "./decklink/host";
 import { checkFfmpegPath } from "./decklink/ffmpeg";
 import { isAllowedOrigin, isSafeExternalUrl } from "./navigation";
+import { folderFromDialogResult } from "./folderPick";
 import {
   clampBoundsToWorkAreas,
   loadOperatorBounds,
@@ -1515,6 +1516,15 @@ function registerIpc(): void {
     return text;
   });
   ipcMain.handle("overlaysys:reveal-logs", () => revealLogs());
+
+  // Native folder chooser for a media "Live folder". Only the operator window
+  // may open it; output windows and any other frame get null.
+  ipcMain.handle("overlaysys:pick-folder", async (event): Promise<string | null> => {
+    const win = operatorWindow;
+    if (!win || win.isDestroyed() || event.sender !== win.webContents) return null;
+    const result = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
+    return folderFromDialogResult(result);
+  });
 
   ipcMain.handle("overlaysys:get-channel-window-prefs", (): WindowPrefsFile => {
     return loadPrefs(prefsFilePath());

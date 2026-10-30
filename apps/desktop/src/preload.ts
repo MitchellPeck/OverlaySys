@@ -162,6 +162,8 @@ interface OverlaysysApi {
   copyDiagnostics(): Promise<string>;
   /** Show boot.log in the OS file manager. */
   revealLogs(): Promise<void>;
+  /** Native folder chooser; resolves with the chosen path, or null if canceled. */
+  pickFolder(): Promise<string | null>;
 
   /**
    * Things the host did on the operator's behalf: server crash + respawn,
@@ -241,6 +243,7 @@ const api: OverlaysysApi = {
   getDiagnostics: () => ipcRenderer.invoke("overlaysys:get-diagnostics"),
   copyDiagnostics: () => ipcRenderer.invoke("overlaysys:copy-diagnostics"),
   revealLogs: () => ipcRenderer.invoke("overlaysys:reveal-logs"),
+  pickFolder: () => ipcRenderer.invoke("overlaysys:pick-folder"),
   onDesktopEvent: (fn) => {
     const handler = (_event: Electron.IpcRendererEvent, ev: DesktopEvent) => fn(ev);
     ipcRenderer.on("overlaysys:desktop-event", handler);
