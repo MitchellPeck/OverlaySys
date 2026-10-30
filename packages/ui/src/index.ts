@@ -21,6 +21,7 @@ export { Tooltip } from "./Tooltip";
 export { KindBar } from "./KindBar";
 export { NumberInput } from "./NumberInput";
 export { SegmentedControl } from "./SegmentedControl";
+export { PositionGrid } from "./PositionGrid";
 export { Switch, Checkbox } from "./Switch";
 export { FileDrop } from "./FileDrop";
 export { Menu, useContextMenu } from "./Menu";

@@ -15,13 +15,15 @@ import {
   RotateCw,
   Underline,
 } from "lucide-react";
-import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, Shadow, TextFit, ClipBy } from "@overlaysys/core";
+import type { Layer, Template, Transform, MaskShape, ColorValue, CornerRadius, Shadow, TextFit, ClipBy, MediaPosition } from "@overlaysys/core";
+import { MEDIA_POSITION_LABELS, MediaPositionSchema } from "@overlaysys/core";
 import {
   Button,
   Checkbox,
   IconButton,
   Input,
   NumberInput,
+  PositionGrid,
   SegmentedControl,
   Select,
   Switch,
@@ -206,6 +208,17 @@ function FitRow({ value, onChange }: { value: "cover" | "contain" | "fill"; onCh
   );
 }
 
+const POSITION_OPTIONS = MediaPositionSchema.options.map((value) => ({ value, label: MEDIA_POSITION_LABELS[value] }));
+
+/** Where the picture sits in the layer box (3×3); unset = centred. */
+function PositionRow({ value, onChange }: { value: MediaPosition | undefined; onChange: (v: MediaPosition) => void }) {
+  return (
+    <FieldRow label="Position">
+      {() => <PositionGrid<MediaPosition> aria-label="Position" value={value ?? "center"} options={POSITION_OPTIONS} onChange={onChange} />}
+    </FieldRow>
+  );
+}
+
 function ContentSection({
   layer,
   template,
@@ -250,6 +263,7 @@ function ContentSection({
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <FitRow value={layer.fit} onChange={(fit) => patchLayer({ fit } as Partial<Layer>)} />
+          <PositionRow value={layer.position} onChange={(position) => patchLayer({ position } as Partial<Layer>)} />
         </>
       );
     case "video":
@@ -267,6 +281,7 @@ function ContentSection({
             onChange={(v) => patchLayer({ src: v } as Partial<Layer>)}
           />
           <FitRow value={layer.fit} onChange={(fit) => patchLayer({ fit } as Partial<Layer>)} />
+          <PositionRow value={layer.position} onChange={(position) => patchLayer({ position } as Partial<Layer>)} />
           <FieldRow label="Playback">
             {() => (
               <div style={{ display: "flex", flexWrap: "wrap", columnGap: 12 }}>
