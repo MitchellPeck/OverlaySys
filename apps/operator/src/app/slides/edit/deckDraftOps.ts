@@ -1,4 +1,4 @@
-import { deckTextToSlides, type Deck, type DeckSlide } from "@overlaysys/core";
+import { deckTextToSlides, type Deck, type DeckSlide, type MediaRef } from "@overlaysys/core";
 
 /** Pure edits on a deck draft. Every op returns a new deck, or the same deck when it changes nothing. */
 
@@ -71,7 +71,50 @@ export function setSlideLabel(deck: Deck, id: string, label: string): Deck {
 }
 
 const isBlankSlide = (s: DeckSlide) =>
-  !s.templateId && !s.label?.trim() && Object.values(s.data).every((v) => !v.trim());
+  !s.media && !s.templateId && !s.label?.trim() && Object.values(s.data).every((v) => !v.trim());
+
+/** The deck's slides with a new deck's lone empty slide dropped (it would play first otherwise). */
+const keptSlides = (deck: Deck) => (deck.slides.length === 1 && isBlankSlide(deck.slides[0]!) ? [] : deck.slides);
+
+/** A photo or video slide at the end. `data` stays `{}` so older clients still parse the deck. */
+export function addMediaSlide(deck: Deck, ref: MediaRef, newId: string): Deck {
+  const media: MediaRef = { ...(ref.mediaItemId ? { mediaItemId: ref.mediaItemId } : {}), assetUrl: ref.assetUrl, mediaType: ref.mediaType };
+  return { ...deck, slides: [...keptSlides(deck), { id: newId, data: {}, media }] };
+}
+
+const validHold = (sec: number | undefined) => (sec !== undefined && Number.isFinite(sec) && sec > 0 ? sec : undefined);
+
+/** Seconds every slide is held; `undefined` (or not a positive number) turns auto-advance off. */
+export function setDefaultHold(deck: Deck, sec: number | undefined): Deck {
+  const { defaultHoldSec: _old, ...rest } = deck;
+  const v = validHold(sec);
+  return v === undefined ? rest : { ...rest, defaultHoldSec: v };
+}
+
+/** One slide's own hold; `undefined` falls back to the deck's. */
+export function setSlideHold(deck: Deck, id: string, sec: number | undefined): Deck {
+  return mapSlide(deck, id, (s) => {
+    const { holdSec: _old, ...rest } = s;
+    const v = validHold(sec);
+    return v === undefined ? rest : { ...rest, holdSec: v };
+  });
+}
+
+export function setLoop(deck: Deck, on: boolean): Deck {
+  const { loop: _old, ...rest } = deck;
+  return on ? { ...rest, loop: true } : rest;
+}
+
+/** A video slide moves on when the video ends (or waits for its hold / the operator). */
+export function setAdvanceOnEnd(deck: Deck, id: string, on: boolean): Deck {
+  return mapSlide(deck, id, (s) => ({ ...s, advanceOnEnd: on }));
+}
+
+/** Hold-time text → seconds; blank or not a positive number → undefined (use the default). */
+export function parseHoldText(text: string): number | undefined {
+  const t = text.trim();
+  return t ? validHold(Number(t)) : undefined;
+}
 
 /**
  * One slide per blank-line-separated block of `text`, written to `fieldKey`,
@@ -81,8 +124,7 @@ const isBlankSlide = (s: DeckSlide) =>
 export function appendPastedText(deck: Deck, text: string, fieldKey: string, newId: () => string): Deck {
   const added = deckTextToSlides(text, fieldKey, newId);
   if (added.length === 0) return deck;
-  const keep = deck.slides.length === 1 && isBlankSlide(deck.slides[0]!) ? [] : deck.slides;
-  return { ...deck, slides: [...keep, ...added] };
+  return { ...deck, slides: [...keptSlides(deck), ...added] };
 }
 
 /** Comma-separated tag text → trimmed tags, blanks and case-insensitive repeats dropped (first spelling wins). */

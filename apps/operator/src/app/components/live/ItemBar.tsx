@@ -23,6 +23,7 @@ import { ScriptureTakeStrip } from "../ScriptureTakeStrip";
 import { MediaTransportStrip } from "../MediaTransportStrip";
 import { useThumbCtx } from "./useThumbCtx";
 import { useRowWarnings } from "./overflowStore";
+import { SlidesAutoNote } from "./SlidesAutoNote";
 
 /** Mouse clicks must not leave focus on a control: Space is the global advance key. */
 const keepFocus = (e: React.MouseEvent) => e.preventDefault();
@@ -234,11 +235,14 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
       if (!cue || !take) return <span style={{ fontSize: 12, color: colors.textMuted }}>Slides decks arrive with plan 3</span>;
       const can = slidesControlState(row, { deckCache, deckNotFound });
       return (
-        <CueTake
-          cueMany={() => slidesRowTakeMessages(show.id, row, "cue")}
-          takeMany={() => slidesRowTakeMessages(show.id, row, "take")}
-          blocked={can.enabled ? undefined : { title: can.title }}
-        />
+        <>
+          <SlidesAutoNote row={row} />
+          <CueTake
+            cueMany={() => slidesRowTakeMessages(show.id, row, "cue")}
+            takeMany={() => slidesRowTakeMessages(show.id, row, "take")}
+            blocked={can.enabled ? undefined : { title: can.title }}
+          />
+        </>
       );
     }
     default:

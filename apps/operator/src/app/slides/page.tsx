@@ -154,7 +154,7 @@ export default function SlidesLibraryPage() {
         // Offline with nothing loaded: say so. With decks already loaded, keep showing them.
         error={load.error && decks.length === 0 ? offlineCopy("decks").title : null}
       />
-      <NewDeckDialog open={newOpen} onClose={() => setNewOpen(false)} onCreate={createDeck} />
+      <NewDeckDialog open={newOpen} onClose={() => setNewOpen(false)} onCreate={createDeck} allowLiveFolder />
     </PageBody>
   );
 }

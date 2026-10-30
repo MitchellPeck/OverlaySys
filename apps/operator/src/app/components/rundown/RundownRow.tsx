@@ -28,6 +28,8 @@ type Props = {
   actionBlocked?: string | null;
   edited?: boolean;
   overflowWarn?: boolean;
+  /** Live: a short note before the state chip (a slides deck's "auto · loops · 5s"). */
+  note?: ReactNode;
   dropLine?: "before" | "after" | null;
   onClick(): void;
   onDoubleClick?(): void;
@@ -222,6 +224,7 @@ export function RundownRow(p: Props) {
           <SecondLine view={view} />
         </div>
       </div>
+      {p.note}
       {live?.chip === "onair" && <span style={stateChip(colors.onairFill)}>ON AIR</span>}
       {live?.chip === "cued" && <span style={stateChip(colors.okFill)}>CUED</span>}
       {live?.otherShow && (

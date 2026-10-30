@@ -11,6 +11,7 @@ import { cumulativeStarts, formatRowLength } from "@/lib/rowLength";
 import { dropTarget, type DropPos } from "@/app/shows/edit/showEditOps";
 import { RundownRow, rowDomId } from "./RundownRow";
 import { SectionDivider } from "./SectionDivider";
+import { SlidesAutoNote } from "../live/SlidesAutoNote";
 import { dropHalf, headerLine, liveRowState, liveRowSurface, nudgeTarget } from "./rundownModel";
 // [P3.16] show editor: load the decks its slides rows point at
 import { useRowDecks } from "@/app/slides/row/useRowDecks";
@@ -167,6 +168,7 @@ export function RundownList(p: RundownListProps) {
                 actionBlocked={p.actionBlocked ?? null}
                 edited={p.editedRowIds?.has(r.id)}
                 overflowWarn={p.warnRowIds?.has(r.id)}
+                note={!edit && r.kind === "slides" ? <SlidesAutoNote row={r} /> : undefined}
                 dropLine={line}
                 onClick={() => p.onSelect(r.id)}
                 onDoubleClick={p.onDoubleClick ? () => p.onDoubleClick!(r.id) : undefined}

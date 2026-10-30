@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Film, Image as ImageIcon, MoreHorizontal, Plus } from "lucide-react";
 import { Button, colors, IconButton, radius, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
@@ -13,7 +13,25 @@ export type SlideCard = {
   caption?: string;
   group?: { label: string; color: string } | null;
   badge?: string;
+  /** A photo or video card: its thumbnail URL (null when there is none, e.g. a video without a poster). */
+  media?: { src: string | null; type: "image" | "video" };
 };
+
+/** A photo/video card's picture, or a type icon when there is none or it fails to load. */
+function MediaFill({ src, type }: { src: string | null; type: "image" | "video" }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const Icon = type === "video" ? Film : ImageIcon;
+  return (
+    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#888" }}>
+      {src && failed !== src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+      ) : (
+        <Icon size={24} aria-hidden />
+      )}
+    </div>
+  );
+}
 
 const firstLine = (data: Record<string, string>) =>
   (Object.values(data).find((v) => v.trim()) ?? "").split("\n")[0] ?? "";
@@ -52,6 +70,8 @@ export function SlideThumbGrid(p: {
   menuItems?(id: string): MenuItem[];
   minCardWidth?: number;
   emptyText?: string;
+  /** More buttons beside the add button (or alone when there is none). */
+  extraActions?: ReactNode;
 }) {
   const minW = p.minCardWidth ?? 200;
   const ctx = useContextMenu();
@@ -141,7 +161,9 @@ export function SlideThumbGrid(p: {
                   onClick={() => p.onSelect(s.id)}
                   style={{ position: "absolute", inset: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer", display: "block" }}
                 >
-                  {s.templateId ? (
+                  {s.media ? (
+                    <MediaFill src={s.media.src} type={s.media.type} />
+                  ) : s.templateId ? (
                     <FitThumb templateId={s.templateId} data={s.data} />
                   ) : (
                     <div
@@ -203,11 +225,14 @@ export function SlideThumbGrid(p: {
           );
         })}
       </div>
-      {p.onAdd && (
-        <div style={{ marginTop: 12 }}>
-          <Button size="sm" onClick={p.onAdd} icon={<Plus size={14} />}>
-            {p.addLabel ?? "+ slide"}
-          </Button>
+      {(p.onAdd || p.extraActions) && (
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {p.onAdd && (
+            <Button size="sm" onClick={p.onAdd} icon={<Plus size={14} />}>
+              {p.addLabel ?? "+ slide"}
+            </Button>
+          )}
+          {p.extraActions}
         </div>
       )}
       {ctx.menu}

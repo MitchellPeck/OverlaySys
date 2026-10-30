@@ -129,3 +129,26 @@ describe("slides row routed to a non-program output (final-review I1)", () => {
     expect(a.slidesStripNotice(routed, view, { lyrics: st({ slidesSession: session("r1", { atEnd: true }) }) })).toBe(SLIDES_END_OF_DECK);
   });
 });
+
+describe("auto-advance on Live", () => {
+  const timed = deck({ defaultHoldSec: 8 });
+  it('slidesRowView shows "auto · loops" when the summary loops', () => {
+    const cs = { program: st({ slidesSession: session("r1", { loops: true, nextAdvanceAt: 10_000 }) }) };
+    expect(a.slidesAutoInfo(row, cs, timed)).toEqual({ text: "auto · loops", nextAdvanceAt: 10_000 });
+  });
+  it('"auto" when it does not loop; nothing for a manual deck or on preview only', () => {
+    expect(a.slidesAutoInfo(row, { program: st({ slidesSession: session("r1", { loops: false }) }) }, timed)).toEqual({ text: "auto" });
+    expect(a.slidesAutoInfo(row, { program: st({ slidesSession: session("r1") }) }, deck())).toBeNull();
+    expect(a.slidesAutoInfo(row, { preview: st({ slidesSession: session("r1", { nextAdvanceAt: 1 }) }) }, timed)).toBeNull();
+  });
+  it("a running timer counts as auto even before the deck has loaded", () => {
+    const cs = { program: st({ slidesSession: session("r1", { nextAdvanceAt: 5 }) }) };
+    expect(a.slidesAutoInfo(row, cs, undefined)?.text).toBe("auto");
+  });
+  it("countdown seconds from nextAdvanceAt with a server offset", () => {
+    // Server clock = local + offset: local 1000 + 2000 = 3000 on the server; 4.2 s left → 5.
+    expect(a.slidesCountdownSec(7_200, 1_000, 2_000)).toBe(5);
+    expect(a.slidesCountdownSec(7_000, 1_000, 2_000)).toBe(4);
+    expect(a.slidesCountdownSec(2_000, 1_000, 2_000)).toBe(0);
+  });
+});

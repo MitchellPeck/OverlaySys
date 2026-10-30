@@ -1,5 +1,5 @@
 import type { ChannelState, Deck, SlidesRowFields, SlidesRowView } from "@overlaysys/core";
-import { SLIDES_END_OF_DECK, slidesRowView } from "@overlaysys/core";
+import { SLIDES_END_OF_DECK, isMediaOnlyDeck, slidesRowView } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { useStore } from "./store";
 import { useDeck } from "../app/slides/useDeck";
@@ -84,6 +84,35 @@ export function slidesThumbMessages(
 /** cue → preview, take → row.channelHint ?? "program". */
 export function slidesRowTakeMessages(showId: string, row: RowLike, action: "cue" | "take"): ClientMessage[] | null {
   return [slidesRowTakeMessage(showId, row, action)];
+}
+
+/** Whether a deck moves on by itself: a deck hold, any slide hold, a live folder, or videos that advance when they end. */
+export function deckAutoAdvances(deck: Deck): boolean {
+  if (deck.defaultHoldSec !== undefined || deck.liveFolderId) return true;
+  if (deck.slides.some((s) => s.holdSec !== undefined)) return true;
+  return isMediaOnlyDeck(deck) && deck.slides.some((s) => s.media?.mediaType === "video" && s.advanceOnEnd !== false);
+}
+
+/**
+ * The Live timing note for a slides row on air (never preview): "auto · loops"
+ * or "auto", plus when the next slide comes (server clock). Null for a manual deck.
+ */
+export function slidesAutoInfo(
+  row: RowLike,
+  channelStates: Record<string, ChannelState | undefined>,
+  deck: Deck | null | undefined,
+): { text: string; nextAdvanceAt?: number } | null {
+  const ch = slidesLiveChannel(row, channelStates);
+  const s = ch ? channelStates[ch]?.slidesSession : undefined;
+  if (!s) return null;
+  const auto = s.nextAdvanceAt !== undefined || (!!deck && !deck.deletedAt && deckAutoAdvances(deck));
+  if (!auto) return null;
+  return { text: s.loops ? "auto · loops" : "auto", ...(s.nextAdvanceAt !== undefined ? { nextAdvanceAt: s.nextAdvanceAt } : {}) };
+}
+
+/** Whole seconds until `nextAdvanceAt` (server clock), rounded up; `serverOffsetMs` = server − local. Never negative. */
+export function slidesCountdownSec(nextAdvanceAt: number, nowMs: number, serverOffsetMs: number): number {
+  return Math.max(0, Math.ceil((nextAdvanceAt - (nowMs + serverOffsetMs)) / 1000));
 }
 
 export function slidesStripNotice(

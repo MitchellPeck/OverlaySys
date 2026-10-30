@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal } from "lucide-react";
+import { ImagePlus, MoreHorizontal } from "lucide-react";
 import { v4 as uuid } from "uuid";
-import { resolveSlideTemplateId, type Deck, type TemplateMeta } from "@overlaysys/core";
+import { liveFolderFileUrl, nextFolderOrder, resolveSlideTemplateId, type Deck, type DeckSlide, type MediaRef, type TemplateMeta } from "@overlaysys/core";
 import {
   Button,
+  Checkbox,
   Dialog,
   IconButton,
   Input,
@@ -31,13 +32,20 @@ import { templatesFor } from "@/lib/templateRoles";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
 import { plural } from "@/lib/listFormat";
+import { isCloudMode } from "@/lib/mode";
+import { requestLiveFolder } from "@/lib/mediaRequests";
+import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
+import { useLibraryPicker } from "@/app/media/MediaPicker";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { EditorFrame, SlideThumbGrid, slideFieldsFor, type SlideCard } from "@/app/songs/edit/slides";
 import { useDeck } from "../useDeck";
 import { LicensingField } from "../LicensingField";
 import { deckDeleteConfirm, licensingLabel } from "../libraryConfig";
 import { DeckSlideFields } from "./DeckSlideFields";
+import { DeckTimingFields, HoldField, holdPlaceholder } from "./DeckTiming";
+import { folderDeckEntries, moveFolderFile, setFolderFileHold } from "./folderDeckOps";
 import {
+  addMediaSlide,
   addSlide,
   appendPastedText,
   deckDefaultOptionLabel,
@@ -45,6 +53,8 @@ import {
   duplicateSlide,
   moveSlide,
   parseTags,
+  setAdvanceOnEnd,
+  setSlideHold,
   setSlideLabel,
   setSlideTemplate,
 } from "./deckDraftOps";
@@ -62,6 +72,13 @@ function newSlideId(deck: Deck): string {
 }
 
 const labelStyle = { fontSize: fontSize.sm, color: colors.textDim } as const;
+const sectionBox = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  borderTop: `1px solid ${colors.border}`,
+  paddingTop: 16,
+} as const;
 const sectionHeading = {
   margin: 0,
   fontSize: fontSize.xs,
@@ -139,6 +156,38 @@ function FittedPreview({ templateId, data }: { templateId: string; data: Record<
   );
 }
 
+/** Card thumbnail for a photo/video: the photo itself, a video's poster (none in cloud mode or for live-folder videos). */
+const mediaThumb = (assetUrl: string, type: "image" | "video") => ({
+  src: type === "video" ? videoPosterUrl(assetUrl) : resolveAssetUrl(assetUrl),
+  type,
+});
+
+/** A photo or video slide's preview, at the same width as a design slide's. */
+function MediaPreview({ media }: { media: MediaRef }) {
+  const src = resolveAssetUrl(media.assetUrl);
+  const box = {
+    width: "100%",
+    maxWidth: PREVIEW_WIDTH,
+    aspectRatio: "16 / 9",
+    boxSizing: "border-box",
+    border: `1px solid ${colors.border}`,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    background: "#000",
+  } as const;
+  const fill = { width: "100%", height: "100%", objectFit: "contain", display: "block" } as const;
+  return (
+    <div style={box}>
+      {media.mediaType === "video" ? (
+        <video key={src} src={src} controls muted preload="metadata" style={fill} />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" style={fill} />
+      )}
+    </div>
+  );
+}
+
 function MissingDeck() {
   const router = useRouter();
   return (
@@ -166,6 +215,10 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const library = useLibraryPicker();
+  const folderId = draft?.liveFolderId;
+  const folderState = useStore((s) => (folderId ? s.liveFolderFiles[folderId] : undefined));
+  const folderItem = useStore((s) => (folderId ? s.mediaItems.find((m) => m.id === folderId) : undefined));
 
   const dirty = !!draft && !!saved && !same(draft, saved);
   const draftRef = useRef(draft);
@@ -187,6 +240,10 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   useEffect(() => {
     if (connected && !templatesLoaded) getClient().send({ type: "list_templates" });
   }, [connected, templatesLoaded]);
+
+  useEffect(() => {
+    if (connected && folderId) requestLiveFolder(folderId);
+  }, [connected, folderId]);
 
   // Every server copy lands in the store's deck cache (load reply, our own save
   // echo, another client's save). Adopt it unless that would lose unsaved edits;
@@ -230,16 +287,45 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   const effectiveId = selected && draft ? resolveSlideTemplateId(selected, {}, draft) : (draft?.defaultTemplateId ?? "");
   const defaultTemplate = useStore((s) => (draft ? s.templateCache[draft.defaultTemplateId] : undefined)) ?? null;
 
+  const mediaItems = useStore((s) => s.mediaItems);
+  const mediaName = (s: DeckSlide) =>
+    s.media ? (mediaItems.find((m) => m.id === s.media!.mediaItemId)?.name ?? (s.media.mediaType === "video" ? "Video" : "Photo")) : "";
+
   const cards: SlideCard[] = useMemo(
     () =>
       slides.map((s, i) => ({
         id: s.id,
-        templateId: draft ? resolveSlideTemplateId(s, {}, draft) : null,
+        templateId: draft && !s.media ? resolveSlideTemplateId(s, {}, draft) : null,
         data: s.data,
-        caption: s.label?.trim() ? `${i + 1} · ${s.label}` : `Slide ${i + 1}`,
-        badge: s.templateId ? "Own design" : undefined,
+        caption: s.label?.trim() ? `${i + 1} · ${s.label}` : s.media ? `${i + 1} · ${mediaName(s)}` : `Slide ${i + 1}`,
+        badge: s.media ? undefined : s.templateId ? "Own design" : undefined,
+        ...(s.media ? { media: mediaThumb(s.media.assetUrl, s.media.mediaType) } : {}),
       })),
-    [slides, draft],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mediaName reads mediaItems
+    [slides, draft, mediaItems],
+  );
+
+  // A live-folder deck lists the folder's graphics instead of its own slides.
+  const folderFiles = folderState?.files ?? [];
+  const folderConfigured = folderState?.configured ?? false;
+  const folderEntries = useMemo(
+    () => (folderId ? folderDeckEntries(draft?.folderOrder, folderFiles, folderConfigured) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- folderFiles/folderConfigured derive from folderState
+    [folderId, draft?.folderOrder, folderState],
+  );
+  const folderCards: SlideCard[] = useMemo(
+    () =>
+      folderEntries.map((e, i) => ({
+        id: e.file,
+        templateId: null,
+        data: {},
+        caption: `${i + 1} · ${e.file}`,
+        media:
+          folderConfigured && folderId && e.mediaType
+            ? mediaThumb(liveFolderFileUrl(folderId, e.file), e.mediaType)
+            : { src: null, type: e.mediaType ?? "image" },
+      })),
+    [folderEntries, folderConfigured, folderId],
   );
 
   if (!deckId || remote === null || remote?.deletedAt) {
@@ -263,6 +349,21 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   }
 
   const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? "missing design";
+  const isFolderDeck = !!draft.liveFolderId;
+  /** The saved order with any newly seen files placed, so they keep a stable position once saved. */
+  const placedOrder = (d: Deck) => nextFolderOrder(d.folderOrder, folderConfigured ? folderFiles : []);
+  const selectedFile = isFolderDeck ? (folderEntries.find((e) => e.file === selectedId) ?? folderEntries[0] ?? null) : null;
+
+  async function addMedia() {
+    const pick = await library.pick("any");
+    const d = draftRef.current;
+    if (!pick || !d) return;
+    const nid = newSlideId(d);
+    const { name: _name, ...ref } = pick;
+    setDraft((cur) => (cur ? addMediaSlide(cur, ref, nid) : cur));
+    setSelectedId(nid);
+  }
+
   const meta = deckMetas.find((m) => m.id === draft.id);
 
   const slideMenu = (id: string): MenuItem[] => [
@@ -349,7 +450,7 @@ export function DeckEditor({ deckId }: { deckId: string }) {
   }
 
   const deckMenu: MenuItem[] = [
-    { id: "paste", label: "Paste text as slides…", onSelect: () => setPasteOpen(true) },
+    ...(isFolderDeck ? [] : [{ id: "paste", label: "Paste text as slides…", onSelect: () => setPasteOpen(true) }]),
     {
       id: "duplicate-deck",
       label: "Duplicate deck",
@@ -374,12 +475,44 @@ export function DeckEditor({ deckId }: { deckId: string }) {
       <span style={{ color: colors.textMuted }}>/</span>
       <span style={{ color: colors.text, fontWeight: 600 }}>{draft.name || "(untitled)"}</span>
       <span style={{ color: colors.textMuted, marginLeft: 8 }}>
-        {plural(draft.slides.length, "slide")} · {licensingLabel[draft.licensing.kind]}
+        {isFolderDeck
+          ? folderItem
+            ? `Live folder · ${folderItem.name}`
+            : "Live folder"
+          : `${plural(draft.slides.length, "slide")} · ${licensingLabel[draft.licensing.kind]}`}
       </span>
     </div>
   );
 
-  const left = (
+  const left = isFolderDeck ? (
+    <div>
+      {folderState && !folderConfigured && (
+        <p role="status" style={{ margin: 0, padding: "8px 8px 0", fontSize: fontSize.sm, color: colors.textDim }}>
+          These graphics are on the show computer. You can change their order and hold times here by file name.
+        </p>
+      )}
+      <SlideThumbGrid
+        slides={folderCards}
+        selectedId={selectedFile?.file ?? null}
+        onSelect={setSelectedId}
+        onReorder={(from, to) => {
+          const a = folderEntries[from]?.file;
+          const b = folderEntries[to]?.file;
+          if (a && b) update((d) => ({ ...d, folderOrder: moveFolderFile(placedOrder(d), a, b) }));
+        }}
+        minCardWidth={150}
+        emptyText={
+          !folderState
+            ? connected
+              ? "Loading the folder…"
+              : "Not connected to the server."
+            : folderConfigured
+              ? "No photos or videos in this folder yet."
+              : "No graphics have been saved in this deck's order yet."
+        }
+      />
+    </div>
+  ) : (
     <SlideThumbGrid
       slides={cards}
       selectedId={selected?.id ?? null}
@@ -391,12 +524,31 @@ export function DeckEditor({ deckId }: { deckId: string }) {
         setSelectedId(nid);
       }}
       addLabel="Add slide"
+      extraActions={
+        isCloudMode() ? null : (
+          <Button size="sm" variant="secondary" onClick={() => void addMedia()} icon={<ImagePlus size={14} />}>
+            Add photo or video
+          </Button>
+        )
+      }
       menuItems={slideMenu}
       minCardWidth={150}
     />
   );
 
-  const main = selected ? (
+  const main = isFolderDeck ? (
+    selectedFile && folderConfigured && selectedFile.mediaType ? (
+      <div style={{ padding: 16 }}>
+        <MediaPreview
+          media={{ assetUrl: liveFolderFileUrl(draft.liveFolderId!, selectedFile.file), mediaType: selectedFile.mediaType }}
+        />
+      </div>
+    ) : null
+  ) : selected?.media ? (
+    <div style={{ padding: 16 }}>
+      <MediaPreview media={selected.media} />
+    </div>
+  ) : selected ? (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
       <FittedPreview templateId={effectiveId} data={selected.data} />
       <div style={{ maxWidth: PREVIEW_WIDTH }}>
@@ -422,22 +574,49 @@ export function DeckEditor({ deckId }: { deckId: string }) {
           <Input id="deck-name" value={draft.name} onChange={(e) => update((d) => ({ ...d, name: e.target.value }))} />
         </div>
         <TagsField tags={draft.tags} onChange={(tags) => update((d) => ({ ...d, tags }))} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label htmlFor="deck-design" style={labelStyle}>
-            Default design
-          </label>
-          <Select
-            id="deck-design"
-            value={draft.defaultTemplateId}
-            onChange={(e) => update((d) => ({ ...d, defaultTemplateId: e.target.value }))}
-          >
-            <TemplateOptions templates={templates} current={draft.defaultTemplateId} />
-          </Select>
-        </div>
-        <LicensingField value={draft.licensing} onChange={(licensing) => update((d) => ({ ...d, licensing }))} />
+        {!isFolderDeck && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label htmlFor="deck-design" style={labelStyle}>
+                Default design
+              </label>
+              <Select
+                id="deck-design"
+                value={draft.defaultTemplateId}
+                onChange={(e) => update((d) => ({ ...d, defaultTemplateId: e.target.value }))}
+              >
+                <TemplateOptions templates={templates} current={draft.defaultTemplateId} />
+              </Select>
+            </div>
+            <LicensingField value={draft.licensing} onChange={(licensing) => update((d) => ({ ...d, licensing }))} />
+          </>
+        )}
       </section>
-      {selected && (
-        <section style={{ display: "flex", flexDirection: "column", gap: 12, borderTop: `1px solid ${colors.border}`, paddingTop: 16 }}>
+      <section style={sectionBox}>
+        <h2 style={sectionHeading}>Timing</h2>
+        <DeckTimingFields deck={draft} onChange={update} />
+      </section>
+      {isFolderDeck && selectedFile && (
+        <section style={sectionBox}>
+          <h2 style={sectionHeading}>{selectedFile.file}</h2>
+          {selectedFile.mediaType === "video" ? (
+            <div style={{ fontSize: fontSize.sm, color: colors.textDim }}>Videos play to the end, then the next graphic shows.</div>
+          ) : (
+            <HoldField
+              key={selectedFile.file}
+              id="file-hold"
+              label="Hold this graphic (seconds)"
+              value={selectedFile.holdSec}
+              placeholder={holdPlaceholder(draft)}
+              onCommit={(sec) =>
+                update((d) => ({ ...d, folderOrder: setFolderFileHold(placedOrder(d), selectedFile.file, sec) }))
+              }
+            />
+          )}
+        </section>
+      )}
+      {!isFolderDeck && selected && (
+        <section style={sectionBox}>
           <h2 style={sectionHeading}>Slide {selIdx + 1}</h2>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label htmlFor="slide-label" style={labelStyle}>
@@ -450,19 +629,40 @@ export function DeckEditor({ deckId }: { deckId: string }) {
               onChange={(e) => update((d) => setSlideLabel(d, selected.id, e.target.value))}
             />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label htmlFor="slide-design" style={labelStyle}>
-              Design
-            </label>
-            <Select
-              id="slide-design"
-              value={selected.templateId ?? ""}
-              onChange={(e) => update((d) => setSlideTemplate(d, selected.id, e.target.value || undefined))}
-            >
-              <option value="">{deckDefaultOptionLabel(templateName(draft.defaultTemplateId))}</option>
-              <TemplateOptions templates={templates} current={selected.templateId} />
-            </Select>
-          </div>
+          {selected.media ? (
+            <div style={{ fontSize: fontSize.sm, color: colors.textDim }}>
+              {selected.media.mediaType === "video" ? "Video" : "Photo"} · {mediaName(selected)}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label htmlFor="slide-design" style={labelStyle}>
+                Design
+              </label>
+              <Select
+                id="slide-design"
+                value={selected.templateId ?? ""}
+                onChange={(e) => update((d) => setSlideTemplate(d, selected.id, e.target.value || undefined))}
+              >
+                <option value="">{deckDefaultOptionLabel(templateName(draft.defaultTemplateId))}</option>
+                <TemplateOptions templates={templates} current={selected.templateId} />
+              </Select>
+            </div>
+          )}
+          <HoldField
+            key={selected.id}
+            id="slide-hold"
+            label="Hold this slide (seconds)"
+            value={selected.holdSec}
+            placeholder={selected.media?.mediaType === "video" ? "Until the video ends" : holdPlaceholder(draft)}
+            onCommit={(sec) => update((d) => setSlideHold(d, selected.id, sec))}
+          />
+          {selected.media?.mediaType === "video" && (
+            <Checkbox
+              label="Advance when the video ends"
+              checked={selected.advanceOnEnd ?? true}
+              onChange={(on) => update((d) => setAdvanceOnEnd(d, selected.id, on))}
+            />
+          )}
         </section>
       )}
     </div>
@@ -489,6 +689,7 @@ export function DeckEditor({ deckId }: { deckId: string }) {
         }
       />
       {menuAnchor && <Menu items={deckMenu} anchor={menuAnchor} onClose={() => setMenuAnchor(null)} />}
+      {library.picker}
       <EditorFrame header={header} left={left} main={main} right={right} rightWidth="320px" />
       <Dialog
         open={pasteOpen}

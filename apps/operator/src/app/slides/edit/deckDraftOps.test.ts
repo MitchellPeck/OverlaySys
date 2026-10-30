@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Deck } from "@overlaysys/core";
 import {
+  addMediaSlide,
   addSlide,
   appendPastedText,
   deckDefaultOptionLabel,
   deleteSlide,
   duplicateSlide,
   moveSlide,
+  parseHoldText,
   parseTags,
+  setAdvanceOnEnd,
+  setDefaultHold,
+  setLoop,
   setSlideData,
+  setSlideHold,
   setSlideLabel,
   setSlideTemplate,
 } from "./deckDraftOps";
@@ -173,5 +179,58 @@ describe("parseTags", () => {
 describe("deckDefaultOptionLabel", () => {
   it("names the deck default design", () => {
     expect(deckDefaultOptionLabel("Lower third")).toBe("Deck default (Lower third)");
+  });
+});
+
+const photo = { mediaItemId: "m1", assetUrl: "/assets/a.png", mediaType: "image" as const };
+const clip = { mediaItemId: "m2", assetUrl: "/assets/b.mp4", mediaType: "video" as const };
+
+describe("addMediaSlide", () => {
+  it("adds data {}", () => {
+    const d = addMediaSlide(three(), photo, "n");
+    expect(ids(d)).toEqual(["a", "b", "c", "n"]);
+    expect(d.slides[3]).toEqual({ id: "n", data: {}, media: photo });
+  });
+  it("replaces a new deck's single empty slide", () => {
+    const d = addMediaSlide(deck([{ id: "e", data: {} }]), clip, "n");
+    expect(d.slides).toEqual([{ id: "n", data: {}, media: clip }]);
+  });
+  it("keeps a single media slide", () => {
+    const d = addMediaSlide(deck([{ id: "e", data: {}, media: photo }]), clip, "n");
+    expect(ids(d)).toEqual(["e", "n"]);
+  });
+});
+
+describe("timing", () => {
+  it("setDefaultHold sets the deck hold (auto-advance on)", () => {
+    expect(setDefaultHold(three(), 8).defaultHoldSec).toBe(8);
+  });
+  it("setDefaultHold undefined turns auto-advance off", () => {
+    const d = setDefaultHold(setDefaultHold(three(), 8), undefined);
+    expect("defaultHoldSec" in d).toBe(false);
+  });
+  it("setDefaultHold ignores a non-positive hold", () => {
+    expect("defaultHoldSec" in setDefaultHold(three(), 0)).toBe(false);
+  });
+  it("setSlideHold sets and clears one slide's hold", () => {
+    const d = setSlideHold(three(), "b", 4);
+    expect(d.slides[1]!.holdSec).toBe(4);
+    expect("holdSec" in setSlideHold(d, "b", undefined).slides[1]!).toBe(false);
+  });
+  it("setLoop on stores loop: true; off removes it", () => {
+    const d = setLoop(three(), true);
+    expect(d.loop).toBe(true);
+    expect("loop" in setLoop(d, false)).toBe(false);
+  });
+  it("setAdvanceOnEnd stores the choice on that slide", () => {
+    const d = addMediaSlide(three(), clip, "v");
+    expect(setAdvanceOnEnd(d, "v", false).slides[3]!.advanceOnEnd).toBe(false);
+    expect(setAdvanceOnEnd(d, "v", true).slides[3]!.advanceOnEnd).toBe(true);
+  });
+  it("parseHoldText: blank is no hold, a positive number is seconds, junk is no hold", () => {
+    expect(parseHoldText("")).toBeUndefined();
+    expect(parseHoldText(" 6.5 ")).toBe(6.5);
+    expect(parseHoldText("0")).toBeUndefined();
+    expect(parseHoldText("abc")).toBeUndefined();
   });
 });
