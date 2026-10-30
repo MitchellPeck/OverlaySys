@@ -1,6 +1,8 @@
 import {
   defaultMediaFit,
+  mediaObjectPosition,
   resolveMediaPlacement,
+  type ChannelMedia,
   type MediaFit,
   type MediaPlacement,
   type MediaPosition,
@@ -65,5 +67,29 @@ export function itemPlacement(mediaType: "image" | "video", p: MediaPlacement): 
   return {
     ...(p.fit !== defaultMediaFit(mediaType) ? { fit: p.fit } : {}),
     ...(p.position !== "center" ? { position: p.position } : {}),
+  };
+}
+
+export type MonitorMediaView = {
+  element: "img" | "video";
+  objectFit: MediaFit;
+  objectPosition: string;
+  /** A photo paints nothing outside the picture; a video keeps black bars (as the output does). */
+  background: "transparent" | "#000";
+  caption: "Photo" | "Video";
+  /** A video shows its time left; a photo has none. */
+  timed: boolean;
+};
+
+/** How the PVW/PGM monitors draw the channel's media, matching the output. */
+export function monitorMediaView(media: Pick<ChannelMedia, "mediaType" | "fit" | "position">): MonitorMediaView {
+  const photo = media.mediaType === "image";
+  return {
+    element: photo ? "img" : "video",
+    objectFit: media.fit,
+    objectPosition: mediaObjectPosition(media.position),
+    background: photo ? "transparent" : "#000",
+    caption: photo ? "Photo" : "Video",
+    timed: !photo,
   };
 }

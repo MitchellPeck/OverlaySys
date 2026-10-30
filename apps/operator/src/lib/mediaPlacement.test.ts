@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MEDIA_FIT_OPTIONS, applyPlacement, itemPlacement, rowPlacement, startPlacement } from "./mediaPlacement";
+import { MEDIA_FIT_OPTIONS, applyPlacement, itemPlacement, monitorMediaView, rowPlacement, startPlacement } from "./mediaPlacement";
 
 describe("MEDIA_FIT_OPTIONS", () => {
   it("offers the four sizes in plain language", () => {
@@ -51,5 +51,19 @@ describe("itemPlacement", () => {
     expect(itemPlacement("image", { fit: "cover", position: "center" })).toEqual({});
     expect(itemPlacement("image", { fit: "scale-down", position: "bottom" })).toEqual({ fit: "scale-down", position: "bottom" });
     expect(itemPlacement("video", { fit: "contain", position: "top" })).toEqual({ position: "top" });
+  });
+});
+
+describe("monitorMediaView", () => {
+  const m = (o: object) => ({ mediaType: "video", fit: "contain", position: "center", ...o }) as never;
+  it("draws a photo as <img> with its size and position and no background", () => {
+    expect(monitorMediaView(m({ mediaType: "image", fit: "scale-down", position: "top-right" }))).toEqual({
+      element: "img", objectFit: "scale-down", objectPosition: "100% 0%", background: "transparent", caption: "Photo", timed: false,
+    });
+  });
+  it("draws a video as <video> with its size and position", () => {
+    expect(monitorMediaView(m({ fit: "cover", position: "bottom-left" }))).toEqual({
+      element: "video", objectFit: "cover", objectPosition: "0% 100%", background: "#000", caption: "Video", timed: true,
+    });
   });
 });

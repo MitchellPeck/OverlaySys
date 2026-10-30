@@ -11,6 +11,7 @@ import { formatClock } from "@/lib/mediaTake";
 import { inChipRemainingMs } from "@/lib/previewIn";
 import { displayTime, previewNeedsSeek, previewVideoSync, PREVIEW_SYNC_INTERVAL_MS } from "@/lib/mediaTime";
 import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
+import { monitorMediaView } from "@/lib/mediaPlacement";
 
 const STAGE_W = 1920;
 const STAGE_H = 1080;
@@ -202,9 +203,12 @@ export function ChannelPreview({ config, state, emptyLabel = "(idle)" }: Props) 
           : bg,
       }}
     >
-      {state?.media && (
-        <MonitorVideo key={state.media.takenAt} media={state.media} heardAt={heardAt} matte={matte} />
-      )}
+      {state?.media &&
+        (state.media.mediaType === "image" ? (
+          <MonitorPhoto key={state.media.takenAt} media={state.media} matte={matte} />
+        ) : (
+          <MonitorVideo key={state.media.takenAt} media={state.media} heardAt={heardAt} matte={matte} />
+        ))}
       <div
         ref={stageRef}
         style={{
@@ -292,10 +296,36 @@ export function ChannelPreview({ config, state, emptyLabel = "(idle)" }: Props) 
           ) : (
             <Play size={14} aria-label="Playing" style={{ verticalAlign: "-2px" }} />
           )}{" "}
-          {state.media.label || "Video"} · {formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left
+          {state.media.label || monitorMediaView(state.media).caption}
+          {monitorMediaView(state.media).timed &&
+            ` · ${formatClock(displayTime(state.media, heardAt, Date.now()).remaining)} left`}
         </div>
       )}
     </div>
+  );
+}
+
+/** The channel's photo under the template stage, sized and placed as on the output. */
+function MonitorPhoto({ media, matte }: { media: ChannelMedia; matte: boolean }) {
+  const view = monitorMediaView(media);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={resolveAssetUrl(media.assetUrl)}
+      alt=""
+      aria-hidden
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit: view.objectFit,
+        objectPosition: view.objectPosition,
+        background: view.background,
+        pointerEvents: "none",
+        filter: matte ? "brightness(0) invert(1)" : undefined,
+      }}
+    />
   );
 }
 
@@ -306,6 +336,7 @@ export function ChannelPreview({ config, state, emptyLabel = "(idle)" }: Props) 
  * change, and whenever it drifts (checked every 2 s).
  */
 function MonitorVideo({ media, heardAt, matte }: { media: ChannelMedia; heardAt: number; matte: boolean }) {
+  const view = monitorMediaView(media);
   const ref = useRef<HTMLVideoElement | null>(null);
   const latest = useRef({ media, heardAt });
   latest.current = { media, heardAt };
@@ -355,8 +386,9 @@ function MonitorVideo({ media, heardAt, matte }: { media: ChannelMedia; heardAt:
         inset: 0,
         width: "100%",
         height: "100%",
-        objectFit: "contain",
-        background: "#000",
+        objectFit: view.objectFit,
+        objectPosition: view.objectPosition,
+        background: view.background,
         pointerEvents: "none",
         filter: matte ? "brightness(0) invert(1)" : undefined,
       }}
