@@ -13,6 +13,7 @@ export type TargetLike = {
   type?: string;
   isContentEditable?: boolean;
   closest?: (selector: string) => unknown;
+  matches?: (selector: string) => boolean;
 } | null;
 
 // Input types that don't take typed text. Keys on these belong to the show,
@@ -52,16 +53,27 @@ function isFormFieldTarget(t: TargetLike): boolean {
  * front of the designer must not let Backspace delete layers behind it.
  */
 export function isShortcutBlocked(target: TargetLike, active: TargetLike = null): boolean {
+  // Focus can fall to <body> while a dialog is open, so check the document too.
+  if (typeof document !== "undefined" && document.querySelector(DIALOG_SELECTOR)) return true;
   return isFormFieldTarget(target) || isFormFieldTarget(active) || isInsideDialog(target) || isInsideDialog(active);
 }
 
 /**
  * True when the focused element is something Enter/Space activates itself
- * (button, link, [role=button], checkbox/radio, select, summary), so the show
- * shortcuts must leave those two keys to it.
+ * (button, link, [role=button], checkbox/radio, select, summary) and was
+ * focused via keyboard, so the show shortcuts must leave those two keys to it.
  */
 export function isActivatableTarget(t: TargetLike): boolean {
   if (!t) return false;
+  // Only keyboard-focused elements: a button the mouse just clicked keeps
+  // focus, and Space/Enter must still drive the show then.
+  if (typeof t.matches === "function") {
+    try {
+      if (!t.matches(":focus-visible")) return false;
+    } catch {
+      return false;
+    }
+  }
   if (t.closest?.(ACTIVATABLE_SELECTOR)) return true;
   const tag = t.tagName;
   if (tag === "BUTTON" || tag === "SELECT" || tag === "SUMMARY" || tag === "A") return true;

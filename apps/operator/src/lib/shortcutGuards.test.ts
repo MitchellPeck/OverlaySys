@@ -252,3 +252,25 @@ describe("isShortcutBlocked / isActivatableTarget", () => {
     expect(isActivatableTarget(null)).toBe(false);
   });
 });
+
+describe("keyboard focus and open dialogs", () => {
+  it("only exempts activatable targets that match :focus-visible", () => {
+    const btn = (visible: boolean) => ({ tagName: "BUTTON", matches: (s: string) => s === ":focus-visible" && visible });
+    expect(isActivatableTarget(btn(true))).toBe(true);
+    expect(isActivatableTarget(btn(false))).toBe(false);
+    expect(isActivatableTarget({ tagName: "BUTTON", matches: () => { throw new Error("bad selector"); } })).toBe(false);
+  });
+  it("blocks when a dialog is open anywhere in the document, even with focus on body", () => {
+    const g = globalThis as { document?: unknown };
+    const prev = g.document;
+    try {
+      g.document = { querySelector: () => ({}) };
+      expect(isShortcutBlocked({ tagName: "BODY" })).toBe(true);
+      g.document = { querySelector: () => null };
+      expect(isShortcutBlocked({ tagName: "BODY" })).toBe(false);
+    } finally {
+      if (prev === undefined) delete g.document;
+      else g.document = prev;
+    }
+  });
+});
