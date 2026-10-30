@@ -39,6 +39,10 @@ interface Session {
   takenAt: number;
   /** The slide this session last put on air (still up while starved, even if its file has gone). */
   onAir?: MediaDeckSlide;
+  /** The on-air media reported an error: a wrap back onto it must take it again, not replay it. */
+  onAirFailed: boolean;
+  /** This video playthrough already advanced; cleared by a new take or a "playing" report. */
+  playthroughEnded: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   nextAdvanceAt?: number;
 }
@@ -175,6 +179,9 @@ function arm(s: Session): void {
 /** Put the current slide on air and restart its timer: one channel emit carries both. */
 function show(s: Session, withShowId = false): void {
   const slide = s.slides[s.idx]!;
+  s.onAir = slide;
+  s.onAirFailed = false;
+  s.playthroughEnded = false;
   arm(s);
   publish(s.channel, summarize(s), { deferEmit: true });
   channels.mediaTake(s.channel, {
@@ -191,13 +198,13 @@ function show(s: Session, withShowId = false): void {
     owner: s.owner,
   });
   s.takenAt = channels.getState(s.channel).media?.takenAt ?? 0;
-  s.onAir = slide;
 }
 
 /** True when `slide` is the very file this session has on air right now. */
 function isOnAir(s: Session, slide: MediaDeckSlide): boolean {
   return (
     !!s.onAir &&
+    !s.onAirFailed &&
     s.onAir.key === slide.key &&
     s.onAir.assetUrl === slide.assetUrl &&
     channels.getState(s.channel).media?.takenAt === s.takenAt
@@ -315,6 +322,8 @@ export function start(channel: string, args: StartArgs): StartResult {
     starved: false,
     failed: new Set(),
     takenAt: 0,
+    onAirFailed: false,
+    playthroughEnded: false,
     timer: null,
   };
   sessions.set(channel, s);
@@ -380,15 +389,24 @@ export function mediaEnded(channel: string, takenAt: number): void {
   const s = sessions.get(channel);
   if (!s || channel === PREVIEW || s.takenAt !== takenAt || s.atEnd || s.starved) return;
   const slide = s.slides[s.idx]!;
-  if (slide.mediaType !== "video" || !slide.advanceOnEnd) return;
+  if (slide.mediaType !== "video" || !slide.advanceOnEnd || s.playthroughEnded) return;
+  // A replay in place keeps the takenAt, so a duplicate "ended" must not advance twice.
+  s.playthroughEnded = true;
   forward(s, false);
+}
+
+/** The renderer reports this channel's media playing: a new playthrough may end (and advance) again. */
+export function mediaPlaying(channel: string, takenAt: number): void {
+  const s = sessions.get(channel);
+  if (s && s.takenAt === takenAt) s.playthroughEnded = false;
 }
 
 /** The renderer couldn't play this channel's media: skip it like a missing file. */
 export function mediaFailed(channel: string, takenAt: number): void {
   const s = sessions.get(channel);
   if (!s || channel === PREVIEW || s.takenAt !== takenAt || s.starved) return;
-  s.failed.add(s.slides[s.idx]!.key);
+  s.failed.add((s.onAir ?? s.slides[s.idx]!).key);
+  s.onAirFailed = true;
   forward(s, false);
 }
 

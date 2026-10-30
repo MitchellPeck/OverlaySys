@@ -727,4 +727,5 @@ export function mediaStatus(
   else notifyPlayback({ channel, takenAt, playback: next });
   // A media deck skips a slide that can't play.
   if (report.status === "error") mediaDeckSession.mediaFailed(channel, takenAt);
+  else if (report.status === "playing") mediaDeckSession.mediaPlaying(channel, takenAt);
 }

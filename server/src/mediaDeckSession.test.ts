@@ -503,6 +503,41 @@ describe("mediaDeckSession", () => {
     expect(onAir("preview")).toBe("/media-folders/lf1/1.png");
   });
 
+  it("the published summary names the new slide after a step", () => {
+    folder.files.set("lf1", [img("1.png"), img("2.png"), img("3.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 0, label: "1.png", nextLabel: "2.png" });
+    mediaDeckSession.step("program", 1);
+    expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, label: "2.png", nextLabel: "3.png" });
+    sec(5);
+    expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2, label: "3.png" });
+  });
+
+  it("a failed on-air file replaced under the same name is taken again, not replayed", () => {
+    folder.files.set("lf1", [img("only.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    const failedTake = channels.getState("program").media!.takenAt;
+    reportError();
+    expect(channels.getState("program").media!.takenAt).toBe(failedTake); // held
+    setFolder("lf1", [{ ...img("only.png"), mtimeMs: 2 }]);
+    expect(channels.getState("program").media!.takenAt).not.toBe(failedTake);
+    expect(onAir()).toBe("/media-folders/lf1/only.png");
+    expect(mediaDeckSession.summary("program")?.nextAdvanceAt).toBe(Date.now() + 5000);
+  });
+
+  it("one video playthrough advances at most once, however many ended reports arrive", () => {
+    mediaDeckSession.start("program", { rowId: "r1", deck: deck({ slides: [mediaSlide("v", "video")] }) });
+    const takenAt = channels.getState("program").media!.takenAt;
+    const seq = () => channels.getState("program").media!.seek?.seq ?? 0;
+    reportEnded();
+    expect(seq()).toBe(1);
+    reportEnded(); // duplicate for the same playthrough
+    expect(seq()).toBe(1);
+    channels.mediaStatus("program", takenAt, { status: "playing", currentTime: 0, duration: 10 });
+    reportEnded();
+    expect(seq()).toBe(2);
+  });
+
   it("refuses an out-of-range start slide", () => {
     expect(mediaDeckSession.start("program", { rowId: "r1", deck: deck(), slideIdx: 3 })).toEqual({
       ok: false, error: "slide 3",
