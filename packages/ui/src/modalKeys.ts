@@ -46,3 +46,12 @@ export function nextTrapFocus(count: number, current: number, shift: boolean): n
 export function shouldCloseOnBackdropClick<T>(pressTarget: T | null, clickTarget: T, backdrop: T): boolean {
   return pressTarget === backdrop && clickTarget === backdrop;
 }
+
+/**
+ * Which confirm-dialog button has focus when it opens. Cancel by default, so
+ * a stray Enter cancels; `enterConfirms` focuses the confirm button instead
+ * (Clear all: the operator presses it, then Enter to go through with it).
+ */
+export function confirmInitialFocus(o: { danger?: boolean; enterConfirms?: boolean }): "cancel" | "confirm" {
+  return o.enterConfirms ? "confirm" : "cancel";
+}

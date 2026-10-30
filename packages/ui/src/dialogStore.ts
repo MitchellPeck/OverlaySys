@@ -12,6 +12,8 @@ export type ConfirmOptions = {
   /** Default "Cancel". */
   cancelLabel?: string;
   danger?: boolean;
+  /** Focus the confirm button on open, so Enter confirms (default: Cancel). */
+  enterConfirms?: boolean;
 };
 
 export type PromptOptions = {

@@ -4,6 +4,7 @@ import { useState, useSyncExternalStore } from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { Modal } from "./Modal";
+import { confirmInitialFocus } from "./modalKeys";
 import { colors, fontSize, space } from "./tokens";
 import {
   createDialogStore,
@@ -77,6 +78,7 @@ function ActiveDialogView({ active }: { active: ActiveDialog }) {
   const done = (v: unknown) => store.resolve(v);
 
   if (spec.kind === "confirm") {
+    const focusConfirm = confirmInitialFocus(spec) === "confirm";
     return (
       <Modal
         open
@@ -89,13 +91,19 @@ function ActiveDialogView({ active }: { active: ActiveDialog }) {
         onConfirm={() => done(true)}
         footer={
           <>
-            <Button variant="ghost" size="sm" data-autofocus onClick={() => done(false)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-autofocus={focusConfirm ? undefined : true}
+              onClick={() => done(false)}
+            >
               {spec.cancelLabel ?? "Cancel"}
             </Button>
             <Button
               variant={spec.danger ? "destructive" : "primary"}
               size="sm"
               data-dialog-confirm
+              data-autofocus={focusConfirm ? true : undefined}
               onClick={() => done(true)}
             >
               {spec.confirmLabel}

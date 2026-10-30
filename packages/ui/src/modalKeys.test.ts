@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextTrapFocus, shouldConfirmOnEnter } from "./modalKeys";
+import { confirmInitialFocus, nextTrapFocus, shouldConfirmOnEnter } from "./modalKeys";
 
 describe("shouldConfirmOnEnter", () => {
   it("confirms from inputs and the dialog body", () => {
@@ -37,5 +37,17 @@ describe("nextTrapFocus", () => {
   });
   it("stays put with nothing focusable", () => {
     expect(nextTrapFocus(0, -1, false)).toBe(-1);
+  });
+});
+
+describe("confirmInitialFocus", () => {
+  it("focuses Cancel by default, even on a danger confirm", () => {
+    expect(confirmInitialFocus({})).toBe("cancel");
+    expect(confirmInitialFocus({ danger: true })).toBe("cancel");
+  });
+
+  it("focuses the confirm button when Enter should confirm", () => {
+    // Clear all: the operator presses the button, then Enter to confirm.
+    expect(confirmInitialFocus({ danger: true, enterConfirms: true })).toBe("confirm");
   });
 });

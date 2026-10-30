@@ -25,6 +25,7 @@ export const CLEAR_ALL_CONFIRM = {
   message: "Everything on every output is cleared.",
   confirmLabel: "Clear all",
   danger: true,
+  enterConfirms: true,
 } as const;
 
 export type LiveCommandState = {

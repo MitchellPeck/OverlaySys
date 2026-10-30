@@ -54,6 +54,8 @@ describe("liveCommands", () => {
   it("Clear all uses the one shared copy", () => {
     expect(liveCommands(state).find((c) => c.id === "clear-all")?.confirm).toMatchObject(CLEAR_ALL_CONFIRM);
     expect(CLEAR_ALL_CONFIRM.title).toBe("Clear all outputs?");
+    // Enter confirms Clear all (focus starts on the Clear all button).
+    expect(CLEAR_ALL_CONFIRM.enterConfirms).toBe(true);
   });
 
   it("lists hotcards of the current project only", () =>
