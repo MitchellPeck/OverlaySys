@@ -46,7 +46,9 @@ export function MediaTransportStrip({ inline = false, size = "sm" }: { inline?: 
   if (entries.length === 0) return null;
   if (inline) {
     return (
-      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: "0 1 auto", overflowX: "auto" }}>
+      // Clips rather than scrolls: overflowX:auto also made it scroll vertically
+      // (both axes go auto), drawing scrollbars around the Live item bar.
+      <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: "0 1 auto", overflow: "hidden" }}>
         {entries.map((s) =>
           isPhotoMedia(s.media) ? (
             <PhotoCompact key={s.channel} channel={s.channel} media={s.media} size={size} />
@@ -188,7 +190,7 @@ function CompactTransport({ channel, media, size }: { channel: string; media: Ch
     <div
       title={media.playback.error ?? undefined}
       // Shrinks (the seek bar first) rather than push the Live layout past the viewport.
-      style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}
+      style={{ ...compactRow(size), flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}
     >
       {/* In the Live item bar (lg) the row title already names the video. */}
       {size !== "lg" && <Film size={14} aria-hidden />}
@@ -229,7 +231,7 @@ function PhotoCompact({ channel, media, size }: { channel: string; media: Channe
   const { send } = useWs();
   const hasOutTransition = media.transitionOut.style !== "cut";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}>
+    <div style={{ ...compactRow(size), flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}>
       {size !== "lg" && (
         <span
           title={`${media.label || "Photo"} · ${channel}`}
@@ -325,3 +327,10 @@ function ChannelTransport({ channel, media, size }: { channel: string; media: Ch
 
 /** Keep focus off live controls after a click: Space is the global advance key. */
 const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
+/** One compact transport row: 28px in the bottom bar (sm); as tall as its buttons in the Live item bar (lg). */
+function compactRow(size: "sm" | "lg"): React.CSSProperties {
+  return size === "lg"
+    ? { display: "flex", alignItems: "center", gap: 8 }
+    : { display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32 };
+}
