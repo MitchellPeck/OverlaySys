@@ -37,6 +37,8 @@ interface Session {
   failed: Set<string>;
   /** Media takenAt of the current slide, so a late `ended` from an earlier slide is ignored. */
   takenAt: number;
+  /** The slide this session last put on air (still up while starved, even if its file has gone). */
+  onAir?: MediaDeckSlide;
   timer: ReturnType<typeof setTimeout> | null;
   nextAdvanceAt?: number;
 }
@@ -100,16 +102,35 @@ function holdMs(s: Session, slide: MediaDeckSlide): number | undefined {
   return sec !== undefined && sec > 0 ? sec * 1000 : undefined;
 }
 
+/** Index of the first playable slide in `from..end`, then (wrapping) `0..from-1`; -1 when none. */
+function playableFrom(s: Session, from: number, wrap: boolean): number {
+  const present = presence(s);
+  const n = s.slides.length;
+  for (let k = 0; k < n; k++) {
+    const i = from + k;
+    if (i >= n && !wrap) break;
+    if (present(s.slides[i % n]!)) return i % n;
+  }
+  return -1;
+}
+
+/** The slide that will actually play next (missing and failed ones skipped). */
+function nextPlayable(s: Session): MediaDeckSlide | undefined {
+  const i = playableFrom(s, s.idx + 1, s.deck.loop === true);
+  return i >= 0 ? s.slides[i] : undefined;
+}
+
 function summarize(s: Session): SlidesSessionSummary {
-  const cur = s.slides[s.idx]!;
-  const next = s.slides[s.idx + 1];
+  const idx = Math.min(Math.max(s.idx, 0), s.slides.length - 1);
+  const cur = s.onAir ?? s.slides[idx];
+  const next = nextPlayable(s);
   return {
     rowId: s.rowId,
     ...(s.deck.id ? { deckId: s.deck.id } : {}),
     title: s.deck.name,
-    slideIdx: s.idx,
+    slideIdx: idx,
     slideCount: s.slides.length,
-    ...(cur.label ? { label: cur.label } : {}),
+    ...(cur?.label ? { label: cur.label } : {}),
     lines: [],
     ...(next?.label ? { nextLabel: next.label } : {}),
     blanked: false,
@@ -170,6 +191,28 @@ function show(s: Session, withShowId = false): void {
     owner: s.owner,
   });
   s.takenAt = channels.getState(s.channel).media?.takenAt ?? 0;
+  s.onAir = slide;
+}
+
+/** True when `slide` is the very file this session has on air right now. */
+function isOnAir(s: Session, slide: MediaDeckSlide): boolean {
+  return (
+    !!s.onAir &&
+    s.onAir.key === slide.key &&
+    s.onAir.assetUrl === slide.assetUrl &&
+    channels.getState(s.channel).media?.takenAt === s.takenAt
+  );
+}
+
+/**
+ * Wrapping onto the slide already on air (a one-file folder, or every other
+ * slide gone): no re-take, so no fade or dip. A photo just restarts its hold;
+ * a video plays again from the start through the seek path.
+ */
+function replay(s: Session): void {
+  const slide = s.slides[s.idx]!;
+  if (slide.mediaType === "video") channels.mediaControl(s.channel, s.takenAt, "restart");
+  hold(s);
 }
 
 /** Hold what's on air with no timer (end of a non-looping deck, or an emptied folder). */
@@ -201,11 +244,12 @@ function forward(s: Session, manual: boolean): void {
   if (manual) end(s.channel);
 }
 
-/** Re-read the slides and play the first playable one; with none, hold what's on air. */
+/**
+ * Re-read the slides and play the first playable one. With none, hold what's
+ * on air: the old list and index stay, since they describe what's up.
+ */
 function restartFromTop(s: Session): void {
   const r = resolveSlides(s.deck, s.order);
-  if (r.order) s.order = r.order;
-  if (r.slides.length > 0) s.slides = r.slides;
   const present = presence(s);
   const first = r.slides.findIndex((sl) => present(sl));
   s.atEnd = false;
@@ -214,14 +258,17 @@ function restartFromTop(s: Session): void {
     hold(s);
     return;
   }
+  if (r.order) s.order = r.order;
+  s.slides = r.slides;
   s.idx = first;
   s.starved = false;
-  show(s);
+  if (isOnAir(s, s.slides[first]!)) replay(s);
+  else show(s);
 }
 
 function back(s: Session): void {
   const present = presence(s);
-  for (let i = s.idx - 1; i >= 0; i--) {
+  for (let i = Math.min(s.idx, s.slides.length) - 1; i >= 0; i--) {
     if (!present(s.slides[i]!)) continue;
     s.idx = i;
     s.atEnd = false;
@@ -345,11 +392,14 @@ export function mediaFailed(channel: string, takenAt: number): void {
   forward(s, false);
 }
 
-/** Preview → program: the deck goes on air from its current slide and its timer starts. */
+/**
+ * Preview → program: the deck goes on air from its current slide and its
+ * timer starts. A current slide that can't play (its file gone, or failed)
+ * gives way to the next playable one; with none, nothing is promoted.
+ */
 export function promote(from: string, to: string): boolean {
   const src = sessions.get(from);
   if (!src) return false;
-  dropAll(to, { deferEmit: true });
   const s: Session = {
     ...src,
     channel: to,
@@ -359,6 +409,20 @@ export function promote(from: string, to: string): boolean {
     timer: null,
   };
   delete s.nextAdvanceAt;
+  delete s.onAir;
+  let idx = playableFrom(s, Math.min(s.idx, s.slides.length - 1), true);
+  if (idx < 0) {
+    // The preview list may be stale (a held, emptied folder): try the folder as it is now.
+    const r = resolveSlides(s.deck, s.order);
+    const present = presence(s);
+    idx = r.slides.findIndex((sl) => present(sl));
+    if (idx < 0) return false;
+    if (r.order) s.order = r.order;
+    s.slides = r.slides;
+  }
+  if (idx !== s.idx) s.atEnd = false;
+  s.idx = idx;
+  dropAll(to, { deferEmit: true });
   sessions.set(to, s);
   show(s, true);
   end(from);

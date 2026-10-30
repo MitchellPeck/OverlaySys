@@ -429,6 +429,80 @@ describe("mediaDeckSession", () => {
     expect(onAir("preview")).toBe("/assets/v.mp4");
   });
 
+  it("failed and deleted files at the wrap hold the last slide without throwing; graphics still take", () => {
+    folder.files.set("lf1", [img("a.png"), img("b.png"), img("c.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    reportError();
+    expect(onAir()).toBe("/media-folders/lf1/b.png");
+    reportError();
+    expect(onAir()).toBe("/media-folders/lf1/c.png");
+    setFolder("lf1", [img("a.png"), img("b.png")]);
+    expect(() => sec(5)).not.toThrow();
+    expect(onAir()).toBe("/media-folders/lf1/c.png");
+    expect(mediaDeckSession.summary("program")).toMatchObject({ slideIdx: 2, slideCount: 3, label: "c.png" });
+    expect(mediaDeckSession.summary("program")?.nextAdvanceAt).toBeUndefined();
+    expect(() => channels.take("program", "lower-third", { name: "Pastor" })).not.toThrow();
+    expect(() => mediaDeckSession.step("program", -1)).not.toThrow();
+    expect(channels.getState("program").slidesSession).toMatchObject({ rowId: "r1", slot: "media" });
+  });
+
+  it("a wrap onto the photo already on air re-arms its hold without a re-take", () => {
+    folder.files.set("lf1", [img("only.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    const takenAt = channels.getState("program").media!.takenAt;
+    sec(5);
+    expect(channels.getState("program").media!.takenAt).toBe(takenAt);
+    expect(mediaDeckSession.summary("program")?.nextAdvanceAt).toBe(Date.now() + 5000);
+    sec(5);
+    expect(channels.getState("program").media!.takenAt).toBe(takenAt);
+  });
+
+  it("a wrap onto the video already on air restarts it in place", () => {
+    mediaDeckSession.start("program", { rowId: "r1", deck: deck({ slides: [mediaSlide("v", "video")] }) });
+    const takenAt = channels.getState("program").media!.takenAt;
+    reportEnded();
+    const m = channels.getState("program").media!;
+    expect(m.takenAt).toBe(takenAt);
+    expect(m.seek?.time).toBe(0);
+    expect(m.paused).toBe(false);
+  });
+
+  it("the next label names the slide that will actually play", () => {
+    folder.files.set("lf1", [img("1.png"), img("2.png"), img("3.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    expect(mediaDeckSession.summary("program")?.nextLabel).toBe("2.png");
+    setFolder("lf1", [img("1.png"), img("3.png")]);
+    expect(mediaDeckSession.summary("program")?.nextLabel).toBe("3.png");
+    sec(5);
+    // Looping: after the last slide comes the first again.
+    expect(mediaDeckSession.summary("program")?.nextLabel).toBe("1.png");
+  });
+
+  it("promoting a held (starved) preview deck never re-takes a missing file on program", () => {
+    folder.files.set("lf1", [img("1.png"), img("2.png")]);
+    mediaDeckSession.start("preview", { rowId: "r1", deck: folderDeck() });
+    setFolder("lf1", []);
+    mediaDeckSession.step("preview", 1);
+    mediaDeckSession.step("preview", 1);
+    expect(onAir("preview")).toBe("/media-folders/lf1/1.png"); // held: nothing left to play
+    folder.files.set("lf1", [img("2.png")]); // seen at promote, before any change notice
+    channels.takePvwToPgm("preview", "program");
+    expect(onAir("program")).toBe("/media-folders/lf1/2.png");
+    expect(mediaDeckSession.summary("program")).toMatchObject({ label: "2.png", nextAdvanceAt: Date.now() + 5000 });
+    expect(channels.getState("preview").media).toBeNull();
+  });
+
+  it("promoting a preview deck with nothing playable promotes nothing", () => {
+    folder.files.set("lf1", [img("1.png")]);
+    mediaDeckSession.start("preview", { rowId: "r1", deck: folderDeck() });
+    setFolder("lf1", []);
+    mediaDeckSession.step("preview", 1);
+    channels.takePvwToPgm("preview", "program");
+    expect(channels.getState("program").media).toBeNull();
+    expect(mediaDeckSession.has("program")).toBe(false);
+    expect(onAir("preview")).toBe("/media-folders/lf1/1.png");
+  });
+
   it("refuses an out-of-range start slide", () => {
     expect(mediaDeckSession.start("program", { rowId: "r1", deck: deck(), slideIdx: 3 })).toEqual({
       ok: false, error: "slide 3",
