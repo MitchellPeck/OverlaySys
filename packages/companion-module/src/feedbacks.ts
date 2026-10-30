@@ -598,15 +598,20 @@ export function feedbackPredicate(
         return false;
       const show = state.showCache.get(state.loadedShowId);
       const row = show?.rows[state.loadedShowRowCursor];
-      return row?.kind === String(options.kind ?? "");
+      return rowIsKind(row?.kind, String(options.kind ?? ""));
     }
     case "row_at_index_kind_is": {
       if (state.loadedShowId == null) return false;
       const show = state.showCache.get(state.loadedShowId);
       const row = show?.rows[Number(options.rowIndex ?? 1) - 1];
-      return row?.kind === String(options.kind ?? "");
+      return rowIsKind(row?.kind, String(options.kind ?? ""));
     }
   }
+}
+
+/** The "Media" choice (stored as "video") also matches photo rows. */
+function rowIsKind(rowKind: string | undefined, wanted: string): boolean {
+  return rowKind === wanted || (wanted === "video" && rowKind === "media");
 }
 
 // ──── SDK-shaped definitions ─────────────────────────────────────────────
@@ -710,7 +715,7 @@ const rowKindInputF: CompanionInputFieldDropdown = {
   choices: [
     { id: "song", label: "Song" },
     { id: "graphic", label: "Graphic" },
-    { id: "video", label: "Video" },
+    { id: "video", label: "Media" },
     { id: "scripture", label: "Scripture" },
     { id: "slides", label: "Slides" },
   ],
@@ -722,6 +727,7 @@ const KIND_COLOR_DEFAULTS: Record<RowKind, number> = {
   graphic: 0xff9a40,
   scripture: 0x2a0020,
   video: 0xff00ff,
+  media: 0xff00ff,
   slides: 0x008080,
 };
 
@@ -729,9 +735,15 @@ const KIND_LABELS: Record<RowKind, string> = {
   song: "Song",
   graphic: "Graphic",
   scripture: "Scripture",
-  video: "Video",
+  video: "Media",
+  media: "Media",
   slides: "Slides",
 };
+
+/** Operator-facing name of a row kind; photo and video rows are both "Media". */
+export function rowKindLabel(kind: RowKind): string {
+  return KIND_LABELS[kind];
+}
 
 /** The colour for the kind of the loaded show's row at a 1-based index; undefined when there is no such row. */
 export function rowKindColor(
@@ -798,7 +810,7 @@ export function feedbackDefinitionsForSDK(
     type: "advanced",
     options: [
       rowIndexInputF,
-      ...(Object.keys(KIND_LABELS) as RowKind[]).map(
+      ...(Object.keys(KIND_LABELS) as RowKind[]).filter((k) => k !== "media").map(
         (k): CompanionInputFieldColor => ({
           id: `color_${k}`,
           type: "colorpicker",
@@ -814,6 +826,8 @@ export function feedbackDefinitionsForSDK(
         const v = Number(o[`color_${k}`]);
         if (Number.isFinite(v)) colors[k] = v;
       }
+      // One "Media" picker covers photo rows too.
+      if (colors.video !== undefined) colors.media = colors.video;
       const bgcolor = rowKindColor(getState(), Number(o.rowIndex ?? 1), colors);
       return bgcolor === undefined ? {} : { bgcolor };
     },

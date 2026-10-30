@@ -15,13 +15,13 @@ export interface ModuleConfig {
   pageSlides: string;
 }
 
-export type RowKind = "song" | "graphic" | "scripture" | "video" | "slides";
+export type RowKind = "song" | "graphic" | "scripture" | "video" | "media" | "slides";
 
 const PAGE_FIELDS: { id: keyof ModuleConfig; kind: RowKind; label: string }[] = [
   { id: "pageSong", kind: "song", label: "Page for song rows" },
   { id: "pageGraphic", kind: "graphic", label: "Page for graphic rows" },
   { id: "pageScripture", kind: "scripture", label: "Page for scripture rows" },
-  { id: "pageVideo", kind: "video", label: "Page for video rows" },
+  { id: "pageVideo", kind: "video", label: "Page for media rows (photos and videos)" },
   { id: "pageSlides", kind: "slides", label: "Page for slides rows" },
 ];
 
@@ -107,6 +107,8 @@ export function rowKindPages(config: ModuleConfig): Partial<Record<RowKind, stri
     const v = String(config[f.id] ?? "").trim();
     if (v) out[f.kind] = v;
   }
+  // Photo rows share the video rows' page.
+  if (out.video) out.media = out.video;
   return out;
 }
 

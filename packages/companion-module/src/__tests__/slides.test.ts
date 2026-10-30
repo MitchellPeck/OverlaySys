@@ -5,6 +5,9 @@ import { actionDefinitions, dispatchAction } from "../actions";
 import { presetDefinitions } from "../presets";
 import { feedbackPredicate } from "../feedbacks";
 import { projectVariables, variableDefinitions } from "../variables";
+import { rowKindLabel } from "../feedbacks";
+import { serverNow } from "../types";
+import { vi, afterEach } from "vitest";
 
 const withSession = () =>
   apply(initialState(), {
@@ -142,5 +145,57 @@ describe("slides rows from the rundown", () => {
       slidesSession: { rowId: "sr1", title: "D", slideIdx: 0, slideCount: 2, lines: [], blanked: false, atEnd: false },
     } as never);
     expect(feedbackPredicate(s, "row_is_active", { rowId: "sr1" })).toBe(true);
+  });
+});
+
+const mediaDeck = (extra: Record<string, unknown> = {}) =>
+  apply(initialState(), {
+    type: "state",
+    channel: "program",
+    state: {
+      channel: "program",
+      active: null,
+      slidesSession: {
+        rowId: "r9", title: "Photos", slideIdx: 0, slideCount: 3, lines: [],
+        blanked: false, atEnd: false, slot: "media", loops: true, ...extra,
+      },
+    } as never,
+  });
+
+afterEach(() => vi.useRealTimers());
+
+describe("media decks", () => {
+  it("kind label for photo and video rows is \"Media\"", () => {
+    expect(rowKindLabel("media")).toBe("Media");
+    expect(rowKindLabel("video")).toBe("Media");
+    expect(rowKindLabel("song")).toBe("Song");
+  });
+
+  it("slides_on_air is true for a media-slot deck", () => {
+    expect(feedbackPredicate(mediaDeck(), "slides_on_air", { channel: "program" })).toBe(true);
+    expect(projectVariables(mediaDeck(), ["program"]).program_slides_deck).toBe("Photos");
+  });
+
+  it("slides_next_in counts down from nextAdvanceAt", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const s = mediaDeck({ nextAdvanceAt: 1_000_000 + 10_500 });
+    expect(variableDefinitions(["program"]).map((d) => d.variableId)).toContain("program_slides_next_in");
+    expect(projectVariables(s, ["program"]).program_slides_next_in).toBe("11");
+    vi.setSystemTime(1_000_000 + 4_000);
+    expect(projectVariables(s, ["program"]).program_slides_next_in).toBe("7");
+    vi.setSystemTime(1_000_000 + 20_000);
+    expect(projectVariables(s, ["program"]).program_slides_next_in).toBe("0");
+    expect(projectVariables(mediaDeck(), ["program"]).program_slides_next_in).toBe("");
+    expect(projectVariables(initialState(), ["program"]).program_slides_next_in).toBe("");
+  });
+
+  it("slides_next_in uses the server clock offset", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const s = mediaDeck({ nextAdvanceAt: 1_000_000 + 90_000 + 5_000 });
+    s.serverTimeOffsetMs = 90_000;
+    expect(serverNow(s)).toBe(1_090_000);
+    expect(projectVariables(s, ["program"]).program_slides_next_in).toBe("5");
   });
 });

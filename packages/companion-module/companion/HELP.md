@@ -147,7 +147,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | Rundown: row on program (by number) | `row_at_index_is_active` | Row index (1-based; survives show changes) | True when the row at the given 1-based index currently matches PGM — survives show changes. |
 | Rundown: cursor row is type | `cursor_row_kind_is` | Row type | True when the row at the cursor is the chosen type (song, graphic, video, scripture). Use it to style a button or branch a button's actions when the current line is a song. |
 | Rundown: row is type (by number) | `row_at_index_kind_is` | Row index (1-based; survives show changes), Row type | True when the row at the given 1-based index is the chosen type — survives show changes. |
-| Rundown: row colour by type (by number) | `row_at_index_kind_color` | Row index (1-based; survives show changes), Song, Graphic, Scripture, Video, Slides | Sets the button background to the colour picked for the type of the row at the given 1-based index — one feedback instead of one per type. |
+| Rundown: row colour by type (by number) | `row_at_index_kind_color` | Row index (1-based; survives show changes), Song, Graphic, Scripture, Media, Slides | Sets the button background to the colour picked for the type of the row at the given 1-based index — one feedback instead of one per type. |
 
 ### Variables
 
@@ -173,6 +173,7 @@ The tables below are generated from the module's own definitions. Do not edit th
 | `<c>_slides_deck` | <c> slides deck title |
 | `<c>_slide_n` | <c> slides current slide (1-based) |
 | `<c>_slide_count` | <c> slides slide count |
+| `<c>_slides_next_in` | <c> slides seconds until the next auto-advance (blank when none) |
 | `<c>_outputs` | <c> connected output windows (count) |
 | `<c>_video_title` | <c> video title |
 | `<c>_video_status` | <c> video status (loading/playing/paused/ended/error) |

@@ -107,6 +107,7 @@ export function variableDefinitions(
       { variableId: `${c}_slides_deck`, name: `${c} slides deck title` },
       { variableId: `${c}_slide_n`, name: `${c} slides current slide (1-based)` },
       { variableId: `${c}_slide_count`, name: `${c} slides slide count` },
+      { variableId: `${c}_slides_next_in`, name: `${c} slides seconds until the next auto-advance (blank when none)` },
       // [/P3.21]
       { variableId: `${c}_outputs`, name: `${c} connected output windows (count)` },
       { variableId: `${c}_video_title`, name: `${c} video title` },
@@ -286,6 +287,8 @@ export function projectVariables(
     out[`${c}_slides_deck`] = sl?.title ?? "";
     out[`${c}_slide_n`] = sl ? String(sl.slideIdx + 1) : "";
     out[`${c}_slide_count`] = sl ? String(sl.slideCount) : "";
+    out[`${c}_slides_next_in`] =
+      sl?.nextAdvanceAt != null ? String(Math.max(0, Math.ceil((sl.nextAdvanceAt - now) / 1000))) : "";
     // [/P3.21]
     out[`${c}_outputs`] = state.outputs ? String(state.outputs[c]?.count ?? 0) : "";
   }
