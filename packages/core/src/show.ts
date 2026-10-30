@@ -4,6 +4,7 @@ import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema }
 import { SermonNotesSchema } from "./sermonNotes";
 import { StageLayoutsSchema } from "./stageLayoutRules";
 import { DeckSlideSchema } from "./deck";
+import { MediaFitSchema, MediaPositionSchema, type MediaFit, type MediaPosition } from "./mediaPlacement";
 import type { MediaRef, SlidesRowFields } from "./deck";
 
 /**
@@ -228,6 +229,9 @@ const VideoRowObject = z.object({
   durationSec: z.number().optional(),
   loop: z.boolean().optional(),
   muted: z.boolean().optional(),
+  /** Absent plays as before: Fit inside, centred. */
+  fit: MediaFitSchema.optional(),
+  position: MediaPositionSchema.optional(),
   volume: z.number().min(0).max(1).default(1),
   endAction: MediaEndActionSchema.default("clear"),
   transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
@@ -257,7 +261,9 @@ const ImageRowObject = z.object({
   assetUrl: z.string(),
   mediaItemId: z.string().optional(),
   label: z.string().optional(),
-  fit: z.enum(["contain", "cover", "fill"]).default("cover"),
+  fit: MediaFitSchema.default("cover"),
+  /** Absent = centred. */
+  position: MediaPositionSchema.optional(),
   transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   channelHint: z.string().optional(),
@@ -280,6 +286,8 @@ type DeckSlideFields = {
   holdSec?: number;
   advanceOnEnd?: boolean;
   muted?: boolean;
+  fit?: MediaFit;
+  position?: MediaPosition;
 };
 
 /** A row that takes slides from a deck (or its own local slides) on air. */

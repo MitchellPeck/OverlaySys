@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { SongSessionSummarySchema } from "./song";
 import { SlidesSessionSummarySchema } from "./slides";
+import { MediaFitSchema, MediaPositionSchema } from "./mediaPlacement";
 
 export const ChannelPhaseSchema = z.enum(["in", "on", "out"]);
 export type ChannelPhase = z.infer<typeof ChannelPhaseSchema>;
@@ -87,7 +88,8 @@ export const ChannelMediaSchema = z.object({
   endAction: MediaEndActionSchema,
   // Defaulted so state from a pre-image server still parses.
   mediaType: z.enum(["image", "video"]).default("video"),
-  fit: z.enum(["contain", "cover", "fill"]).default("contain"),
+  fit: MediaFitSchema.default("contain"),
+  position: MediaPositionSchema.default("center"),
   loop: z.boolean().default(false),
   muted: z.boolean().default(false),
   /** Who took this media (e.g. a media-deck session), so it can tell its own takes apart. */

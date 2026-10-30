@@ -8,6 +8,7 @@ import type {
   CornerRadius,
   Shadow,
 } from "@overlaysys/core";
+import { mediaObjectPosition } from "@overlaysys/core";
 import { resolveBinding } from "./bindings";
 import { applyTextFitStyles } from "./textFit";
 
@@ -261,6 +262,11 @@ export function revealClipPath(
  * flex column applyTextStyle set up — its horizontal alignment relies on the
  * span stretching across it — so it can't be reset to "" (block).
  */
+/** CSS object-position for an image/video layer; "" (browser default, centred) when it sets none. */
+export function layerObjectPosition(layer: Extract<Layer, { type: "image" | "video" }>): string {
+  return layer.position ? mediaObjectPosition(layer.position) : "";
+}
+
 export function layerDisplay(layer: Pick<Layer, "type" | "visible">): string {
   if (!layer.visible) return "none";
   return layer.type === "text" ? "flex" : "";
@@ -311,6 +317,7 @@ export function applyLayerAppearance(
       const src = resolveBinding(layer.src, data);
       if (img.getAttribute("src") !== src) img.src = src;
       img.style.objectFit = layer.fit;
+      img.style.objectPosition = layerObjectPosition(layer);
       return;
     }
     case "shape": {
@@ -416,6 +423,7 @@ function buildLayer(
       v.style.width = "100%";
       v.style.height = "100%";
       v.style.objectFit = layer.fit;
+      v.style.objectPosition = layerObjectPosition(layer);
       v.style.pointerEvents = "none";
       applyVideoCrop(v, layer.crop);
       v.playbackRate = layer.playbackRate;

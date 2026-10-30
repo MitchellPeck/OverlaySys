@@ -42,3 +42,4 @@ export * from "./slidesRowOps";
 export * from "./templateIds";
 export * from "./mediaItem";
 export * from "./mediaDeck";
+export * from "./mediaPlacement";

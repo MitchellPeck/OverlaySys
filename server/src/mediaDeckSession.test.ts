@@ -177,6 +177,34 @@ describe("mediaDeckSession", () => {
     expect(rowsOnAir(channels.getState("program"), null).has("r1")).toBe(true);
   });
 
+  it("each slide is taken with its own size and position (deck default, then the slide's override)", () => {
+    const d = deck({
+      mediaFit: "scale-down",
+      mediaPosition: "bottom",
+      slides: [mediaSlide("a", "image"), mediaSlide("b", "image", { fit: "contain", position: "top" })],
+    });
+    mediaDeckSession.start("program", { rowId: "r1", deck: d });
+    expect(channels.getState("program").media).toMatchObject({ fit: "scale-down", position: "bottom" });
+    sec(5);
+    expect(channels.getState("program").media).toMatchObject({ fit: "contain", position: "top" });
+  });
+
+  it("an old deck takes photos to fill the screen and videos to fit inside, centred", () => {
+    mediaDeckSession.start("program", { rowId: "r1", deck: deck({ slides: [mediaSlide("a", "image"), mediaSlide("v", "video")] }) });
+    expect(channels.getState("program").media).toMatchObject({ mediaType: "image", fit: "cover", position: "center" });
+    sec(5);
+    expect(channels.getState("program").media).toMatchObject({ mediaType: "video", fit: "contain", position: "center" });
+  });
+
+  it("a live-folder deck takes every graphic with the deck default unless the file overrides it", () => {
+    setFolder("lf1", [img("a.png"), img("b.png")]);
+    const d = folderDeck({ mediaFit: "scale-down", mediaPosition: "bottom", folderOrder: [{ file: "a.png" }, { file: "b.png", position: "top" }] });
+    mediaDeckSession.start("program", { rowId: "r1", deck: d });
+    expect(channels.getState("program").media).toMatchObject({ fit: "scale-down", position: "bottom" });
+    sec(5);
+    expect(channels.getState("program").media).toMatchObject({ fit: "scale-down", position: "top" });
+  });
+
   it("video with advanceOnEnd advances on ended, not on a timer", () => {
     const d = deck({ slides: [mediaSlide("v", "video"), mediaSlide("b", "image")] });
     mediaDeckSession.start("program", { rowId: "r1", deck: d });

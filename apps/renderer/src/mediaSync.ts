@@ -1,4 +1,4 @@
-import type { ChannelMedia, MediaPlayback } from "@overlaysys/core";
+import { mediaObjectPosition, type ChannelMedia, type MediaPlayback } from "@overlaysys/core";
 
 /**
  * Pure helpers for the renderer's media slot. Kept out of MediaLayer.tsx so
@@ -108,6 +108,9 @@ export function mirrorCorrection(localTime: number, primary: MediaPlayback, serv
 export type MediaElementProps = {
   element: "img" | "video";
   objectFit: ChannelMedia["fit"];
+  objectPosition: string;
+  /** Photos are see-through outside the picture; videos keep a black background. */
+  background: "transparent" | "#000";
   loop: boolean;
   muted: boolean;
 };
@@ -115,12 +118,15 @@ export type MediaElementProps = {
 /**
  * What the media slot mounts for a take: a photo as `<img>`, anything else
  * as `<video>`. Full-screen video plays audio unless the take is muted;
- * mirror windows are always silent.
+ * mirror windows are always silent. A photo paints nothing outside the
+ * picture, so a transparent output shows what's beneath it.
  */
 export function mediaElementProps(media: ChannelMedia, isMirror: boolean): MediaElementProps {
   return {
     element: media.mediaType === "image" ? "img" : "video",
     objectFit: media.fit,
+    objectPosition: mediaObjectPosition(media.position),
+    background: media.mediaType === "image" ? "transparent" : "#000",
     loop: media.mediaType !== "image" && media.loop,
     muted: isMirror || media.muted,
   };

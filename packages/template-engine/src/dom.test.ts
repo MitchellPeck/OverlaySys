@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layerDisplay, revealClipPath, revealRefBox } from "./dom";
+import { layerDisplay, layerObjectPosition, revealClipPath, revealRefBox } from "./dom";
 
 const T = { x: 100, y: 200, w: 400, h: 10, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, anchorX: 0, anchorY: 0 };
 const rest = { dx: 0, dy: 0, w: 400, h: 10, scaleX: 1, scaleY: 1 };
@@ -47,5 +47,15 @@ describe("layerDisplay", () => {
   it("hides an invisible layer of any type", () => {
     expect(layerDisplay({ type: "text", visible: false } as never)).toBe("none");
     expect(layerDisplay({ type: "image", visible: false } as never)).toBe("none");
+  });
+});
+
+describe("layerObjectPosition", () => {
+  it("leaves the browser default (centred) when a layer has no position", () => {
+    expect(layerObjectPosition({ type: "image" } as never)).toBe("");
+  });
+  it("places an image or video layer by its 3x3 position", () => {
+    expect(layerObjectPosition({ type: "image", position: "bottom" } as never)).toBe("50% 100%");
+    expect(layerObjectPosition({ type: "video", position: "top-right" } as never)).toBe("100% 0%");
   });
 });

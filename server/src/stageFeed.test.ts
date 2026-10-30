@@ -365,6 +365,7 @@ describe("buildStageFeed", () => {
         endAction: "clear",
         mediaType: "video",
         fit: "contain",
+        position: "center",
         loop: false,
         muted: false,
         transitionIn: { style: "cut", durationMs: 0 },

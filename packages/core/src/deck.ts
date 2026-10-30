@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MediaFitSchema, MediaPositionSchema } from "./mediaPlacement";
 
 const DeckLicensingStrict = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("ccli"), ccliNumber: z.string().optional() }),
@@ -31,6 +32,9 @@ export const DeckSlideSchema = z
     holdSec: z.number().positive().optional(),
     advanceOnEnd: z.boolean().optional(),
     muted: z.boolean().optional(),
+    /** A media slide's own size/position; absent uses the deck's. */
+    fit: MediaFitSchema.optional(),
+    position: MediaPositionSchema.optional(),
   })
   .passthrough();
 export type DeckSlide = z.infer<typeof DeckSlideSchema>;
@@ -53,7 +57,20 @@ export const DeckSchema = z
     /** Live-folder library item this deck plays; slides come from the folder's files. */
     liveFolderId: z.string().optional(),
     /** Saved play order of a live folder's files. */
-    folderOrder: z.array(z.object({ file: z.string(), holdSec: z.number().positive().optional() })).optional(),
+    folderOrder: z
+      .array(
+        z.object({
+          file: z.string(),
+          holdSec: z.number().positive().optional(),
+          /** This graphic's own size/position; absent uses the deck's. */
+          fit: MediaFitSchema.optional(),
+          position: MediaPositionSchema.optional(),
+        }),
+      )
+      .optional(),
+    /** Default size/position for the deck's photo/video slides and every live-folder graphic. */
+    mediaFit: MediaFitSchema.optional(),
+    mediaPosition: MediaPositionSchema.optional(),
   })
   .passthrough();
 export type Deck = z.infer<typeof DeckSchema>;

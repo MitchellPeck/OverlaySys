@@ -231,8 +231,13 @@ describe("photos, loops and mutes", () => {
 
   it("mediaTake defaults to a video that neither loops nor mutes", () => {
     channels.mediaTake(ch, ARGS, 1000);
-    expect(media()).toMatchObject({ mediaType: "video", fit: "contain", loop: false, muted: false });
+    expect(media()).toMatchObject({ mediaType: "video", fit: "contain", position: "center", loop: false, muted: false });
     expect(media()).not.toHaveProperty("owner");
+  });
+
+  it("mediaTake carries size and position", () => {
+    channels.mediaTake(ch, { ...ARGS, mediaType: "image", fit: "scale-down", position: "bottom-right" }, 1000);
+    expect(media()).toMatchObject({ fit: "scale-down", position: "bottom-right" });
   });
 
   it("mediaTake carries loop, muted and owner", () => {

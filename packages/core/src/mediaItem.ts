@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MediaFitSchema, MediaPositionSchema } from "./mediaPlacement";
 
 /** A library entry: an uploaded file or a live folder. A live folder's path is per machine and never stored here. */
 export const MediaItemSchema = z
@@ -12,6 +13,9 @@ export const MediaItemSchema = z
     height: z.number().optional(),
     durationSec: z.number().optional(),
     folder: z.string().optional(),
+    /** The item's own size/position: where it's added, that use starts with these. */
+    fit: MediaFitSchema.optional(),
+    position: MediaPositionSchema.optional(),
     createdAt: z.string(),
     updatedAt: z.string().optional(),
     deletedAt: z.string().optional(),

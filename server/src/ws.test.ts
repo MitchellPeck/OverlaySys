@@ -265,10 +265,10 @@ describe("ws song takes set liveRow", () => {
     const sock = connect();
     await sock.client({
       type: "media_take", channel: ch, rowId: "p1", assetUrl: "/assets/p.png", volume: 1, endAction: "hold",
-      mediaType: "image", fit: "cover", loop: true, muted: true,
+      mediaType: "image", fit: "scale-down", position: "bottom", loop: true, muted: true,
     });
     await vi.waitFor(() =>
-      expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "cover", loop: true, muted: true }),
+      expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "scale-down", position: "bottom", loop: true, muted: true }),
     );
   });
 

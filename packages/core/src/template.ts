@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MediaPositionSchema } from "./mediaPlacement";
 
 export const TransformSchema = z.object({
   x: z.number().default(0),
@@ -142,6 +143,8 @@ const ImageLayerSchema = z.object({
   type: z.literal("image"),
   src: z.union([z.string(), FieldRefSchema]),
   fit: z.enum(["contain", "cover", "fill"]).default("cover"),
+  /** Where the image sits in the layer box; absent = centred. */
+  position: MediaPositionSchema.optional(),
 });
 
 /**
@@ -167,6 +170,8 @@ const VideoLayerSchema = z.object({
   src: z.union([z.string(), FieldRefSchema]),
   /** How the video frame fits within the layer box. */
   fit: z.enum(["contain", "cover", "fill"]).default("cover"),
+  /** Where the frame sits in the layer box; absent = centred. */
+  position: MediaPositionSchema.optional(),
   /** Loop back to start when playback reaches end (or `trimEnd`). */
   loop: z.boolean().default(true),
   /** Start playing as soon as the layer mounts. */

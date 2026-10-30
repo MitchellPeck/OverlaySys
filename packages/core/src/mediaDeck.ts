@@ -1,4 +1,5 @@
 import type { Deck } from "./deck";
+import { resolveMediaPlacement, type MediaFit, type MediaPosition, type PartialMediaPlacement } from "./mediaPlacement";
 
 export type LiveFolderFile = { name: string; mediaType: "image" | "video"; size: number; mtimeMs: number };
 
@@ -10,7 +11,16 @@ export type MediaDeckSlide = {
   advanceOnEnd: boolean;
   muted: boolean;
   label?: string;
+  /** Resolved: the slide's/file's own, else the deck's, else photos Fill screen / videos Fit inside, centred. */
+  fit: MediaFit;
+  position: MediaPosition;
 };
+
+/** A deck's default size/position for its media (absent fields fall through). */
+export const deckMediaPlacement = (deck: Pick<Deck, "mediaFit" | "mediaPosition">): PartialMediaPlacement => ({
+  ...(deck.mediaFit ? { fit: deck.mediaFit } : {}),
+  ...(deck.mediaPosition ? { position: deck.mediaPosition } : {}),
+});
 
 export function liveFolderFileUrl(folderId: string, name: string): string {
   return `/media-folders/${folderId}/${encodeURIComponent(name)}`;
@@ -48,6 +58,8 @@ export function resolveFolderDeckSlides(
   files: LiveFolderFile[],
   defaultHoldSec: number | undefined,
   folderId: string,
+  /** The deck's default size/position for every graphic. */
+  deckPlacement?: PartialMediaPlacement,
 ): MediaDeckSlide[] {
   const present = new Map(files.map((f) => [f.name, f]));
   const out: MediaDeckSlide[] = [];
@@ -62,6 +74,7 @@ export function resolveFolderDeckSlides(
       advanceOnEnd: file.mediaType === "video",
       muted: false,
       label: file.name,
+      ...resolveMediaPlacement(file.mediaType, entry, deckPlacement),
     });
   }
   return out;
@@ -70,6 +83,7 @@ export function resolveFolderDeckSlides(
 /** Slides of a non-folder media-only deck. */
 export function mediaDeckSlidesFromDeck(deck: Deck): MediaDeckSlide[] {
   const out: MediaDeckSlide[] = [];
+  const deckDefault = deckMediaPlacement(deck);
   for (const s of deck.slides) {
     if (!s.media) continue;
     const video = s.media.mediaType === "video";
@@ -81,6 +95,7 @@ export function mediaDeckSlidesFromDeck(deck: Deck): MediaDeckSlide[] {
       advanceOnEnd: s.advanceOnEnd ?? video,
       muted: s.muted ?? false,
       label: s.label,
+      ...resolveMediaPlacement(s.media.mediaType, s, deckDefault),
     });
   }
   return out;

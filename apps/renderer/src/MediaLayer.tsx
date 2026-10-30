@@ -381,7 +381,13 @@ function MediaVideo({
         preload="auto"
         disablePictureInPicture
         loop={element.loop}
-        style={{ width: "100%", height: "100%", objectFit: element.objectFit, background: "#000" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: element.objectFit,
+          objectPosition: element.objectPosition,
+          background: element.background,
+        }}
       />
     </MediaFrame>
   );
@@ -552,7 +558,14 @@ function MediaImage({ media, channel, isMirror, matte, scale, stageSize, send, l
         ref={imgRef}
         alt=""
         draggable={false}
-        style={{ width: "100%", height: "100%", objectFit: element.objectFit, background: "#000", display: "block" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: element.objectFit,
+          objectPosition: element.objectPosition,
+          background: element.background,
+          display: "block",
+        }}
       />
     </MediaFrame>
   );

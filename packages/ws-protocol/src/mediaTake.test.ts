@@ -31,6 +31,19 @@ describe("mediaRowTakeMessage", () => {
     expect(msg).not.toHaveProperty("muted");
   });
 
+  it("carries a row's size and position; leaves them off when the row doesn't set them", () => {
+    const img: ImageRow = {
+      kind: "media", mediaType: "image", id: "p1", assetUrl: "/p.png", fit: "scale-down", position: "bottom",
+      transitionIn: FADE, transitionOut: FADE,
+    };
+    expect(mediaRowTakeMessage(img, "program")).toMatchObject({ fit: "scale-down", position: "bottom" });
+    expect(mediaRowTakeMessage({ ...img, position: undefined }, "program")).not.toHaveProperty("position");
+    expect(mediaRowTakeMessage(video({ fit: "cover", position: "top-left" }), "program")).toMatchObject({ fit: "cover", position: "top-left" });
+    const plain = mediaRowTakeMessage(video(), "program");
+    expect(plain).not.toHaveProperty("fit");
+    expect(plain).not.toHaveProperty("position");
+  });
+
   it("omits showId when there is none", () => {
     expect(mediaRowTakeMessage(video(), "program")).not.toHaveProperty("showId");
     expect(mediaRowTakeMessage(video(), "program", null)).not.toHaveProperty("showId");

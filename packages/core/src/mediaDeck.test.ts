@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Deck } from "./deck";
 import {
   isMediaOnlyDeck,
+  mediaDeckSlidesFromDeck,
   liveFolderFileUrl,
   nextFolderOrder,
   resolveFolderDeckSlides,
@@ -35,10 +36,57 @@ describe("resolveFolderDeckSlides", () => {
     const s = resolveFolderDeckSlides([{ file: "a.png", holdSec: 2 }, { file: "b.png" }], [f("a.png"), f("b.png")], 5, "f");
     expect(s.map((x) => x.holdSec)).toEqual([2, 5]);
   });
+  it("applies the deck's size/position to every graphic, then a file's own override", () => {
+    const s = resolveFolderDeckSlides(
+      [{ file: "a.png" }, { file: "b.png", fit: "contain", position: "top" }],
+      [f("a.png"), f("b.png")],
+      5,
+      "f",
+      { fit: "scale-down", position: "bottom" },
+    );
+    expect(s.map((x) => [x.fit, x.position])).toEqual([
+      ["scale-down", "bottom"],
+      ["contain", "top"],
+    ]);
+  });
+  it("with no deck default a photo fills the screen and a video fits inside, centred", () => {
+    const s = resolveFolderDeckSlides(undefined, [f("a.png"), f("b.mp4", "video")], 5, "f");
+    expect(s.map((x) => [x.fit, x.position])).toEqual([
+      ["cover", "center"],
+      ["contain", "center"],
+    ]);
+  });
   it("videos advance on end", () => {
     const s = resolveFolderDeckSlides(undefined, [f("a.mp4", "video"), f("b.png")], 5, "f");
     expect(s.map((x) => x.advanceOnEnd)).toEqual([true, false]);
     expect(s[0]?.assetUrl).toBe("/media-folders/f/a.mp4");
+  });
+});
+
+describe("mediaDeckSlidesFromDeck", () => {
+  const media = (mediaType: "image" | "video") => ({ assetUrl: `/assets/x.${mediaType === "image" ? "png" : "mp4"}`, mediaType });
+  it("applies the deck default, then a slide's own size/position", () => {
+    const d = deck({
+      mediaFit: "scale-down",
+      mediaPosition: "bottom",
+      slides: [
+        { id: "1", data: {}, media: media("image") },
+        { id: "2", data: {}, media: media("image"), fit: "fill", position: "left" },
+        { id: "3", data: {}, media: media("video"), position: "top-right" },
+      ],
+    });
+    expect(mediaDeckSlidesFromDeck(d).map((x) => [x.fit, x.position])).toEqual([
+      ["scale-down", "bottom"],
+      ["fill", "left"],
+      ["scale-down", "top-right"],
+    ]);
+  });
+  it("an old deck plays as before: photos cover, videos contain, centred", () => {
+    const d = deck({ slides: [{ id: "1", data: {}, media: media("image") }, { id: "2", data: {}, media: media("video") }] });
+    expect(mediaDeckSlidesFromDeck(d).map((x) => [x.fit, x.position])).toEqual([
+      ["cover", "center"],
+      ["contain", "center"],
+    ]);
   });
 });
 

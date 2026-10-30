@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Template } from "./template";
 import type { Deck, DeckLicensing, DeckSlide, SlidesRowFields } from "./deck";
+import { resolveMediaPlacement, type MediaFit, type MediaPosition } from "./mediaPlacement";
 
 export type ResolvedSlide = {
   key: string;
@@ -10,7 +11,7 @@ export type ResolvedSlide = {
   data: Record<string, string>;
   label?: string;
   /** A photo/video slide: what it shows (its `data` is empty). */
-  media?: { assetUrl: string; mediaType: "image" | "video" };
+  media?: { assetUrl: string; mediaType: "image" | "video"; fit?: MediaFit; position?: MediaPosition };
 };
 
 export type SlidesRowView = {
@@ -63,7 +64,15 @@ export function resolveSlidesRow(
       data: { ...s.data, ...(row.fieldOverrides?.[s.id] ?? {}) },
     };
     if (s.label !== undefined) out.label = s.label;
-    if (s.media) out.media = { assetUrl: s.media.assetUrl, mediaType: s.media.mediaType };
+    if (s.media) {
+      // A one-off (local) slide has no deck default.
+      const deckDefault = row.deckId && deck ? { fit: deck.mediaFit, position: deck.mediaPosition } : undefined;
+      out.media = {
+        assetUrl: s.media.assetUrl,
+        mediaType: s.media.mediaType,
+        ...resolveMediaPlacement(s.media.mediaType, s, deckDefault),
+      };
+    }
     slides.push(out);
   }
   return { slides, missingSlides };

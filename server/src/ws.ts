@@ -450,6 +450,7 @@ export function handleConnection(
             endAction: parsed.endAction,
             ...(parsed.mediaType ? { mediaType: parsed.mediaType } : {}),
             ...(parsed.fit ? { fit: parsed.fit } : {}),
+            ...(parsed.position ? { position: parsed.position } : {}),
             ...(parsed.loop !== undefined ? { loop: parsed.loop } : {}),
             ...(parsed.muted !== undefined ? { muted: parsed.muted } : {}),
             // `owner` is never taken from a client: only the server's media-deck session sets it.

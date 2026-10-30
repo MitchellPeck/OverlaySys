@@ -31,4 +31,42 @@ describe("media schemas", () => {
     });
     expect(r.success).toBe(true);
   });
+  it("old rows and decks parse unchanged; new size/position fields are accepted", () => {
+    const photo = RundownRowSchema.parse({ kind: "media", mediaType: "image", id: "r1", assetUrl: "/a.png" });
+    expect(photo).not.toHaveProperty("position");
+    const video = RundownRowSchema.parse({ kind: "video", id: "v1", assetUrl: "/a.mp4" });
+    expect(video).not.toHaveProperty("fit");
+    expect(video).not.toHaveProperty("position");
+    expect(
+      RundownRowSchema.parse({ kind: "media", mediaType: "image", id: "r1", assetUrl: "/a.png", fit: "scale-down", position: "bottom" }),
+    ).toMatchObject({ fit: "scale-down", position: "bottom" });
+    expect(RundownRowSchema.parse({ kind: "video", id: "v1", assetUrl: "/a.mp4", fit: "cover", position: "top" })).toMatchObject({
+      fit: "cover",
+      position: "top",
+    });
+    const base = { id: "d1", name: "D", defaultTemplateId: "t", licensing: { kind: "own" }, createdAt: "2026-01-01" };
+    const old = DeckSchema.parse({ ...base, slides: [{ id: "s1", data: {}, media: { assetUrl: "/a.png", mediaType: "image" } }] });
+    expect(old).not.toHaveProperty("mediaFit");
+    expect(old.slides[0]).not.toHaveProperty("fit");
+    const placed = DeckSchema.parse({
+      ...base,
+      mediaFit: "contain",
+      mediaPosition: "bottom",
+      slides: [{ id: "s1", data: {}, media: { assetUrl: "/a.png", mediaType: "image" }, fit: "fill", position: "left" }],
+      liveFolderId: "f1",
+      folderOrder: [{ file: "a.png", fit: "scale-down", position: "top-right" }],
+    });
+    expect(placed).toMatchObject({ mediaFit: "contain", mediaPosition: "bottom", folderOrder: [{ fit: "scale-down", position: "top-right" }] });
+    expect(DeckSchema.safeParse({ ...base, slides: [], mediaFit: "zoom" }).success).toBe(false);
+    expect(MediaItemSchema.parse({ id: "m", name: "M", kind: "file", mediaType: "image", assetUrl: "/a.png", createdAt: "x", fit: "scale-down", position: "bottom" })).toMatchObject({ fit: "scale-down", position: "bottom" });
+  });
+  it("ChannelMedia from an older server gets position center", async () => {
+    const { ChannelMediaSchema } = await import("./channel");
+    const m = ChannelMediaSchema.parse({
+      rowId: "r", assetUrl: "/a.png", volume: 1, endAction: "hold", takenAt: 1, paused: false,
+      playback: { status: "playing", currentTime: 0, duration: 0, updatedAt: 1 },
+    });
+    expect(m.position).toBe("center");
+    expect(ChannelMediaSchema.parse({ ...m, fit: "scale-down" }).fit).toBe("scale-down");
+  });
 });

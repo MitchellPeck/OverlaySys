@@ -2,6 +2,8 @@ import type {
   ActiveGraphic,
   ChannelState,
   MediaEndAction,
+  MediaFit,
+  MediaPosition,
   MediaPlayback,
   MediaStatus,
   MediaTransition,
@@ -584,7 +586,8 @@ export type MediaTakeArgs = {
   volume: number;
   endAction: MediaEndAction;
   mediaType?: "image" | "video";
-  fit?: "contain" | "cover" | "fill";
+  fit?: MediaFit;
+  position?: MediaPosition;
   loop?: boolean;
   muted?: boolean;
   /** Set only by the server's media-deck session for its own takes; any other take stops the deck. */
@@ -609,6 +612,7 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     endAction: args.endAction,
     mediaType: args.mediaType ?? "video",
     fit: args.fit ?? "contain",
+    position: args.position ?? "center",
     loop: args.loop ?? false,
     muted: args.muted ?? false,
     ...(args.owner !== undefined ? { owner: args.owner } : {}),

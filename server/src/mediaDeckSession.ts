@@ -1,5 +1,5 @@
 import type { Deck, DeckSlide, LiveFolderFile, MediaDeckSlide, SlidesRowFields, SlidesSessionSummary } from "@overlaysys/core";
-import { isMediaOnlyDeck, mediaDeckSlidesFromDeck, nextFolderOrder, resolveFolderDeckSlides } from "@overlaysys/core";
+import { deckMediaPlacement, isMediaOnlyDeck, mediaDeckSlidesFromDeck, nextFolderOrder, resolveFolderDeckSlides } from "@overlaysys/core";
 import * as channels from "./channels";
 import { listLiveFolderFiles, onLiveFolderChange } from "./liveFolders";
 
@@ -90,7 +90,7 @@ function resolveSlides(deck: Deck, order: Deck["folderOrder"]): { order?: Folder
   if (!deck.liveFolderId) return { slides: mediaDeckSlidesFromDeck(deck) };
   const files = listLiveFolderFiles(deck.liveFolderId);
   const next = nextFolderOrder(order, files);
-  return { order: next, slides: resolveFolderDeckSlides(next, files, deck.defaultHoldSec, deck.liveFolderId) };
+  return { order: next, slides: resolveFolderDeckSlides(next, files, deck.defaultHoldSec, deck.liveFolderId, deckMediaPlacement(deck)) };
 }
 
 /** Which slides can still play: not failed, and (live folder) its file is still there. */
@@ -193,7 +193,8 @@ function show(s: Session, withShowId = false): void {
     volume: 1,
     endAction: "hold",
     mediaType: slide.mediaType,
-    ...(slide.mediaType === "image" ? { fit: "cover" as const } : {}),
+    fit: slide.fit,
+    position: slide.position,
     loop: false,
     muted: slide.muted,
     owner: s.owner,

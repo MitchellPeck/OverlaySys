@@ -52,6 +52,20 @@ describe("slides resolvers", () => {
     expect(new Set(s.map((x) => x.key)).size).toBe(3);
     expect(s.map((x) => x.position)).toEqual([0, 1, 2]);
   });
+  it("a media slide carries its size/position: slide override, then the deck default, then what plays today", () => {
+    const img = { assetUrl: "/a.png", mediaType: "image" as const };
+    const vid = { assetUrl: "/a.mp4", mediaType: "video" as const };
+    const d = { ...deck, slides: [{ id: "a", data: {}, media: img }, { id: "b", data: {}, media: vid, position: "top" }] } as Deck;
+    expect(resolveSlidesRow(row(), d).slides.map((s) => s.media)).toEqual([
+      { ...img, fit: "cover", position: "center" },
+      { ...vid, fit: "contain", position: "top" },
+    ]);
+    const withDefault = { ...d, mediaFit: "scale-down", mediaPosition: "bottom" } as Deck;
+    expect(resolveSlidesRow(row(), withDefault).slides.map((s) => [s.media?.fit, s.media?.position])).toEqual([
+      ["scale-down", "bottom"],
+      ["scale-down", "top"],
+    ]);
+  });
   it("field overrides merge over slide data, per slide id", () => {
     const s = resolveSlidesRow(row({ fieldOverrides: { a: { text: "Line A2", choir: "X" } } }), deck).slides;
     expect(s[0]!.data).toEqual({ text: "Line A2", choir: "X" });
@@ -90,7 +104,7 @@ describe("media slides in a row", () => {
   it("resolveSlidesRow carries a slide's media; design slides have none", () => {
     const d = { ...deck, slides: [...deck.slides, { id: "m", data: {}, media: { mediaItemId: "i1", assetUrl: "/assets/x.png", mediaType: "image" } }] } as Deck;
     const s = resolveSlidesRow(row(), d).slides;
-    expect(s[3]!.media).toEqual({ assetUrl: "/assets/x.png", mediaType: "image" });
+    expect(s[3]!.media).toEqual({ assetUrl: "/assets/x.png", mediaType: "image", fit: "cover", position: "center" });
     expect("media" in s[0]!).toBe(false);
   });
 });

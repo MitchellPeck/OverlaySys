@@ -11,7 +11,7 @@ import {
 } from "./mediaSync";
 
 const base: ChannelMedia = {
-  rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const,
+  rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", position: "center", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const,
   takenAt: 100, paused: false,
   playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: 0 },
 };
@@ -32,17 +32,22 @@ describe("resolveMediaUrl", () => {
 });
 
 describe("mediaElementProps", () => {
-  it("renders a photo as an image with its fit", () => {
+  it("renders a photo as a see-through image with its fit and position", () => {
     expect(mediaElementProps({ ...base, mediaType: "image", fit: "cover" }, false)).toEqual({
-      element: "img", objectFit: "cover", loop: false, muted: false,
+      element: "img", objectFit: "cover", objectPosition: "50% 50%", background: "transparent", loop: false, muted: false,
+    });
+    expect(mediaElementProps({ ...base, mediaType: "image", fit: "scale-down", position: "bottom" }, false)).toMatchObject({
+      objectFit: "scale-down", objectPosition: "50% 100%", background: "transparent",
     });
   });
-  it("a video plays its audio, fits contain, and does not loop by default", () => {
-    expect(mediaElementProps(base, false)).toEqual({ element: "video", objectFit: "contain", loop: false, muted: false });
+  it("a video plays its audio, fits contain on black, and does not loop by default", () => {
+    expect(mediaElementProps(base, false)).toEqual({
+      element: "video", objectFit: "contain", objectPosition: "50% 50%", background: "#000", loop: false, muted: false,
+    });
   });
-  it("carries loop, muted and fill onto the video", () => {
-    expect(mediaElementProps({ ...base, loop: true, muted: true, fit: "fill" }, false)).toEqual({
-      element: "video", objectFit: "fill", loop: true, muted: true,
+  it("carries loop, muted, fill and position onto the video", () => {
+    expect(mediaElementProps({ ...base, loop: true, muted: true, fit: "fill", position: "top-left" }, false)).toEqual({
+      element: "video", objectFit: "fill", objectPosition: "0% 0%", background: "#000", loop: true, muted: true,
     });
   });
   it("a mirror window is always muted", () => {

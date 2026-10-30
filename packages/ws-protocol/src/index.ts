@@ -3,6 +3,8 @@ import {
   ChannelStateSchema,
   ChannelConfigSchema,
   MediaEndActionSchema,
+  MediaFitSchema,
+  MediaPositionSchema,
   MediaTransitionSchema,
   MediaStatusSchema,
   MediaPlaybackSchema,
@@ -238,7 +240,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     endAction: MediaEndActionSchema,
     /** Omitted by older senders; the server treats the take as a video that fits "contain". */
     mediaType: z.enum(["image", "video"]).optional(),
-    fit: z.enum(["contain", "cover", "fill"]).optional(),
+    fit: MediaFitSchema.optional(),
+    /** Omitted = centred. */
+    position: MediaPositionSchema.optional(),
     loop: z.boolean().optional(),
     /** Full-screen videos play audio unless this is true. */
     muted: z.boolean().optional(),
