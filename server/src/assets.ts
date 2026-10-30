@@ -111,6 +111,64 @@ export function isSafeAssetFilename(name: string): boolean {
   return ALLOWED_EXT.has(ext);
 }
 
+/**
+ * Extensions the upload route writes by transcoding. Their filename carries
+ * the sha256 of the *source* upload, not of the stored bytes, so it can't be
+ * verified against them. They're served as video with nosniff, so planted
+ * bytes can't run script from the operator's origin.
+ */
+const TRANSCODE_OUTPUT_EXT = new Set([".mp4", ".webm"]);
+
+/**
+ * Whether `bytes` belong under `filename` in the content-addressed store:
+ * the sha256 of the bytes matches the name, or the name is a transcode
+ * output (see TRANSCODE_OUTPUT_EXT). Callers check `isSafeAssetFilename`
+ * first.
+ */
+export function assetBytesMatchName(filename: string, bytes: Buffer): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  if (TRANSCODE_OUTPUT_EXT.has(ext)) return true;
+  const sha = crypto.createHash("sha256").update(bytes).digest("hex");
+  return filename.slice(0, -ext.length).toLowerCase() === sha;
+}
+
+/**
+ * Write `bytes` to `<assets>/<filename>` through a temp file and a rename,
+ * so the static route never serves a half-written file. Idempotent: an
+ * existing file is kept. Callers validate the filename and the hash.
+ */
+export async function writeAssetAtomic(
+  filename: string,
+  bytes: Buffer,
+): Promise<{ written: boolean }> {
+  const filePath = path.join(ASSETS_DIR(), filename);
+  await fs.mkdir(ASSETS_DIR(), { recursive: true });
+  const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+  if (exists) return { written: false };
+  const tmp = path.join(ASSETS_DIR(), `.tmp-${crypto.randomBytes(8).toString("hex")}`);
+  try {
+    await fs.writeFile(tmp, bytes);
+    await fs.rename(tmp, filePath);
+  } finally {
+    await fs.unlink(tmp).catch(() => {});
+  }
+  return { written: true };
+}
+
+/**
+ * Headers for SVG assets: a CSP that blocks script, so an SVG opened directly
+ * from the operator's origin can't run code. `<img>` rendering ignores it.
+ */
+const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
+/**
+ * Raw PUT body cap. The body is JSON with the asset as one base64 string,
+ * which V8 caps at ~512 MiB (2^29 - 24 chars), so the bundle export (which
+ * also builds that string) can't produce a larger one, and Fastify couldn't
+ * parse it.
+ */
+const RAW_PUT_BODY_LIMIT = 512 * 1024 * 1024;
+
 
 export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
   await fs.mkdir(ASSETS_DIR(), { recursive: true });
@@ -127,10 +185,42 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
     decorateReply: false,
     // Long cache: filenames are content-hashed, so the URL changes when the
     // bytes change — safe to cache aggressively.
-    setHeaders: (res) => {
+    setHeaders: (res, filePath) => {
       res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (path.extname(filePath).toLowerCase() === ".svg") {
+        res.setHeader("Content-Security-Policy", SVG_CSP);
+      }
     },
   });
+
+  // One encode per output file: concurrent uploads of the same source wait
+  // on the first one's encode instead of writing the same path at once.
+  const encodeJobs = new Map<string, Promise<void>>();
+  const encodeOnce = (
+    finalName: string,
+    encode: (dst: string) => Promise<void>,
+  ): Promise<void> => {
+    let job = encodeJobs.get(finalName);
+    if (!job) {
+      job = (async () => {
+        // Same directory as the final path so the rename is atomic; keeps
+        // the extension because ffmpeg picks the container from it.
+        const tmp = path.join(
+          ASSETS_DIR(),
+          `.tmp-${crypto.randomBytes(8).toString("hex")}${path.extname(finalName)}`,
+        );
+        try {
+          await encode(tmp);
+          await fs.rename(tmp, path.join(ASSETS_DIR(), finalName));
+        } finally {
+          await fs.unlink(tmp).catch(() => {});
+        }
+      })().finally(() => encodeJobs.delete(finalName));
+      encodeJobs.set(finalName, job);
+    }
+    return job;
+  };
 
   app.post("/api/assets", async (req, reply) => {
     const file = await req.file();
@@ -163,9 +253,13 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
         size += (chunk as Buffer).length;
         await fh.write(chunk as Buffer);
       }
-    } finally {
+    } catch (err) {
+      // Aborted or malformed upload: don't leave the partial temp file behind.
       await fh.close();
+      await fs.unlink(tmpPath).catch(() => {});
+      throw err;
     }
+    await fh.close();
 
     if (file.file.truncated) {
       await fs.unlink(tmpPath).catch(() => {});
@@ -201,15 +295,11 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
     } else if (plan.kind === "passthrough") {
       await fs.rename(tmpPath, finalPath);
     } else {
+      const encode = plan.kind === "h264-mp4" ? transcodeToMp4 : transcodeToWebmAlpha;
       try {
-        if (plan.kind === "h264-mp4") {
-          await transcodeToMp4(tmpPath, finalPath);
-        } else if (plan.kind === "vp9-webm-alpha") {
-          await transcodeToWebmAlpha(tmpPath, finalPath);
-        }
+        await encodeOnce(finalName, (dst) => encode(tmpPath, dst));
       } catch (err) {
         await fs.unlink(tmpPath).catch(() => {});
-        await fs.unlink(finalPath).catch(() => {});
         req.log.error({ err, plan }, "asset transcode failed");
         reply.code(500);
         return {
@@ -327,16 +417,15 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
    * Write raw bytes to the content-addressed asset store under a caller-
    * specified filename, bypassing the upload pipeline's transcode planner.
    * The bundle importer uses this to restore already-converted assets back
-   * onto disk without re-encoding them. The hash is the responsibility of
-   * the caller — we trust the embedded bundle since it came out of the
-   * exporter that read the file by name in the first place.
+   * onto disk without re-encoding them. The bytes must hash to the name
+   * (transcode outputs excepted, see `assetBytesMatchName`), so a caller
+   * can't plant arbitrary content under some hash.
    */
   app.put<{ Params: { filename: string }; Body: unknown }>(
     "/api/assets/raw/:filename",
     {
-      // Default 1MB is too small for video assets — match the multipart cap
-      // so large bundle imports don't 413 before reaching the handler.
-      bodyLimit: 1024 * 1024 * 1024,
+      // Default 1MB is too small for video assets.
+      bodyLimit: RAW_PUT_BODY_LIMIT,
     },
     async (req, reply) => {
       const filename = req.params.filename;
@@ -360,13 +449,12 @@ export async function registerAssetRoutes(app: FastifyInstance): Promise<void> {
         reply.code(400);
         return { error: `bad base64: ${String(err)}` };
       }
-      const filePath = path.join(ASSETS_DIR(), filename);
-      const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-      if (exists) {
-        return { filename, written: false, size: bytes.length };
+      if (!assetBytesMatchName(filename, bytes)) {
+        reply.code(400);
+        return { error: "content hash doesn't match filename" };
       }
-      await fs.writeFile(filePath, bytes);
-      return { filename, written: true, size: bytes.length };
+      const { written } = await writeAssetAtomic(filename, bytes);
+      return { filename, written, size: bytes.length };
     },
   );
 }

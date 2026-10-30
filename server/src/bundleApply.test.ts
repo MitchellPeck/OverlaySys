@@ -281,6 +281,20 @@ describe("writeBundledAsset", () => {
   it("rejects unsafe filenames", async () => {
     await expect(writeBundledAsset("../../../etc/passwd", "x")).rejects.toThrow();
   });
+
+  it("rejects bytes whose sha256 doesn't match the filename", async () => {
+    const filename = `${"a".repeat(64)}.svg`;
+    const svg = Buffer.from("<svg><script>alert(1)</script></svg>").toString("base64");
+    await expect(writeBundledAsset(filename, svg)).rejects.toThrow(/hash/);
+    expect(await fs.readdir(path.join(tmpDir, "assets")).catch(() => [])).toEqual([]);
+  });
+
+  it("accepts a transcoded video, whose name is its source's hash", async () => {
+    const filename = `${"b".repeat(64)}.mp4`;
+    const res = await writeBundledAsset(filename, Buffer.from("encoded").toString("base64"));
+    expect(res.written).toBe(true);
+    expect(await fs.readdir(path.join(tmpDir, "assets"))).toEqual([filename]);
+  });
 });
 
 describe("video rows", () => {

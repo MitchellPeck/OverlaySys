@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import type { Hotcard, Show, Template } from "@overlaysys/core";
 import { dataRoot } from "./storage";
-import { extFromMime, isSafeAssetFilename } from "./assets";
+import { assetBytesMatchName, extFromMime, isSafeAssetFilename, writeAssetAtomic } from "./assets";
 
 /**
  * Server-side equivalent of the asset transforms the operator used to do
@@ -316,8 +316,9 @@ function retargetRecord(
 
 /**
  * Write base64-decoded bytes to `data/assets/<filename>`. Used by the import
- * route when restoring the embedded `assets` array. Idempotent — if the
- * filename already exists the existing bytes are kept.
+ * route when restoring the embedded `assets` array. The bytes must hash to
+ * the filename (transcode outputs excepted), and land via temp file + rename.
+ * Idempotent — if the filename already exists the existing bytes are kept.
  */
 export async function writeBundledAsset(
   filename: string,
@@ -327,10 +328,8 @@ export async function writeBundledAsset(
     throw new Error(`invalid asset filename: ${filename}`);
   }
   const bytes = Buffer.from(base64, "base64");
-  const filePath = path.join(ASSETS_DIR(), filename);
-  await fs.mkdir(ASSETS_DIR(), { recursive: true });
-  const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-  if (exists) return { written: false };
-  await fs.writeFile(filePath, bytes);
-  return { written: true };
+  if (!assetBytesMatchName(filename, bytes)) {
+    throw new Error(`asset content hash doesn't match filename: ${filename}`);
+  }
+  return writeAssetAtomic(filename, bytes);
 }
