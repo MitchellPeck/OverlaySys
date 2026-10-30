@@ -1,0 +1,167 @@
+{
+  "id": "o-church-of-god-united",
+  "title": "O Church Of God United",
+  "ccliNumber": "599792",
+  "author": "Frederick B. Morley and Samuel Sebastian Wesley",
+  "copyright": "1954. Renewed 1982 The Hymn Society",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "O church of God united",
+            "To serve one common Lord"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Proclaim to all one message",
+            "With hearts in glad accord"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Christ ever goes before us",
+            "We follow day by day"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "With strong and eager footsteps",
+            "Along the upward way"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "From every land and nation",
+            "The ordered ranks appear"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "To serve one valiant leader",
+            "They come from far and near"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "They chant their one confession",
+            "They praise one living Lord"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "And place their sure dependence",
+            "Upon His saving word"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Though creeds and tongues may differ",
+            "They speak O Christ of Thee"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "And in Thy loving Spirit",
+            "We shall one people be"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Lord may our faithful service",
+            "And singleness of aim"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Proclaim to all the power",
+            "Of Thy redeeming name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "May Thy great prayer be answered",
+            "That we may all be one"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Close bound by love united",
+            "In Thee God's blessed Son"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "To bring a single witness",
+            "To make the pathway bright"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "That souls who grope in darkness",
+            "May find the one true light"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "#547",
+    "pco_song_id": "30973076",
+    "pco_arrangement_id": "36321065"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.704Z"
+}

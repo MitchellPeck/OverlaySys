@@ -1,0 +1,128 @@
+{
+  "id": "near-to-the-heart-of-god",
+  "title": "Near To The Heart Of God",
+  "ccliNumber": "7056333",
+  "author": "Cleland Boyd McAfee and Russell Mauldin",
+  "copyright": " Words: Public Domain and Music: 2010 Belden Street Music Publishing",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "There is a place of quiet rest",
+            "Near to the heart of God"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "A place where sin cannot molest",
+            "Near to the heart of God"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "O Jesus blest Redeemer",
+            "Sent from the heart of God"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Hold us who wait before Thee",
+            "Near to the heart of God"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "There is a place of comfort sweet",
+            "Near to the heart of God"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "A place where we our Savior meet",
+            "Near to the heart of God"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "There is a place of full release",
+            "Near to the heart of God"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "A place where all is joy and peace",
+            "Near to the heart of God"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "x1",
+      "kind": "other",
+      "label": "Ending 1",
+      "slides": [
+        {
+          "id": "x1s1",
+          "lines": [
+            "Hold us who wait before Thee",
+            "Near to the heart of God"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c1",
+    "v3",
+    "c1",
+    "x1"
+  ],
+  "customFields": {
+    "hymn_num": "#194",
+    "pco_song_id": "30587054",
+    "pco_arrangement_id": "35834286"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.725Z"
+}

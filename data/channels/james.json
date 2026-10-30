@@ -2,5 +2,7 @@
   "id": "james",
   "name": "James",
   "renderMode": "normal",
-  "background": "#000000"
+  "background": "#000000",
+  "kind": "graphics",
+  "updatedAt": "2026-10-30T14:30:07.764Z"
 }

@@ -1,0 +1,135 @@
+{
+  "id": "my-hope-is-built",
+  "title": "My Hope Is Built",
+  "ccliNumber": "2585446",
+  "author": "Nicky Chiswell and Edward Mote",
+  "copyright": "1992 Nicky Chiswell",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "My hope is built on nothing less",
+            "Than Jesus' blood and righteousness"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "No merit of my own I claim",
+            "But wholly lean on Jesus' name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "When long appears my toilsome race",
+            "I rest on His unchanging grace"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "In ev’ry high and stormy gale",
+            "My anchor holds within the veil"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "His oath His covenant His blood",
+            "Support me in the whelming flood"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "When ev’ry earthly prop gives way",
+            "He then is still my strength and stay"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "When the last trumpet voice shall sound",
+            "O may we then in Him be found"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Robed in His righteousness alone",
+            "Faultless to stand before the throne"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "On Christ the solid rock I stand",
+            "All other ground is sinking sand"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "All other ground is sinking sand"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c1",
+    "v3",
+    "c1",
+    "v4",
+    "c1"
+  ],
+  "customFields": {
+    "hymn_num": "UMH #368",
+    "pco_song_id": "28757103",
+    "pco_arrangement_id": "33569406"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.570Z"
+}

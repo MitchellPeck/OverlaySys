@@ -1,0 +1,155 @@
+{
+  "id": "blest-be-the-tie-that-binds",
+  "title": "Blest Be The Tie That Binds",
+  "ccliNumber": "25369",
+  "author": "Johann Hans Georg Nageli and John Fawcett",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Blest be the tie that binds",
+            "Our hearts in Christian love"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "The fellowship of kindred minds",
+            "Is like to that above"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Before our Father's throne",
+            "We pour our ardent prayers"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Our fears our hopes our aims are one",
+            "Our comforts and our cares"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "We share each other's woes",
+            "Our mutual burdens bear"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "And often for each other flows",
+            "The sympathizing tear"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "When we asunder part",
+            "It gives us inward pain"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "But we shall still be joined in heart",
+            "And hope to meet again"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "This glorious hope revives",
+            "Our courage by the way"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "While each in expectation lives",
+            "And longs to see the day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v6",
+      "kind": "verse",
+      "label": "Verse 6",
+      "slides": [
+        {
+          "id": "v6s1",
+          "lines": [
+            "From sorrow toil and pain",
+            "And sin we shall be free"
+          ]
+        },
+        {
+          "id": "v6s2",
+          "lines": [
+            "And perfect love and friendship reign",
+            "Through all eternity"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6"
+  ],
+  "customFields": {
+    "hymn_num": "#557",
+    "pco_song_id": "30973079",
+    "pco_arrangement_id": "36321069"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.711Z"
+}

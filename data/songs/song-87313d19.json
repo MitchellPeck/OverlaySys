@@ -1,0 +1,40 @@
+{
+  "id": "song-87313d19",
+  "title": "Gloria Patri",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Glory be to the Father and to the Son",
+            "And to the Holy Ghost;"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "As it was in the beginning, is now",
+            "And ever shall be, World without end. Amen. Amen."
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1"
+  ],
+  "customFields": {},
+  "defaultIntroTemplateId": "template-49ff73b5",
+  "defaultIntroFieldMap": {
+    "title": "title"
+  },
+  "defaultIntroFieldLiterals": {
+    "subtitle": ""
+  },
+  "updatedAt": "2026-10-29T15:05:19.945Z"
+}

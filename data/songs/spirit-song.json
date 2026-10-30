@@ -1,0 +1,96 @@
+{
+  "id": "spirit-song",
+  "title": "Spirit Song",
+  "ccliNumber": "27824",
+  "author": "John Wimber",
+  "copyright": "1979 Mercy / Vineyard Publishing",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Oh let the Son of God enfold you",
+            "With His Spirit and His love"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Let Him fill your heart and satisfy your soul",
+            "Oh let Him have those things that hold you"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "And His Spirit like a dove",
+            "Will descend upon your life and make you whole"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "Jesus oh Jesus",
+            "Come and fill Your lambs"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Jesus oh Jesus",
+            "Come and fill Your lambs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Oh come and sing this song with gladness",
+            "As your hearts are filled with joy"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Lift your hands in sweet surrender to His name",
+            "Oh give Him all your tears and sadness"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Give Him all your years of pain",
+            "And you'll enter into life in Jesus' name"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2"
+  ],
+  "customFields": {
+    "pco_song_id": "28757091",
+    "pco_arrangement_id": "33569391"
+  },
+  "updatedAt": "2026-10-30T14:19:53.640Z"
+}

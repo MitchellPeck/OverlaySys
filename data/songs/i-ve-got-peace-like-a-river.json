@@ -1,0 +1,35 @@
+{
+  "id": "i-ve-got-peace-like-a-river",
+  "title": "I’ve Got Peace Like A River",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            ""
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1"
+  ],
+  "customFields": {
+    "pco_song_id": "28712860",
+    "pco_arrangement_id": "33514462"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title"
+  },
+  "defaultIntroFieldLiterals": {
+    "subtitle": "In Bulletin"
+  },
+  "updatedAt": "2026-10-30T14:19:53.593Z"
+}

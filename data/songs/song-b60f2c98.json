@@ -1,0 +1,37 @@
+{
+  "id": "song-b60f2c98",
+  "title": "Doxology",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Praise God from whom all blessings flow,",
+            "Praise Him all creatures here below."
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Praise Him above the heavenly host,",
+            "Praise Father, Son, and Holy Ghost. Amen."
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1"
+  ],
+  "customFields": {},
+  "defaultIntroTemplateId": "template-49ff73b5",
+  "defaultIntroFieldMap": {
+    "title": "title"
+  },
+  "updatedAt": "2026-10-29T15:05:20.028Z"
+}

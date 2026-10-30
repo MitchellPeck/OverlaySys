@@ -1,0 +1,303 @@
+{
+  "id": "for-all-the-saints",
+  "title": "For All The Saints",
+  "ccliNumber": "2645678",
+  "author": "William Walsham How",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "For all the saints",
+            "Who from their labours rest"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Who Thee by faith",
+            "Before the world confessed"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Thy name O Jesus",
+            "Be forever blest"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Thou wast their Rock",
+            "Their Fortress and their Might"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Thou Lord their Captain",
+            "In the well fought fight"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Thou in the darkness drear",
+            "Their one true Light"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "O may Thy soldiers",
+            "Faithful true and bold"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Fight as the saints",
+            "Who nobly fought of old"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "And win with them",
+            "The victor's crown of gold"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "O blest communion",
+            "Fellowship divine"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "We feebly struggle",
+            "They in glory shine"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "Yet all are one in Thee",
+            "For all are Thine"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "And when the strife is fierce",
+            "The warfare long"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "Steals on the ear",
+            "The distant triumph song"
+          ]
+        },
+        {
+          "id": "v5s3",
+          "lines": [
+            "And hearts are brave again",
+            "And arms are strong"
+          ]
+        },
+        {
+          "id": "v5s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v6",
+      "kind": "verse",
+      "label": "Verse 6",
+      "slides": [
+        {
+          "id": "v6s1",
+          "lines": [
+            "The golden evening",
+            "Brightens in the west"
+          ]
+        },
+        {
+          "id": "v6s2",
+          "lines": [
+            "Soon soon to faithful",
+            "Warriors cometh rest"
+          ]
+        },
+        {
+          "id": "v6s3",
+          "lines": [
+            "Sweet is the calm",
+            "Of paradise the blest"
+          ]
+        },
+        {
+          "id": "v6s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v7",
+      "kind": "verse",
+      "label": "Verse 7",
+      "slides": [
+        {
+          "id": "v7s1",
+          "lines": [
+            "But lo there breaks",
+            "A yet more glorious day"
+          ]
+        },
+        {
+          "id": "v7s2",
+          "lines": [
+            "The saints triumphant",
+            "Rise in bright array"
+          ]
+        },
+        {
+          "id": "v7s3",
+          "lines": [
+            "The King of Glory",
+            "Passes on His way"
+          ]
+        },
+        {
+          "id": "v7s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v8",
+      "kind": "verse",
+      "label": "Verse 8",
+      "slides": [
+        {
+          "id": "v8s1",
+          "lines": [
+            "From earth's wide bounds",
+            "From ocean's farthest coast"
+          ]
+        },
+        {
+          "id": "v8s2",
+          "lines": [
+            "Through gates of pearl",
+            "Streams in the countless host"
+          ]
+        },
+        {
+          "id": "v8s3",
+          "lines": [
+            "Singing to Father",
+            "Son and Holy Ghost"
+          ]
+        },
+        {
+          "id": "v8s4",
+          "lines": [
+            "Alleluia"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6",
+    "v7",
+    "v8"
+  ],
+  "customFields": {
+    "hymn_num": "#711",
+    "pco_song_id": "29040719",
+    "pco_arrangement_id": "33912978"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.686Z"
+}

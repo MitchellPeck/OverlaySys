@@ -1,0 +1,159 @@
+{
+  "id": "i-will-sing-the-wondrous-story",
+  "title": "I Will Sing The Wondrous Story",
+  "ccliNumber": "47062",
+  "author": "Francis H. Rowley and Peter Philip Bilhorn",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "Yes I'll sing the wondrous story",
+            "Of the Christ who died for me"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Sing it with the saints in glory",
+            "Gathered by the crystal sea"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "I will sing the wondrous story",
+            "Of the Christ who died for me"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "How He left His home in glory",
+            "For the cross of Calvary"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "I was lost but Jesus found me",
+            "Found the sheep that went astray"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Threw His loving arms around me",
+            "Drew me back into His way"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "I was bruised but Jesus healed me",
+            "Faint was I from many a fall"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Sight was gone and fears possessed me",
+            "But He freed me from them all"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Days of darkness still come o'er me",
+            "Sorrow's paths I often tread"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "But the Savior still is with me",
+            "By His hand I'm safely led"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "He will keep me till the river",
+            "Rolls its waters at my feet"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "Then He'll bear me safely over",
+            "Where the loved ones I shall meet"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c1",
+    "v3",
+    "c1",
+    "v4",
+    "c1",
+    "v5",
+    "c1"
+  ],
+  "customFields": {
+    "hymn_num": "#91",
+    "pco_song_id": "30587040",
+    "pco_arrangement_id": "35834269"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.716Z"
+}

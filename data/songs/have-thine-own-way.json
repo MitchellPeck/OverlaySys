@@ -1,0 +1,127 @@
+{
+  "id": "have-thine-own-way",
+  "title": "Have Thine Own Way",
+  "ccliNumber": "28225",
+  "author": "Adelaide Addison Pollard and George Coles Stebbins",
+  "copyright": " Public Domain",
+  "sections": [
+    {
+      "id": "tag2",
+      "kind": "tag",
+      "label": "Tag",
+      "slides": [
+        {
+          "id": "tag2s1",
+          "lines": [
+            "Have thine own way, Lord! Have thine own way!"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Thou art the potter;",
+            "I am the clay."
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Mold me and make me after thy will,",
+            "while I am waiting; yielded and still."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Search me and try me,",
+            "Savior today!"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Wash me just now, Lord, wash me just now,",
+            "as in thy presence humbly I bow."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Wounded and weary,",
+            "help me I pray!"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Power, all power, surely is thine!",
+            "Touch me and heal me, Savior divine!"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Hold o'er my being",
+            "absolute sway."
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Fill with thy Spirit till all shall see",
+            "Christ only, always, living in me!"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "tag2",
+    "v1",
+    "tag2",
+    "v2",
+    "tag2",
+    "v3",
+    "tag2",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "UMH #382",
+    "pco_song_id": "29032641",
+    "pco_arrangement_id": "33903004"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.576Z"
+}

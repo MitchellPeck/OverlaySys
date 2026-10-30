@@ -1,0 +1,132 @@
+{
+  "id": "tis-so-sweet-to-trust-in-jesus-trust-in-jesus",
+  "title": "'Tis So Sweet To Trust In Jesus",
+  "ccliNumber": "22609",
+  "author": "Louisa M. R. Stead and William James Kirkpatrick",
+  "copyright": " Public Domain, Words: Public Domain, and Music: Public Domain",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "'Tis so sweet to trust in Jesus",
+            "Just to take Him at His word"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Just to rest upon His promise",
+            "Just to know thus saith the Lord"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "Jesus Jesus how I trust Him",
+            "How I've proved Him o'er and o'er"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Jesus Jesus precious Jesus",
+            "O for grace to trust Him more"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "O how sweet to trust in Jesus",
+            "Just to trust His cleansing blood"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Just in simple faith to plunge me",
+            "'Neath the healing cleansing flood"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Yes 'tis sweet to trust in Jesus",
+            "Just from sin and self to cease"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Just from Jesus simply taking",
+            "Life and rest and joy and peace"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "I'm so glad I learned to trust Thee",
+            "Precious Jesus Savior Friend"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "And I know that Thou art with me",
+            "Wilt be with me to the end"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "#462",
+    "pco_song_id": "28928925",
+    "pco_arrangement_id": "33777522"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.661Z"
+}

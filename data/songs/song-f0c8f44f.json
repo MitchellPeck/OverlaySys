@@ -1,0 +1,61 @@
+{
+  "id": "song-f0c8f44f",
+  "title": "Affirmation of Faith",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "I believe in God, the Father Almighty, Maker of heaven and earth,",
+            "and in Jesus Christ, His only Son our Lord,"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "who was conceived by the Holy Spirit, born of the Virgin Mary,",
+            "suffered under Pontius Pilate, was crucified, dead and buried:"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "The third day He rose again from the dead;",
+            "He ascended into heaven, and sitteth on the right hand of God the Father Almighty;"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "from thence He shall come to judge the quick and the dead.",
+            "I believe in the Holy Spirit, the holy catholic church,"
+          ]
+        },
+        {
+          "id": "v1s5",
+          "lines": [
+            "the communion of saints, the forgiveness of sins, the resurrection of the body,",
+            "and the life everlasting. Amen."
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1"
+  ],
+  "customFields": {},
+  "defaultIntroTemplateId": "template-49ff73b5",
+  "defaultIntroFieldMap": {
+    "title": "title"
+  },
+  "defaultIntroFieldLiterals": {
+    "subtitle": "Rev. Taylor Bacon"
+  },
+  "updatedAt": "2026-10-29T14:59:09.643Z"
+}

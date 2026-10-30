@@ -1,0 +1,131 @@
+{
+  "id": "hymn-of-promise",
+  "title": "Hymn Of Promise",
+  "ccliNumber": "126529",
+  "author": "Natalie Sleeth",
+  "copyright": "1986 Hope Publishing Company",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "In the bulb there is a flower",
+            "In the seed an apple tree"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "In cocoons a hidden promise",
+            "Butterflies will soon be free"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "In the cold and snow of winter",
+            "There's a spring that waits to be"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Unrevealed until its season",
+            "Something God alone can see"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "There's a song in every silence",
+            "Seeking word and melody"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "There's a dawn in every darkness",
+            "Bringing hope to you and me"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "From the past will come the future",
+            "What it holds a mystery"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Unrevealed until its season",
+            "Something God alone can see"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "In our end is our beginning",
+            "In our time infinity"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "In our doubt there is believing",
+            "In our life eternity"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "In our death a resurrection",
+            "At the last a victory"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Unrevealed until its season",
+            "Something God alone can see"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3"
+  ],
+  "customFields": {
+    "hymn_num": "#707",
+    "pco_song_id": "29040905",
+    "pco_arrangement_id": "33913168"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.691Z"
+}

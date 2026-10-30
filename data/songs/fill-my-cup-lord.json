@@ -1,0 +1,113 @@
+{
+  "id": "fill-my-cup-lord",
+  "title": "Fill My Cup Lord",
+  "ccliNumber": "15946",
+  "author": "Richard Blanchard",
+  "copyright": "1959 Richard Blanchard. Assigned 1964 Word Music, LLC",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Like the woman at the well I was seeking",
+            "For things that could not satisfy"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "And then I heard my Savior speaking",
+            "Draw from my well that never shall run dry"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "Fill my cup Lord I lift it up Lord",
+            "Come and quench this thirsting of my soul"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "Bread of heaven feed me till I want no more",
+            "Fill my cup fill it up and make me whole"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "There are millions in this world who are craving",
+            "The pleasures earthly things afford"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "But none can match the wondrous treasure",
+            "That I find in Jesus Christ my Lord"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "So my brother if the things this world gave you",
+            "Leave hungers that won't pass away"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "My blessed Lord will come and save you",
+            "If you kneel to Him and humbly pray"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c1",
+    "v3",
+    "c1"
+  ],
+  "customFields": {
+    "hymn_num": "641",
+    "pco_song_id": "28757078",
+    "pco_arrangement_id": "33569375"
+  },
+  "defaultIntroTemplateId": "template-49ff73b5",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.680Z"
+}

@@ -1,0 +1,179 @@
+{
+  "id": "the-lily-of-the-valley",
+  "title": "The Lily Of The Valley",
+  "ccliNumber": "5776070",
+  "author": "Charles W. Fry, Jean Anne Shafferman, and Lloyd Larson",
+  "copyright": " Words: Public Domain and Music: 2010 The Lorenz Corporation (Admin. by Music Services, Inc.)",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "I've found a friend in Jesus",
+            "He's everything to me"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "He's the Fairest of Ten Thousand to my soul",
+            "The Lily of the Valley"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "In Him alone I see",
+            "All I need to cleanse"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "And make me fully whole",
+            "In sorrow He's my comfort"
+          ]
+        },
+        {
+          "id": "v1s5",
+          "lines": [
+            "In trouble He's my stay",
+            "He tells me every care on Him to roll"
+          ]
+        },
+        {
+          "id": "v1s6",
+          "lines": [
+            "He's the Lily of the Valley",
+            "The Bright and Morning Star"
+          ]
+        },
+        {
+          "id": "v1s7",
+          "lines": [
+            "He's the Fairest of Ten Thousand to my soul"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "He all my griefs has taken",
+            "And all my sorrows borne"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "In temptation He's my strong and mighty Tower",
+            "I've all for Him forsaken"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "I've all my idols torn",
+            "From my heart and now He keeps me by His power"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Though all the world forsake me",
+            "And Satan tempt me sore"
+          ]
+        },
+        {
+          "id": "v2s5",
+          "lines": [
+            "Through Jesus I shall safely reach the goal",
+            "He's the Lily of the Valley"
+          ]
+        },
+        {
+          "id": "v2s6",
+          "lines": [
+            "The Bright and Morning Star",
+            "He's the Fairest of Ten Thousand to my soul"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "He'll never never leave me",
+            "Nor yet forsake me here"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "While I live by faith and do His blessed will",
+            "A wall of fire about"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "I've nothing now to fear",
+            "With His manna He my hungry soul shall fill"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Then sweeping up to glory",
+            "I'll see His blessed face"
+          ]
+        },
+        {
+          "id": "v3s5",
+          "lines": [
+            "Where the rivers of delight shall ever flow",
+            "He's the Lily of the Valley"
+          ]
+        },
+        {
+          "id": "v3s6",
+          "lines": [
+            "The Bright and Morning Star",
+            "He's the Fairest of Ten Thousand to my soul"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3"
+  ],
+  "customFields": {
+    "hymn_num": "#244",
+    "pco_song_id": "30587047",
+    "pco_arrangement_id": "35834278"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.721Z"
+}

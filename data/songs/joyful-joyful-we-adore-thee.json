@@ -1,0 +1,160 @@
+{
+  "id": "joyful-joyful-we-adore-thee",
+  "title": "Joyful Joyful We Adore Thee",
+  "ccliNumber": "25321",
+  "author": "Edward Hodges, Henry Van Dyke, and Ludwig van Beethoven",
+  "copyright": " Public Domain",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Joyful joyful we adore Thee",
+            "God of glory Lord of love"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Hearts unfold like flow’rs before Thee",
+            "Opening to the sun above"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Melt the clouds of sin and sadness",
+            "Drive the dark of doubt away"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Giver of immortal gladness",
+            "Fill us with the light of day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "All Thy works with joy surround Thee",
+            "Earth and heav’n reflect Thy rays"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Stars and angels sing around Thee",
+            "Center of unbroken praise"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Field and forest vale and mountain",
+            "Flowery meadow flashing sea"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Chanting bird and flowing fountain",
+            "Call us to rejoice in Thee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Thou art giving and forgiving",
+            "Ever blessing ever blest"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Wellspring of the joy of living",
+            "Ocean depth of happy rest"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Thou our Father Christ our Brother",
+            "All who live in love are Thine"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Teach us how to love each other",
+            "Lift us to the joy divine"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Mortals join the mighty chorus",
+            "Which the morning stars began"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Father love is reigning o'er us",
+            "Brother love binds man to man"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "Ever singing march we onward",
+            "Victors in the midst of strife"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "Joyful music lifts us sunward",
+            "In the triumph song of life"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "pco_song_id": "28757114",
+    "pco_arrangement_id": "33569418"
+  },
+  "updatedAt": "2026-10-30T14:19:53.632Z"
+}

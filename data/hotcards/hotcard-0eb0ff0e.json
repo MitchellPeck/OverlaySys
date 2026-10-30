@@ -2,10 +2,12 @@
   "id": "hotcard-0eb0ff0e",
   "name": "Charlie L3",
   "projectId": "default",
-  "templateId": "template-6550a012",
+  "templateId": "template-fbd2804e",
   "data": {
+    "name": "Rev. Charlie Marus",
+    "title": "Guest Pastor | Grace Resurrection",
     "field1": "/assets/cc7c2427030cea904492eabb34acb68a61053158dbb54157f256f709d23e2067.webm"
   },
   "hotkey": "F1",
-  "updatedAt": "2026-10-29T13:21:18.362Z"
+  "updatedAt": "2026-10-30T14:19:53.781Z"
 }

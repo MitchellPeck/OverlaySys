@@ -1,0 +1,44 @@
+{
+  "id": "song-bf0aa632",
+  "title": "Congregational Response",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "May the Good Lord bless and keep you",
+            "Whether near or far away."
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "May you find that long-awaited golden day today.",
+            "May your troubles all be small ones,"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "And your fortune ten times ten.",
+            "May the good Lord bless and keep you, Till we meet again."
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1"
+  ],
+  "customFields": {},
+  "defaultIntroTemplateId": "template-49ff73b5",
+  "defaultIntroFieldMap": {
+    "title": "title"
+  },
+  "updatedAt": "2026-10-29T14:59:09.661Z"
+}

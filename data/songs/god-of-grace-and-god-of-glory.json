@@ -1,0 +1,209 @@
+{
+  "id": "god-of-grace-and-god-of-glory",
+  "title": "God Of Grace And God Of Glory",
+  "ccliNumber": "7252663",
+  "author": "Harry Fosdick, Josh Miles, Karin Simmons, and Rachel Wilhelm",
+  "copyright": "2024 Josh Miles and Remaining portion is unaffiliated",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "God of grace and God of glory",
+            "On Your people pour Your power"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Crown Your ancient Church's story",
+            "Bring its bud to glorious flow'r"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Multiply our faith and worship",
+            "Give us eyes to see You now"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Grant us wisdom grant us courage",
+            "For the facing of this hour"
+          ]
+        },
+        {
+          "id": "v1s5",
+          "lines": [
+            "For the facing of this hour",
+            "Turn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Lo the hosts of evil 'round us",
+            "Scorn the Christ assail His ways"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "From the fears that long have bound us",
+            "Free our hearts to faith and praise"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Multiply our faith and worship",
+            "Let our ears hear all You say"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Grant us wisdom grant us courage",
+            "For the living of these days"
+          ]
+        },
+        {
+          "id": "v2s5",
+          "lines": [
+            "For the living of these days"
+          ]
+        },
+        {
+          "id": "v2s6",
+          "lines": [
+            "Refrain 1"
+          ]
+        },
+        {
+          "id": "v2s7",
+          "lines": [
+            "God of grace God of glory",
+            "On Your people pour Your pow'r"
+          ]
+        },
+        {
+          "id": "v2s8",
+          "lines": [
+            "Pour Your pow'r",
+            "Pour Your pow'r"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Cure Your children's warring madness",
+            "Bend our pride to Your control"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Shame our wanton selfish gladness",
+            "Rich in things and poor in soul"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Multiply our faith and worship",
+            "Help our hearts and hands let go"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Grant us wisdom grant us courage",
+            "Lest we miss Your kingdom's goal"
+          ]
+        },
+        {
+          "id": "v3s5",
+          "lines": [
+            "Lest we miss Your kingdom's goal"
+          ]
+        },
+        {
+          "id": "v3s6",
+          "lines": [
+            "Refrain 2"
+          ]
+        },
+        {
+          "id": "v3s7",
+          "lines": [
+            "God of grace God of glory",
+            "On Your people pour Your power"
+          ]
+        },
+        {
+          "id": "v3s8",
+          "lines": [
+            "(repeat)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "t1",
+      "kind": "tag",
+      "label": "Tag 1",
+      "slides": [
+        {
+          "id": "t1s1",
+          "lines": [
+            "Pour Your pow'r",
+            "Pour Your pow'r"
+          ]
+        },
+        {
+          "id": "t1s2",
+          "lines": [
+            "Pour Your pow'r"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "t1"
+  ],
+  "customFields": {
+    "hymn_num": "#577",
+    "pco_song_id": "28929060",
+    "pco_arrangement_id": "33777689"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.654Z"
+}

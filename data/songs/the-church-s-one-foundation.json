@@ -1,0 +1,203 @@
+{
+  "id": "the-church-s-one-foundation",
+  "title": "The Church's One Foundation",
+  "ccliNumber": "55377",
+  "author": "Samuel John Stone and Samuel Sebastian Wesley",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "The Church's one foundation",
+            "Is Jesus Christ her Lord"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "She is His new creation",
+            "By water and the Word"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "From heav'n He came and sought her",
+            "To be His holy bride"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "With His own blood He bought her",
+            "And for her life He died"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Elect from every nation",
+            "Yet one o'er all the earth"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Her charter of salvation",
+            "One Lord one faith one birth"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "One holy name she blesses",
+            "Partakes one holy food"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "And to one hope she presses",
+            "With every grace endued"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "'Mid toil and tribulation",
+            "And tumult of her war"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "She waits the consummation",
+            "Of peace forevermore"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Till with the vision glorious",
+            "Her longing eyes are blest"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "And the great Church victorious",
+            "Shall be the Church at rest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Yet she on earth hath union",
+            "With God the Three in One"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "And mystic sweet communion",
+            "With those whose rest is won"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "O happy ones and holy",
+            "Lord give us grace that we"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "Like them the meek and lowly",
+            "On high may dwell with Thee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "Though with a scornful wonder",
+            "Men see her sore oppressed"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "By schisms rent asunder",
+            "By heresies distressed"
+          ]
+        },
+        {
+          "id": "v5s3",
+          "lines": [
+            "Yet saints their watch are keeping",
+            "Their cry goes up how long"
+          ]
+        },
+        {
+          "id": "v5s4",
+          "lines": [
+            "And soon the night of weeping",
+            "Shall be the morn of song"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5"
+  ],
+  "customFields": {
+    "hymn_num": "#545",
+    "pco_song_id": "28929049",
+    "pco_arrangement_id": "33777676"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.697Z"
+}

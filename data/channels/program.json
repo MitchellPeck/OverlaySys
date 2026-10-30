@@ -2,7 +2,7 @@
   "id": "program",
   "name": "Program",
   "renderMode": "normal",
-  "background": "#000000",
+  "background": "transparent",
   "kind": "graphics",
-  "updatedAt": "2026-10-29T13:21:18.393Z"
+  "updatedAt": "2026-10-30T14:19:53.809Z"
 }

@@ -1,0 +1,188 @@
+{
+  "id": "praise-to-the-lord-the-almighty",
+  "title": "Praise To The Lord, The Almighty",
+  "ccliNumber": "43073",
+  "author": "Catherine Winkworth and Joachim Neander",
+  "copyright": " Public Domain",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Praise to the Lord the Almighty",
+            "The King of creation"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "O my soul praise Him",
+            "For He is thy health and salvation"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "All ye who hear now to His temple draw near",
+            "Praise Him in glad adoration"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Praise to the Lord Who over all things",
+            "So wondrously reigneth"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Shelters thee under His wings",
+            "Yea so gently sustaineth"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Hast thou not seen how thy desires ever have been",
+            "Granted in what He ordaineth"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Praise to the Lord Who doth prosper",
+            "Thy work and defend thee"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Surely His goodness and mercy here daily attend thee",
+            "Ponder anew what the Almighty can do"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "If with His love He befriend thee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Praise to the Lord Who",
+            "When tempests their warfare are waging"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Who when the elements madly around thee are raging",
+            "Biddeth them cease turneth their fury to peace"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "Whirlwinds and waters assuaging"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "Praise to the Lord Who",
+            "When darkness of sin is abounding"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "Who when the godless do triumph",
+            "All virtue confounding"
+          ]
+        },
+        {
+          "id": "v5s3",
+          "lines": [
+            "Sheddeth His light chaseth the horrors of night",
+            "Saints with His mercy surrounding"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v6",
+      "kind": "verse",
+      "label": "Verse 6",
+      "slides": [
+        {
+          "id": "v6s1",
+          "lines": [
+            "Praise to the Lord",
+            "O let all that is in me adore Him"
+          ]
+        },
+        {
+          "id": "v6s2",
+          "lines": [
+            "All that hath life and breath",
+            "Come now with praises before Him"
+          ]
+        },
+        {
+          "id": "v6s3",
+          "lines": [
+            "Let the amen sound from His people again",
+            "Gladly for all we adore Him"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6"
+  ],
+  "customFields": {
+    "pco_song_id": "28757111",
+    "pco_arrangement_id": "33569415"
+  },
+  "updatedAt": "2026-10-30T14:19:53.625Z"
+}

@@ -1,0 +1,167 @@
+{
+  "id": "jesus-saves",
+  "title": "Jesus Saves",
+  "ccliNumber": "56053",
+  "author": "Priscilla J. Owens and William James Kirkpatrick",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "We have heard the joyful sound",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Spread the tidings all around",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Bear the news to every land",
+            "Climb the steeps and cross the waves"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Onward 'tis our Lord's command",
+            "Jesus saves Jesus saves"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Waft it on the rolling tide",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Tell to sinners far and wide",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Sing ye islands of the sea",
+            "Echo back ye ocean caves"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Earth shall keep her jubilee",
+            "Jesus saves Jesus saves"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Sing above the battle strife",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "By His death and endless life",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Sing it softly through the gloom",
+            "When the heart for mercy craves"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Sing in triumph o'er the tomb",
+            "Jesus saves Jesus saves"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Give the winds a mighty voice",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Let the nations now rejoice",
+            "Jesus saves Jesus saves"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "Shout salvation full and free",
+            "Highest hills and deepest caves"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "This our song of victory",
+            "Jesus saves Jesus saves"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "#131",
+    "pco_song_id": "30586937",
+    "pco_arrangement_id": "35834144"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.606Z"
+}

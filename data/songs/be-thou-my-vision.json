@@ -90,17 +90,17 @@
     "x1"
   ],
   "customFields": {
-    "hymn_num": "$451"
+    "hymn_num": "UMH #451"
   },
   "defaultIntroTemplateId": "template-d2afea00",
   "defaultIntroFieldMap": {
     "title": "title",
     "subtitle": "hymn_num"
   },
-  "defaultOutroTemplateId": "lyric-default",
+  "defaultOutroTemplateId": "template-d2afea00",
   "defaultOutroFieldMap": {
-    "text": "copyright"
+    "title": "author",
+    "subtitle": "copyright"
   },
-  "defaultChannel": "program",
-  "updatedAt": "2026-10-29T13:21:18.343Z"
+  "updatedAt": "2026-10-30T14:19:53.619Z"
 }

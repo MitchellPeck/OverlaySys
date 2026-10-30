@@ -1,0 +1,221 @@
+{
+  "id": "o-god-our-help-in-ages-past",
+  "title": "O God Our Help In Ages Past",
+  "ccliNumber": "43152",
+  "author": "Isaac Watts and William Croft",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "O God our help in ages past",
+            "Our hope for years to come"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Our shelter from the stormy blast",
+            "And our eternal home"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Under the shadow of Thy throne",
+            "Thy saints have dwelt secure"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Sufficient is Thine arm alone",
+            "And our defense is sure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Before the hills in order stood",
+            "Or earth received her frame"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "From everlasting Thou art God",
+            "To endless years the same"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Thy Word commands our flesh to dust",
+            "Return ye sons of men"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "All nations rose from earth at first",
+            "And turn to earth again"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "A thousand ages in Thy sight",
+            "Are like an evening gone"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "Short as the watch that ends the night",
+            "Before the rising sun"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v6",
+      "kind": "verse",
+      "label": "Verse 6",
+      "slides": [
+        {
+          "id": "v6s1",
+          "lines": [
+            "The busy tribes of flesh and blood",
+            "With all their lives and cares"
+          ]
+        },
+        {
+          "id": "v6s2",
+          "lines": [
+            "Are carried downwards by the flood",
+            "And lost in following years"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v7",
+      "kind": "verse",
+      "label": "Verse 7",
+      "slides": [
+        {
+          "id": "v7s1",
+          "lines": [
+            "Time like an ever rolling stream",
+            "Bears all its sons away"
+          ]
+        },
+        {
+          "id": "v7s2",
+          "lines": [
+            "They fly forgotten as a dream",
+            "Dies at the op'ning day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v8",
+      "kind": "verse",
+      "label": "Verse 8",
+      "slides": [
+        {
+          "id": "v8s1",
+          "lines": [
+            "Like flowery fields the nations stand",
+            "Pleased with the morning light"
+          ]
+        },
+        {
+          "id": "v8s2",
+          "lines": [
+            "The flowers beneath the mower's hand",
+            "Lie withering ere 'tis night"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v9",
+      "kind": "verse",
+      "label": "Verse 9",
+      "slides": [
+        {
+          "id": "v9s1",
+          "lines": [
+            "Our God our help in ages past",
+            "Our hope for years to come"
+          ]
+        },
+        {
+          "id": "v9s2",
+          "lines": [
+            "Be Thou our guard while troubles last",
+            "And our eternal home"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6",
+    "v7",
+    "v8",
+    "v9"
+  ],
+  "customFields": {
+    "hymn_num": "#117",
+    "pco_song_id": "30791261",
+    "pco_arrangement_id": "36090539"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.647Z"
+}

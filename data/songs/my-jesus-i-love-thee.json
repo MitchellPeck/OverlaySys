@@ -1,0 +1,111 @@
+{
+  "id": "my-jesus-i-love-thee",
+  "title": "My Jesus I Love Thee",
+  "ccliNumber": "27817",
+  "author": "Adoniram Judson Gordon and William R. Featherston",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "My Jesus I love Thee I know Thou art mine",
+            "For Thee all the follies of sin I resign"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "My gracious Redeemer my Savior art Thou",
+            "If ever I loved Thee my Jesus 'tis now"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "I love Thee because Thou hast first loved me",
+            "And purchased my pardon on Calvary's tree"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "I love Thee for wearing the thorns on Thy brow",
+            "If ever I loved Thee my Jesus 'tis now"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "I'll love Thee in life I will love Thee in death",
+            "And praise Thee as long as Thou lendest me breath"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "And say when the death dew lies cold on my brow",
+            "If ever I loved Thee my Jesus 'tis now"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "In mansions of glory and endless delight",
+            "I'll ever adore Thee in heaven so bright"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "I'll sing with the glittering crown on my brow",
+            "If ever I loved Thee my Jesus 'tis now"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "172",
+    "pco_song_id": "28997019",
+    "pco_arrangement_id": "33859786"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.674Z"
+}

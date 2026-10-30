@@ -1,0 +1,167 @@
+{
+  "id": "holy-holy-holy-nicaea",
+  "title": "Holy Holy Holy (Nicaea)",
+  "ccliNumber": "1156",
+  "author": "John Bacchus Dykes and Reginald Heber",
+  "copyright": " Public Domain, Words: Public Domain, and Music: Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Holy holy holy",
+            "Lord God Almighty"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Early in the morning",
+            "Our song shall rise to Thee"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "Holy holy holy",
+            "Merciful and mighty"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "God in three persons",
+            "Blessed Trinity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Holy holy holy",
+            "All the saints adore Thee"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Casting down their golden crowns",
+            "Around the glassy sea"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Cherubim and seraphim",
+            "Falling down before Thee"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Which wert and art",
+            "And evermore shalt be"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Holy holy holy",
+            "Though the darkness hide Thee"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Though the eye of sinful man",
+            "Thy glory may not see"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "Only Thou art holy",
+            "There is none beside Thee"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "Perfect in power",
+            "In love and purity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Holy holy holy",
+            "Lord God Almighty"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "All Thy works shall praise Thy name",
+            "In earth and sky and sea"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "Holy holy holy",
+            "Merciful and mighty"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "God in three persons",
+            "Blessed Trinity"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num,": "#64",
+    "pco_song_id": "28757062",
+    "pco_arrangement_id": "33569354"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num,"
+  },
+  "updatedAt": "2026-10-30T14:19:53.667Z"
+}

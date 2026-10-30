@@ -1,0 +1,145 @@
+{
+  "id": "his-eye-is-on-the-sparrow",
+  "title": "His Eye Is On The Sparrow",
+  "ccliNumber": "77692",
+  "author": "Charles Hutchinson Gabriel and Civilla Durfee Martin",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Why should I feel discouraged",
+            "Why should the shadows come"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Why should my heart be lonely",
+            "And long for heaven and home"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "When Jesus is my portion my constant friend is He",
+            "His eye is on the sparrow and I know He watches me"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "His eye is on the sparrow and I know He watches me"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "kind": "chorus",
+      "label": "Chorus 1",
+      "slides": [
+        {
+          "id": "c1s1",
+          "lines": [
+            "I sing because I'm happy I sing because I'm free",
+            "For His eye is on the sparrow"
+          ]
+        },
+        {
+          "id": "c1s2",
+          "lines": [
+            "And I know He watches me"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Let not your heart be troubled",
+            "His tender words I hear"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "And resting on His goodness",
+            "I lose my doubt and fear"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Tho' by the path He leadeth but one step I may see",
+            "His eye is on the sparrow and I know He watches me"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "His eye is on the sparrow and I know He watches me"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Whenever I am tempted whenever clouds arise",
+            "When songs give place to sighing"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "When hope within me dies",
+            "I draw the closer to Him from care He sets me free"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "His eye is on the sparrow and I know He watches me",
+            "His eye is on the sparrow and I know He watches me"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "c1",
+    "v2",
+    "c1",
+    "v3",
+    "c1"
+  ],
+  "customFields": {
+    "hymn_num": "#231",
+    "pco_song_id": "30586944",
+    "pco_arrangement_id": "35834152"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.609Z"
+}

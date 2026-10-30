@@ -1,0 +1,133 @@
+{
+  "id": "just-as-i-am",
+  "title": "Just As I Am",
+  "ccliNumber": "5635850",
+  "author": "David Moffitt, Travis Alan Cottrell, and Sue C. Smith",
+  "copyright": "2009 Universal Music - Brentwood Benson Publishing, CCTB Music, and First Hand Revelation Music",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Just as I am without one plea",
+            "But that Thy blood was shed for me"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "And that Thou bidst me come to Thee",
+            "O Lamb of God I come I come"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Just as I am and waiting not",
+            "To rid my soul of one dark blot"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "To Thee whose blood can cleanse each spot",
+            "O Lamb of God I come I come"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "Just as I am, tho' tossed about",
+            "With many a conflict, many a doubt"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "Fightings and fears within, without",
+            "O Lamb of God I come I come"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Just as I am, poor, wretched, blind",
+            "Sight riches healing of the mind"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Yea all I need in Thee to find",
+            "O Lamb of God I come I come"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v5",
+      "kind": "verse",
+      "label": "Verse 5",
+      "slides": [
+        {
+          "id": "v5s1",
+          "lines": [
+            "Just as I am Thou Wilt receive",
+            "Wilt welcome pardon cleanse relieve"
+          ]
+        },
+        {
+          "id": "v5s2",
+          "lines": [
+            "Because Thy promise I believe",
+            "O Lamb of God I come I come"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5"
+  ],
+  "customFields": {
+    "hymn_num": "#151",
+    "pco_song_id": "30586947",
+    "pco_arrangement_id": "35834155"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.613Z"
+}

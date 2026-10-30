@@ -1,0 +1,172 @@
+{
+  "id": "immortal-invisible",
+  "title": "Immortal Invisible",
+  "ccliNumber": "124466",
+  "author": "John Roberts and Walter Chalmers Smith",
+  "copyright": " Public Domain",
+  "defaultLyricTemplateId": "lyric-default",
+  "sections": [
+    {
+      "id": "v1",
+      "kind": "verse",
+      "label": "Verse 1",
+      "slides": [
+        {
+          "id": "v1s1",
+          "lines": [
+            "Immortal invisible God only wise",
+            "In light inaccessible"
+          ]
+        },
+        {
+          "id": "v1s2",
+          "lines": [
+            "Hid from our eyes",
+            "Most blessed most glorious"
+          ]
+        },
+        {
+          "id": "v1s3",
+          "lines": [
+            "The Ancient of Days",
+            "Almighty victorious"
+          ]
+        },
+        {
+          "id": "v1s4",
+          "lines": [
+            "Thy great name we praise"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v2",
+      "kind": "verse",
+      "label": "Verse 2",
+      "slides": [
+        {
+          "id": "v2s1",
+          "lines": [
+            "Unresting unhasting",
+            "And silent as light"
+          ]
+        },
+        {
+          "id": "v2s2",
+          "lines": [
+            "Nor wanting nor wasting",
+            "Thou rulest in might"
+          ]
+        },
+        {
+          "id": "v2s3",
+          "lines": [
+            "Thy justice like mountains",
+            "High soaring above"
+          ]
+        },
+        {
+          "id": "v2s4",
+          "lines": [
+            "Thy clouds which are fountains",
+            "Of goodness and love"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v3",
+      "kind": "verse",
+      "label": "Verse 3",
+      "slides": [
+        {
+          "id": "v3s1",
+          "lines": [
+            "To all life thou givest",
+            "To both great and small"
+          ]
+        },
+        {
+          "id": "v3s2",
+          "lines": [
+            "In all life thou livest",
+            "The true life of all"
+          ]
+        },
+        {
+          "id": "v3s3",
+          "lines": [
+            "We blossom and flourish",
+            "As leaves on the tree"
+          ]
+        },
+        {
+          "id": "v3s4",
+          "lines": [
+            "And wither and perish",
+            "But naught changeth thee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "v4",
+      "kind": "verse",
+      "label": "Verse 4",
+      "slides": [
+        {
+          "id": "v4s1",
+          "lines": [
+            "Great Father of glory",
+            "Pure Father of light"
+          ]
+        },
+        {
+          "id": "v4s2",
+          "lines": [
+            "Thine angels adore thee",
+            "All veiling their sight"
+          ]
+        },
+        {
+          "id": "v4s3",
+          "lines": [
+            "All praise we would render",
+            "O help us to see"
+          ]
+        },
+        {
+          "id": "v4s4",
+          "lines": [
+            "'Tis only the splendor",
+            "Of light hideth thee"
+          ]
+        },
+        {
+          "id": "v4s5",
+          "lines": [
+            "Amen"
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultArrangement": [
+    "v1",
+    "v2",
+    "v3",
+    "v4"
+  ],
+  "customFields": {
+    "hymn_num": "#103",
+    "pco_song_id": "30997954",
+    "pco_arrangement_id": "36353461"
+  },
+  "defaultIntroTemplateId": "template-d2afea00",
+  "defaultIntroFieldMap": {
+    "title": "title",
+    "subtitle": "hymn_num"
+  },
+  "updatedAt": "2026-10-30T14:19:53.562Z"
+}

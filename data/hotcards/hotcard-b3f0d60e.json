@@ -2,10 +2,12 @@
   "id": "hotcard-b3f0d60e",
   "name": "Taylor L3",
   "projectId": "default",
-  "templateId": "template-6550a012",
+  "templateId": "template-fbd2804e",
   "data": {
-    "field1": "/assets/cb49a2e69f725be3ad1bbe8d4f342b239e608e058ddc4c548a3ad5affeb3c3ff.webm"
+    "name": "Rev. Taylor Bacon",
+    "title": "Associate Pastor | Grace Resurrection",
+    "field1": ""
   },
-  "hotkey": "F4",
-  "updatedAt": "2026-10-29T13:21:18.380Z"
+  "hotkey": null,
+  "updatedAt": "2026-10-30T14:19:53.796Z"
 }
