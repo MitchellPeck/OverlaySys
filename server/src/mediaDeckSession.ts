@@ -11,6 +11,7 @@ import { listLiveFolderFiles, onLiveFolderChange } from "./liveFolders";
  */
 
 export const EMPTY_MEDIA_DECK_MESSAGE = "This folder has no photos or videos yet.";
+export const MISSING_SLIDE_MESSAGE = "That slide is no longer in this deck.";
 
 const PREVIEW = "preview";
 
@@ -308,7 +309,7 @@ export function start(channel: string, args: StartArgs): StartResult {
   // Refused takes leave whatever is on air alone.
   if (r.slides.length === 0) return { ok: false, error: EMPTY_MEDIA_DECK_MESSAGE };
   const idx = args.slideIdx ?? 0;
-  if (!Number.isInteger(idx) || idx < 0 || idx >= r.slides.length) return { ok: false, error: `slide ${idx}` };
+  if (!Number.isInteger(idx) || idx < 0 || idx >= r.slides.length) return { ok: false, error: MISSING_SLIDE_MESSAGE };
   if (!folderWatch) folderWatch = onLiveFolderChange(onFolderChange);
   dropAll(channel, { deferEmit: true });
   const s: Session = {

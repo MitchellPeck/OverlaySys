@@ -80,12 +80,20 @@ function arm(s: Session): void {
     s.timer = null;
     delete s.nextAdvanceAt;
     if (sessions.get(s.channel) !== s) return;
+    const onAir = s.idx;
     try {
       autoAdvance(s);
     } catch (err) {
       // Never leave a timer re-firing a failing render on air: hold here until the operator moves.
       stopTimer(s);
       console.warn("[slidesSession] auto-advance failed", err);
+      // Back to the slide actually on air, so the summary and the next step agree with the screen.
+      s.idx = onAir;
+      try {
+        channels.setSlidesSessionSummary(s.channel, summarize(s));
+      } catch (e) {
+        console.warn("[slidesSession] summary after a failed auto-advance failed", e);
+      }
     }
   }, ms);
 }
@@ -106,15 +114,53 @@ function autoAdvance(s: Session): void {
   render(s, false);
 }
 
+/** Marks the media this session's photo/video slides put in the media slot. */
+const mediaOwner = (s: Session): string => `slidesDeck:${s.args.rowId}`;
+
+/** True while the channel's media slot still shows what this session put there. */
+function ownsMedia(s: Session): boolean {
+  return channels.getState(s.channel).media?.owner === mediaOwner(s);
+}
+
+/** Take this session's media off air; media someone else took since is left alone. */
+function releaseMedia(s: Session): void {
+  if (ownsMedia(s)) channels.mediaClear(s.channel);
+}
+
+/** A photo/video slide airs full-frame in the media slot (beneath graphics); the deck's graphic goes. */
+function renderMedia(s: Session, media: NonNullable<ResolvedSlide["media"]>, label: string | undefined): void {
+  channels.mediaTake(s.channel, {
+    rowId: s.args.rowId,
+    assetUrl: media.assetUrl,
+    ...(label !== undefined ? { label } : {}),
+    volume: 1,
+    endAction: "hold",
+    mediaType: media.mediaType,
+    ...(media.fit ? { fit: media.fit } : {}),
+    ...(media.position ? { position: media.position } : {}),
+    loop: false,
+    muted: media.muted === true,
+    owner: mediaOwner(s),
+  });
+  const cur = channels.getState(s.channel).active;
+  if (cur && cur.phase !== "out") channels.clearInternal(s.channel);
+}
+
 function render(s: Session, forceMount: boolean): void {
   channels.setSlidesSessionSummary(s.channel, summarize(s), { deferEmit: true });
   if (s.blanked) {
     // Out animation plays; the session stays alive so unblank can re-show.
+    releaseMedia(s);
     channels.clearInternal(s.channel);
     channels.setSlidesSessionSummary(s.channel, summarize(s));
     return;
   }
   const slide = s.args.slides[s.idx]!;
+  if (slide.media) {
+    renderMedia(s, slide.media, slide.label);
+    return;
+  }
+  releaseMedia(s);
   // Unsupplied text fields go out as "": the design's sample text never airs.
   const data = slideAirData(slide.data, s.args.templates.get(slide.templateId));
   const cur = channels.getState(s.channel).active;
@@ -133,6 +179,14 @@ function noteUse(args: StartArgs, channel: string): void {
   );
 }
 
+/** A new session takes over `channel`: the old one's timer stops, and its media goes unless `first` airs media anyway. */
+function replaced(channel: string, first: ResolvedSlide): void {
+  const prev = sessions.get(channel);
+  if (!prev) return;
+  stopTimer(prev);
+  if (!first.media) releaseMedia(prev);
+}
+
 export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
   if (args.slides.length === 0 || !Number.isInteger(slideIdx) || slideIdx < 0 || slideIdx >= args.slides.length) {
     return false;
@@ -140,8 +194,7 @@ export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
   // A song session on this channel (STT binding, timers) must not outlive the takeover.
   songSession.endSessionOnly(channel);
   songSession.clearQueued(channel);
-  const prev = sessions.get(channel);
-  if (prev) stopTimer(prev);
+  replaced(channel, args.slides[slideIdx]!);
   const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false, autoEnded: false, timer: null };
   sessions.set(channel, s);
   arm(s);
@@ -212,6 +265,7 @@ export function end(channel: string): void {
   stopTimer(s);
   sessions.delete(channel);
   channels.setSlidesSessionSummary(channel, null, { deferEmit: true });
+  releaseMedia(s);
   channels.clear(channel);
   // Blanked: active is already null so clear() emitted nothing.
   if (!channels.getState(channel).active) channels.setSlidesSessionSummary(channel, null);
@@ -220,8 +274,7 @@ export function end(channel: string): void {
 export function promote(from: string, to: string): boolean {
   const src = sessions.get(from);
   if (!src) return false;
-  const prev = sessions.get(to);
-  if (prev) stopTimer(prev);
+  replaced(to, src.args.slides[src.idx]!);
   const s: Session = { channel: to, args: src.args, idx: src.idx, blanked: false, atEnd: src.atEnd, autoEnded: false, timer: null };
   sessions.set(to, s);
   // The timer starts from the promoted slide.
@@ -234,17 +287,25 @@ export function promote(from: string, to: string): boolean {
   return true;
 }
 
+/** The channel's session has one of its photo/video slides up in the media slot. */
+export function ownsMediaOn(channel: string): boolean {
+  const s = sessions.get(channel);
+  return !!s && ownsMedia(s);
+}
+
 export function getSession(channel: string): SlidesSessionSummary | null {
   const s = sessions.get(channel);
   return s ? summarize(s) : null;
 }
 
-/** Forget the session without touching channel state (external take/clear). */
+/** Forget the session (external take/clear): its graphic is left to the caller; media it owns is released. */
 export function dropAll(channel: string): boolean {
   const s = sessions.get(channel);
   if (!s) return false;
   stopTimer(s);
-  return sessions.delete(channel);
+  sessions.delete(channel);
+  releaseMedia(s);
+  return true;
 }
 
 export function resetAll(): void {

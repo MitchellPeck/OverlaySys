@@ -164,6 +164,7 @@ describe("slides live handlers", () => {
     { kind: "slides", id: "rowFolder", deckId: "dFolder" },
     { kind: "slides", id: "rowMediaPick", deckId: "dMedia", slideIds: ["m3", "m1"] },
     { kind: "slides", id: "rowFolderPick", deckId: "dFolder", slideIds: ["m1"] },
+    { kind: "slides", id: "rowMixed", deckId: "dMixed" },
     {
       kind: "slides",
       id: "rowLocalMedia",
@@ -187,6 +188,16 @@ describe("slides live handlers", () => {
     const media = (id: string) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.png`, mediaType: "image" as const } });
     await decks.saveDeck(deck({ id: "dMedia", name: "Announcements", slides: [media("m1"), media("m2"), media("m3")] }));
     await decks.saveDeck(deck({ id: "dFolder", slides: [], liveFolderId: "lf-empty", loop: true, defaultHoldSec: 5 }));
+    // No default design: its template slide names its own, its photo needs none.
+    await decks.saveDeck(
+      deck({
+        id: "dMixed",
+        defaultTemplateId: "",
+        mediaFit: "contain",
+        mediaPosition: "bottom-right",
+        slides: [{ id: "x1", data: { text: "Welcome" }, templateId: "t" }, media("m1")],
+      }),
+    );
     // A media clear drops the previous test's media deck and its summary.
     for (const ch of ["program", "preview", "lower"]) channels.mediaClear(ch);
     mediaDeckSession.resetAll();
@@ -331,6 +342,26 @@ describe("slides live handlers", () => {
     expect(spy.mock.calls[1]![1].timing).toEqual({ holdSecs: [undefined, 3], loop: false });
     await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowTimed", channel: "preview" }, send);
     expect(sent).toEqual([]);
+  });
+
+  it("a mixed deck with no default design takes; its photo airs in the media slot with the deck's placement", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMixed" }, send);
+    expect(sent).toEqual([]);
+    expect(channels.getState("program").active).toMatchObject({ templateId: "t", phase: "in", data: { text: "Welcome" } });
+    expect(channels.getState("program").slidesSession).toMatchObject({ rowId: "rowMixed", slot: "graphics" });
+    await handleSlidesMessage({ type: "slides_advance", channel: "program", delta: 1 }, send);
+    expect(channels.getState("program").media).toMatchObject({
+      rowId: "rowMixed", assetUrl: "/assets/m1.png", mediaType: "image", fit: "contain", position: "bottom-right", owner: "slidesDeck:rowMixed",
+    });
+    expect(channels.getState("program").active?.phase).toBe("out");
+    await handleSlidesMessage({ type: "slides_end", channel: "program" }, send);
+    expect(channels.getState("program").media).toBeNull();
+    expect(sent).toEqual([]);
+  });
+
+  it("a refused media-deck take says so in plain words", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMedia", slideIdx: 9 }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_found", message: "That slide is no longer in this deck." }]);
   });
 
   it("slides_take of a media-only deck plays it in the media slot and leaves graphics alone", async () => {

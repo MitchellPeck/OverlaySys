@@ -111,6 +111,18 @@ describe("item end tracker", () => {
     expect(ended).toEqual([["program", "deck"]]);
   });
 
+  it("reports a mixed deck its timer ran to the end on a photo slide (its own photo still up)", () => {
+    const { set, ended } = setup();
+    const deck = (autoEnded?: boolean) => ({
+      slidesSession: { rowId: "deck", slot: "graphics", atEnd: !!autoEnded, ...(autoEnded ? { autoEnded } : {}) } as never,
+      media: { rowId: "deck", owner: "slidesDeck:deck", mediaType: "image", playback: { status: "playing" } } as never,
+    });
+    set({});
+    set(deck(), null);
+    set(deck(true), null);
+    expect(ended).toEqual([["program", "deck"]]);
+  });
+
   it("says nothing the first time it sees a channel", () => {
     const { set, ended } = setup();
     set({ active: graphic("out") }, null);

@@ -86,8 +86,9 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
     return;
   }
   // A slide with no resolvable design fails the whole take: never a half-rendered deck on air.
+  // Photo/video slides air in the media slot and need no design.
   const tpls = new Map<string, Template>();
-  for (const id of new Set(view.slides.map((s) => s.templateId))) {
+  for (const id of new Set(view.slides.filter((s) => !s.media).map((s) => s.templateId))) {
     const t = id ? await templates.getTemplate(id) : null;
     if (!t) {
       send({ type: "error", code: "not_configured", message: "Pick a design for this deck" });

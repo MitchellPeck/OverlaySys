@@ -396,6 +396,9 @@ describe("slidesSession", () => {
         expect(warn).toHaveBeenCalled();
         expect(slidesSession.getSession("program")).not.toBeNull();
         expect(slidesSession.getSession("program")!.nextAdvanceAt).toBeUndefined();
+        // The index goes back to the slide actually on air.
+        expect(slidesSession.getSession("program")!.slideIdx).toBe(0);
+        expect(channels.getState("program").slidesSession!.slideIdx).toBe(0);
         vi.advanceTimersByTime(60000);
         expect(spy).toHaveBeenCalledTimes(1);
       } finally {
@@ -436,5 +439,139 @@ describe("slidesSession", () => {
     expect(channels.getState("program").active?.data).toEqual({ header: "", subtitle: "Line D" });
     slidesSession.advance("program", 1);
     expect(channels.getState("program").active?.data).toMatchObject({ header: "Line A", subtitle: "" });
+  });
+});
+
+describe("mixed deck: media slides air in the media slot", () => {
+  const photo: ResolvedSlide = {
+    key: "p:1", slideId: "p", position: 1, templateId: "", data: {},
+    media: { assetUrl: "/assets/p.png", mediaType: "image", fit: "contain", position: "top-left" },
+  };
+  const video: ResolvedSlide = {
+    key: "v:2", slideId: "v", position: 2, templateId: "", data: {},
+    media: { assetUrl: "/assets/v.mp4", mediaType: "video", fit: "cover", position: "center", muted: true },
+  };
+  const mixed = [rs(0, "a", "T1", "Line A"), photo, rs(2, "c", "T1", "Line C")];
+  const owner = "slidesDeck:row";
+  beforeEach(() => {
+    for (const ch of ["program", "preview"]) channels.mediaClear(ch);
+  });
+
+  it("steps template → media → template, with both slots right at each step", () => {
+    slidesSession.start("program", args({ slides: mixed }), 0);
+    let st = channels.getState("program");
+    expect(st.active).toMatchObject({ templateId: "T1", phase: "in", data: { text: "Line A" } });
+    expect(st.media ?? null).toBeNull();
+
+    slidesSession.advance("program", 1);
+    st = channels.getState("program");
+    expect(st.media).toMatchObject({
+      rowId: "row", assetUrl: "/assets/p.png", mediaType: "image", fit: "contain", position: "top-left", owner,
+    });
+    expect(st.active?.phase).toBe("out"); // the deck's graphic goes
+    expect(st.slidesSession).toMatchObject({ rowId: "row", slideIdx: 1, slot: "graphics" });
+
+    slidesSession.advance("program", 1);
+    st = channels.getState("program");
+    expect(st.media).toBeNull();
+    expect(st.active).toMatchObject({ templateId: "T1", phase: "in", data: { text: "Line C" } });
+    expect(st.slidesSession).toMatchObject({ slideIdx: 2 });
+  });
+
+  it("a video slide carries its fit, position and mute", () => {
+    slidesSession.start("program", args({ slides: [rs(0, "a", "T1", "A"), video] }), 1);
+    expect(channels.getState("program").media).toMatchObject({
+      assetUrl: "/assets/v.mp4", mediaType: "video", fit: "cover", position: "center", muted: true, owner,
+    });
+  });
+
+  it("end releases the media it owns", () => {
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    expect(channels.getState("program").media?.owner).toBe(owner);
+    slidesSession.end("program");
+    expect(channels.getState("program").media).toBeNull();
+    expect(channels.getState("program").slidesSession).toBeUndefined();
+  });
+
+  it("dropping the session (an external graphic take) releases its media", () => {
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    channels.take("program", "gfx", {});
+    expect(slidesSession.getSession("program")).toBeNull();
+    expect(channels.getState("program").media).toBeNull();
+    expect(channels.getState("program").active).toMatchObject({ templateId: "gfx", phase: "in" });
+  });
+
+  it("a foreign media take while on a media slide doesn't break stepping, and is left alone", () => {
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    channels.mediaTake("program", { rowId: "other", assetUrl: "/assets/other.mp4", volume: 1, endAction: "hold" });
+    expect(slidesSession.getSession("program")).not.toBeNull();
+    slidesSession.advance("program", 1);
+    let st = channels.getState("program");
+    expect(st.active).toMatchObject({ templateId: "T1", phase: "in", data: { text: "Line C" } });
+    expect(st.media).toMatchObject({ rowId: "other", assetUrl: "/assets/other.mp4" });
+    slidesSession.advance("program", -1);
+    st = channels.getState("program");
+    expect(st.media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+    // A foreign clear: the session just stops owning it.
+    channels.mediaClear("program");
+    slidesSession.advance("program", 1);
+    expect(channels.getState("program").active).toMatchObject({ data: { text: "Line C" }, phase: "in" });
+    slidesSession.end("program");
+    expect(channels.getState("program").media).toBeNull();
+  });
+
+  it("ending after a foreign take leaves the foreign media on air", () => {
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    channels.mediaTake("program", { rowId: "other", assetUrl: "/assets/other.mp4", volume: 1, endAction: "hold" });
+    slidesSession.end("program");
+    expect(channels.getState("program").media).toMatchObject({ rowId: "other" });
+  });
+
+  it("PVW→PGM on a media slide promotes it and releases preview's media", () => {
+    slidesSession.start("preview", args({ slides: mixed }), 1);
+    expect(channels.getState("preview").media?.owner).toBe(owner);
+    channels.takePvwToPgm("preview", "program");
+    expect(slidesSession.getSession("program")).toMatchObject({ slideIdx: 1 });
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+    expect(channels.getState("preview").media).toBeNull();
+    expect(slidesSession.getSession("preview")).toBeNull();
+  });
+
+  it("blank hides the media slide; unblank shows it again", () => {
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    slidesSession.blank("program");
+    expect(channels.getState("program").media).toBeNull();
+    slidesSession.blank("program");
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+  });
+
+  describe("timing", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    it("auto-advance and loop run across both kinds of slide", () => {
+      slidesSession.start("program", { ...args({ slides: mixed }), timing: { holdSecs: [5, 5, 5], loop: true } }, 0);
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, nextAdvanceAt: Date.now() + 5000 });
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").media).toBeNull();
+      expect(channels.getState("program").active).toMatchObject({ data: { text: "Line C" }, phase: "in" });
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 0 });
+      expect(channels.getState("program").active).toMatchObject({ data: { text: "Line A" }, phase: "in" });
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png" });
+      slidesSession.end("program");
+    });
+    it("PVW→PGM still promotes a deck on a media slide once preview's graphic has gone", () => {
+      slidesSession.start("preview", args({ slides: mixed }), 1);
+      vi.advanceTimersByTime(2000);
+      expect(channels.getState("preview").active).toBeNull();
+      channels.takePvwToPgm("preview", "program");
+      expect(slidesSession.getSession("program")).toMatchObject({ slideIdx: 1 });
+      expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+      expect(channels.getState("preview").media).toBeNull();
+      slidesSession.end("program");
+    });
   });
 });

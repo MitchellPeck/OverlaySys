@@ -17,7 +17,9 @@ export function rowsOnAir(st: ChannelState, activeSource: RowSource | null): Set
   // So has a template deck its own timer ran to the end (a Space-armed end is still on air).
   const templateDeckEnded = st.slidesSession?.autoEnded === true;
   if (st.slidesSession?.rowId && !mediaDeckEnded && !templateDeckEnded) rows.add(st.slidesSession.rowId);
-  const heldByEndedDeck = mediaDeckEnded && !!st.media?.owner && st.media.rowId === st.slidesSession?.rowId;
+  // The ended deck's own photo/video still up (a media deck's, or a mixed deck's media slide) is part of that end.
+  const heldByEndedDeck =
+    (mediaDeckEnded || templateDeckEnded) && !!st.media?.owner && st.media.rowId === st.slidesSession?.rowId;
   if (st.media && st.media.playback.status !== "ended" && !heldByEndedDeck) rows.add(st.media.rowId);
   return rows;
 }

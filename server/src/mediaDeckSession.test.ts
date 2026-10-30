@@ -596,7 +596,7 @@ describe("mediaDeckSession", () => {
 
   it("refuses an out-of-range start slide", () => {
     expect(mediaDeckSession.start("program", { rowId: "r1", deck: deck(), slideIdx: 3 })).toEqual({
-      ok: false, error: "slide 3",
+      ok: false, error: "That slide is no longer in this deck.",
     });
   });
 });

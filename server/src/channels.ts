@@ -455,19 +455,21 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // preview (if any) still promotes below.
   mediaDeckSession.promote(fromChannel, toChannel);
   const src = states.get(fromChannel);
+  // [P3.5] slides session: up as a graphic, or (a photo/video slide) as its own media
+  if (src && slidesSession.getSession(fromChannel) && (src.active || slidesSession.ownsMediaOn(fromChannel))) {
+    // [P2b.11] draft guard
+    if (src.active && refuseDraft(toChannel, src.active.templateId)) return;
+    // [/P2b.11]
+    if (songSession.getSession(toChannel)) songSession.end(toChannel);
+    return void slidesSession.promote(fromChannel, toChannel);
+  }
+  // [/P3.5]
   if (!src || !src.active) return;
   const queued = src.active;
 
   // [P2b.11] draft guard
   if (refuseDraft(toChannel, queued.templateId)) return;
   // [/P2b.11]
-
-  // [P3.5] slides session
-  if (src.slidesSession && slidesSession.getSession(fromChannel)) {
-    if (songSession.getSession(toChannel)) songSession.end(toChannel);
-    return void slidesSession.promote(fromChannel, toChannel);
-  }
-  // [/P3.5]
 
   // End any song session live on the destination channel — otherwise the
   // session keeps rendering lyric slides over whatever we just promoted.

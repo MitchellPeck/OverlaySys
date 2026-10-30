@@ -11,7 +11,7 @@ export type ResolvedSlide = {
   data: Record<string, string>;
   label?: string;
   /** A photo/video slide: what it shows (its `data` is empty). */
-  media?: { assetUrl: string; mediaType: "image" | "video"; fit?: MediaFit; position?: MediaPosition };
+  media?: { assetUrl: string; mediaType: "image" | "video"; fit?: MediaFit; position?: MediaPosition; muted?: boolean };
 };
 
 export type SlidesRowView = {
@@ -71,6 +71,7 @@ export function resolveSlidesRow(
         assetUrl: s.media.assetUrl,
         mediaType: s.media.mediaType,
         ...resolveMediaPlacement(s.media.mediaType, s, deckDefault),
+        ...(s.muted ? { muted: true } : {}),
       };
     }
     slides.push(out);
