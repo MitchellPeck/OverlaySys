@@ -3,16 +3,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Film, Image as ImageIcon } from "lucide-react";
+import { liveFolderFileUrl, type LiveFolderFile, type MediaItemMeta } from "@overlaysys/core";
 import { Button, Input, Modal, colors, fontSize, radius } from "@overlaysys/ui";
 import { useStore } from "../../lib/store";
 import { isCloudMode } from "../../lib/mode";
 import { resolveAssetUrl, uploadAsset, videoPosterUrl } from "../../lib/uploadAsset";
-import { saveMediaItem } from "../../lib/mediaRequests";
+import { requestLiveFolder, saveMediaItem } from "../../lib/mediaRequests";
 import { importErrorText } from "./libraryConfig";
 import { MediaCard } from "./MediaCard";
 import { probeMedia } from "./importMedia";
 import { sourceActions, uploadMediaSource, uploadRefusal, type SourcePick, type SourceUploadDeps } from "./mediaSourceChoice";
-import { pickFromItem, pickableItems, type PickAccept, type PickedMedia } from "./pickerModel";
+import {
+  LIVE_FOLDER_PICK_NOTE,
+  liveFolderChoices,
+  pickFromItem,
+  pickFromLiveFile,
+  pickableItems,
+  type PickAccept,
+  type PickedMedia,
+} from "./pickerModel";
 
 const TITLES: Record<PickAccept, string> = {
   image: "Choose a photo",
@@ -26,7 +35,7 @@ const EMPTY: Record<PickAccept, string> = {
   any: "No photos or videos in Media yet.",
 };
 
-/** Library browser for photos and videos. Live folders aren't offered here. */
+/** Library browser for photos and videos. A live folder opens to its files, and one file can be chosen. */
 export function MediaPicker({
   open,
   accept,
@@ -39,10 +48,20 @@ export function MediaPicker({
   onClose: () => void;
 }) {
   const items = useStore((s) => s.mediaItems);
+  const liveFiles = useStore((s) => s.liveFolderFiles);
   const [query, setQuery] = useState("");
+  const [folder, setFolder] = useState<MediaItemMeta | null>(null);
   useEffect(() => {
-    if (open) setQuery("");
+    if (open) {
+      setQuery("");
+      setFolder(null);
+    }
   }, [open]);
+  const folderId = folder?.id;
+  const folderLoaded = folderId ? liveFiles[folderId] !== undefined : false;
+  useEffect(() => {
+    if (open && folderId && !folderLoaded) requestLiveFolder(folderId);
+  }, [open, folderId, folderLoaded]);
   const shown = pickableItems(items, accept, query);
   const hasAny = pickableItems(items, accept).length > 0;
 
@@ -51,7 +70,17 @@ export function MediaPicker({
   // "Choose from Media" — which reopened the picker the moment a tile closed it.
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <Modal open={open} onClose={onClose} title={TITLES[accept]} size="lg" zIndex={1100}>
+    <Modal open={open} onClose={onClose} title={folder ? folder.name : TITLES[accept]} size="lg" zIndex={1100}>
+      {folder ? (
+        <LiveFolderFiles
+          folder={folder}
+          entry={liveFiles[folder.id]}
+          accept={accept}
+          onBack={() => setFolder(null)}
+          onPick={(f) => onPick(pickFromLiveFile(folder.id, f))}
+        />
+      ) : (
+      <>
       <Input
         aria-label="Search Media"
         placeholder="Search by name"
@@ -69,7 +98,7 @@ export function MediaPicker({
             <button
               key={m.id}
               type="button"
-              onClick={() => onPick(pickFromItem(m))}
+              onClick={() => (m.kind === "live-folder" ? setFolder(m) : onPick(pickFromItem(m)))}
               style={{
                 padding: 0,
                 border: "none",
@@ -83,15 +112,84 @@ export function MediaPicker({
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-              aria-label={`Use ${m.name}`}
+              aria-label={m.kind === "live-folder" ? `Open ${m.name}` : `Use ${m.name}`}
             >
-              <MediaCard item={m} />
+              <MediaCard item={m} liveFiles={liveFiles[m.id]?.files} />
             </button>
           ))}
         </div>
       )}
+      </>
+      )}
     </Modal>,
     document.body,
+  );
+}
+
+/** The files of one live folder (of the field's type) and a way back; picking one plays it from the folder. */
+function LiveFolderFiles({
+  folder,
+  entry,
+  accept,
+  onBack,
+  onPick,
+}: {
+  folder: MediaItemMeta;
+  entry: { files: LiveFolderFile[]; configured: boolean } | undefined;
+  accept: PickAccept;
+  onBack: () => void;
+  onPick: (file: LiveFolderFile) => void;
+}) {
+  const { files, message } = liveFolderChoices(entry, accept);
+  return (
+    <div>
+      <Button size="sm" variant="ghost" onClick={onBack} style={{ marginBottom: 12 }}>
+        Back to Media
+      </Button>
+      {message && (
+        <p style={{ margin: "24px 0", textAlign: "center", fontSize: fontSize.sm, color: colors.textMuted }}>{message}</p>
+      )}
+      {files.length > 0 && (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 4, maxHeight: "55vh", overflow: "auto" }}>
+            {files.map((f) => (
+              <button
+                key={f.name}
+                type="button"
+                onClick={() => onPick(f)}
+                aria-label={`Use ${f.name}`}
+                style={{ padding: 0, border: "none", background: "transparent", color: "inherit", font: "inherit", textAlign: "left", cursor: "pointer", borderRadius: radius.md, minWidth: 0 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = colors.surface2)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <LiveFileThumb folderId={folder.id} file={f} />
+                <div style={{ padding: "4px 6px", fontSize: fontSize.sm, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: "12px 0 0", fontSize: fontSize.xs, color: colors.textMuted }}>{LIVE_FOLDER_PICK_NOTE}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LiveFileThumb({ folderId, file }: { folderId: string; file: LiveFolderFile }) {
+  const [failed, setFailed] = useState(false);
+  const url = liveFolderFileUrl(folderId, file.name);
+  const src = file.mediaType === "video" ? videoPosterUrl(url) : resolveAssetUrl(url);
+  const Fallback = file.mediaType === "video" ? Film : ImageIcon;
+  return (
+    <div
+      style={{ aspectRatio: "16 / 9", background: colors.surface3, borderRadius: radius.md, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", color: colors.textMuted }}
+    >
+      {failed || !src ? (
+        <Fallback size={28} aria-hidden />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      )}
+    </div>
   );
 }
 
