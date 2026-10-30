@@ -499,3 +499,41 @@
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4:** Run the tests and `tsc`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(companion): Media rows and looping decks`.
+
+### Task 17: Media panel on Live (user-approved addition)
+
+**Files:**
+- Create: `apps/operator/src/app/components/live/MediaPanel.tsx`, `apps/operator/src/app/components/live/mediaPanelModel.ts`, `apps/operator/src/app/components/live/mediaPanelModel.test.ts`
+- Modify: the Live drawer/tab host that shows the hotcards panel (find where `HotcardsPanel` is mounted on Live and add a "Media" tab beside it); `server/src/mediaHandlers.ts` + `packages/ws-protocol/src/index.ts` (new client message `media_folder_take{ id, channel }`); `server/src/mediaDeckSession.ts` (start a folder loop without a show row)
+- Test: `server/src/mediaDeckSession.test.ts`, `server/src/mediaHandlers` tests
+
+**Interfaces:**
+- Consumes: `MediaThumb`/`MediaCard` (apps/operator/src/app/media/MediaCard.tsx), store `mediaItems`/`liveFolderFiles`, `mediaRowTakeMessage` (ws-protocol), `mediaDeckSession.start`, `resolveFolderDeckSlides`.
+- Produces:
+  - `mediaPanelModel.ts`: `mediaItemTakeMessage(item: MediaItemMeta, channel: "preview" | "program"): ClientMessage` for file items — builds a `media_take` with `rowId: "media-item:<id>"`, photo → `mediaType "image"`, `fit "cover"`; video → `endAction "hold"`, `volume 1`, not muted, not looping (the Media row defaults). `filterPanelItems(items, query, folder)`.
+  - Protocol `media_folder_take{ id: string; channel: string }`: the server starts a media-only folder loop on that channel with `rowId: "media-folder:<id>"`, `loop: true`, `defaultHoldSec: 8`, and the folder's saved order if a deck links that folder, else name order. Refused with "This folder has no photos or videos yet." when empty. Preview shows statically (existing preview rule).
+
+**Behaviour (user-approved):** a "Media" tab beside hotcards on Live; same thumbnails/search/folders as the Media area; each item has **Cue** (to preview) and **Take** (to program) like hotcards; a photo holds until the next take; a video plays with sound and holds its last frame; taking anything else into the media slot replaces it; a live folder takes as a looping 8 s deck that keeps running under graphics; nothing changes the show.
+
+- [ ] **Step 1: Write failing tests:** `mediaItemTakeMessage builds a photo take to preview and a video take to program with hold/sound defaults`; `filterPanelItems by query and folder`; server: `media_folder_take starts a looping folder deck with 8 s hold`, `media_folder_take on an empty folder is refused with the plain message`, `a graphics take leaves a panel-started loop running`.
+- [ ] **Step 2:** Run them. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4:** Run `npx vitest run apps/operator server packages/ws-protocol` and tsc for operator, server, ws-protocol. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(live): Media panel — cue or take library photos, videos and live folders`.
+
+### Task 18: Hotcard creation shows the template's fields (user-reported)
+
+**Files:**
+- Modify: `apps/operator/src/app/hotcards/edit/HotcardNewStep.tsx`, `apps/operator/src/app/hotcards/edit/page.tsx` (`create`, the template fetch effect so it also runs on the new step)
+- Test: `apps/operator/src/app/hotcards/edit/hotcardDraft.test.ts` (or a new pure helper's test)
+
+**Interfaces:**
+- Produces: `NewHotcardValues` gains `data: Record<string, string>`; `create` saves it as the new hotcard's `data`.
+
+**Behaviour:** the "New hotcard" step shows the picked template's fields (same field editor the hotcard editor uses), fetching the template when it isn't cached (local: `get_template`; cloud: `getTemplateCloud`), showing "Loading template…" until it arrives. Values typed there are saved with the new card. Changing the template keeps values for field keys the new template also declares and drops the rest. Fields are optional; Create still needs only a name and template.
+
+- [ ] **Step 1: Write the failing test** for a pure helper `carryFieldValues(prev: Record<string,string>, fields: {key: string}[]): Record<string,string>` (keeps declared keys, drops others) and that `create` includes `data`.
+- [ ] **Step 2:** Run it. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4:** Run `npx vitest run apps/operator` + operator tsc. Expected: PASS.
+- [ ] **Step 5: Commit** `fix(hotcards): the New hotcard step shows and saves the template's fields`.
