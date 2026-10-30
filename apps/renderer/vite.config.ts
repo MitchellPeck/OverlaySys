@@ -10,6 +10,8 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 3001,
     host: true,
-    proxy: { "/assets": "http://localhost:4000" },
+    // The server serves assets and live-folder files; templates reference
+    // both by relative URL, so the dev renderer forwards them.
+    proxy: { "/assets": "http://localhost:4000", "/media-folders": "http://localhost:4000" },
   },
 }));

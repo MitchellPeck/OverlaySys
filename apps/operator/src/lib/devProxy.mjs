@@ -19,12 +19,17 @@ export function devProxyEnabled(env) {
 }
 
 /**
- * Dev-only rewrite of /assets to the OverlaySys server.
+ * Dev-only rewrites of /assets and /media-folders to the OverlaySys server.
  * @param {DevProxyEnv} env
  * @returns {{ source: string; destination: string }[]}
  */
 export function assetRewrites(env) {
   if (!devProxyEnabled(env)) return [];
   const server = (env.OVERLAYSYS_SERVER_URL || "http://localhost:4000").replace(/\/+$/, "");
-  return [{ source: "/assets/:p*", destination: `${server}/assets/:p*` }];
+  // Live-folder files (/media-folders/<id>/<file>) are served by the server
+  // too; without this they 404 on the dev operator's origin.
+  return [
+    { source: "/assets/:p*", destination: `${server}/assets/:p*` },
+    { source: "/media-folders/:p*", destination: `${server}/media-folders/:p*` },
+  ];
 }
