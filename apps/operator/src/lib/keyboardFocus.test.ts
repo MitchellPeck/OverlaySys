@@ -71,6 +71,33 @@ describe("createKeyboardFocusTracker", () => {
     expect(t.isKeyboardFocused(btn)).toBe(false);
   });
 
+  it("a Tab that moved no focus doesn't mark a later programmatic focus (keyup ends it)", () => {
+    const t = createKeyboardFocusTracker();
+    const opener = { tagName: "BUTTON" };
+    t.onKeyDown(tab); // e.g. a single-focusable modal trap: no focusin
+    t.onKeyUp(tab);
+    t.onFocusIn(opener); // Modal restores focus to the mouse-clicked opener
+    expect(t.isKeyboardFocused(opener)).toBe(false);
+  });
+
+  it("a Tab that moved no focus is forgotten at the next non-Tab keydown", () => {
+    const t = createKeyboardFocusTracker();
+    const opener = { tagName: "BUTTON" };
+    t.onKeyDown(tab);
+    t.onKeyDown({ key: "Escape", metaKey: false, ctrlKey: false, altKey: false });
+    t.onFocusIn(opener);
+    expect(t.isKeyboardFocused(opener)).toBe(false);
+  });
+
+  it("the Tab's own keyup keeps the element it focused", () => {
+    const t = createKeyboardFocusTracker();
+    const btn = { tagName: "BUTTON" };
+    t.onKeyDown(tab);
+    t.onFocusIn(btn);
+    t.onKeyUp(tab);
+    expect(t.isKeyboardFocused(btn)).toBe(true);
+  });
+
   it("nothing is keyboard-focused for a null target", () => {
     const t = createKeyboardFocusTracker();
     t.onKeyDown(tab);

@@ -76,6 +76,7 @@ export function useGlobalShortcuts(): void {
     // Which element Tab focused: only that one keeps Enter/Space for itself.
     const focusTracker = createKeyboardFocusTracker();
     const onTrackKey = (e: KeyboardEvent) => focusTracker.onKeyDown(e);
+    const onTrackKeyUp = (e: KeyboardEvent) => focusTracker.onKeyUp(e);
     const onFocusIn = (e: FocusEvent) => focusTracker.onFocusIn(e.target);
     const onPointerDown = () => focusTracker.onPointerDown();
     function onKey(e: KeyboardEvent) {
@@ -237,11 +238,13 @@ export function useGlobalShortcuts(): void {
     }
 
     window.addEventListener("keydown", onTrackKey, true);
+    window.addEventListener("keyup", onTrackKeyUp, true);
     window.addEventListener("focusin", onFocusIn, true);
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onTrackKey, true);
+      window.removeEventListener("keyup", onTrackKeyUp, true);
       window.removeEventListener("focusin", onFocusIn, true);
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKey);
