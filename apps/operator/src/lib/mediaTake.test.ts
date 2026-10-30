@@ -6,7 +6,7 @@ const row = (over: Partial<VideoRow> = {}): VideoRow => ({
   kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, ...over,
 });
 const media = (status: ChannelMedia["playback"]["status"], rowId = "v1"): ChannelMedia => ({
-  rowId, assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+  rowId, assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", position: "center", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
   playback: { status, currentTime: 0, duration: 10, updatedAt: 1 },
 });
 const states = (ch: string, m: ChannelMedia): Record<string, ChannelState> =>
@@ -57,7 +57,7 @@ describe("mediaRowTakeMessage (operator)", () => {
   it("sends to the row's channel, or program when it has none", () => {
     expect(mediaRowTakeMessage(row())).toMatchObject({ type: "media_take", channel: "program", mediaType: "video" });
     const img: ImageRow = {
-      kind: "media", mediaType: "image", id: "p1", assetUrl: "/assets/p.png", fit: "cover", channelHint: "alt",
+      kind: "media", mediaType: "image", id: "p1", assetUrl: "/assets/p.png", fit: "cover", position: "center", channelHint: "alt",
       transitionIn: { style: "fade", durationMs: 500 }, transitionOut: { style: "fade", durationMs: 500 },
     };
     expect(mediaRowTakeMessage(img, "show-1")).toMatchObject({ channel: "alt", mediaType: "image", showId: "show-1" });

@@ -1,4 +1,5 @@
-import { deckTextToSlides, type Deck, type DeckSlide, type MediaRef } from "@overlaysys/core";
+import { deckTextToSlides, type Deck, type DeckSlide, type MediaRef, type PartialMediaPlacement } from "@overlaysys/core";
+import { applyPlacement, ownPlacement, type PlacementPatch } from "../../../lib/mediaPlacement";
 
 /** Pure edits on a deck draft. Every op returns a new deck, or the same deck when it changes nothing. */
 
@@ -76,10 +77,23 @@ const isBlankSlide = (s: DeckSlide) =>
 /** The deck's slides with a new deck's lone empty slide dropped (it would play first otherwise). */
 const keptSlides = (deck: Deck) => (deck.slides.length === 1 && isBlankSlide(deck.slides[0]!) ? [] : deck.slides);
 
-/** A photo or video slide at the end. `data` stays `{}` so older clients still parse the deck. */
-export function addMediaSlide(deck: Deck, ref: MediaRef, newId: string): Deck {
+/**
+ * A photo or video slide at the end, starting with the library item's own
+ * size/position (if it has one). `data` stays `{}` so older clients still parse the deck.
+ */
+export function addMediaSlide(deck: Deck, ref: MediaRef & PartialMediaPlacement, newId: string): Deck {
   const media: MediaRef = { ...(ref.mediaItemId ? { mediaItemId: ref.mediaItemId } : {}), assetUrl: ref.assetUrl, mediaType: ref.mediaType };
-  return { ...deck, slides: [...keptSlides(deck), { id: newId, data: {}, media }] };
+  return { ...deck, slides: [...keptSlides(deck), { id: newId, data: {}, media, ...ownPlacement(ref) }] };
+}
+
+/** The deck's default size/position for its photo/video slides (and every live-folder graphic). */
+export function setDeckPlacement(deck: Deck, patch: PlacementPatch): Deck {
+  return applyPlacement(deck, patch, { fit: "mediaFit", position: "mediaPosition" });
+}
+
+/** One slide's own size/position; `undefined` goes back to the deck's. */
+export function setSlidePlacement(deck: Deck, id: string, patch: PlacementPatch): Deck {
+  return mapSlide(deck, id, (s) => applyPlacement(s, patch));
 }
 
 /** The shortest hold the editor accepts (same as the deck's hold field). */

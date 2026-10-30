@@ -2,6 +2,7 @@ import type { ChannelState, MediaItemMeta } from "@overlaysys/core";
 import { mediaRowTakeMessage, type ClientMessage } from "@overlaysys/ws-protocol";
 import { NO_FOLDER } from "../../media/libraryConfig";
 import { newMediaRowFromPick } from "../../media/pickerModel";
+import { ownPlacement } from "../../../lib/mediaPlacement";
 
 export type PanelChannel = "preview" | "program";
 
@@ -12,11 +13,12 @@ export const panelRowId = (m: Pick<MediaItemMeta, "id" | "kind">): string =>
 /**
  * The `media_take` for a library file, with a Media row's defaults: a photo
  * covers the frame and holds; a video plays once with sound and holds its last
- * frame. No show id, so nothing in the show changes.
+ * frame. The item's own size/position go with it. No show id, so nothing in
+ * the show changes.
  */
 export function mediaItemTakeMessage(item: MediaItemMeta, channel: PanelChannel): ClientMessage {
   const row = newMediaRowFromPick(
-    { mediaItemId: item.id, assetUrl: item.assetUrl ?? "", mediaType: item.mediaType ?? "image" },
+    { mediaItemId: item.id, assetUrl: item.assetUrl ?? "", mediaType: item.mediaType ?? "image", ...ownPlacement(item) },
     panelRowId(item),
   );
   const labelled = { ...row, label: item.name };

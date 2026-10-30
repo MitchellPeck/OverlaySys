@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_MEDIA_TRANSITION, type ImageRow, type VideoRow } from "@overlaysys/core";
-import { Input, SegmentedControl, Select, Switch, colors, fontSize } from "@overlaysys/ui";
-import { PHOTO_FIT_OPTIONS, TransitionField, probeDuration } from "@/app/components/MediaRowModal";
+import { DEFAULT_MEDIA_TRANSITION, resolveMediaPlacement, type ImageRow, type VideoRow } from "@overlaysys/core";
+import { Input, Select, Switch, colors, fontSize } from "@overlaysys/ui";
+import { TransitionField, probeDuration } from "@/app/components/MediaRowModal";
+import { MediaFitSelect, MediaPositionPicker } from "@/app/components/MediaPlacementFields";
+import { ownPlacement, type PlacementPatch } from "@/lib/mediaPlacement";
 import { MediaSourceField, type SourcePick } from "@/app/media/MediaPicker";
 import { formatClock } from "@/lib/mediaTake";
 import { mediaRowName } from "@/lib/rowView";
@@ -45,6 +47,8 @@ export function MediaItemForm({ row, show, onChange }: ItemFormProps<MediaRow>) 
       assetUrl: pick.assetUrl,
       mediaItemId: pick.mediaItemId,
       ...(isVideo ? { durationSec: pick.durationSec } : {}),
+      // A library item with its own size/position starts the row there; still editable below.
+      ...ownPlacement(pick),
     });
     if (next.kind !== "video") return onChange(next);
     const withDuration = withLibraryDuration(next, mediaItems);
@@ -94,7 +98,8 @@ export function MediaItemForm({ row, show, onChange }: ItemFormProps<MediaRow>) 
           onChange={(e) => patch({ label: e.target.value || undefined })}
         />
       </FormRow>
-      {row.kind === "video" ? <VideoFields row={row} patch={patch} /> : <PhotoFields row={row} patch={patch} />}
+      <PlacementFields row={row} onChange={patch} />
+      {row.kind === "video" && <VideoFields row={row} patch={patch} />}
       {transitions}
       <ItemCommonFields row={row} onChange={(p) => patch(p)} showSermonNotes={false} sets={[]} />
     </ItemFormFrame>
@@ -145,10 +150,18 @@ function VideoFields({ row, patch }: { row: VideoRow; patch: (p: Record<string, 
   );
 }
 
-function PhotoFields({ row, patch }: { row: ImageRow; patch: (p: Record<string, unknown>) => void }) {
+/** Size and position on air (a photo is see-through outside the picture). */
+function PlacementFields({ row, onChange }: { row: MediaRow; onChange: (p: PlacementPatch) => void }) {
+  const value = { ...(row.fit ? { fit: row.fit } : {}), ...(row.position ? { position: row.position } : {}) };
+  const fallback = resolveMediaPlacement(row.kind === "video" ? "video" : "image");
   return (
-    <FormRow label="Fit">
-      <SegmentedControl size="sm" aria-label="Fit" value={row.fit ?? "cover"} options={PHOTO_FIT_OPTIONS} onChange={(fit) => patch({ fit })} />
-    </FormRow>
+    <>
+      <FormRow label="Size">
+        <MediaFitSelect value={value} fallback={fallback} onChange={onChange} />
+      </FormRow>
+      <FormRow label="Position">
+        <MediaPositionPicker value={value} fallback={fallback} onChange={onChange} />
+      </FormRow>
+    </>
   );
 }

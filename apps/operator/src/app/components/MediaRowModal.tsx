@@ -4,16 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import {
   DEFAULT_MEDIA_TRANSITION,
   type ChannelConfig,
+  type MediaPlacement,
   type MediaRef,
   type MediaTransition,
   type MediaTransitionStyle,
 } from "@overlaysys/core";
-import { Button, Field, Input, Modal, SegmentedControl, Select, Switch } from "@overlaysys/ui";
+import { Button, Field, Input, Modal, Select, Switch } from "@overlaysys/ui";
 import { resolveAssetUrl } from "@/lib/uploadAsset";
 import { useStore } from "@/lib/store";
 import { MediaSourceField, type SourcePick } from "@/app/media/MediaPicker";
-
-export type PhotoFit = "cover" | "contain" | "fill";
+import { applyPlacement, startPlacement, type PlacementPatch } from "@/lib/mediaPlacement";
+import { MediaFitSelect, MediaPositionPicker } from "./MediaPlacementFields";
 
 /** Everything the Add media dialog chose. Video-only and photo-only settings are ignored for the other type. */
 export type MediaRowSaveArgs = {
@@ -27,14 +28,9 @@ export type MediaRowSaveArgs = {
   endAction: "clear" | "hold";
   loop: boolean;
   muted: boolean;
-  fit: PhotoFit;
+  /** Size and position on air (both types). */
+  placement: MediaPlacement;
 };
-
-export const PHOTO_FIT_OPTIONS: { value: PhotoFit; label: string; title: string }[] = [
-  { value: "cover", label: "Cover", title: "Fill the frame; edges may be cropped" },
-  { value: "contain", label: "Contain", title: "Show the whole photo" },
-  { value: "fill", label: "Stretch", title: "Stretch to the frame" },
-];
 
 const STYLE_LABELS: Record<MediaTransitionStyle, string> = {
   cut: "Cut",
@@ -126,7 +122,7 @@ export function MediaRowModal({
   const [endAction, setEndAction] = useState<"clear" | "hold">("hold");
   const [loop, setLoop] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [fit, setFit] = useState<PhotoFit>("cover");
+  const [placement, setPlacement] = useState<MediaPlacement>(startPlacement("image", undefined));
   const [transitionIn, setTransitionIn] = useState<MediaTransition>(DEFAULT_MEDIA_TRANSITION);
   const [transitionOut, setTransitionOut] = useState<MediaTransition>(DEFAULT_MEDIA_TRANSITION);
   const [channelHint, setChannelHint] = useState("program");
@@ -146,13 +142,21 @@ export function MediaRowModal({
     setEndAction("hold");
     setLoop(false);
     setMuted(false);
-    setFit("cover");
+    setPlacement(startPlacement("image", undefined));
     setTransitionIn(DEFAULT_MEDIA_TRANSITION);
     setTransitionOut(DEFAULT_MEDIA_TRANSITION);
     setChannelHint("program");
   }, [open]);
 
   const isVideo = source?.mediaType === "video";
+
+  const placementChange = (p: PlacementPatch) => setPlacement((cur) => applyPlacement(cur, p));
+
+  // A new source starts from its library item's own size/position (else what plays today).
+  function chooseSource(pick: SourcePick | null) {
+    setSource(pick);
+    if (pick) setPlacement(startPlacement(pick.mediaType, pick));
+  }
 
   async function save() {
     if (!source) return;
@@ -178,7 +182,7 @@ export function MediaRowModal({
         endAction,
         loop,
         muted,
-        fit,
+        placement,
       });
     } finally {
       setSaving(false);
@@ -207,7 +211,7 @@ export function MediaRowModal({
           mediaType={source?.mediaType ?? null}
           name={source?.name ?? ""}
           accept="any"
-          onChange={setSource}
+          onChange={chooseSource}
         />
       </Field>
       <Field label="Label">
@@ -221,10 +225,15 @@ export function MediaRowModal({
           ))}
         </Select>
       </Field>
-      {source && !isVideo && (
-        <Field label="Fit">
-          <SegmentedControl<PhotoFit> size="sm" aria-label="Fit" value={fit} options={PHOTO_FIT_OPTIONS} onChange={setFit} />
-        </Field>
+      {source && (
+        <>
+          <Field label="Size">
+            <MediaFitSelect value={placement} fallback={placement} onChange={placementChange} />
+          </Field>
+          <Field label="Position">
+            <MediaPositionPicker value={placement} fallback={placement} onChange={placementChange} />
+          </Field>
+        </>
       )}
       {isVideo && (
         <>

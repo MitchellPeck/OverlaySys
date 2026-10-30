@@ -1,4 +1,11 @@
-import { liveFolderFileUrl, type LiveFolderFile, type MediaItem, type MediaItemMeta } from "@overlaysys/core";
+import {
+  liveFolderFileUrl,
+  resolveMediaPlacement,
+  type LiveFolderFile,
+  type MediaItem,
+  type MediaItemMeta,
+  type MediaPlacement,
+} from "@overlaysys/core";
 import type { FilterSpec, MenuItem, SortSpec } from "@overlaysys/ui";
 
 export const MEDIA_LIST_STORAGE_KEY = "media";
@@ -61,9 +68,17 @@ export function thumbnailSource(item: MediaItem, liveFiles: LiveFolderFile[] | u
   return { kind: item.mediaType === "video" ? "video" : "image", url: item.assetUrl };
 }
 
+/** How an item's card draws its picture: a file as it plays (its own size/position); a live folder fills the tile. */
+export function mediaThumbPlacement(item: MediaItem): MediaPlacement {
+  if (item.kind === "live-folder" || !item.mediaType) return { fit: "cover", position: "center" };
+  return resolveMediaPlacement(item.mediaType, item);
+}
+
 export type MediaActions = {
   rename(m: MediaItemMeta): void;
   move(m: MediaItemMeta): void;
+  /** Files only: the item's own size and position. */
+  placement(m: MediaItemMeta): void;
   replace(m: MediaItemMeta): void;
   /** Live folders only: choose a different folder on this computer. */
   chooseFolder(m: MediaItemMeta): void;
@@ -77,6 +92,7 @@ export function mediaMenuItems(m: MediaItemMeta, actions: MediaActions, offlineR
     { id: "rename", label: "Rename…", ...off, onSelect: () => actions.rename(m) },
     { id: "move", label: "Move to folder…", ...off, onSelect: () => actions.move(m) },
   ];
+  if (m.kind === "file") items.push({ id: "placement", label: "Size and position…", ...off, onSelect: () => actions.placement(m) });
   if (m.kind === "file") items.push({ id: "replace", label: "Replace file…", ...off, onSelect: () => actions.replace(m) });
   if (m.kind === "live-folder") items.push({ id: "folder", label: "Change folder…", ...off, onSelect: () => actions.chooseFolder(m) });
   items.push({ separator: true }, { id: "delete", label: "Delete…", danger: true, ...off, onSelect: () => actions.delete(m) });

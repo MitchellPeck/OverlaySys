@@ -3,7 +3,7 @@ import type { ChannelMedia } from "@overlaysys/core";
 import { displayStatus, displayTime, isPhotoMedia, NO_RENDERER_MS, previewNeedsSeek, previewVideoSync, remainingTone } from "./mediaTime";
 
 const m = (over: Partial<ChannelMedia["playback"]> = {}, rest: Partial<ChannelMedia> = {}): ChannelMedia => ({
-  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+  rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", position: "center", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
   playback: { status: "playing", currentTime: 10, duration: 300, updatedAt: 999_999, ...over },
   ...rest,
 });

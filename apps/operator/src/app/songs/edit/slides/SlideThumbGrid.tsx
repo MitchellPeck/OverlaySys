@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Film, Image as ImageIcon, MoreHorizontal, Plus } from "lucide-react";
+import { mediaObjectPosition, type MediaFit, type MediaPosition } from "@overlaysys/core";
 import { Button, colors, IconButton, radius, useContextMenu, type MenuItem } from "@overlaysys/ui";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
@@ -13,19 +14,22 @@ export type SlideCard = {
   caption?: string;
   group?: { label: string; color: string } | null;
   badge?: string;
-  /** A photo or video card: its thumbnail URL (null when there is none, e.g. a video without a poster). */
-  media?: { src: string | null; type: "image" | "video" };
+  /**
+   * A photo or video card: its thumbnail URL (null when there is none, e.g. a
+   * video without a poster), drawn with the size/position it plays with (default Fit inside, centred).
+   */
+  media?: { src: string | null; type: "image" | "video"; fit?: MediaFit; position?: MediaPosition };
 };
 
 /** A photo/video card's picture, or a type icon when there is none or it fails to load. */
-function MediaFill({ src, type }: { src: string | null; type: "image" | "video" }) {
+function MediaFill({ src, type, fit = "contain", position = "center" }: NonNullable<SlideCard["media"]>) {
   const [failed, setFailed] = useState<string | null>(null);
   const Icon = type === "video" ? Film : ImageIcon;
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#888" }}>
       {src && failed !== src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+        <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} style={{ width: "100%", height: "100%", objectFit: fit, objectPosition: mediaObjectPosition(position) }} />
       ) : (
         <Icon size={24} aria-hidden />
       )}
@@ -162,7 +166,7 @@ export function SlideThumbGrid(p: {
                   style={{ position: "absolute", inset: 0, padding: 0, border: 0, background: "transparent", cursor: "pointer", display: "block" }}
                 >
                   {s.media ? (
-                    <MediaFill src={s.media.src} type={s.media.type} />
+                    <MediaFill {...s.media} />
                   ) : s.templateId ? (
                     <FitThumb templateId={s.templateId} data={s.data} />
                   ) : (

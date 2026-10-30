@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Film, FolderOpen, Image as ImageIcon } from "lucide-react";
-import type { LiveFolderFile, MediaItemMeta } from "@overlaysys/core";
+import { mediaObjectPosition, type LiveFolderFile, type MediaItemMeta } from "@overlaysys/core";
 import { colors, fontSize, fontWeight, radius } from "@overlaysys/ui";
 import { resolveAssetUrl, videoPosterUrl } from "../../lib/uploadAsset";
-import { formatDuration, liveFolderCountText, thumbnailSource, typeLabel } from "./libraryConfig";
+import { formatDuration, liveFolderCountText, mediaThumbPlacement, thumbnailSource, typeLabel } from "./libraryConfig";
 
 /** Where the browser loads a thumbnail from: asset (resolved), video poster, or live-folder file. */
 function thumbSrc(item: MediaItemMeta, liveFiles: LiveFolderFile[] | undefined): string | null {
@@ -15,9 +15,13 @@ function thumbSrc(item: MediaItemMeta, liveFiles: LiveFolderFile[] | undefined):
   return resolveAssetUrl(t.url);
 }
 
-/** 16:9 thumbnail with a type badge and (for video) its duration. Reused by the Live media panel. */
+/**
+ * 16:9 thumbnail with a type badge and (for video) its duration, drawn with
+ * the item's own size/position (see-through over the tile). Reused by the Live media panel.
+ */
 export function MediaThumb({ item, liveFiles }: { item: MediaItemMeta; liveFiles?: LiveFolderFile[] }) {
   const src = thumbSrc(item, liveFiles);
+  const placement = mediaThumbPlacement(item);
   const [failed, setFailed] = useState<string | null>(null);
   const showImg = src && failed !== src;
   const Fallback = item.kind === "live-folder" ? FolderOpen : item.mediaType === "video" ? Film : ImageIcon;
@@ -52,7 +56,7 @@ export function MediaThumb({ item, liveFiles }: { item: MediaItemMeta; liveFiles
           alt=""
           loading="lazy"
           onError={() => setFailed(src)}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: placement.fit, objectPosition: mediaObjectPosition(placement.position) }}
         />
       ) : (
         <Fallback size={28} aria-hidden />

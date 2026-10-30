@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LiveFolderFile } from "@overlaysys/core";
-import { folderDeckEntries, moveFolderFile, newFolderDeck, setFolderFileHold } from "./folderDeckOps";
+import { folderDeckEntries, moveFolderFile, newFolderDeck, setFolderFileHold, setFolderFilePlacement } from "./folderDeckOps";
 
 const file = (name: string, mediaType: "image" | "video" = "image"): LiveFolderFile => ({ name, mediaType, size: 1, mtimeMs: 1 });
 
@@ -68,5 +68,30 @@ describe("folderDeckEntries", () => {
 describe("folder hold minimum", () => {
   it("a per-file hold under 0.5 s is cleared", () => {
     expect(setFolderFileHold([{ file: "a.png", holdSec: 3 }], "a.png", 0.2)).toEqual([{ file: "a.png" }]);
+  });
+});
+
+describe("setFolderFilePlacement", () => {
+  it("overrides one file's size/position; undefined goes back to the deck default", () => {
+    const order = [{ file: "a.png", holdSec: 3 }, { file: "b.png" }];
+    const placed = setFolderFilePlacement(order, "a.png", { fit: "scale-down", position: "bottom" });
+    expect(placed).toEqual([{ file: "a.png", holdSec: 3, fit: "scale-down", position: "bottom" }, { file: "b.png" }]);
+    expect(setFolderFilePlacement(placed, "a.png", { fit: undefined })).toEqual([
+      { file: "a.png", holdSec: 3, position: "bottom" },
+      { file: "b.png" },
+    ]);
+  });
+  it("a file not in the order yet joins the end", () => {
+    expect(setFolderFilePlacement([{ file: "a.png" }], "z.png", { position: "top" })).toEqual([{ file: "a.png" }, { file: "z.png", position: "top" }]);
+  });
+  it("changing a file's hold keeps its size/position", () => {
+    expect(setFolderFileHold([{ file: "a.png", fit: "contain", position: "top" }], "a.png", 6)).toEqual([
+      { file: "a.png", holdSec: 6, fit: "contain", position: "top" },
+    ]);
+  });
+  it("the editor's entries carry each file's own size/position", () => {
+    const e = folderDeckEntries([{ file: "a.png", fit: "contain", position: "top" }], [file("a.png")], true);
+    expect(e[0]).toMatchObject({ fit: "contain", position: "top" });
+    expect(folderDeckEntries([{ file: "a.png", position: "left" }], [], false)[0]).toMatchObject({ position: "left" });
   });
 });

@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MediaItemMeta } from "@overlaysys/core";
+import type { MediaItemMeta, MediaPlacement } from "@overlaysys/core";
 import { Button, LibraryList, Tooltip, offlineCopy, useConfirm, usePrompt, useToast, colors, radius } from "@overlaysys/ui";
 import { useStore } from "../../lib/store";
 import { getClient } from "../../lib/useWs";
 import { useConnection } from "../../lib/useConnection";
 import { deleteMediaItem, displayServerError, restoreMediaItem, saveMediaItem } from "../../lib/mediaRequests";
 import { uploadAsset } from "../../lib/uploadAsset";
+import { itemPlacement } from "../../lib/mediaPlacement";
 import { plural } from "../../lib/listFormat";
 import { listLoadState } from "../../lib/listLoadState";
 import { PageBody } from "../components/PageShell";
 import { PageChrome } from "../shell/PageChrome";
 import { LiveFolderDialog } from "./LiveFolderDialog";
+import { MediaPlacementDialog } from "./MediaPlacementDialog";
 import { MediaCard } from "./MediaCard";
 import { importMediaFile, mediaTypeOf, mediaTypeOfFile, probeMedia } from "./importMedia";
 import {
@@ -40,6 +42,7 @@ export default function MediaLibraryPage() {
   const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveTarget, setLiveTarget] = useState<MediaItemMeta | undefined>();
+  const [placementTarget, setPlacementTarget] = useState<MediaItemMeta | null>(null);
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const [importing, setImporting] = useState(0);
@@ -134,6 +137,7 @@ export default function MediaLibraryPage() {
         failed(e);
       }
     },
+    placement: (m) => setPlacementTarget(m),
     replace: (m) => {
       replaceTarget.current = m;
       replaceRef.current?.click();
@@ -156,6 +160,16 @@ export default function MediaLibraryPage() {
         action: { label: "Undo", onClick: () => void restoreMediaItem(m.id).catch(failed) },
       });
     },
+  };
+
+  const savePlacement = async (m: MediaItemMeta, p: MediaPlacement) => {
+    setPlacementTarget(null);
+    const { usedBy: _usedBy, fit: _fit, position: _position, ...rest } = m;
+    try {
+      await saveMediaItem({ ...rest, ...itemPlacement(m.mediaType ?? "image", p) });
+    } catch (e) {
+      failed(e);
+    }
   };
 
   const offline = !connected;
@@ -265,6 +279,7 @@ export default function MediaLibraryPage() {
           e.target.value = "";
         }}
       />
+      <MediaPlacementDialog item={placementTarget} onClose={() => setPlacementTarget(null)} onSave={(m, p) => void savePlacement(m, p)} />
       <LiveFolderDialog
         open={liveOpen}
         existing={liveTarget}

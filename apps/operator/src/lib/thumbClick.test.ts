@@ -14,7 +14,7 @@ vi.mock("./slidesRowView", () => ({
       : [{ type: "slides_take", showId, rowId: row.id, slideIdx: pos, channel: "preview" }],
 }));
 
-import { thumbActivate, thumbImageSrc, thumbsFor, type ThumbCtx } from "./thumbClick";
+import { thumbActivate, thumbImageSrc, thumbMediaStyle, thumbsFor, type ThumbCtx } from "./thumbClick";
 
 const sec = (id: string, kind: Section["kind"], slides: string[][]): Section => ({
   id,
@@ -110,6 +110,23 @@ describe("thumbsFor", () => {
     expect(thumbsFor(p as never, mkCtx())[0]).toMatchObject({ render: { kind: "image", src: "/assets/p.png" }, state: null });
     const live = mkCtx({ channelStates: { program: { media: { rowId: "p", playback: { status: "ended" } } } as unknown as ChannelState } });
     expect(thumbsFor(p as never, live)[0]!.state).toBe("live");
+  });
+
+  it("a photo or video row's thumb carries the row's size and position", () => {
+    const p = { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/p.png", fit: "contain", position: "bottom" };
+    expect(thumbsFor(p as never, mkCtx())[0]!.render).toEqual({ kind: "image", src: "/assets/p.png", fit: "contain", position: "bottom" });
+    const v = { kind: "video", id: "v", assetUrl: "/assets/abc.mp4", fit: "scale-down", position: "top-left" };
+    expect(thumbsFor(v as never, mkCtx())[0]!.render).toMatchObject({ kind: "poster", fit: "scale-down", position: "top-left" });
+  });
+
+  it("a media slide's thumb carries the slide's resolved size and position", () => {
+    slidesMock.mockReturnValue({
+      slides: [{ key: "k1", slideId: "a", position: 0, templateId: "", data: {}, media: { assetUrl: "/a.png", mediaType: "image", fit: "scale-down", position: "bottom" } }],
+    });
+    expect(thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, mkCtx())[0]!.render).toEqual({
+      kind: "image", src: "/a.png", fit: "scale-down", position: "bottom",
+    });
+    slidesMock.mockReset();
   });
 
   it("slides without plan 3: placeholder thumb, click sends nothing", () => {
@@ -393,6 +410,18 @@ describe("thumbActivate", () => {
     const row = { kind: "slides", id: "s1", deckId: "d", channelHint: "lyrics" };
     const live = mkCtx({ channelStates: { lyrics: { slidesSession: { rowId: "s1", slideIdx: 0 } } as unknown as ChannelState } });
     expect(thumbActivate(row as never, 2, live).messages).toEqual([{ type: "slides_goto", channel: "lyrics", slideIdx: 2 }]);
+  });
+});
+
+describe("thumbMediaStyle", () => {
+  it("draws a thumb with its real size and position, see-through", () => {
+    expect(thumbMediaStyle({ kind: "image", src: "/p.png", fit: "contain", position: "bottom" })).toEqual({
+      objectFit: "contain", objectPosition: "50% 100%",
+    });
+  });
+  it("defaults to what plays: a photo fills the screen, a video fits inside, centred", () => {
+    expect(thumbMediaStyle({ kind: "image", src: "/p.png" })).toEqual({ objectFit: "cover", objectPosition: "50% 50%" });
+    expect(thumbMediaStyle({ kind: "poster", src: null })).toEqual({ objectFit: "contain", objectPosition: "50% 50%" });
   });
 });
 

@@ -7,7 +7,15 @@ import type {
   SlidesRowView as CoreSlidesRowView,
   SlidesSessionSummary,
 } from "@overlaysys/core";
-import { SLIDES_END_OF_DECK, isMediaOnlyDeck, liveFolderFileUrl, resolveFolderDeckSlides, slidesRowView } from "@overlaysys/core";
+import {
+  SLIDES_END_OF_DECK,
+  deckMediaPlacement,
+  isMediaOnlyDeck,
+  liveFolderFileUrl,
+  resolveFolderDeckSlides,
+  resolveMediaPlacement,
+  slidesRowView,
+} from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { useStore } from "./store";
 import { useDeck } from "../app/slides/useDeck";
@@ -69,23 +77,29 @@ export function folderSlidesRowView(
   // index that list, so the highlight and a thumb click hit the graphic actually playing.
   if (session?.slideKeys) {
     const types = new Map((folder?.files ?? []).map((f) => [f.name, f.mediaType] as const));
-    const slides: OperatorResolvedSlide[] = session.slideKeys.map((file, position) => ({
-      key: `${row.id}:${position}:${file}`,
-      slideId: file,
-      position,
-      templateId: "",
-      data: {},
-      label: file,
-      media: {
-        assetUrl: liveFolderFileUrl(deck.liveFolderId!, file),
-        mediaType: types.get(file) ?? (VIDEO_FILE.test(file) ? "video" : "image"),
-      },
-    }));
+    const own = new Map((deck.folderOrder ?? []).map((o) => [o.file, o] as const));
+    const deckDefault = deckMediaPlacement(deck);
+    const slides: OperatorResolvedSlide[] = session.slideKeys.map((file, position) => {
+      const mediaType = types.get(file) ?? (VIDEO_FILE.test(file) ? "video" : "image");
+      return {
+        key: `${row.id}:${position}:${file}`,
+        slideId: file,
+        position,
+        templateId: "",
+        data: {},
+        label: file,
+        media: {
+          assetUrl: liveFolderFileUrl(deck.liveFolderId!, file),
+          mediaType,
+          ...resolveMediaPlacement(mediaType, own.get(file), deckDefault),
+        },
+      };
+    });
     return { ...base, detail: graphicsDetail(slides.length), slides };
   }
   if (!folder) return { ...base, detail: "Loading…", slides: [] };
   if (!folder.configured) return { ...base, detail: "Live folder", slides: [], blockedReason: FOLDER_ELSEWHERE_REASON };
-  const resolved = resolveFolderDeckSlides(deck.folderOrder, folder.files, deck.defaultHoldSec, deck.liveFolderId!);
+  const resolved = resolveFolderDeckSlides(deck.folderOrder, folder.files, deck.defaultHoldSec, deck.liveFolderId!, deckMediaPlacement(deck));
   if (resolved.length === 0) return { ...base, detail: "Live folder", slides: [], blockedReason: FOLDER_EMPTY_REASON };
   const slides: OperatorResolvedSlide[] = resolved.map((m, position) => ({
     key: `${row.id}:${position}:${m.key}`,
@@ -94,7 +108,7 @@ export function folderSlidesRowView(
     templateId: "",
     data: {},
     ...(m.label !== undefined ? { label: m.label } : {}),
-    media: { assetUrl: m.assetUrl, mediaType: m.mediaType },
+    media: { assetUrl: m.assetUrl, mediaType: m.mediaType, fit: m.fit, position: m.position },
   }));
   return { ...base, detail: graphicsDetail(slides.length), slides };
 }

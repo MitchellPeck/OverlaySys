@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaItemMeta } from "@overlaysys/core";
 import {
-  NO_FOLDER, mediaDeleteConfirm, mediaFilters, mediaMenuItems, mediaSorts, folderNames, formatDuration, thumbnailSource, liveFolderCountText, importErrorText,
+  NO_FOLDER, mediaDeleteConfirm, mediaFilters, mediaMenuItems, mediaSorts, folderNames, formatDuration, thumbnailSource, liveFolderCountText, importErrorText, mediaThumbPlacement,
 } from "./libraryConfig";
 
 const item = (o: Partial<MediaItemMeta> & { id: string }): MediaItemMeta => ({
@@ -56,12 +56,23 @@ describe("misc", () => {
   });
   it("menu: rename, move, delete (danger), offline reason", () => {
     const noop = () => {};
-    const items = mediaMenuItems(a, { rename: noop, move: noop, replace: noop, chooseFolder: noop, delete: noop }, "Reconnect");
+    const items = mediaMenuItems(a, { rename: noop, move: noop, placement: noop, replace: noop, chooseFolder: noop, delete: noop }, "Reconnect");
     const real = items.filter((i): i is Extract<typeof i, { id: string }> => "id" in i);
-    expect(real.map((i) => i.id)).toEqual(["rename", "move", "replace", "delete"]);
+    expect(real.map((i) => i.id)).toEqual(["rename", "move", "placement", "replace", "delete"]);
     expect(real.every((i) => i.disabled === "Reconnect")).toBe(true);
-    const live = mediaMenuItems(c, { rename: noop, move: noop, replace: noop, chooseFolder: noop, delete: noop }).filter((i): i is Extract<typeof i, { id: string }> => "id" in i);
+    const live = mediaMenuItems(c, { rename: noop, move: noop, placement: noop, replace: noop, chooseFolder: noop, delete: noop }).filter((i): i is Extract<typeof i, { id: string }> => "id" in i);
     expect(live.map((i) => i.id)).toEqual(["rename", "move", "folder", "delete"]);
+  });
+});
+
+describe("mediaThumbPlacement", () => {
+  it("a file's card shows its own size/position, else what it plays with", () => {
+    expect(mediaThumbPlacement(item({ id: "p", fit: "scale-down", position: "bottom" }))).toEqual({ fit: "scale-down", position: "bottom" });
+    expect(mediaThumbPlacement(a)).toEqual({ fit: "cover", position: "center" });
+    expect(mediaThumbPlacement(b)).toEqual({ fit: "contain", position: "center" });
+  });
+  it("a live folder's card fills its tile", () => {
+    expect(mediaThumbPlacement(c)).toEqual({ fit: "cover", position: "center" });
   });
 });
 

@@ -36,6 +36,7 @@ import { isCloudMode } from "@/lib/mode";
 import type { RowLike } from "@/lib/rowLike";
 import { MediaRowModal, type MediaRowSaveArgs } from "@/app/components/MediaRowModal";
 import { newMediaRowFromPick } from "@/app/media/pickerModel";
+import { rowPlacement } from "@/lib/mediaPlacement";
 import { ScriptureRowModal, type SaveArgs as ScriptureSaveArgs } from "@/app/components/ScriptureRowModal";
 import { canSave, removeRowAt } from "./showEditOps";
 import {
@@ -487,10 +488,11 @@ function ShowEditPageInner() {
         endAction: args.endAction,
         loop: args.loop || undefined,
         muted: args.muted || undefined,
+        ...rowPlacement("video", args.placement),
       });
       addRows([withVideoLengthPrefill(video)]);
     } else {
-      addRows([patchRow(row, { ...common, fit: args.fit })]);
+      addRows([patchRow(row, { ...common, ...rowPlacement("image", args.placement) })]);
     }
     setMediaModalOpen(false);
   }

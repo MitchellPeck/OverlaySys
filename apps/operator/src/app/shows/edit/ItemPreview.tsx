@@ -6,7 +6,7 @@ import { colors, fontSize } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
 import type { RowLike } from "@/lib/rowLike";
-import { thumbImageSrc, thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
+import { thumbImageSrc, thumbMediaStyle, thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { VideoThumb } from "@/app/components/VideoThumb";
 
@@ -54,6 +54,9 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
 
   const height = Math.round((width * 9) / 16);
   let body: ReactNode;
+  // Photos and videos draw with their real size/position (a photo is see-through over the tile), as they play.
+  const media = spec?.render.kind === "image" || spec?.render.kind === "poster" ? spec.render : null;
+  const mediaStyle = media ? thumbMediaStyle(media) : null;
   if (row.kind === "video") {
     const asset = (row as { assetUrl?: string }).assetUrl ?? "";
     body = (
@@ -61,18 +64,23 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
         <PreviewText text={asset ? "No poster frame yet" : "Choose a video"} />
         {asset && (
           <div style={{ position: "absolute", inset: 0 }}>
-            <VideoThumb assetUrl={asset} width={width} />
+            <VideoThumb
+              assetUrl={asset}
+              width={width}
+              objectFit={mediaStyle?.objectFit ?? "contain"}
+              objectPosition={mediaStyle?.objectPosition}
+            />
           </div>
         )}
       </div>
     );
-  } else if (spec?.render.kind === "image" || spec?.render.kind === "poster") {
+  } else if (media && mediaStyle) {
     // A photo row, or a deck's first slide that is a photo or video.
-    const src = thumbImageSrc(spec.render, { resolveAsset: resolveAssetUrl, posterUrl: videoPosterUrl });
+    const src = thumbImageSrc(media, { resolveAsset: resolveAssetUrl, posterUrl: videoPosterUrl });
     body = (
       <div style={{ width, height, background: colors.surface2, position: "relative", overflow: "hidden" }}>
         {src ? (
-          <img src={src} alt="" style={{ display: "block", width, height, objectFit: "cover" }} />
+          <img src={src} alt="" style={{ display: "block", width, height, ...mediaStyle }} />
         ) : (
           <PreviewText text="No preview" />
         )}

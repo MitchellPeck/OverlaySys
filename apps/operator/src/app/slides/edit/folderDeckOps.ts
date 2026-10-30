@@ -1,4 +1,5 @@
-import { nextFolderOrder, type Deck, type LiveFolderFile } from "@overlaysys/core";
+import { nextFolderOrder, type Deck, type LiveFolderFile, type MediaFit, type MediaPosition } from "@overlaysys/core";
+import { applyPlacement, ownPlacement, type PlacementPatch } from "../../../lib/mediaPlacement";
 import { validHold } from "./deckDraftOps";
 
 /** Pure edits on a live-folder deck's saved play order. Every op returns a new order, or the same one when nothing changes. */
@@ -38,18 +39,35 @@ export function moveFolderFile(order: FolderOrder, from: string, to: string): Fo
   return next;
 }
 
-/** One file's own hold; `undefined` falls back to the deck's. A file not in the order yet joins the end. */
-export function setFolderFileHold(order: FolderOrder, file: string, sec: number | undefined): FolderOrder {
-  const hold = validHold(sec);
-  const entry = hold !== undefined ? { file, holdSec: hold } : { file };
+type FolderEntry = FolderOrder[number];
+
+/** `order` with file's entry replaced by `fn(entry)`. A file not in the order yet joins the end. */
+function mapFolderFile(order: FolderOrder, file: string, fn: (e: FolderEntry) => FolderEntry): FolderOrder {
   const i = order.findIndex((o) => o.file === file);
-  if (i < 0) return [...order, entry];
+  if (i < 0) return [...order, fn({ file })];
   const next = order.slice();
-  next[i] = entry;
+  next[i] = fn(order[i]!);
   return next;
 }
 
-export type FolderDeckEntry = { file: string; mediaType?: "image" | "video"; holdSec?: number };
+/** One file's own hold; `undefined` falls back to the deck's. Its size/position are kept. */
+export function setFolderFileHold(order: FolderOrder, file: string, sec: number | undefined): FolderOrder {
+  const hold = validHold(sec);
+  return mapFolderFile(order, file, ({ holdSec: _old, ...rest }) => (hold !== undefined ? { ...rest, holdSec: hold } : rest));
+}
+
+/** One file's own size/position; `undefined` goes back to the deck's. */
+export function setFolderFilePlacement(order: FolderOrder, file: string, patch: PlacementPatch): FolderOrder {
+  return mapFolderFile(order, file, (e) => applyPlacement(e, patch));
+}
+
+export type FolderDeckEntry = {
+  file: string;
+  mediaType?: "image" | "video";
+  holdSec?: number;
+  fit?: MediaFit;
+  position?: MediaPosition;
+};
 
 /**
  * What the folder deck's editor lists. On the show computer (`configured`):
@@ -57,12 +75,13 @@ export type FolderDeckEntry = { file: string; mediaType?: "image" | "video"; hol
  * files can't be seen, so every saved file by name.
  */
 export function folderDeckEntries(order: Deck["folderOrder"], files: LiveFolderFile[], configured: boolean): FolderDeckEntry[] {
-  if (!configured) return (order ?? []).map((o) => ({ file: o.file, ...(o.holdSec !== undefined ? { holdSec: o.holdSec } : {}) }));
+  const own = (o: FolderEntry) => ({ ...(o.holdSec !== undefined ? { holdSec: o.holdSec } : {}), ...ownPlacement(o) });
+  if (!configured) return (order ?? []).map((o) => ({ file: o.file, ...own(o) }));
   const present = new Map(files.map((f) => [f.name, f]));
   const out: FolderDeckEntry[] = [];
   for (const o of nextFolderOrder(order, files)) {
     const f = present.get(o.file);
-    if (f) out.push({ file: o.file, mediaType: f.mediaType, ...(o.holdSec !== undefined ? { holdSec: o.holdSec } : {}) });
+    if (f) out.push({ file: o.file, mediaType: f.mediaType, ...own(o) });
   }
   return out;
 }

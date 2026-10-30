@@ -160,7 +160,7 @@ describe("live-folder decks on Live", () => {
     const v = a.slidesRowViewFor(row, folderDeck, { f1: { files: [file("a.png"), file("b.png"), file("c.mp4", "video")], configured: true } })!;
     expect(v.slides.map((s) => s.label)).toEqual(["b.png", "a.png", "c.mp4"]);
     expect(v.slides.map((s) => s.position)).toEqual([0, 1, 2]);
-    expect(v.slides[2]!.media).toEqual({ assetUrl: "/media-folders/f1/c.mp4", mediaType: "video" });
+    expect(v.slides[2]!.media).toEqual({ assetUrl: "/media-folders/f1/c.mp4", mediaType: "video", fit: "contain", position: "center" });
     expect(v.detail).toBe("3 graphics");
     expect(v.blockedReason).toBeUndefined();
     expect(a.slidesControlState({ ...row }, { deckCache: { d1: folderDeck }, liveFolderFiles: { f1: { files: [file("a.png")], configured: true } } })).toEqual({ enabled: true });
@@ -206,6 +206,16 @@ describe("an on-air live-folder row follows the session's own list", () => {
     ]);
     expect(v.slides[1]!.media?.assetUrl).toBe("/media-folders/f1/2.png");
     expect(v.detail).toBe("3 graphics");
+  });
+  it("the session's list carries the deck default and each file's own size/position", () => {
+    const placed = { ...folderDeck, mediaFit: "scale-down", mediaPosition: "bottom", folderOrder: [{ file: "2.png", position: "top" }] } as Deck;
+    const v = a.slidesRowViewFor(row, placed, folders, onAirCs)!;
+    expect(v.slides.map((s) => [s.media?.fit, s.media?.position])).toEqual([
+      ["scale-down", "bottom"],
+      ["scale-down", "top"],
+      ["scale-down", "bottom"],
+    ]);
+    expect(a.slidesRowViewFor(row, placed, folders, {})!.slides.map((s) => s.media?.position)).toEqual(["bottom", "bottom", "bottom"]);
   });
   it("a cued folder row follows its preview session too; with no session it resolves the folder", () => {
     const cued = { preview: st({ slidesSession: session("r1", { slideIdx: 0, slot: "media", slideKeys: ["1.png"] }) }) };

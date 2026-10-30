@@ -1,5 +1,5 @@
 import type { ChannelState, SectionKind, Song, SongRow, SongSessionSummary } from "@overlaysys/core";
-import { resolveArrangement, slideAirData } from "@overlaysys/core";
+import { mediaObjectPosition, resolveArrangement, slideAirData, type MediaFit, type MediaPosition } from "@overlaysys/core";
 import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { posterPathFor } from "./mediaTake";
@@ -28,11 +28,22 @@ export type ThumbRender =
        */
       airData?: true;
     }
-  /** A video: `src` is the server poster path (null when there is none); `assetUrl` the video itself. */
-  | { kind: "poster"; src: string | null; assetUrl?: string }
-  /** A photo row: the card shows the stored image itself. */
-  | { kind: "image"; src: string }
+  /**
+   * A video: `src` is the server poster path (null when there is none); `assetUrl` the video itself.
+   * `fit`/`position` are how it plays (absent: Fit inside, centred).
+   */
+  | ({ kind: "poster"; src: string | null; assetUrl?: string } & ThumbPlacement)
+  /** A photo: the card shows the stored image itself, placed as it plays (absent: Fill screen, centred). */
+  | ({ kind: "image"; src: string } & ThumbPlacement)
   | { kind: "placeholder"; text: string };
+
+type ThumbPlacement = { fit?: MediaFit; position?: MediaPosition };
+
+/** Only the size/position a row or slide sets. */
+const placementOf = (p: ThumbPlacement): ThumbPlacement => ({
+  ...(p.fit ? { fit: p.fit } : {}),
+  ...(p.position ? { position: p.position } : {}),
+});
 
 export type ThumbSpec = {
   key: string;
@@ -226,7 +237,7 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
             key: v.id,
             label: "",
             group: null,
-            render: { kind: "poster", src: posterPathFor(v.assetUrl), assetUrl: v.assetUrl },
+            render: { kind: "poster", src: posterPathFor(v.assetUrl), assetUrl: v.assetUrl, ...placementOf(v) },
             state: air === "program" ? "live" : null,
             blanked: false,
           },
@@ -240,7 +251,7 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
             key: p.id,
             label: "",
             group: null,
-            render: { kind: "image", src: p.assetUrl },
+            render: { kind: "image", src: p.assetUrl, ...placementOf(p) },
             state: air === "program" ? "live" : null,
             blanked: false,
           },
@@ -262,8 +273,8 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
           // A photo/video slide (or a live folder's graphic) shows the file itself, not its deck's design.
           render: s.media
             ? s.media.mediaType === "image"
-              ? { kind: "image" as const, src: s.media.assetUrl }
-              : { kind: "poster" as const, src: posterPathFor(s.media.assetUrl), assetUrl: s.media.assetUrl }
+              ? { kind: "image" as const, src: s.media.assetUrl, ...placementOf(s.media) }
+              : { kind: "poster" as const, src: posterPathFor(s.media.assetUrl), assetUrl: s.media.assetUrl, ...placementOf(s.media) }
             : {
                 kind: "template" as const,
                 templateId: s.templateId,
@@ -388,4 +399,19 @@ export function thumbImageSrc(
   if (r.kind === "image") return d.resolveAsset(r.src);
   if (r.kind === "poster") return r.assetUrl ? d.posterUrl(r.assetUrl) : null;
   return null;
+}
+
+/**
+ * How a photo/video thumb is drawn so it matches the output: its size and
+ * position (a photo defaults to Fill screen, a video to Fit inside, centred).
+ * The image itself has no background, so a photo is see-through over the tile.
+ */
+export function thumbMediaStyle(r: Extract<ThumbRender, { kind: "image" | "poster" }>): {
+  objectFit: MediaFit;
+  objectPosition: string;
+} {
+  return {
+    objectFit: r.fit ?? (r.kind === "image" ? "cover" : "contain"),
+    objectPosition: mediaObjectPosition(r.position ?? "center"),
+  };
 }

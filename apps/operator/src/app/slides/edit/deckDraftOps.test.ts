@@ -11,12 +11,14 @@ import {
   parseHoldText,
   parseTags,
   setAdvanceOnEnd,
+  setDeckPlacement,
   setDefaultHold,
   setLoop,
   setSlideData,
   setSlideHold,
   setSlideLabel,
   setSlideMuted,
+  setSlidePlacement,
   setSlideTemplate,
 } from "./deckDraftOps";
 
@@ -199,6 +201,28 @@ describe("addMediaSlide", () => {
   it("keeps a single media slide", () => {
     const d = addMediaSlide(deck([{ id: "e", data: {}, media: photo }]), clip, "n");
     expect(ids(d)).toEqual(["e", "n"]);
+  });
+});
+
+describe("size and position", () => {
+  it("addMediaSlide starts a slide with the library item's own size/position", () => {
+    const d = addMediaSlide(three(), { ...photo, fit: "scale-down", position: "bottom" }, "n");
+    expect(d.slides[3]).toEqual({ id: "n", data: {}, media: photo, fit: "scale-down", position: "bottom" });
+  });
+  it("setDeckPlacement sets and clears the deck default", () => {
+    const d = setDeckPlacement(three(), { fit: "scale-down", position: "bottom" });
+    expect(d).toMatchObject({ mediaFit: "scale-down", mediaPosition: "bottom" });
+    const cleared = setDeckPlacement(d, { fit: undefined });
+    expect(cleared).not.toHaveProperty("mediaFit");
+    expect(cleared.mediaPosition).toBe("bottom");
+  });
+  it("setSlidePlacement overrides one slide; undefined goes back to the deck default", () => {
+    const d = setSlidePlacement(deck([{ id: "a", data: {}, media: photo }]), "a", { fit: "contain", position: "top" });
+    expect(d.slides[0]).toMatchObject({ fit: "contain", position: "top" });
+    const back = setSlidePlacement(d, "a", { position: undefined });
+    expect(back.slides[0]).not.toHaveProperty("position");
+    expect(back.slides[0]!.fit).toBe("contain");
+    expect(setSlidePlacement(d, "nope", { fit: "fill" })).toBe(d);
   });
 });
 

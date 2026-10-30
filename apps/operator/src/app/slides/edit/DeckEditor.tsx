@@ -5,7 +5,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ImagePlus, MoreHorizontal, Upload } from "lucide-react";
 import { v4 as uuid } from "uuid";
-import { liveFolderFileUrl, nextFolderOrder, resolveSlideTemplateId, type Deck, type DeckSlide, type MediaRef, type TemplateMeta } from "@overlaysys/core";
+import {
+  deckMediaPlacement,
+  liveFolderFileUrl,
+  mediaObjectPosition,
+  nextFolderOrder,
+  resolveMediaPlacement,
+  resolveSlideTemplateId,
+  type Deck,
+  type DeckSlide,
+  type MediaPlacement,
+  type MediaRef,
+  type TemplateMeta,
+} from "@overlaysys/core";
 import {
   Button,
   Checkbox,
@@ -45,7 +57,9 @@ import { LicensingField } from "../LicensingField";
 import { deckDeleteConfirm, licensingLabel } from "../libraryConfig";
 import { DeckSlideFields } from "./DeckSlideFields";
 import { DeckTimingFields, HoldField, holdPlaceholder } from "./DeckTiming";
-import { folderDeckEntries, moveFolderFile, setFolderFileHold } from "./folderDeckOps";
+import { folderDeckEntries, moveFolderFile, setFolderFileHold, setFolderFilePlacement } from "./folderDeckOps";
+import { MediaPlacementFields, deckDefaultSizeOption } from "@/app/components/MediaPlacementFields";
+import type { PlacementPatch } from "@/lib/mediaPlacement";
 import {
   addMediaSlide,
   addSlide,
@@ -56,9 +70,11 @@ import {
   moveSlide,
   parseTags,
   setAdvanceOnEnd,
+  setDeckPlacement,
   setSlideHold,
   setSlideLabel,
   setSlideMuted,
+  setSlidePlacement,
   setSlideTemplate,
 } from "./deckDraftOps";
 
@@ -165,8 +181,8 @@ const mediaThumb = (assetUrl: string, type: "image" | "video") => ({
   type,
 });
 
-/** A photo or video slide's preview, at the same width as a design slide's. */
-function MediaPreview({ media }: { media: MediaRef }) {
+/** A photo or video slide's preview, at the same width as a design slide's, placed as it plays (a photo is see-through). */
+function MediaPreview({ media, placement }: { media: MediaRef; placement: MediaPlacement }) {
   const src = resolveAssetUrl(media.assetUrl);
   const box = {
     width: "100%",
@@ -178,7 +194,13 @@ function MediaPreview({ media }: { media: MediaRef }) {
     overflow: "hidden",
     background: "#000",
   } as const;
-  const fill = { width: "100%", height: "100%", objectFit: "contain", display: "block" } as const;
+  const fill = {
+    width: "100%",
+    height: "100%",
+    objectFit: placement.fit,
+    objectPosition: mediaObjectPosition(placement.position),
+    display: "block",
+  } as const;
   return (
     <div style={box}>
       {media.mediaType === "video" ? (
@@ -188,6 +210,29 @@ function MediaPreview({ media }: { media: MediaRef }) {
         <img src={src} alt="" style={fill} />
       )}
     </div>
+  );
+}
+
+/** A slide's or folder graphic's own size/position; unset follows the deck's. */
+function MediaOverrideFields({
+  own,
+  mediaType,
+  deck,
+  onChange,
+}: {
+  own: { fit?: MediaPlacement["fit"]; position?: MediaPlacement["position"] };
+  mediaType: "image" | "video";
+  deck: Deck;
+  onChange(p: PlacementPatch): void;
+}) {
+  const fallback = resolveMediaPlacement(mediaType, deckMediaPlacement(deck));
+  return (
+    <MediaPlacementFields
+      value={{ ...(own.fit ? { fit: own.fit } : {}), ...(own.position ? { position: own.position } : {}) }}
+      fallback={fallback}
+      inherit={{ option: deckDefaultSizeOption(fallback), reset: "Use deck default" }}
+      onChange={onChange}
+    />
   );
 }
 
@@ -304,7 +349,14 @@ export function DeckEditor({ deckId }: { deckId: string }) {
         data: s.data,
         caption: s.label?.trim() ? `${i + 1} · ${s.label}` : s.media ? `${i + 1} · ${mediaName(s)}` : `Slide ${i + 1}`,
         badge: s.media ? undefined : s.templateId ? "Own design" : undefined,
-        ...(s.media ? { media: mediaThumb(s.media.assetUrl, s.media.mediaType) } : {}),
+        ...(s.media
+          ? {
+              media: {
+                ...mediaThumb(s.media.assetUrl, s.media.mediaType),
+                ...resolveMediaPlacement(s.media.mediaType, s, draft ? deckMediaPlacement(draft) : undefined),
+              },
+            }
+          : {}),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mediaName reads mediaItems
     [slides, draft, mediaItems],
@@ -325,12 +377,15 @@ export function DeckEditor({ deckId }: { deckId: string }) {
         templateId: null,
         data: {},
         caption: `${i + 1} · ${e.file}`,
-        media:
-          folderConfigured && folderId && e.mediaType
+        media: {
+          ...(folderConfigured && folderId && e.mediaType
             ? mediaThumb(liveFolderFileUrl(folderId, e.file), e.mediaType)
-            : { src: null, type: e.mediaType ?? "image" },
+            : { src: null, type: e.mediaType ?? ("image" as const) }),
+          ...resolveMediaPlacement(e.mediaType ?? "image", e, draft ? deckMediaPlacement(draft) : undefined),
+        },
       })),
-    [folderEntries, folderConfigured, folderId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the deck's media default matters, not the whole draft
+    [folderEntries, folderConfigured, folderId, draft?.mediaFit, draft?.mediaPosition],
   );
 
   if (!deckId || remote === null || remote?.deletedAt) {
@@ -355,6 +410,7 @@ export function DeckEditor({ deckId }: { deckId: string }) {
 
   const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? "missing design";
   const isFolderDeck = !!draft.liveFolderId;
+  const hasMedia = isFolderDeck || draft.slides.some((s) => s.media !== undefined);
   /** The saved order with any newly seen files placed, so they keep a stable position once saved. */
   const placedOrder = (d: Deck) => nextFolderOrder(d.folderOrder, folderConfigured ? folderFiles : []);
   const selectedFile = isFolderDeck ? (folderEntries.find((e) => e.file === selectedId) ?? folderEntries[0] ?? null) : null;
@@ -591,12 +647,16 @@ export function DeckEditor({ deckId }: { deckId: string }) {
       <div style={{ padding: 16 }}>
         <MediaPreview
           media={{ assetUrl: liveFolderFileUrl(draft.liveFolderId!, selectedFile.file), mediaType: selectedFile.mediaType }}
+          placement={resolveMediaPlacement(selectedFile.mediaType, selectedFile, deckMediaPlacement(draft))}
         />
       </div>
     ) : null
   ) : selected?.media ? (
     <div style={{ padding: 16 }}>
-      <MediaPreview media={selected.media} />
+      <MediaPreview
+        media={selected.media}
+        placement={resolveMediaPlacement(selected.media.mediaType, selected, deckMediaPlacement(draft))}
+      />
     </div>
   ) : selected ? (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -646,6 +706,22 @@ export function DeckEditor({ deckId }: { deckId: string }) {
         <h2 style={sectionHeading}>Timing</h2>
         <DeckTimingFields deck={draft} onChange={update} />
       </section>
+      {hasMedia && (
+        <section style={sectionBox}>
+          <h2 style={sectionHeading}>Size and position</h2>
+          <MediaPlacementFields
+            value={deckMediaPlacement(draft)}
+            fallback={resolveMediaPlacement("image", deckMediaPlacement(draft))}
+            inherit={{ option: "Photos fill the screen, videos fit inside" }}
+            onChange={(p) => update((d) => setDeckPlacement(d, p))}
+          />
+          <div style={{ fontSize: fontSize.xs, color: colors.textMuted }}>
+            {isFolderDeck
+              ? "Every graphic uses this unless you change it for one graphic."
+              : "Every photo and video slide uses this unless you change it for one slide."}
+          </div>
+        </section>
+      )}
       {isFolderDeck && selectedFile && (
         <section style={sectionBox}>
           <h2 style={sectionHeading}>{selectedFile.file}</h2>
@@ -663,6 +739,12 @@ export function DeckEditor({ deckId }: { deckId: string }) {
               }
             />
           )}
+          <MediaOverrideFields
+            own={selectedFile}
+            mediaType={selectedFile.mediaType ?? "image"}
+            deck={draft}
+            onChange={(p) => update((d) => ({ ...d, folderOrder: setFolderFilePlacement(placedOrder(d), selectedFile.file, p) }))}
+          />
         </section>
       )}
       {!isFolderDeck && selected && (
@@ -718,6 +800,14 @@ export function DeckEditor({ deckId }: { deckId: string }) {
               label="Mute"
               checked={selected.muted === true}
               onChange={(on) => update((d) => setSlideMuted(d, selected.id, on))}
+            />
+          )}
+          {selected.media && (
+            <MediaOverrideFields
+              own={selected}
+              mediaType={selected.media.mediaType}
+              deck={draft}
+              onChange={(p) => update((d) => setSlidePlacement(d, selected.id, p))}
             />
           )}
         </section>

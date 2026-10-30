@@ -31,6 +31,24 @@ describe("newMediaRowFromPick", () => {
   });
 });
 
+describe("an item's own size/position", () => {
+  it("a pick carries the item's size/position, and a new row starts with it", () => {
+    const pick = pickFromItem(item({ id: "lt", fit: "scale-down", position: "bottom" }));
+    expect(pick).toMatchObject({ fit: "scale-down", position: "bottom" });
+    expect(newMediaRowFromPick(pick, "r")).toMatchObject({ kind: "media", fit: "scale-down", position: "bottom" });
+    const vid = newMediaRowFromPick({ assetUrl: "/a.mp4", mediaType: "video", fit: "cover", position: "top" }, "r");
+    expect(vid).toMatchObject({ kind: "video", fit: "cover", position: "top" });
+  });
+  it("an item with none leaves the row as before", () => {
+    const pick = pickFromItem(item({ id: "p" }));
+    expect(pick).not.toHaveProperty("fit");
+    expect(pick).not.toHaveProperty("position");
+    const vid = newMediaRowFromPick({ assetUrl: "/a.mp4", mediaType: "video" }, "r");
+    expect(vid).not.toHaveProperty("fit");
+    expect(vid).not.toHaveProperty("position");
+  });
+});
+
 describe("pickerModel", () => {
   const items = [
     item({ id: "p", name: "Banner" }),

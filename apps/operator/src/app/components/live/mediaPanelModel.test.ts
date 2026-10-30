@@ -23,6 +23,14 @@ const item = (over: Partial<MediaItemMeta> = {}): MediaItemMeta => ({
 });
 
 describe("mediaItemTakeMessage", () => {
+  it("takes an item with its own size and position", () => {
+    expect(mediaItemTakeMessage(item({ fit: "scale-down", position: "bottom" }), "program")).toMatchObject({
+      fit: "scale-down",
+      position: "bottom",
+    });
+    expect(mediaItemTakeMessage(item(), "program")).not.toHaveProperty("position");
+  });
+
   it("builds a photo take to preview and a video take to program with hold/sound defaults", () => {
     expect(mediaItemTakeMessage(item(), "preview")).toMatchObject({
       type: "media_take",
