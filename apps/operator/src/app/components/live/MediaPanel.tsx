@@ -12,7 +12,7 @@ import { NO_FOLDER, folderNames, liveFolderCountText } from "../../media/library
 import { MEDIA_FIT_OPTIONS } from "@/lib/mediaPlacement";
 import { useLivePrefs } from "../../hooks/useLivePrefs";
 import {
-  dblClickFromButton,
+  dblClickFromControl,
   filterPanelItems,
   mediaFolderTakeMessage,
   mediaItemTakeMessage,
@@ -187,7 +187,7 @@ function PanelCard({
       onMouseDown={noFocus}
       onDoubleClick={(e) => {
         // A double-click on Cue must never take to program.
-        if (blocked || dblClickFromButton(e.target as Element)) return;
+        if (blocked || dblClickFromControl(e.target as Element)) return;
         onDouble(chosen);
       }}
       aria-label={`${item.name}${air === "program" ? " (on air)" : air === "preview" ? " (on preview)" : ""}`}
@@ -218,17 +218,23 @@ function PanelCard({
           Take
         </Button>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <div
+        data-no-card-dblclick
+        // The card keeps clicks from focusing; the picker needs them to open.
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{ display: "flex", alignItems: "center", gap: 4 }}
+      >
         <Select
           aria-label={`Size for ${item.name}`}
-          value={shown.fit}
+          value={shown.fit ?? ""}
           onChange={(e) => {
             // Hand the keyboard back to the show shortcuts once a size is picked.
             e.currentTarget.blur();
-            choose({ fit: e.target.value as typeof shown.fit });
+            choose({ fit: (e.target.value || undefined) as PartialMediaPlacement["fit"] });
           }}
           style={{ flex: 1, minWidth: 0, fontSize: 11 }}
         >
+          {item.kind === "live-folder" && <option value="">Folder default</option>}
           {MEDIA_FIT_OPTIONS.map((o) => (
             <option key={o.value} value={o.value} title={o.title}>
               {o.label}

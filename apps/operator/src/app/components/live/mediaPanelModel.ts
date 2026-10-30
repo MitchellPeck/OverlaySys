@@ -1,4 +1,4 @@
-import { resolveMediaPlacement, type ChannelState, type MediaItemMeta, type MediaPlacement, type PartialMediaPlacement } from "@overlaysys/core";
+import { resolveMediaPlacement, type ChannelState, type MediaItemMeta, type MediaFit, type MediaPosition, type PartialMediaPlacement } from "@overlaysys/core";
 import { mediaRowTakeMessage, type ClientMessage } from "@overlaysys/ws-protocol";
 import { NO_FOLDER } from "../../media/libraryConfig";
 import { newMediaRowFromPick } from "../../media/pickerModel";
@@ -56,12 +56,17 @@ export function panelPlacement(
   return state.itemKey === placementKey(item) ? state.chosen : {};
 }
 
-/** What the controls show: the choice, else the item's own, else what plays today (Fill screen / centre for a photo or folder). */
+/**
+ * What the controls show: the choice, else the item's own, else what plays
+ * today. A live folder has no placement of its own (its linked deck decides,
+ * server-side), so an unchosen field is null: "Folder default".
+ */
 export function panelPlacementShown(
   item: Pick<MediaItemMeta, "kind" | "mediaType" | "fit" | "position">,
   chosen: PartialMediaPlacement,
-): MediaPlacement {
-  return resolveMediaPlacement(item.kind !== "live-folder" && item.mediaType === "video" ? "video" : "image", chosen, item);
+): { fit: MediaFit | null; position: MediaPosition | null } {
+  if (item.kind === "live-folder") return { fit: chosen.fit ?? null, position: chosen.position ?? null };
+  return resolveMediaPlacement(item.mediaType === "video" ? "video" : "image", chosen, item);
 }
 
 /**
@@ -102,7 +107,7 @@ export function shouldReleaseFocus<T>(active: T | null, panel: { contains(node: 
 /** Keys in the search box that hand the keyboard back to the show. */
 export const searchKeyReleasesFocus = (key: string): boolean => key === "Escape" || key === "Enter";
 
-/** A double-click that landed on Cue, Take or a size/position control: never a card double-click (which may take to program). */
-export function dblClickFromButton(target: { closest?(selector: string): unknown } | null): boolean {
-  return !!target?.closest?.("button, select");
+/** A double-click that landed on Cue, Take or anywhere in the size/position row (marked data-no-card-dblclick): never a card double-click (which may take to program). */
+export function dblClickFromControl(target: { closest?(selector: string): unknown } | null): boolean {
+  return !!target?.closest?.("button, select, [data-no-card-dblclick]");
 }

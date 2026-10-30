@@ -166,6 +166,27 @@ describe("media_folder_take", () => {
     expect(channels.getState("program").media).toMatchObject({ fit: "cover", position: "top-left" });
   });
 
+  it("a panel-chosen fit/position tops a folderOrder entry's own and the deck default; untouched fields fall back", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    fx.decks = [
+      {
+        id: "d1", name: "Loop", tags: [], defaultTemplateId: "", licensing: { kind: "own" }, slides: [],
+        createdAt: "2026-10-30T00:00:00.000Z", liveFolderId: "lf1", mediaPosition: "top-left",
+        folderOrder: [{ file: "a.png", fit: "fill", position: "right" }, { file: "b.png" }],
+      },
+    ];
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program", fit: "contain" }, send);
+    // a.png: panel fit wins over its own "fill"; its own position still beats the deck's.
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/a.png", fit: "contain", position: "right" });
+    sec(8);
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/b.png", fit: "contain", position: "top-left" });
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program", position: "bottom" }, send);
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/a.png", fit: "fill", position: "bottom" });
+    sec(8);
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/b.png", fit: "cover", position: "bottom" });
+  });
+
   it("refuses an id that isn't a live folder", async () => {
     fx.items.set("m1", { id: "m1", name: "Photo", kind: "file", mediaType: "image", assetUrl: "/assets/p.png", createdAt: "" });
     await handleMediaMessage({ type: "media_folder_take", id: "m1", channel: "program" }, send);

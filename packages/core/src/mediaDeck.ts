@@ -60,6 +60,8 @@ export function resolveFolderDeckSlides(
   folderId: string,
   /** The deck's default size/position for every graphic. */
   deckPlacement?: PartialMediaPlacement,
+  /** Chosen for this play (the Live Media panel): above each file's own entry and the deck default. */
+  override?: PartialMediaPlacement,
 ): MediaDeckSlide[] {
   const present = new Map(files.map((f) => [f.name, f]));
   const out: MediaDeckSlide[] = [];
@@ -74,7 +76,7 @@ export function resolveFolderDeckSlides(
       advanceOnEnd: file.mediaType === "video",
       muted: false,
       label: file.name,
-      ...resolveMediaPlacement(file.mediaType, entry, deckPlacement),
+      ...resolveMediaPlacement(file.mediaType, override, entry, deckPlacement),
     });
   }
   return out;

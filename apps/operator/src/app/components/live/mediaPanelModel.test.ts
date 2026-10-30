@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChannelState, MediaItemMeta } from "@overlaysys/core";
 import { NO_FOLDER } from "../../media/libraryConfig";
 import {
-  dblClickFromButton,
+  dblClickFromControl,
   filterPanelItems,
   mediaFolderTakeMessage,
   mediaItemTakeMessage,
@@ -121,14 +121,14 @@ describe("focus hand-back", () => {
   });
 });
 
-describe("dblClickFromButton", () => {
-  const el = (inButton: boolean) => ({ closest: (sel: string) => (sel === "button, select" && inButton ? {} : null) });
+describe("dblClickFromControl", () => {
+  const el = (inButton: boolean) => ({ closest: (sel: string) => (sel === "button, select, [data-no-card-dblclick]" && inButton ? {} : null) });
 
   it("a double-click on Cue or Take is not a card double-click", () => {
-    expect(dblClickFromButton(el(true))).toBe(true);
-    expect(dblClickFromButton(el(false))).toBe(false);
-    expect(dblClickFromButton(null)).toBe(false);
-    expect(dblClickFromButton({})).toBe(false);
+    expect(dblClickFromControl(el(true))).toBe(true);
+    expect(dblClickFromControl(el(false))).toBe(false);
+    expect(dblClickFromControl(null)).toBe(false);
+    expect(dblClickFromControl({})).toBe(false);
   });
 });
 
@@ -151,7 +151,11 @@ describe("panel placement", () => {
   it("shows the item's own placement until something is chosen", () => {
     expect(panelPlacementShown(item({ fit: "fill" }), {})).toEqual({ fit: "fill", position: "center" });
     expect(panelPlacementShown(item({ mediaType: "video" }), {})).toEqual({ fit: "contain", position: "center" });
-    expect(panelPlacementShown(item({ kind: "live-folder", mediaType: undefined }), { position: "top" })).toEqual({ fit: "cover", position: "top" });
+    // A live folder follows its deck until the operator picks.
+    const lf = item({ kind: "live-folder", mediaType: undefined });
+    expect(panelPlacementShown(lf, {})).toEqual({ fit: null, position: null });
+    expect(panelPlacementShown(lf, { position: "top" })).toEqual({ fit: null, position: "top" });
+    expect(panelPlacementShown(lf, { fit: "cover", position: "center" })).toEqual({ fit: "cover", position: "center" });
   });
 
   it("choices reset to the item default when the item changes", () => {

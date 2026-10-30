@@ -1,4 +1,4 @@
-import type { Deck, DeckSlide, LiveFolderFile, MediaDeckSlide, SlidesRowFields, SlidesSessionSummary } from "@overlaysys/core";
+import type { Deck, PartialMediaPlacement, DeckSlide, LiveFolderFile, MediaDeckSlide, SlidesRowFields, SlidesSessionSummary } from "@overlaysys/core";
 import { deckMediaPlacement, isMediaOnlyDeck, mediaDeckSlidesFromDeck, nextFolderOrder, resolveFolderDeckSlides } from "@overlaysys/core";
 import * as channels from "./channels";
 import { listLiveFolderFiles, onLiveFolderChange } from "./liveFolders";
@@ -15,7 +15,7 @@ export const MISSING_SLIDE_MESSAGE = "That slide is no longer in this deck.";
 
 const PREVIEW = "preview";
 
-export type StartArgs = { rowId: string; showId?: string; deck: Deck; slideIdx?: number };
+export type StartArgs = { rowId: string; showId?: string; deck: Deck; slideIdx?: number; placementOverride?: PartialMediaPlacement };
 export type StartResult = { ok: true } | { ok: false; error: string };
 
 type FolderOrder = NonNullable<Deck["folderOrder"]>;
@@ -25,6 +25,8 @@ interface Session {
   rowId: string;
   showId?: string;
   deck: Deck;
+  /** Live-folder loop started from the panel: size/position chosen there, above every other layer. */
+  placementOverride?: PartialMediaPlacement;
   /** Marks this session's own media takes, so any other take stops it. */
   owner: string;
   /** Live-folder decks: the play order this session has seen (new files join at the wrap). */
@@ -87,11 +89,11 @@ export function mediaDeckForRow(row: SlidesRowFields, deck: Deck | null): Deck |
   return isMediaOnlyDeck(out) ? out : null;
 }
 
-function resolveSlides(deck: Deck, order: Deck["folderOrder"]): { order?: FolderOrder; slides: MediaDeckSlide[] } {
+function resolveSlides(deck: Deck, order: Deck["folderOrder"], override?: PartialMediaPlacement): { order?: FolderOrder; slides: MediaDeckSlide[] } {
   if (!deck.liveFolderId) return { slides: mediaDeckSlidesFromDeck(deck) };
   const files = listLiveFolderFiles(deck.liveFolderId);
   const next = nextFolderOrder(order, files);
-  return { order: next, slides: resolveFolderDeckSlides(next, files, deck.defaultHoldSec, deck.liveFolderId, deckMediaPlacement(deck)) };
+  return { order: next, slides: resolveFolderDeckSlides(next, files, deck.defaultHoldSec, deck.liveFolderId, deckMediaPlacement(deck), override) };
 }
 
 /** Which slides can still play: not failed, and (live folder) its file is still there. */
@@ -270,7 +272,7 @@ function forward(s: Session, manual: boolean): void {
  * on air: the old list and index stay, since they describe what's up.
  */
 function restartFromTop(s: Session): void {
-  const r = resolveSlides(s.deck, s.order);
+  const r = resolveSlides(s.deck, s.order, s.placementOverride);
   const present = presence(s);
   const first = r.slides.findIndex((sl) => present(sl));
   s.atEnd = false;
@@ -316,7 +318,7 @@ function onFolderChange(id: string, files: LiveFolderFile[]): void {
 }
 
 export function start(channel: string, args: StartArgs): StartResult {
-  const r = resolveSlides(args.deck, args.deck.folderOrder);
+  const r = resolveSlides(args.deck, args.deck.folderOrder, args.placementOverride);
   // Refused takes leave whatever is on air alone.
   if (r.slides.length === 0) return { ok: false, error: EMPTY_MEDIA_DECK_MESSAGE };
   const idx = args.slideIdx ?? 0;
@@ -328,6 +330,7 @@ export function start(channel: string, args: StartArgs): StartResult {
     rowId: args.rowId,
     ...(args.showId ? { showId: args.showId } : {}),
     deck: args.deck,
+    ...(args.placementOverride ? { placementOverride: args.placementOverride } : {}),
     owner: `mediaDeck:${args.rowId}`,
     ...(r.order ? { order: r.order } : {}),
     slides: r.slides,
@@ -355,6 +358,9 @@ export type StartFolderArgs = {
   /** A linked deck's size/position for the folder's files. */
   mediaFit?: Deck["mediaFit"];
   mediaPosition?: Deck["mediaPosition"];
+  /** Chosen at the panel: wins over every file's own entry and the deck default, for the whole loop. */
+  fit?: Deck["mediaFit"];
+  position?: Deck["mediaPosition"];
 };
 
 /**
@@ -378,7 +384,12 @@ export function startFolder(channel: string, args: StartFolderArgs): StartResult
     ...(args.mediaFit ? { mediaFit: args.mediaFit } : {}),
     ...(args.mediaPosition ? { mediaPosition: args.mediaPosition } : {}),
   };
-  return start(channel, { rowId: `media-folder:${args.folderId}`, deck });
+  const placementOverride = { ...(args.fit ? { fit: args.fit } : {}), ...(args.position ? { position: args.position } : {}) };
+  return start(channel, {
+    rowId: `media-folder:${args.folderId}`,
+    deck,
+    ...(Object.keys(placementOverride).length ? { placementOverride } : {}),
+  });
 }
 
 export function has(channel: string): boolean {
@@ -492,7 +503,7 @@ export function promote(from: string, to: string): boolean {
   let idx = playableFrom(s, Math.min(s.idx, s.slides.length - 1), true);
   if (idx < 0) {
     // The preview list may be stale (a held, emptied folder): try the folder as it is now.
-    const r = resolveSlides(s.deck, s.order);
+    const r = resolveSlides(s.deck, s.order, s.placementOverride);
     const present = presence(s);
     idx = r.slides.findIndex((sl) => present(sl));
     if (idx < 0) return false;
