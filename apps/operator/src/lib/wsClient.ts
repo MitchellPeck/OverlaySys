@@ -47,6 +47,7 @@ export class WsClient {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
   private statusListeners = new Set<StatusListener>();
+  private sendListeners = new Set<(msg: ClientMessage) => void>();
   private status: Status = "connecting";
   private retry = 0;
   private closedByUser = false;
@@ -190,6 +191,7 @@ export class WsClient {
   }
 
   send(msg: ClientMessage): void {
+    for (const l of this.sendListeners) l(msg);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(encode(msg));
       return;
@@ -209,6 +211,14 @@ export class WsClient {
     this.listeners.add(listener);
     return () => {
       this.listeners.delete(listener);
+    };
+  }
+
+  /** Hear every message this tab sends (before it goes out), e.g. to notice a take. */
+  onSend(listener: (msg: ClientMessage) => void): () => void {
+    this.sendListeners.add(listener);
+    return () => {
+      this.sendListeners.delete(listener);
     };
   }
 

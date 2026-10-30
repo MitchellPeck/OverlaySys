@@ -7,7 +7,8 @@ import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { Button, IconButton, KindBar, colors, radius, space, useConfirm, type ItemKind } from "@overlaysys/ui";
 import { FieldInput } from "@/lib/FieldInput";
 import { useStore } from "@/lib/store";
-import { useWs } from "@/lib/useWs";
+import { getClient, useWs } from "@/lib/useWs";
+import { fetchHotcardForFire } from "@/lib/hotcardFetchFire";
 import type { RowLike } from "@/lib/rowLike";
 import { rowView } from "@/lib/rowView";
 import { formatDuration } from "@/lib/listFormat";
@@ -240,14 +241,11 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
 }
 
 function HotcardControls({ hotcardId }: { hotcardId: string }) {
-  const { send } = useWs();
   const hotcardCache = useStore((s) => s.hotcardCache);
-  const message = (target: "cue" | "take"): ClientMessage | null => {
-    const h = hotcardCache[hotcardId];
-    if (!h) {
-      send({ type: "get_hotcard", hotcardId });
-      return null;
-    }
+  const message = async (target: "cue" | "take"): Promise<ClientMessage | null> => {
+    // Not cached yet: fire once it arrives, unless anything else went to air first.
+    const h = hotcardCache[hotcardId] ?? (await fetchHotcardForFire(getClient(), hotcardId));
+    if (!h) return null;
     // Cue never goes to air, whatever the card's hint (LM-2, Default D7a).
     return hotcardFireMessage(h, target);
   };

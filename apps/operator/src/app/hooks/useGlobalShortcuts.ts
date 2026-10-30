@@ -5,6 +5,7 @@ import { dismissToast, toast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient } from "@/lib/useWs";
 import { onAirMediaFor } from "@/lib/mediaTake";
+import { fetchHotcardForFire } from "@/lib/hotcardFetchFire";
 import { pvwTakeMessages } from "@/lib/onAir";
 import {
   escArmText,
@@ -87,12 +88,15 @@ export function useGlobalShortcuts(): void {
         const meta = hotcardForEvent(e, store.hotcards, store.currentProjectId);
         if (!meta) return;
         e.preventDefault();
+        const action = e.shiftKey ? "cue" : "take";
         const full = store.hotcardCache[meta.id];
         if (!full) {
-          send({ type: "get_hotcard", hotcardId: meta.id });
+          // Fire once it arrives, unless anything else went to air first.
+          void fetchHotcardForFire(client, meta.id).then((h) => {
+            if (h) send(hotcardFireMessage(h, action));
+          });
           return;
         }
-        const action = e.shiftKey ? "cue" : "take";
         send(hotcardFireMessage(full, action));
         return;
       }
