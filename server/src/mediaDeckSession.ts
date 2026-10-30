@@ -1,5 +1,5 @@
-import type { Deck, LiveFolderFile, MediaDeckSlide, SlidesSessionSummary } from "@overlaysys/core";
-import { mediaDeckSlidesFromDeck, nextFolderOrder, resolveFolderDeckSlides } from "@overlaysys/core";
+import type { Deck, DeckSlide, LiveFolderFile, MediaDeckSlide, SlidesRowFields, SlidesSessionSummary } from "@overlaysys/core";
+import { isMediaOnlyDeck, mediaDeckSlidesFromDeck, nextFolderOrder, resolveFolderDeckSlides } from "@overlaysys/core";
 import * as channels from "./channels";
 import { listLiveFolderFiles, onLiveFolderChange } from "./liveFolders";
 
@@ -31,8 +31,10 @@ interface Session {
   slides: MediaDeckSlide[];
   idx: number;
   atEnd: boolean;
-  /** Every folder file is gone: holding what's on air until files return. */
+  /** Nothing left to play (folder emptied, or every slide failed): holding what's on air. */
   starved: boolean;
+  /** Slides whose media reported an error: skipped like a missing file for the rest of the session. */
+  failed: Set<string>;
   /** Media takenAt of the current slide, so a late `ended` from an earlier slide is ignored. */
   takenAt: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -52,6 +54,32 @@ export function onSummaryChange(cb: SummaryListener): () => void {
   };
 }
 
+/**
+ * The deck a Slides row plays in the media slot, or null when it isn't a
+ * media-only deck. A live-folder deck plays its folder and ignores the row's
+ * selection; any other deck (or the row's one-off local slides) honours the
+ * row's `slideIds` the way template decks do, repeats included.
+ */
+export function mediaDeckForRow(row: SlidesRowFields, deck: Deck | null): Deck | null {
+  if (row.deckId) {
+    if (!deck) return null;
+    if (deck.liveFolderId) return deck;
+  } else if (!row.localSlides) {
+    return null;
+  }
+  const source: DeckSlide[] = row.deckId ? deck!.slides : row.localSlides!;
+  const byId = new Map(source.map((sl) => [sl.id, sl] as const));
+  const slides = (row.slideIds ?? source.map((sl) => sl.id)).flatMap((id) => {
+    const sl = byId.get(id);
+    return sl ? [sl] : [];
+  });
+  const base: Deck = row.deckId
+    ? deck!
+    : { id: "", name: "One-off slides", tags: [], defaultTemplateId: "", licensing: { kind: "own" }, slides: [], createdAt: "" };
+  const out: Deck = { ...base, slides };
+  return isMediaOnlyDeck(out) ? out : null;
+}
+
 function resolveSlides(deck: Deck, order: Deck["folderOrder"]): { order?: FolderOrder; slides: MediaDeckSlide[] } {
   if (!deck.liveFolderId) return { slides: mediaDeckSlidesFromDeck(deck) };
   const files = listLiveFolderFiles(deck.liveFolderId);
@@ -59,11 +87,11 @@ function resolveSlides(deck: Deck, order: Deck["folderOrder"]): { order?: Folder
   return { order: next, slides: resolveFolderDeckSlides(next, files, deck.defaultHoldSec, deck.liveFolderId) };
 }
 
-/** Which slides can still play: every slide, except a live-folder file that has gone. */
+/** Which slides can still play: not failed, and (live folder) its file is still there. */
 function presence(s: Session): (slide: MediaDeckSlide) => boolean {
-  if (!s.deck.liveFolderId) return () => true;
+  if (!s.deck.liveFolderId) return (slide) => !s.failed.has(slide.key);
   const names = new Set(listLiveFolderFiles(s.deck.liveFolderId).map((f) => f.name));
-  return (slide) => names.has(slide.key);
+  return (slide) => names.has(slide.key) && !s.failed.has(slide.key);
 }
 
 function holdMs(s: Session, slide: MediaDeckSlide): number | undefined {
@@ -77,7 +105,7 @@ function summarize(s: Session): SlidesSessionSummary {
   const next = s.slides[s.idx + 1];
   return {
     rowId: s.rowId,
-    deckId: s.deck.id,
+    ...(s.deck.id ? { deckId: s.deck.id } : {}),
     title: s.deck.name,
     slideIdx: s.idx,
     slideCount: s.slides.length,
@@ -161,18 +189,7 @@ function forward(s: Session, manual: boolean): void {
   }
   if (s.deck.loop) {
     // The wrap: a live folder re-reads its files here, so new ones join now.
-    const r = resolveSlides(s.deck, s.order);
-    if (r.slides.length === 0) {
-      s.starved = true;
-      hold(s);
-      return;
-    }
-    if (r.order) s.order = r.order;
-    s.slides = r.slides;
-    s.idx = 0;
-    s.atEnd = false;
-    s.starved = false;
-    show(s);
+    restartFromTop(s);
     return;
   }
   if (!s.atEnd) {
@@ -182,6 +199,24 @@ function forward(s: Session, manual: boolean): void {
   }
   // Next again at the end of a non-looping deck ends it (as Slides rows do).
   if (manual) end(s.channel);
+}
+
+/** Re-read the slides and play the first playable one; with none, hold what's on air. */
+function restartFromTop(s: Session): void {
+  const r = resolveSlides(s.deck, s.order);
+  if (r.order) s.order = r.order;
+  if (r.slides.length > 0) s.slides = r.slides;
+  const present = presence(s);
+  const first = r.slides.findIndex((sl) => present(sl));
+  s.atEnd = false;
+  if (first < 0) {
+    s.starved = true;
+    hold(s);
+    return;
+  }
+  s.idx = first;
+  s.starved = false;
+  show(s);
 }
 
 function back(s: Session): void {
@@ -206,14 +241,9 @@ function onFolderChange(id: string, files: LiveFolderFile[]): void {
   if (files.length === 0) return;
   for (const s of [...sessions.values()]) {
     if (!s.starved || s.deck.liveFolderId !== id || sessions.get(s.channel) !== s) continue;
-    const r = resolveSlides(s.deck, s.order);
-    if (r.slides.length === 0) continue;
-    if (r.order) s.order = r.order;
-    s.slides = r.slides;
-    s.idx = 0;
-    s.atEnd = false;
-    s.starved = false;
-    show(s);
+    // Files changed: give previously failed ones another chance.
+    s.failed.clear();
+    restartFromTop(s);
   }
 }
 
@@ -236,6 +266,7 @@ export function start(channel: string, args: StartArgs): StartResult {
     idx,
     atEnd: false,
     starved: false,
+    failed: new Set(),
     takenAt: 0,
     timer: null,
   };
@@ -259,6 +290,8 @@ export function step(channel: string, delta: 1 | -1): void {
 export function goTo(channel: string, idx: number): boolean {
   const s = sessions.get(channel);
   if (!s || !Number.isInteger(idx) || idx < 0 || idx >= s.slides.length) return false;
+  // Going to a slide by hand retries it even if it failed before.
+  s.failed.delete(s.slides[idx]!.key);
   if (!presence(s)(s.slides[idx]!)) return false;
   s.idx = idx;
   s.atEnd = false;
@@ -304,6 +337,14 @@ export function mediaEnded(channel: string, takenAt: number): void {
   forward(s, false);
 }
 
+/** The renderer couldn't play this channel's media: skip it like a missing file. */
+export function mediaFailed(channel: string, takenAt: number): void {
+  const s = sessions.get(channel);
+  if (!s || channel === PREVIEW || s.takenAt !== takenAt || s.starved) return;
+  s.failed.add(s.slides[s.idx]!.key);
+  forward(s, false);
+}
+
 /** Preview → program: the deck goes on air from its current slide and its timer starts. */
 export function promote(from: string, to: string): boolean {
   const src = sessions.get(from);
@@ -313,6 +354,7 @@ export function promote(from: string, to: string): boolean {
     ...src,
     channel: to,
     starved: false,
+    failed: new Set(src.failed),
     takenAt: 0,
     timer: null,
   };

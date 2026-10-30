@@ -587,7 +587,7 @@ export type MediaTakeArgs = {
   fit?: "contain" | "cover" | "fill";
   loop?: boolean;
   muted?: boolean;
-  /** Marks who took this media (a media-deck session); a take that isn't the running deck's stops it. */
+  /** Set only by the server's media-deck session for its own takes; any other take stops the deck. */
   owner?: string;
   transitionIn?: MediaTransition;
   transitionOut?: MediaTransition;
@@ -725,4 +725,6 @@ export function mediaStatus(
     prev.duration !== next.duration;
   if (transition) emit(channel);
   else notifyPlayback({ channel, takenAt, playback: next });
+  // A media deck skips a slide that can't play.
+  if (report.status === "error") mediaDeckSession.mediaFailed(channel, takenAt);
 }

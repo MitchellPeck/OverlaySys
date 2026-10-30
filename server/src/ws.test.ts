@@ -260,16 +260,33 @@ describe("ws song takes set liveRow", () => {
     songSession.end(ch);
   });
 
-  it("media_take carries photo, fit, loop, muted and owner to the media slot", async () => {
+  it("media_take carries photo, fit, loop and muted to the media slot", async () => {
     const ch = `t-${Date.now()}-media`;
     const sock = connect();
     await sock.client({
       type: "media_take", channel: ch, rowId: "p1", assetUrl: "/assets/p.png", volume: 1, endAction: "hold",
-      mediaType: "image", fit: "cover", loop: true, muted: true, owner: "deck:d1",
+      mediaType: "image", fit: "cover", loop: true, muted: true,
     });
     await vi.waitFor(() =>
-      expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "cover", loop: true, muted: true, owner: "deck:d1" }),
+      expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "cover", loop: true, muted: true }),
     );
+  });
+
+  it("a client media_take never carries an owner, so it stops a media deck even with the deck's owner value", async () => {
+    const ch = `t-${Date.now()}-spoof`;
+    const media = (id: string) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.png`, mediaType: "image" as const } });
+    const deck = {
+      id: "dm", name: "Loop", tags: [], defaultTemplateId: "t", licensing: { kind: "own" as const },
+      slides: [media("a"), media("b")], createdAt: "2026-10-30T00:00:00.000Z",
+    };
+    mediaDeckSession.start(ch, { rowId: "r", deck });
+    const sock = connect();
+    await sock.client({
+      type: "media_take", channel: ch, rowId: "x", assetUrl: "/assets/x.mp4", volume: 1, endAction: "hold", owner: "mediaDeck:r",
+    });
+    await vi.waitFor(() => expect(channels.getState(ch).media?.assetUrl).toBe("/assets/x.mp4"));
+    expect(channels.getState(ch).media?.owner).toBeUndefined();
+    expect(mediaDeckSession.has(ch)).toBe(false);
   });
 
   it("clear all channels stops a media deck; without cutting video its current slide stays up", async () => {

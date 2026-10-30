@@ -242,7 +242,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     loop: z.boolean().optional(),
     /** Full-screen videos play audio unless this is true. */
     muted: z.boolean().optional(),
-    /** Who sent the take (a media-deck session marks its own). */
+    /** Ignored by the server: only its own media-deck sessions mark their takes. */
     owner: z.string().optional(),
     /** Omitted by older senders; the server falls back to a 500 ms fade. */
     transitionIn: MediaTransitionSchema.optional(),

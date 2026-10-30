@@ -452,7 +452,7 @@ export function handleConnection(
             ...(parsed.fit ? { fit: parsed.fit } : {}),
             ...(parsed.loop !== undefined ? { loop: parsed.loop } : {}),
             ...(parsed.muted !== undefined ? { muted: parsed.muted } : {}),
-            ...(parsed.owner !== undefined ? { owner: parsed.owner } : {}),
+            // `owner` is never taken from a client: only the server's media-deck session sets it.
             ...(parsed.transitionIn ? { transitionIn: parsed.transitionIn } : {}),
             ...(parsed.transitionOut ? { transitionOut: parsed.transitionOut } : {}),
             ...(parsed.showId ? { showId: parsed.showId } : {}),

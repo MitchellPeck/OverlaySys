@@ -61,6 +61,11 @@ function reportEnded(channel = "program"): void {
   channels.mediaStatus(channel, m.takenAt, { status: "ended", currentTime: 10, duration: 10 });
 }
 
+function reportError(channel = "program"): void {
+  const m = channels.getState(channel).media!;
+  channels.mediaStatus(channel, m.takenAt, { status: "error", currentTime: 0, duration: 0, error: "decode failed" });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-30T12:00:00.000Z"));
@@ -77,6 +82,44 @@ beforeEach(() => {
 afterEach(() => {
   mediaDeckSession.resetAll();
   vi.useRealTimers();
+});
+
+describe("mediaDeckForRow", () => {
+  const row = (over: Record<string, unknown> = {}) => ({ kind: "slides" as const, id: "row", deckId: "deck1", ...over });
+
+  it("a media-only deck honours the row's slide selection, repeats included", () => {
+    const d = mediaDeckSession.mediaDeckForRow(row({ slideIds: ["c", "a", "gone", "c"] }), deck());
+    expect(d?.slides.map((s) => s.id)).toEqual(["c", "a", "c"]);
+    expect(d).toMatchObject({ id: "deck1", defaultHoldSec: 5, loop: true });
+  });
+
+  it("one-off local slides play as a media deck when they are all media", () => {
+    const d = mediaDeckSession.mediaDeckForRow(
+      row({ deckId: undefined, localSlides: [mediaSlide("x", "image"), mediaSlide("y", "image")], slideIds: ["y"] }),
+      null,
+    );
+    expect(d?.slides.map((s) => s.id)).toEqual(["y"]);
+    expect(d?.id).toBe("");
+  });
+
+  it("a live-folder deck ignores the row's selection and local slides", () => {
+    const fd = folderDeck();
+    expect(mediaDeckSession.mediaDeckForRow(row({ slideIds: ["a"], localSlides: [mediaSlide("x", "image")] }), fd)).toBe(fd);
+  });
+
+  it("template slides, or a selection that leaves nothing, are not a media deck", () => {
+    const mixed = deck({ slides: [mediaSlide("a", "image"), { id: "t", data: { text: "Hi" } }] });
+    expect(mediaDeckSession.mediaDeckForRow(row(), mixed)).toBeNull();
+    expect(mediaDeckSession.mediaDeckForRow(row({ slideIds: ["a"] }), mixed)?.slides.map((s) => s.id)).toEqual(["a"]);
+    expect(mediaDeckSession.mediaDeckForRow(row({ slideIds: ["gone"] }), deck())).toBeNull();
+    expect(mediaDeckSession.mediaDeckForRow(row(), null)).toBeNull();
+  });
+
+  it("a one-off media deck's summary has no deck id", () => {
+    const d = mediaDeckSession.mediaDeckForRow(row({ deckId: undefined, localSlides: [mediaSlide("x", "image")] }), null)!;
+    mediaDeckSession.start("program", { rowId: "row", deck: d });
+    expect(mediaDeckSession.summary("program")?.deckId).toBeUndefined();
+  });
 });
 
 describe("mediaDeckSession", () => {
@@ -346,6 +389,44 @@ describe("mediaDeckSession", () => {
     setFolder("lf1", [img("9.png")]);
     expect(onAir()).toBe("/media-folders/lf1/9.png");
     expect(mediaDeckSession.summary("program")?.nextAdvanceAt).toBe(Date.now() + 5000);
+  });
+
+  it("a video that reports an error is skipped like a missing file", () => {
+    const d = deck({ slides: [mediaSlide("v", "video"), mediaSlide("b", "image")] });
+    mediaDeckSession.start("program", { rowId: "r1", deck: d });
+    reportError();
+    expect(onAir()).toBe("/assets/b.png");
+    // On the wrap the failed slide stays skipped.
+    sec(5);
+    expect(onAir()).toBe("/assets/b.png");
+    expect(mediaDeckSession.summary("program")).toMatchObject({ slideIdx: 1, nextAdvanceAt: Date.now() + 5000 });
+  });
+
+  it("when every slide errors the deck holds what's on air and stops its timer", () => {
+    const d = deck({ slides: [mediaSlide("v", "video"), mediaSlide("w", "video")] });
+    mediaDeckSession.start("program", { rowId: "r1", deck: d });
+    const takes: string[] = [];
+    const off = channels.subscribe("program", (st) => {
+      if (st.media && !takes.includes(`${st.media.takenAt}`)) takes.push(`${st.media.takenAt}`);
+    });
+    reportError();
+    expect(onAir()).toBe("/assets/w.mp4");
+    reportError();
+    reportError();
+    expect(onAir()).toBe("/assets/w.mp4");
+    expect(mediaDeckSession.summary("program")?.nextAdvanceAt).toBeUndefined();
+    sec(600);
+    off();
+    // The first error moved to w; nothing re-took after w failed too.
+    expect(takes.length).toBe(2);
+    expect(mediaDeckSession.has("program")).toBe(true);
+  });
+
+  it("an error on preview does not advance", () => {
+    const d = deck({ slides: [mediaSlide("v", "video"), mediaSlide("b", "image")] });
+    mediaDeckSession.start("preview", { rowId: "r1", deck: d });
+    reportError("preview");
+    expect(onAir("preview")).toBe("/assets/v.mp4");
   });
 
   it("refuses an out-of-range start slide", () => {

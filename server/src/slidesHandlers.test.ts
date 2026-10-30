@@ -162,6 +162,13 @@ describe("slides live handlers", () => {
     { kind: "graphic", id: "rowGraphic", templateId: "t", fieldValues: {} },
     { kind: "slides", id: "rowMedia", deckId: "dMedia" },
     { kind: "slides", id: "rowFolder", deckId: "dFolder" },
+    { kind: "slides", id: "rowMediaPick", deckId: "dMedia", slideIds: ["m3", "m1"] },
+    { kind: "slides", id: "rowFolderPick", deckId: "dFolder", slideIds: ["m1"] },
+    {
+      kind: "slides",
+      id: "rowLocalMedia",
+      localSlides: [{ id: "l1", data: {}, media: { assetUrl: "/assets/l1.png", mediaType: "image" } }],
+    },
   ];
   const show = { id: "s", name: "Show", projectId: "p", rows, songs: [] } as unknown as Show;
   const threeSlides = deck({
@@ -180,8 +187,9 @@ describe("slides live handlers", () => {
     const media = (id: string) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.png`, mediaType: "image" as const } });
     await decks.saveDeck(deck({ id: "dMedia", name: "Announcements", slides: [media("m1"), media("m2"), media("m3")] }));
     await decks.saveDeck(deck({ id: "dFolder", slides: [], liveFolderId: "lf-empty", loop: true, defaultHoldSec: 5 }));
-    mediaDeckSession.resetAll();
+    // A media clear drops the previous test's media deck and its summary.
     for (const ch of ["program", "preview", "lower"]) channels.mediaClear(ch);
+    mediaDeckSession.resetAll();
     // External take first: it drops the previous test's sessions from channel state.
     for (const ch of ["program", "preview", "lower"]) channels.take(ch, "before", {});
     slidesSession.resetAll();
@@ -321,10 +329,27 @@ describe("slides live handlers", () => {
     expect(channels.getState("program").active?.templateId).toBe("before");
   });
 
+  it("a media-only deck honours the row's slide selection; one-off media slides play too", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMediaPick" }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m3.png");
+    expect(channels.getState("program").slidesSession).toMatchObject({ slideCount: 2, slot: "media" });
+    await handleSlidesMessage({ type: "slides_advance", channel: "program", delta: 1 }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m1.png");
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowLocalMedia" }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/l1.png");
+    expect(channels.getState("program").slidesSession).toMatchObject({ rowId: "rowLocalMedia", slideCount: 1, slot: "media" });
+    expect(sent).toEqual([]);
+  });
+
+  it("a live-folder deck ignores the row's slide selection", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowFolderPick" }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_found", message: "This folder has no photos or videos yet." }]);
+  });
+
   it("slides_take of an empty live-folder deck fails with a plain message", async () => {
     await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowFolder" }, send);
     expect(sent).toEqual([{ type: "error", code: "not_found", message: "This folder has no photos or videos yet." }]);
-    expect(channels.getState("program").media).toBeNull();
+    expect(channels.getState("program").media ?? null).toBeNull();
     expect(channels.getState("program").slidesSession).toBeUndefined();
   });
 });

@@ -5,7 +5,7 @@ import { scheduleSync } from "./cloudSync";
 import * as stageFeedHub from "./stageFeedHub";
 // [P3.9]
 import type { Template } from "@overlaysys/core";
-import { isMediaOnlyDeck, slidesRowView } from "@overlaysys/core";
+import { slidesRowView } from "@overlaysys/core";
 import * as shows from "./shows";
 import * as templates from "./templates";
 import * as slidesSession from "./slidesSession";
@@ -65,11 +65,12 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
     return;
   }
   // A media-only deck (photos/videos, or a live folder) plays in the media slot, beneath graphics.
-  if (deck && isMediaOnlyDeck(deck)) {
+  const mediaDeck = mediaDeckSession.mediaDeckForRow(row, deck);
+  if (mediaDeck) {
     const res = mediaDeckSession.start(msg.channel ?? row.channelHint ?? "program", {
       rowId: row.id,
       showId: show.id,
-      deck,
+      deck: mediaDeck,
       ...(msg.slideIdx !== undefined ? { slideIdx: msg.slideIdx } : {}),
     });
     if (!res.ok) send({ type: "error", code: "not_found", message: res.error });
