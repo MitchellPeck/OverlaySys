@@ -125,6 +125,12 @@ async function main() {
       "src",
       "_api-staging",
     );
+    // A previous run killed mid-build leaves the route stranded in
+    // _api-staging — and it was once committed there, so the cloud deploy
+    // shipped without /api/assets/signed-upload. Put it back first.
+    if (!(await exists(apiDir)) && (await exists(apiDirTmp))) {
+      await fs.rename(apiDirTmp, apiDir);
+    }
     const hasApi = await exists(apiDir);
     if (hasApi) {
       await fs.rename(apiDir, apiDirTmp);
