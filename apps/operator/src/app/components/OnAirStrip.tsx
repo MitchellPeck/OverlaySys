@@ -1,7 +1,8 @@
 "use client";
 
-import { CLEAR_ALL_CONFIRM } from "@/lib/liveCommands";
-import { Button, colors, useConfirm } from "@overlaysys/ui";
+import { useEffect, useState } from "react";
+import { Button, colors } from "@overlaysys/ui";
+import { armConfirmPress } from "@/lib/armConfirm";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { channelHasContent, clearChannelMessages, pvwTakeMessages } from "@/lib/onAir";
@@ -18,7 +19,8 @@ export function AirControls() {
   const show = useStore((s) => s.show);
   const disconnected = useStore((s) => s.conn) !== "open";
   const take = useTakeFeedback();
-  const confirm = useConfirm();
+  // Clear all asks "Sure?" on the button itself: press again to clear.
+  const [clearArmedUntil, setClearArmedUntil] = useState<number | null>(null);
 
   const pgm = channelStates["program"];
   const pvw = channelStates["preview"];
@@ -33,13 +35,25 @@ export function AirControls() {
     for (const m of rest) send(m);
   }
 
-  async function clearAll() {
+  function clearAll() {
     const live = Object.entries(channelStates).filter(([, st]) => channelHasContent(st));
     if (live.length === 0) return;
-    const ok = await confirm({ ...CLEAR_ALL_CONFIRM });
-    if (!ok) return;
+    const press = armConfirmPress(clearArmedUntil, Date.now());
+    setClearArmedUntil(press.armedUntil);
+    if (!press.fire) return;
     for (const [ch, st] of live) for (const m of clearChannelMessages(st, ch)) send(m);
   }
+  const clearArmed = clearArmedUntil !== null;
+  // Disarm when the window runs out, or when there's nothing left to clear.
+  useEffect(() => {
+    if (clearArmedUntil === null) return;
+    if (!anyContent) {
+      setClearArmedUntil(null);
+      return;
+    }
+    const t = setTimeout(() => setClearArmedUntil(null), Math.max(0, clearArmedUntil - Date.now()));
+    return () => clearTimeout(t);
+  }, [clearArmedUntil, anyContent]);
 
   const blurAfter = (fn: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
     fn();
@@ -89,10 +103,11 @@ export function AirControls() {
         variant="danger"
         style={full}
         disabled={disconnected || !anyContent}
-        title={offline ?? "Clear every channel"}
-        onClick={blurAfter(() => void clearAll())}
+        title={offline ?? (clearArmed ? "Press again to clear every channel" : "Clear every channel")}
+        aria-live="polite"
+        onClick={blurAfter(clearAll)}
       >
-        Clear all
+        {clearArmed ? "Sure? Clear all" : "Clear all"}
       </Button>
       {take.status === "failed" && (
         <span role="status" style={{ color: colors.warn, fontSize: 11 }}>
