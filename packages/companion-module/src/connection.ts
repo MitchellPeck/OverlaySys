@@ -62,6 +62,9 @@ export class Connection {
     this.reconnectTimer = null;
     if (this.ws) {
       this.ws.removeAllListeners();
+      // Closing a still-connecting socket emits "error"; with no listener that
+      // is an uncaught exception that takes the module down.
+      this.ws.on("error", () => {});
       this.ws.close();
       this.ws = null;
     }
