@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Film, Image as ImageIcon } from "lucide-react";
 import { Button, Input, Modal, colors, fontSize, radius } from "@overlaysys/ui";
 import { useStore } from "../../lib/store";
@@ -44,7 +45,11 @@ export function MediaPicker({
   const shown = pickableItems(items, accept, query);
   const hasAny = pickableItems(items, accept).length > 0;
 
-  return (
+  // Portalled to <body>: the picker is often opened from inside a form <Field>
+  // (a <label>), and a click anywhere in a label re-fires on its first button —
+  // "Choose from Media" — which reopened the picker the moment a tile closed it.
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
     <Modal open={open} onClose={onClose} title={TITLES[accept]} size="lg" zIndex={1100}>
       <Input
         aria-label="Search Media"
@@ -84,7 +89,8 @@ export function MediaPicker({
           ))}
         </div>
       )}
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 
