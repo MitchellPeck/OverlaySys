@@ -73,14 +73,23 @@ describe("areas model", () => {
     expect(liveToggleTarget("library", null, true)).toBe("/shows");
   });
 
+  it("library destinations include /media right after /slides, desktop and web", () => {
+    for (const cloud of [false, true]) {
+      const routes = destinationsFor("library", cloud).map((d) => d.route);
+      expect(routes).toContain("/media");
+      if (!cloud) expect(routes.indexOf("/media")).toBe(routes.indexOf("/slides") + 1);
+    }
+    expect(routeToArea("/media")).toBe("library");
+  });
+
   it("lists areas in tab order", () => {
     expect(AREA_ORDER).toEqual(["live", "library", "settings"]);
-    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Slides", "Designs", "Hotcards", "Planning Center"]);
+    expect(AREAS.library.destinations.map((d) => d.label)).toEqual(["Shows", "Songs", "Slides", "Media", "Designs", "Hotcards", "Planning Center"]);
     expect(AREAS.live.destinations[0]?.label).toBe("Live");
   });
 
   it("shows the project switcher except on editors and per-install settings", () => {
-    for (const p of ["/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit", "/settings/channels", "/settings/stt", "/settings/connection", "/account", "/slides", "/slides/edit", "/design"]) {
+    for (const p of ["/shows/edit", "/songs/edit", "/design/edit", "/design/stage/edit", "/hotcards/edit", "/settings/channels", "/settings/stt", "/settings/connection", "/account", "/slides", "/slides/edit", "/media", "/design"]) {
       expect(showsProjectSwitcher(p), p).toBe(false);
     }
     for (const p of ["/shows", "/", "/settings/scripture", "/songs"]) {

@@ -2,7 +2,7 @@
 // workspaces.ts (Live/Prep).
 
 import {
-  ArrowDownUp, BookOpen, CloudDownload, FolderKanban, ListOrdered, Mic, MonitorPlay,
+  ArrowDownUp, BookOpen, CloudDownload, FolderKanban, Images, ListOrdered, Mic, MonitorPlay,
   MonitorSmartphone, MonitorSpeaker, Music, Network, Palette, Plug, Presentation, UserRound, Zap, type LucideIcon,
 } from "lucide-react";
 
@@ -33,6 +33,7 @@ export const AREAS: Record<AreaId, Area> = {
       { route: "/shows", label: "Shows", icon: ListOrdered },
       { route: "/songs", label: "Songs", icon: Music },
       { route: "/slides", label: "Slides", icon: Presentation, desktopOnly: true },
+      { route: "/media", label: "Media", icon: Images },
       { route: "/design", label: "Designs", icon: Palette },
       { route: "/hotcards", label: "Hotcards", icon: Zap },
       { route: "/pco", label: "Planning Center", icon: CloudDownload, desktopOnly: true },
@@ -94,6 +95,8 @@ const NO_SWITCHER = [
   // [P3.14] decks are global
   "/slides",
   // [/P3.14]
+  // media library is global
+  "/media",
   // [P1.14] templates and stage layouts are global
   "/design",
   // [/P1.14]
