@@ -364,6 +364,46 @@ describe("slidesSession", () => {
       expect(slidesSession.getSession("program")).toMatchObject({ nextAdvanceAt: t0 + 13000, loops: true });
     });
 
+    it("autoEnded marks only an auto-advanced end; a manual move or re-take clears it", () => {
+      slidesSession.start("program", timed([5, 5, 5], false), 2);
+      expect(channels.getState("program").slidesSession!.autoEnded).toBeUndefined();
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ atEnd: true, autoEnded: true });
+      slidesSession.advance("program", -1);
+      expect(channels.getState("program").slidesSession!.autoEnded).toBeUndefined();
+      slidesSession.goTo("program", 2);
+      slidesSession.advance("program", 1);
+      expect(channels.getState("program").slidesSession).toMatchObject({ atEnd: true });
+      expect(channels.getState("program").slidesSession!.autoEnded).toBeUndefined();
+      slidesSession.start("program", timed([5, 5, 5], false), 2);
+      vi.advanceTimersByTime(5000);
+      slidesSession.goTo("program", 2);
+      expect(channels.getState("program").slidesSession!.autoEnded).toBeUndefined();
+      vi.advanceTimersByTime(5000);
+      slidesSession.start("program", timed([5, 5, 5], false), 2);
+      expect(channels.getState("program").slidesSession!.autoEnded).toBeUndefined();
+    });
+
+    it("a render that throws in the timer stops the timer and keeps the session", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      slidesSession.start("program", timed([5, 5, 5], true), 0);
+      const spy = vi.spyOn(channels, "update").mockImplementation(() => {
+        throw new Error("boom");
+      });
+      try {
+        vi.advanceTimersByTime(5000);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalled();
+        expect(slidesSession.getSession("program")).not.toBeNull();
+        expect(slidesSession.getSession("program")!.nextAdvanceAt).toBeUndefined();
+        vi.advanceTimersByTime(60000);
+        expect(spy).toHaveBeenCalledTimes(1);
+      } finally {
+        spy.mockRestore();
+        warn.mockRestore();
+      }
+    });
+
     it("a deck without timing never auto-advances and reports no nextAdvanceAt", () => {
       slidesSession.start("program", args(), 0);
       expect(channels.getState("program").slidesSession).toMatchObject({ loops: false, slot: "graphics" });

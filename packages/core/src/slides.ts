@@ -151,5 +151,7 @@ export const SlidesSessionSummarySchema = z.object({
   nextAdvanceAt: z.number().optional(),
   loops: z.boolean().optional(),
   slot: z.enum(["graphics", "media"]).optional(),
+  /** The deck's own timer reached the end of a non-looping deck: it holds the last slide, but it has ended. */
+  autoEnded: z.boolean().optional(),
 });
 export type SlidesSessionSummary = z.infer<typeof SlidesSessionSummarySchema>;

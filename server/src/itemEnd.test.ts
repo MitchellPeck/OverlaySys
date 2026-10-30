@@ -96,6 +96,21 @@ describe("item end tracker", () => {
     expect(ended).toEqual([["program", "deck"]]);
   });
 
+  it("reports a template deck that auto-advanced onto its end; a Space-armed end is still on air", () => {
+    const { set, ended } = setup();
+    const deck = (atEnd: boolean, autoEnded?: boolean) => ({
+      active: graphic("in"),
+      slidesSession: { rowId: "deck", slot: "graphics", atEnd, ...(autoEnded ? { autoEnded } : {}) } as never,
+    });
+    set({});
+    set(deck(false), null);
+    set(deck(true), null);
+    expect(ended).toEqual([]);
+    set(deck(false), null);
+    set(deck(true, true), null);
+    expect(ended).toEqual([["program", "deck"]]);
+  });
+
   it("says nothing the first time it sees a channel", () => {
     const { set, ended } = setup();
     set({ active: graphic("out") }, null);

@@ -22,6 +22,8 @@ interface Session {
   idx: number;
   blanked: boolean;
   atEnd: boolean;
+  /** The timer (not the operator) reached the end of a non-looping deck. */
+  autoEnded: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   nextAdvanceAt?: number;
 }
@@ -56,6 +58,7 @@ function summarize(s: Session): SlidesSessionSummary {
     ...(s.nextAdvanceAt !== undefined ? { nextAdvanceAt: s.nextAdvanceAt } : {}),
     loops: loops(s),
     slot: "graphics",
+    ...(s.autoEnded ? { autoEnded: true } : {}),
   };
 }
 
@@ -77,7 +80,13 @@ function arm(s: Session): void {
     s.timer = null;
     delete s.nextAdvanceAt;
     if (sessions.get(s.channel) !== s) return;
-    autoAdvance(s);
+    try {
+      autoAdvance(s);
+    } catch (err) {
+      // Never leave a timer re-firing a failing render on air: hold here until the operator moves.
+      stopTimer(s);
+      console.warn("[slidesSession] auto-advance failed", err);
+    }
   }, ms);
 }
 
@@ -89,6 +98,7 @@ function autoAdvance(s: Session): void {
     s.idx = 0;
   } else {
     s.atEnd = true;
+    s.autoEnded = true;
     channels.setSlidesSessionSummary(s.channel, summarize(s));
     return;
   }
@@ -132,7 +142,7 @@ export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
   songSession.clearQueued(channel);
   const prev = sessions.get(channel);
   if (prev) stopTimer(prev);
-  const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false, timer: null };
+  const s: Session = { channel, args, idx: slideIdx, blanked: false, atEnd: false, autoEnded: false, timer: null };
   sessions.set(channel, s);
   arm(s);
   render(s, true);
@@ -144,6 +154,7 @@ export function start(channel: string, args: StartArgs, slideIdx = 0): boolean {
 export function advance(channel: string, delta: -1 | 1): void {
   const s = sessions.get(channel);
   if (!s) return;
+  s.autoEnded = false;
   const last = s.args.slides.length - 1;
   if (delta > 0) {
     if (s.idx < last) {
@@ -177,6 +188,7 @@ export function goTo(channel: string, slideIdx: number): boolean {
   const s = sessions.get(channel);
   if (!s || !Number.isInteger(slideIdx) || slideIdx < 0 || slideIdx >= s.args.slides.length) return false;
   const wasBlanked = s.blanked;
+  s.autoEnded = false;
   s.idx = slideIdx;
   s.atEnd = false;
   s.blanked = false;
@@ -210,7 +222,7 @@ export function promote(from: string, to: string): boolean {
   if (!src) return false;
   const prev = sessions.get(to);
   if (prev) stopTimer(prev);
-  const s: Session = { channel: to, args: src.args, idx: src.idx, blanked: false, atEnd: src.atEnd, timer: null };
+  const s: Session = { channel: to, args: src.args, idx: src.idx, blanked: false, atEnd: src.atEnd, autoEnded: false, timer: null };
   sessions.set(to, s);
   // The timer starts from the promoted slide.
   arm(s);
