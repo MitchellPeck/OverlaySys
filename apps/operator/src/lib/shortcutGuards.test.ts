@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HotcardMeta, SongSessionSummary } from "@overlaysys/core";
+import { slidesKeyChannel } from "./slidesRowView";
 import {
   advanceMessage,
   blankMessage,
@@ -232,6 +233,12 @@ describe("advanceMessage / blankMessage", () => {
     expect(keyMode({ songSessions: {}, channelStates })).toBe("slides");
     expect(advanceMessage("slides", -1, channelStates)).toEqual({ type: "slides_advance", channel: "lyrics", delta: -1 });
     expect(blankMessage("slides", channelStates)).toEqual({ type: "slides_blank", channel: "lyrics" });
+  });
+  it("a media loop on program does not take the keys: Space takes rows as usual", () => {
+    const loop = { rowId: "r", title: "Loop", slideIdx: 0, slideCount: 4, lines: [], blanked: false, atEnd: false, slot: "media" };
+    const channelStates = { program: { channel: "program", active: null, slidesSession: loop } } as never;
+    expect(keyMode({ songSessions: {}, channelStates })).toBe("rundown");
+    expect(slidesKeyChannel(channelStates)).toBeNull();
   });
 });
 

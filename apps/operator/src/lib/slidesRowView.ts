@@ -246,12 +246,15 @@ export function slidesStripNotice(
 /**
  * The output Space / Shift+Space / B drive in slides key mode: a program
  * slides session, else one on another non-preview output (a row routed
- * there). Preview never drives keys.
+ * there). Preview never drives keys, and neither does a media loop.
  */
 export function slidesKeyChannel(channelStates: Record<string, ChannelState | undefined>): string | null {
-  if (channelStates.program?.slidesSession) return "program";
+  // A media loop (media-slot deck) never takes the keys: Space keeps taking
+  // rows; the loop is stepped from its row or thumbnails.
+  const drives = (st: ChannelState | undefined) => !!st?.slidesSession && st.slidesSession.slot !== "media";
+  if (drives(channelStates.program)) return "program";
   for (const [ch, st] of Object.entries(channelStates)) {
-    if (ch !== "preview" && st?.slidesSession) return ch;
+    if (ch !== "preview" && drives(st)) return ch;
   }
   return null;
 }
