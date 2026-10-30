@@ -12,6 +12,7 @@ import {
   deckMediaPlacement,
   isMediaOnlyDeck,
   liveFolderFileUrl,
+  mediaTypeOfFileName,
   resolveFolderDeckSlides,
   resolveMediaPlacement,
   slidesRowView,
@@ -63,7 +64,6 @@ export const FOLDER_ELSEWHERE_REASON = "These graphics are on the show computer.
  * A live-folder deck's row view: its slides are the folder's files in play
  * order (the deck has none of its own). `folder` undefined = not loaded yet.
  */
-const VIDEO_FILE = /\.(mp4|webm|mov|m4v)$/i;
 const graphicsDetail = (n: number) => `${n} graphic${n === 1 ? "" : "s"}`;
 
 export function folderSlidesRowView(
@@ -80,7 +80,7 @@ export function folderSlidesRowView(
     const own = new Map((deck.folderOrder ?? []).map((o) => [o.file, o] as const));
     const deckDefault = deckMediaPlacement(deck);
     const slides: OperatorResolvedSlide[] = session.slideKeys.map((file, position) => {
-      const mediaType = types.get(file) ?? (VIDEO_FILE.test(file) ? "video" : "image");
+      const mediaType = types.get(file) ?? (mediaTypeOfFileName(file) === "video" ? "video" : "image");
       return {
         key: `${row.id}:${position}:${file}`,
         slideId: file,

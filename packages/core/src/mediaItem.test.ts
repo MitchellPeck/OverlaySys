@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MediaItemSchema } from "./mediaItem";
+import { IMAGE_EXTENSIONS, MediaItemSchema, VIDEO_EXTENSIONS, mediaTypeOfFileName } from "./mediaItem";
 import { RundownRowSchema } from "./show";
 import { DeckSchema } from "./deck";
 
@@ -68,5 +68,16 @@ describe("media schemas", () => {
     });
     expect(m.position).toBe("center");
     expect(ChannelMediaSchema.parse({ ...m, fit: "scale-down" }).fit).toBe("scale-down");
+  });
+});
+
+describe("media file extensions", () => {
+  it("one list of photo and video extensions, matched case-insensitively", () => {
+    expect([...IMAGE_EXTENSIONS]).toEqual(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]);
+    expect([...VIDEO_EXTENSIONS]).toEqual(["mp4", "webm", "mov", "m4v"]);
+    expect(mediaTypeOfFileName("Easter.JPG")).toBe("image");
+    expect(mediaTypeOfFileName("a.b.mov")).toBe("video");
+    expect(mediaTypeOfFileName("notes.txt")).toBeNull();
+    expect(mediaTypeOfFileName("png")).toBeNull();
   });
 });

@@ -28,3 +28,16 @@ export const MediaItemSchema = z
   });
 export type MediaItem = z.infer<typeof MediaItemSchema>;
 export type MediaItemMeta = MediaItem & { usedBy: number };
+
+/** The photo file extensions OverlaySys plays (import, live folders, thumbnails). */
+export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]);
+/** The video file extensions OverlaySys plays. */
+export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set(["mp4", "webm", "mov", "m4v"]);
+
+/** Photo or video by a file name's extension (any case); null for anything else. */
+export function mediaTypeOfFileName(name: string): "image" | "video" | null {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  const ext = name.slice(dot + 1).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext) ? "image" : VIDEO_EXTENSIONS.has(ext) ? "video" : null;
+}

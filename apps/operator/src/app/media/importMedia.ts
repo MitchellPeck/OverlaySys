@@ -1,5 +1,5 @@
 import { v4 as uuid } from "uuid";
-import type { MediaItem } from "@overlaysys/core";
+import { mediaTypeOfFileName, type MediaItem } from "@overlaysys/core";
 import type { UploadResult } from "../../lib/uploadAsset";
 
 export function mediaTypeOf(mime: string): "image" | "video" | null {
@@ -8,20 +8,12 @@ export function mediaTypeOf(mime: string): "image" | "video" | null {
   return null;
 }
 
-const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]);
-const VIDEO_EXTENSIONS = new Set(["mp4", "webm", "mov", "m4v"]);
-
 /**
  * Photo or video for a picked/dropped file: the browser's type first, then the
  * extension (browsers often leave `type` empty for .mov / .m4v).
  */
 export function mediaTypeOfFile(file: Pick<File, "name" | "type">): "image" | "video" | null {
-  const byType = mediaTypeOf(file.type ?? "");
-  if (byType) return byType;
-  const dot = file.name.lastIndexOf(".");
-  if (dot < 0) return null;
-  const ext = file.name.slice(dot + 1).toLowerCase();
-  return IMAGE_EXTENSIONS.has(ext) ? "image" : VIDEO_EXTENSIONS.has(ext) ? "video" : null;
+  return mediaTypeOf(file.type ?? "") ?? mediaTypeOfFileName(file.name);
 }
 
 /** Which element `probeMedia` loads the file into. */

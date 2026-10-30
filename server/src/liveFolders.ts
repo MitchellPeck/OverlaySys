@@ -2,7 +2,7 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { LiveFolderFile } from "@overlaysys/core";
+import { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, type LiveFolderFile } from "@overlaysys/core";
 import { dataRoot } from "./storage";
 import { mimeFromFilename } from "./assets";
 import { isLocalAddress, remoteAddressOf, securityContext } from "./security";
@@ -23,8 +23,6 @@ export const LIVE_FOLDER_POLL_MS = 5000;
 /** fs.watch fires in bursts while a file is copied; rescan once per burst. */
 const WATCH_DEBOUNCE_MS = 200;
 
-const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"]);
-const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v"]);
 
 export type ScannedFile = LiveFolderFile;
 
@@ -37,8 +35,8 @@ export type ScannedFile = LiveFolderFile;
 export function liveFolderMediaType(name: string): "image" | "video" | null {
   if (!name || name.startsWith(".") || name.includes("/") || name.includes("\\") || name.includes("\0")) return null;
   const ext = path.extname(name).slice(1).toLowerCase();
-  if (IMAGE_EXT.has(ext)) return "image";
-  if (VIDEO_EXT.has(ext)) return "video";
+  if (IMAGE_EXTENSIONS.has(ext)) return "image";
+  if (VIDEO_EXTENSIONS.has(ext)) return "video";
   return null;
 }
 
