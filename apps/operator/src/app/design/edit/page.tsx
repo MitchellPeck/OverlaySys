@@ -216,7 +216,11 @@ function DesignPageInner() {
         });
       return;
     }
-    if (conn !== "open") return;
+    if (conn !== "open") {
+      // A fetch sent before the drop is lost: with nothing loaded yet, ask again on reconnect.
+      if (!useEditor.getState().draft) fetchedRef.current = null;
+      return;
+    }
     if (fetchedRef.current === templateId) return;
     fetchedRef.current = templateId;
     send({ type: "get_template", templateId });
@@ -486,6 +490,9 @@ function DesignPageInner() {
       }
       return;
     }
+    // Offline the fetch can't go out: leave the template unfetched so the
+    // load effect requests it when the connection comes back.
+    if (useStore.getState().conn !== "open") return;
     fetchedRef.current = templateId;
     send({ type: "get_template", templateId });
   }

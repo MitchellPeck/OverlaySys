@@ -24,6 +24,8 @@ import { useStore } from "@/lib/store";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { useConnection } from "@/lib/useConnection";
+import { isNotFoundFor, loadFailedText } from "@/lib/editorLoad";
+import { EditorLoadFailed } from "@/app/components/EditorLoadFailed";
 import { AckError, ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { slidesAddItemEnabled } from "@/lib/slidesRowView";
 import { PageBody } from "@/app/components/PageShell";
@@ -123,6 +125,8 @@ function ShowEditPageInner() {
     setDirtyState(v);
   };
   const [saving, setSaving] = useState(false);
+  /** Why the show can't be shown: not found, or the load failed. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const savingRef = useRef(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   // A counter per request, so asking to rename the same section again re-opens it.
@@ -189,10 +193,13 @@ function ShowEditPageInner() {
     setDraftState(null);
     setDirty(false);
     setSelectedRowId(null);
+    setLoadError(null);
     if (cloud) return; // no WS subscription in cloud mode — see effect below
     const off = getClient().on((msg) => {
       if (msg.type === "show" && msg.show.id === showId) {
         if (!dirtyRef.current) load(msg.show);
+      } else if (isNotFoundFor(msg, showId) && !draftRef.current) {
+        setLoadError("This show doesn't exist (it may have been deleted).");
       }
     });
     return off;
@@ -210,9 +217,13 @@ function ShowEditPageInner() {
       Promise.all([getShowCloud(showId), getShowUpdatedAtCloud(showId), refreshTemplateMetasCloud(), refreshSongMetasCloud()])
         .then(([show, updatedAt]) => {
           if (show) load(show);
+          else setLoadError("This show doesn't exist (it may have been deleted).");
           loadedAtRef.current = updatedAt;
         })
-        .catch((err) => console.warn("[shows/edit] cloud load failed", err));
+        .catch((err) => {
+          console.warn("[shows/edit] cloud load failed", err);
+          setLoadError(loadFailedText("show", err));
+        });
       return;
     }
     if (conn !== "open") return;
@@ -649,6 +660,9 @@ function ShowEditPageInner() {
     [draft, templates],
   );
 
+  if (!draft && loadError) {
+    return <EditorLoadFailed message={loadError} backLabel="Back to shows" onBack={() => router.push("/shows")} />;
+  }
   if (!draft || !addPickers) {
     return (
       <>

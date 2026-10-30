@@ -27,6 +27,8 @@ import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
 import { isCloudMode } from "@/lib/mode";
+import { isNotFoundFor, loadFailedText } from "@/lib/editorLoad";
+import { EditorLoadFailed } from "@/app/components/EditorLoadFailed";
 import { ackErrorText, sendAndAwaitAck } from "@/lib/awaitAck";
 import { useConnection } from "@/lib/useConnection";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
@@ -84,6 +86,8 @@ function HotcardEditPageInner() {
   const [saved, setSaved] = useState<Hotcard | null>(null);
   const [draft, setDraft] = useState<Hotcard | null>(null);
   const [saving, setSaving] = useState(false);
+  /** Why the hotcard can't be shown: not found, or the load failed. */
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -102,11 +106,14 @@ function HotcardEditPageInner() {
     fetchedRef.current = null;
     setSaved(null);
     setDraft(null);
+    setLoadError(null);
     if (cloud || isNew) return;
     const off = getClient().on((msg) => {
       if (msg.type === "hotcard" && msg.hotcard.id === hotcardId) {
         setSaved(msg.hotcard);
         if (!dirtyRef.current) setDraft(msg.hotcard);
+      } else if (isNotFoundFor(msg, hotcardId) && !draftRef.current) {
+        setLoadError("This hotcard doesn't exist (it may have been deleted).");
       }
     });
     return off;
@@ -134,10 +141,13 @@ function HotcardEditPageInner() {
         if (h) {
           setSaved(h);
           setDraft(h);
+        } else {
+          setLoadError("This hotcard doesn't exist (it may have been deleted).");
         }
         loadedAtRef.current = updatedAt;
       } catch (err) {
         console.warn("[hotcards/edit] cloud load failed", err);
+        setLoadError(loadFailedText("hotcard", err));
       }
       return;
     }
@@ -328,6 +338,9 @@ function HotcardEditPageInner() {
     );
   }
 
+  if (!draft && loadError) {
+    return <EditorLoadFailed message={loadError} backLabel="Back to hotcards" onBack={() => router.push("/hotcards")} />;
+  }
   if (!draft) {
     return (
       <>

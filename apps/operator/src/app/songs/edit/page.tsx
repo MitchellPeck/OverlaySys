@@ -46,9 +46,18 @@ import {
 export default function SongEditorPage() {
   return (
     <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
-      <SongEditorPageInner />
+      <SongEditorForId />
     </Suspense>
   );
+}
+
+// Next keeps this page mounted when only ?id= changes (⌘K from song A to B),
+// so the draft, undo stack and paste-undo would carry over. Keying by id
+// remounts the editor with fresh state for the new song.
+function SongEditorForId() {
+  const searchParams = useSearchParams();
+  const id = decodeURIComponent(searchParams?.get("id") ?? "");
+  return <SongEditorPageInner key={id} />;
 }
 
 function SongEditorPageInner() {
