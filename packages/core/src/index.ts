@@ -40,3 +40,5 @@ export * from "./sections";
 export * from "./slidesConvert";
 export * from "./slidesRowOps";
 export * from "./templateIds";
+export * from "./mediaItem";
+export * from "./mediaDeck";

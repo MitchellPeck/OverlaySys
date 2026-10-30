@@ -13,7 +13,7 @@ const FADE = { style: "fade", durationMs: 500 } as const;
 
 function media(takenAt: number, over: Partial<ChannelMedia> = {}): ChannelMedia {
   return {
-    rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear",
+    rowId: "r", assetUrl: "/assets/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false,
     transitionIn: FADE, transitionOut: FADE,
     takenAt, paused: false,
     playback: { status: "loading", currentTime: 0, duration: 0, updatedAt: 0 },

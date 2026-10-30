@@ -147,5 +147,9 @@ export const SlidesSessionSummarySchema = z.object({
   nextLabel: z.string().optional(),
   blanked: z.boolean(),
   atEnd: z.boolean(),
+  /** Epoch ms (server clock) when the auto-advance timer fires next. */
+  nextAdvanceAt: z.number().optional(),
+  loops: z.boolean().optional(),
+  slot: z.enum(["graphics", "media"]).optional(),
 });
 export type SlidesSessionSummary = z.infer<typeof SlidesSessionSummarySchema>;

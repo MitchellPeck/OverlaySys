@@ -11,6 +11,7 @@ export function rowDisplayLabel(
   }
   if (row.kind === "scripture") return row.reference;
   if (row.kind === "video") return row.label || "Video";
+  if (row.kind === "media") return row.label || "Photo";
   if (row.kind === "slides") {
     const deck = row.deckId ? state.decks.find((d) => d.id === row.deckId) : undefined;
     return deck?.name || row.notes?.trim() || "Slides";

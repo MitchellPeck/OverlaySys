@@ -6,7 +6,7 @@ const row = (over: Partial<VideoRow> = {}): VideoRow => ({
   kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, ...over,
 });
 const media = (status: ChannelMedia["playback"]["status"], rowId = "v1"): ChannelMedia => ({
-  rowId, assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+  rowId, assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
   playback: { status, currentTime: 0, duration: 10, updatedAt: 1 },
 });
 const states = (ch: string, m: ChannelMedia): Record<string, ChannelState> =>

@@ -411,7 +411,7 @@ function rowMatchesPgm(
   if (row.kind === "scripture") {
     return Boolean(pgmScriptureRowId === row.id || active?.scriptureContext?.rowId === row.id);
   }
-  if (row.kind === "video") return false;
+  if (row.kind === "video" || row.kind === "media") return false;
   // [P3.21]
   if (row.kind === "slides") return pgmSlidesRowId === row.id;
   if (!active) return false;

@@ -152,6 +152,8 @@ function rowMessages(
       },
     ];
   }
+  // Photo rows are not takeable from Companion yet.
+  if (row.kind === "media") return [];
   // [P3.21]
   if (row.kind === "slides") {
     return [{ type: "slides_take", showId: state.loadedShowId ?? "", rowId: row.id, channel }];
@@ -191,7 +193,7 @@ function rowPvwPgmMessages(
     // No preview stage for scripture slides: go straight to the To channel.
     return [{ type: "scripture_take_slide", showId: state.loadedShowId ?? "", rowId: row.id, slideIdx: 0, channel: toChannel }];
   }
-  if (row.kind === "video") {
+  if (row.kind === "video" || row.kind === "media") {
     // No PVW stage for video (would double audio).
     return [];
   }

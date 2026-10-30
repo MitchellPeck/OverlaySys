@@ -4,7 +4,7 @@ import { DEFAULT_MEDIA_TRANSITION, MediaEndActionSchema, MediaTransitionSchema }
 import { SermonNotesSchema } from "./sermonNotes";
 import { StageLayoutsSchema } from "./stageLayoutRules";
 import { DeckSlideSchema } from "./deck";
-import type { SlidesRowFields } from "./deck";
+import type { MediaRef, SlidesRowFields } from "./deck";
 
 /**
  * Provenance for a row imported from an external source (currently Planning
@@ -222,8 +222,12 @@ const VideoRowObject = z.object({
   /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
   stageLayouts: StageLayoutsSchema.optional(),
   assetUrl: z.string(),
+  /** Library item this row was created from; `assetUrl` is the resolved copy. */
+  mediaItemId: z.string().optional(),
   label: z.string().optional(),
   durationSec: z.number().optional(),
+  loop: z.boolean().optional(),
+  muted: z.boolean().optional(),
   volume: z.number().min(0).max(1).default(1),
   endAction: MediaEndActionSchema.default("clear"),
   transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
@@ -241,8 +245,42 @@ const VideoRowObject = z.object({
 export type VideoRow = z.infer<typeof VideoRowObject>;
 export const VideoRowSchema = VideoRowObject.passthrough();
 
+/** A full-frame photo played in the channel's media slot. (Video rows keep `kind: "video"`.) */
+const ImageRowObject = z.object({
+  kind: z.literal("media"),
+  mediaType: z.literal("image"),
+  id: z.string(),
+  /** Id of the show section this row belongs to; absent means no section. */
+  sectionId: z.string().optional(),
+  /** Per-stage-channel layout override for this row (stage channel id -> layoutId). */
+  stageLayouts: StageLayoutsSchema.optional(),
+  assetUrl: z.string(),
+  mediaItemId: z.string().optional(),
+  label: z.string().optional(),
+  fit: z.enum(["contain", "cover", "fill"]).default("cover"),
+  transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
+  transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
+  channelHint: z.string().optional(),
+  notes: z.string().optional(),
+  sermonNotesId: z.string().optional(),
+  lengthSec: z.number().int().nonnegative().optional(),
+  lengthSecManual: z.boolean().optional(),
+  sourceRef: RowSourceRefSchema.optional(),
+});
+export type ImageRow = z.infer<typeof ImageRowObject>;
+export const ImageRowSchema = ImageRowObject.passthrough();
+
 // Strict view of DeckSlide (no passthrough index signature) so the inferred Show type stays Json-compatible.
-type DeckSlideFields = { id: string; templateId?: string; data: Record<string, string>; label?: string };
+type DeckSlideFields = {
+  id: string;
+  templateId?: string;
+  data: Record<string, string>;
+  label?: string;
+  media?: MediaRef;
+  holdSec?: number;
+  advanceOnEnd?: boolean;
+  muted?: boolean;
+};
 
 /** A row that takes slides from a deck (or its own local slides) on air. */
 const SlidesRowObject = z.object({
@@ -290,9 +328,9 @@ export const RundownRowSchema = z.preprocess(
     }
     return raw;
   },
-  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema, SlidesRowSchema]),
+  z.discriminatedUnion("kind", [GraphicRowSchema, SongRowSchema, ScriptureRowSchema, VideoRowSchema, ImageRowSchema, SlidesRowSchema]),
 );
-export type RundownRow = GraphicRow | SongRow | ScriptureRow | VideoRow | SlidesRow;
+export type RundownRow = GraphicRow | SongRow | ScriptureRow | VideoRow | ImageRow | SlidesRow;
 
 /**
  * Shows pre-dating the Project concept have no `projectId`. Default missing

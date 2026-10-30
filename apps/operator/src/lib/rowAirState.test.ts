@@ -77,7 +77,7 @@ describe("rowAirState", () => {
 
   it("matches a video row by media.rowId unless ended or errored", () => {
     const media = (status: "playing" | "ended" | "error") => ({
-      rowId: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "hold" as const, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+      rowId: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "hold" as const, mediaType: "video" as const, fit: "contain" as const, loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
       playback: { status, currentTime: 0, duration: 10, updatedAt: 1 },
     });
     expect(rowAirState(video("v1"), { program: { channel: "program", active: null, media: media("playing") } }, {})).toBe("program");

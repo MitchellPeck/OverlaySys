@@ -85,6 +85,11 @@ export const ChannelMediaSchema = z.object({
   label: z.string().optional(),
   volume: z.number().min(0).max(1),
   endAction: MediaEndActionSchema,
+  // Defaulted so state from a pre-image server still parses.
+  mediaType: z.enum(["image", "video"]).default("video"),
+  fit: z.enum(["contain", "cover", "fill"]).default("contain"),
+  loop: z.boolean().default(false),
+  muted: z.boolean().default(false),
   // Defaulted so state from a pre-transition server still parses.
   transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),

@@ -554,6 +554,10 @@ export type MediaTakeArgs = {
   label?: string;
   volume: number;
   endAction: MediaEndAction;
+  mediaType?: "image" | "video";
+  fit?: "contain" | "cover" | "fill";
+  loop?: boolean;
+  muted?: boolean;
   transitionIn?: MediaTransition;
   transitionOut?: MediaTransition;
 };
@@ -570,6 +574,10 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     ...(args.label !== undefined ? { label: args.label } : {}),
     volume: args.volume,
     endAction: args.endAction,
+    mediaType: args.mediaType ?? "video",
+    fit: args.fit ?? "contain",
+    loop: args.loop ?? false,
+    muted: args.muted ?? false,
     transitionIn: args.transitionIn ?? DEFAULT_MEDIA_TRANSITION,
     transitionOut: args.transitionOut ?? DEFAULT_MEDIA_TRANSITION,
     takenAt,

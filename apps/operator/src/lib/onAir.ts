@@ -59,6 +59,8 @@ function rowTitle(rowId: string, ctx: Ctx): string | null {
       return row.reference || "Scripture";
     case "video":
       return row.label || "Video";
+    case "media":
+      return row.label || "Photo";
     case "graphic":
       return null;
     // [P3.8] placeholder until slides rows have operator UI

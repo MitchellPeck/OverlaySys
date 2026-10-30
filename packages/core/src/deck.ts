@@ -13,12 +13,24 @@ export const DeckLicensingSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("own") }).passthrough(),
 ]) as unknown as z.ZodType<DeckLicensing, z.ZodTypeDef, unknown>;
 
+export const MediaRefSchema = z.object({
+  mediaItemId: z.string().optional(),
+  assetUrl: z.string(),
+  mediaType: z.enum(["image", "video"]),
+});
+export type MediaRef = z.infer<typeof MediaRefSchema>;
+
 export const DeckSlideSchema = z
   .object({
     id: z.string(),
     templateId: z.string().optional(),
     data: z.record(z.string(), z.string()),
     label: z.string().optional(),
+    /** A media slide shows this photo/video full-frame; `data` stays `{}` so old clients still parse. */
+    media: MediaRefSchema.optional(),
+    holdSec: z.number().positive().optional(),
+    advanceOnEnd: z.boolean().optional(),
+    muted: z.boolean().optional(),
   })
   .passthrough();
 export type DeckSlide = z.infer<typeof DeckSlideSchema>;
@@ -35,6 +47,13 @@ export const DeckSchema = z
     updatedAt: z.string().optional(),
     deletedAt: z.string().optional(),
     convertedFromSongId: z.string().optional(),
+    /** Seconds each slide is held; its presence means the deck auto-advances. */
+    defaultHoldSec: z.number().positive().optional(),
+    loop: z.boolean().optional(),
+    /** Live-folder library item this deck plays; slides come from the folder's files. */
+    liveFolderId: z.string().optional(),
+    /** Saved play order of a live folder's files. */
+    folderOrder: z.array(z.object({ file: z.string(), holdSec: z.number().positive().optional() })).optional(),
   })
   .passthrough();
 export type Deck = z.infer<typeof DeckSchema>;

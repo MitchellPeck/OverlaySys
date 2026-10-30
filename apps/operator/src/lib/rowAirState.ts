@@ -89,6 +89,7 @@ function onChannel(
         (songSessions[ch]?.songId === row.songId && isTakenSongRow(row, st, ctx, songSessions[ch])) ||
         live?.subTakeContext?.songRowId === row.id
       );
+    case "media":
     case "video": {
       const m = st?.media;
       return !!m && m.rowId === row.id && m.playback.status !== "ended" && m.playback.status !== "error";

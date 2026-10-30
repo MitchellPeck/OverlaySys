@@ -56,7 +56,7 @@ export function Rundown() {
         continue;
       }
       // Scripture rows dispatch per slide via ScriptureTakeStrip; video has no template.
-      if (r.kind === "scripture" || r.kind === "video") continue;
+      if (r.kind === "scripture" || r.kind === "video" || r.kind === "media") continue;
       const id = r.kind === "graphic" ? r.templateId : r.lyricTemplateId;
       if (seen.has(id)) continue;
       seen.add(id);

@@ -27,7 +27,7 @@ describe("channelDotModel", () => {
       channel: "program",
       active: null,
       media: {
-        rowId: "v", assetUrl: "/a.mp4", volume: 1, endAction: "hold", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+        rowId: "v", assetUrl: "/a.mp4", volume: 1, endAction: "hold", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
         playback: { status: "playing", currentTime: 0, duration: 1, updatedAt: 1 },
       },
     };
@@ -39,7 +39,7 @@ describe("channelDotModel", () => {
       channel: "stage",
       active: null,
       media: {
-        rowId: "v", assetUrl: "/a.mp4", volume: 1, endAction: "hold", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+        rowId: "v", assetUrl: "/a.mp4", volume: 1, endAction: "hold", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
         playback: { status: "playing", currentTime: 0, duration: 1, updatedAt: 1 },
       },
     };

@@ -107,6 +107,8 @@ export function rowTitle(
       return row.reference;
     case "video":
       return row.label ?? "Video";
+    case "media":
+      return row.label ?? "Photo";
     case "slides":
       return slidesRowView(row, deckFor(row, decks)).title;
   }
@@ -152,6 +154,8 @@ export function firstContentOf(
     }
     case "video":
       return { kind: "graphic", lines: [row.label ?? "Video"], reference: "Video" };
+    case "media":
+      return { kind: "graphic", lines: [row.label ?? "Photo"], reference: "Media" };
     case "slides": {
       const view = slidesRowView(row, deckFor(row, decks));
       const first = view.slides[0];
