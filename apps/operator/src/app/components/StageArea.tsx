@@ -145,7 +145,7 @@ function SlidesNotice({ row, ctx }: { row: RowLike; ctx: ThumbCtx }) {
   // Called for every row so the selected slides row's deck is fetched; null for other kinds.
   const deck = useDeckFor(row);
   if (row.kind !== "slides") return null;
-  const view = slidesRowViewFor(row, deck);
+  const view = slidesRowViewFor(row, deck, ctx.liveFolderFiles);
   const notice = view ? slidesStripNotice(row, view, ctx.channelStates) : null;
   if (!notice) return null;
   return (

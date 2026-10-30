@@ -33,7 +33,7 @@ import type {
 import type { PcoLiveStateMessage, ServerMessage } from "@overlaysys/ws-protocol";
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
-import { requestedDecks } from "./deckRequests";
+import { requestedDecks, requestedLiveFolders } from "./deckRequests";
 
 const sortMedia = (items: MediaItemMeta[]) => [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
@@ -505,6 +505,7 @@ export const useStore = create<StoreState>((set) => ({
   },
   resetDeckLookups: () => {
     requestedDecks.clear();
+    requestedLiveFolders.clear();
     set((s) => ({ deckNotFound: {}, deckEpoch: s.deckEpoch + 1 }));
   },
   setLastSongConversion: (m) => set({ lastSongConversion: m }),

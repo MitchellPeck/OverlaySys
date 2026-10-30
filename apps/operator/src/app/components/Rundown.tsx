@@ -13,7 +13,8 @@ import { rowView, type RowView } from "@/lib/rowView";
 import { liveGroups } from "@/lib/liveNext";
 import { slidesRowViewFor } from "@/lib/slidesRowView";
 import { rowFireMessages } from "@/lib/liveKeys";
-import { requestedDecks } from "@/lib/deckRequests";
+import { requestedDecks, requestedLiveFolders } from "@/lib/deckRequests";
+import { requestLiveFolder } from "@/lib/mediaRequests";
 import { RundownList } from "./rundown/RundownList";
 import { doubleClickAction, rowCanFire, takeableNextRowId } from "./rundown/rundownModel";
 import { useLivePrefs } from "../hooks/useLivePrefs";
@@ -39,6 +40,7 @@ export function Rundown() {
   const overrides = useStore((s) => s.rowDataOverrides);
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   const warnRowIds = useWarnRowIds();
   const { doubleClickTakes } = useLivePrefs();
 
@@ -53,6 +55,12 @@ export function Rundown() {
           requestedDecks.add(id);
           send({ type: "get_deck", deckId: id });
         }
+        // A live-folder deck's slides are the folder's files: ask for them once.
+        const folderId = id ? deckCache[id]?.liveFolderId : undefined;
+        if (folderId && !liveFolderFiles[folderId] && !requestedLiveFolders.has(folderId)) {
+          requestedLiveFolders.add(folderId);
+          requestLiveFolder(folderId);
+        }
         continue;
       }
       // Scripture rows dispatch per slide via ScriptureTakeStrip; video has no template.
@@ -62,14 +70,14 @@ export function Rundown() {
       seen.add(id);
       if (!templateCache[id]) send({ type: "get_template", templateId: id });
     }
-  }, [show, templateCache, deckCache, deckNotFound, conn, send]);
+  }, [show, templateCache, deckCache, deckNotFound, liveFolderFiles, conn, send]);
 
   const caches = useMemo(() => ({ songCache, templateCache }), [songCache, templateCache]);
 
   const model = useMemo(() => {
     if (!show) return null;
     const rows = liveGroups(show).flatMap((g) => g.rows) as Row[];
-    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound };
+    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles };
     const air: Record<string, AirState> = {};
     const views: Record<string, RowView> = {};
     const edited = new Set<string>();
@@ -91,14 +99,16 @@ export function Rundown() {
       // Never a missing deck, nor one still loading (nextRowId must not pick it).
       const deckId = row.kind === "slides" ? row.deckId : undefined;
       const slidesView =
-        row.kind === "slides" ? slidesRowViewFor(row, deckId ? (deckNotFound[deckId] ? null : deckCache[deckId]) : null) : null;
+        row.kind === "slides"
+          ? slidesRowViewFor(row, deckId ? (deckNotFound[deckId] ? null : deckCache[deckId]) : null, liveFolderFiles)
+          : null;
       return rowCanFire(row, action, { supported: !!views[id]?.supported, slidesView });
     };
     const canTake = (id: string) => canFire(id, "take");
     const canCue = (id: string) => canFire(id, "cue");
     const next = takeableNextRowId(rows, air, selectedRowId, canTake);
     return { byId, air, edited, canTake, canCue, next };
-  }, [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions, caches, selectedRowId]);
+  }, [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles, channelStates, songSessions, caches, selectedRowId]);
 
   if (!show || !model) {
     if (!connected) return <OfflineState noun="shows" onRetry={retry} compact />;

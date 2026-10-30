@@ -156,6 +156,7 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
   const songSessions = useStore((s) => s.songSessions);
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   const confirm = useConfirm();
   const caches = useMemo(() => ({ songCache, templateCache }), [songCache, templateCache]);
   if (!show) return null;
@@ -233,7 +234,7 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
       const cue = slidesRowTakeMessages(show.id, row, "cue");
       const take = slidesRowTakeMessages(show.id, row, "take");
       if (!cue || !take) return <span style={{ fontSize: 12, color: colors.textMuted }}>Slides decks arrive with plan 3</span>;
-      const can = slidesControlState(row, { deckCache, deckNotFound });
+      const can = slidesControlState(row, { deckCache, deckNotFound, liveFolderFiles });
       return (
         <>
           <SlidesAutoNote row={row} />

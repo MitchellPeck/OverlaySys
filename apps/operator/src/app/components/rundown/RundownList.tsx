@@ -59,6 +59,7 @@ export function RundownList(p: RundownListProps) {
   const deckCache = useStore((s) => s.deckCache);
   const deckNotFound = useStore((s) => s.deckNotFound);
   const mediaItems = useStore((s) => s.mediaItems);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   // [P3.16] Live loads decks in Rundown.tsx; the show editor does it here.
   useRowDecks(show, edit);
   // [/P3.16]
@@ -78,11 +79,12 @@ export function RundownList(p: RundownListProps) {
       deckCache,
       deckNotFound,
       mediaItems,
+      liveFolderFiles,
     };
     const out: Record<string, RowView> = {};
     for (const r of flat) out[r.id] = rowView(r, ctx);
     return out;
-  }, [show, flat, songs, songCache, templates, templateCache, storeOverrides, deckCache, deckNotFound, mediaItems, edit]);
+  }, [show, flat, songs, songCache, templates, templateCache, storeOverrides, deckCache, deckNotFound, mediaItems, liveFolderFiles, edit]);
   const starts = useMemo(() => (edit ? cumulativeStarts(flat) : []), [edit, flat]);
 
   const drop = (pos: DropPos) => {

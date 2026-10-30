@@ -127,6 +127,23 @@ describe("thumbsFor", () => {
     slidesMock.mockReset();
   });
 
+  it("a live folder's graphics show the photo itself; its videos have no poster", () => {
+    slidesMock.mockReturnValue({
+      slides: [
+        { key: "k1", slideId: "a.png", position: 0, templateId: "", data: {}, label: "a.png", media: { assetUrl: "/media-folders/f1/a.png", mediaType: "image" } },
+        { key: "k2", slideId: "v.mp4", position: 1, templateId: "", data: {}, label: "v.mp4", media: { assetUrl: "/media-folders/f1/v.mp4", mediaType: "video" } },
+      ],
+    });
+    const ctx = { ...mkCtx(), liveFolderFiles: { f1: { files: [], configured: true } } };
+    const t = thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, ctx);
+    expect(t.map((x) => x.render)).toEqual([
+      { kind: "image", src: "/media-folders/f1/a.png" },
+      { kind: "poster", src: null },
+    ]);
+    expect(slidesMock.mock.calls[0]![2]).toBe(ctx.liveFolderFiles);
+    slidesMock.mockReset();
+  });
+
   it("slides thumbs match program: unsupplied text fields render \"\", not the design's sample", () => {
     slidesMock.mockReturnValue({
       slides: [{ key: "k1", slideId: "a", position: 0, templateId: "LT", data: { subtitle: "Line D" } }],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Show } from "@overlaysys/core";
 import type { AirState } from "../../../lib/rowAirState";
+import { slidesRowViewFor } from "../../../lib/slidesRowView";
 import {
   doubleClickAction,
   rowCanFire,
@@ -157,6 +158,15 @@ describe("rowCanFire (keys and buttons agree)", () => {
     expect(rowCanFire(s, "take", { supported: true, slidesView: sv({}) })).toBe(true);
     expect(rowCanFire(s, "cue", { supported: true, slidesView: sv({ missingDeck: true, slides: [] }) })).toBe(false);
     expect(rowCanFire(s, "take", { supported: true, slidesView: null })).toBe(false);
+  });
+  it("a live-folder deck fires when its folder has files, and not when it is empty", () => {
+    const s = { kind: "slides", id: "s", deckId: "d1" } as never;
+    const d = { id: "d1", name: "Loop", tags: [], defaultTemplateId: "t", licensing: { kind: "own" }, slides: [], createdAt: "x", liveFolderId: "f1" } as never;
+    const present = slidesRowViewFor(s, d, { f1: { files: [{ name: "a.png", mediaType: "image", size: 1, mtimeMs: 1 }], configured: true } });
+    const empty = slidesRowViewFor(s, d, { f1: { files: [], configured: true } });
+    expect(rowCanFire(s, "take", { supported: true, slidesView: present })).toBe(true);
+    expect(rowCanFire(s, "cue", { supported: true, slidesView: present })).toBe(true);
+    expect(rowCanFire(s, "take", { supported: true, slidesView: empty })).toBe(false);
   });
   it("unknown kinds never fire", () => expect(rowCanFire({ kind: "mystery", id: "m" } as never, "take", ok)).toBe(false));
 });

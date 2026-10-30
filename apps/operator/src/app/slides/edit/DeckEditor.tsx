@@ -15,6 +15,7 @@ import {
   Menu,
   SaveBar,
   Select,
+  Switch,
   Textarea,
   colors,
   confirm,
@@ -56,6 +57,7 @@ import {
   setAdvanceOnEnd,
   setSlideHold,
   setSlideLabel,
+  setSlideMuted,
   setSlideTemplate,
 } from "./deckDraftOps";
 
@@ -661,6 +663,13 @@ export function DeckEditor({ deckId }: { deckId: string }) {
               label="Advance when the video ends"
               checked={selected.advanceOnEnd ?? true}
               onChange={(on) => update((d) => setAdvanceOnEnd(d, selected.id, on))}
+            />
+          )}
+          {selected.media?.mediaType === "video" && (
+            <Switch
+              label="Mute"
+              checked={selected.muted === true}
+              onChange={(on) => update((d) => setSlideMuted(d, selected.id, on))}
             />
           )}
         </section>

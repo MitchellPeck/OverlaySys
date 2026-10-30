@@ -186,11 +186,12 @@ export function useGlobalShortcuts(): void {
           overrides: store.rowDataOverrides,
           deckCache: store.deckCache,
           deckNotFound: store.deckNotFound,
+          liveFolderFiles: store.liveFolderFiles,
         });
         const deckId = row.kind === "slides" ? row.deckId : undefined;
         const slidesView =
           row.kind === "slides"
-            ? slidesRowViewFor(row, deckId ? (store.deckNotFound[deckId] ? null : store.deckCache[deckId]) : null)
+            ? slidesRowViewFor(row, deckId ? (store.deckNotFound[deckId] ? null : store.deckCache[deckId]) : null, store.liveFolderFiles)
             : null;
         return rowCanFire(row, action, { supported: view.supported, slidesView });
       };

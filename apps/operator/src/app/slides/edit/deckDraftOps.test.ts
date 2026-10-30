@@ -16,6 +16,7 @@ import {
   setSlideData,
   setSlideHold,
   setSlideLabel,
+  setSlideMuted,
   setSlideTemplate,
 } from "./deckDraftOps";
 
@@ -232,5 +233,13 @@ describe("timing", () => {
     expect(parseHoldText(" 6.5 ")).toBe(6.5);
     expect(parseHoldText("0")).toBeUndefined();
     expect(parseHoldText("abc")).toBeUndefined();
+  });
+});
+
+describe("setSlideMuted", () => {
+  it("mutes a video slide; off removes the flag (plays with sound)", () => {
+    const d = setSlideMuted(addMediaSlide(three(), clip, "v"), "v", true);
+    expect(d.slides[3]!.muted).toBe(true);
+    expect("muted" in setSlideMuted(d, "v", false).slides[3]!).toBe(false);
   });
 });

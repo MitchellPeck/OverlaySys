@@ -17,9 +17,10 @@ export function useThumbCtx(): ThumbCtx | null {
   const deckNotFound = useStore((s) => s.deckNotFound);
   const channelStates = useStore((s) => s.channelStates);
   const songSessions = useStore((s) => s.songSessions);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   return useMemo(
     () =>
-      buildThumbCtx({ show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions }),
-    [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, channelStates, songSessions],
+      buildThumbCtx({ show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles, channelStates, songSessions }),
+    [show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles, channelStates, songSessions],
   );
 }

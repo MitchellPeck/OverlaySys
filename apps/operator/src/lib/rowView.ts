@@ -16,7 +16,7 @@ import type { ItemKind } from "@overlaysys/ui";
 import { formatClock } from "./mediaTake";
 import { effectiveRowData, type RowDataOverrides } from "./rowData";
 import type { RowLike } from "./rowLike";
-import { slidesRowViewFor } from "./slidesRowView";
+import { slidesRowViewFor, type LiveFolderMap } from "./slidesRowView";
 
 export type { RowLike } from "./rowLike";
 
@@ -32,6 +32,8 @@ export type RowViewCtx = {
   deckNotFound?: Record<string, true>;
   /** Media library, so a row picked from it shows the item's name. */
   mediaItems?: Pick<MediaItem, "id" | "name">[];
+  /** Live-folder files (store liveFolderFiles): a live-folder deck's slides come from its folder. */
+  liveFolderFiles?: LiveFolderMap;
 };
 
 /** A Media row's name: its label, else its library item's name, else the file name. */
@@ -158,12 +160,13 @@ function rowViewInner(row: RowLike, ctx: RowViewCtx): RowView {
     case "slides": {
       const deckId = (row as { deckId?: string }).deckId;
       const deck = !deckId ? null : ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId];
-      const v = slidesRowViewFor(row, deck);
+      const v = slidesRowViewFor(row, deck, ctx.liveFolderFiles);
       if (!v) {
         return { ...base(row, "slides"), title: "Slides deck", detail: "Needs Slides decks", supported: false };
       }
-      const warning =
-        v.missingSlides > 0
+      const warning = v.blockedReason
+        ? v.blockedReason
+        : v.missingSlides > 0
           ? `${v.missingSlides} slide${v.missingSlides === 1 ? "" : "s"} no longer in the deck`
           : null;
       return { ...base(row, "slides"), title: v.title, detail: v.detail, supported: !v.missingDeck, warning };

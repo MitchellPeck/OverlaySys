@@ -1,5 +1,5 @@
-import type { ChannelState, Deck, SlidesRowFields, SlidesRowView } from "@overlaysys/core";
-import { SLIDES_END_OF_DECK, isMediaOnlyDeck, slidesRowView } from "@overlaysys/core";
+import type { ChannelState, Deck, LiveFolderFile, MediaRef, ResolvedSlide, SlidesRowFields, SlidesRowView as CoreSlidesRowView } from "@overlaysys/core";
+import { SLIDES_END_OF_DECK, isMediaOnlyDeck, resolveFolderDeckSlides, slidesRowView } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { useStore } from "./store";
 import { useDeck } from "../app/slides/useDeck";
@@ -28,9 +28,52 @@ export function useDeckFor(row: RowLike): Deck | null | undefined {
   return d?.deletedAt ? null : d;
 }
 
-export function slidesRowViewFor(row: RowLike, deck: Deck | null | undefined): SlidesRowView | null {
+/** The store's live-folder answers, keyed by folder id. */
+export type LiveFolderMap = Record<string, { files: LiveFolderFile[]; configured: boolean } | undefined>;
+
+/** A slide on Live; a live folder's graphics carry their file instead of a design. */
+export type OperatorResolvedSlide = ResolvedSlide & { media?: Pick<MediaRef, "assetUrl" | "mediaType"> };
+
+/**
+ * The operator's slides row view. `blockedReason` says plainly why a deck
+ * with no slides can't be taken (a live folder that's empty or not on this computer).
+ */
+export type SlidesRowView = Omit<CoreSlidesRowView, "slides"> & { slides: OperatorResolvedSlide[]; blockedReason?: string };
+
+export const FOLDER_EMPTY_REASON = "This folder has no photos or videos yet.";
+export const FOLDER_ELSEWHERE_REASON = "These graphics are on the show computer.";
+
+/**
+ * A live-folder deck's row view: its slides are the folder's files in play
+ * order (the deck has none of its own). `folder` undefined = not loaded yet.
+ */
+export function folderSlidesRowView(
+  row: RowLike,
+  deck: Deck,
+  folder: { files: LiveFolderFile[]; configured: boolean } | undefined,
+): SlidesRowView {
+  const base = { title: deck.name, missingDeck: false, missingSlides: 0, licensing: deck.licensing.kind };
+  if (!folder) return { ...base, detail: "Loading…", slides: [] };
+  if (!folder.configured) return { ...base, detail: "Live folder", slides: [], blockedReason: FOLDER_ELSEWHERE_REASON };
+  const resolved = resolveFolderDeckSlides(deck.folderOrder, folder.files, deck.defaultHoldSec, deck.liveFolderId!);
+  if (resolved.length === 0) return { ...base, detail: "Live folder", slides: [], blockedReason: FOLDER_EMPTY_REASON };
+  const slides: OperatorResolvedSlide[] = resolved.map((m, position) => ({
+    key: `${row.id}:${position}:${m.key}`,
+    slideId: m.key,
+    position,
+    templateId: "",
+    data: {},
+    ...(m.label !== undefined ? { label: m.label } : {}),
+    media: { assetUrl: m.assetUrl, mediaType: m.mediaType },
+  }));
+  return { ...base, detail: `${slides.length} graphic${slides.length === 1 ? "" : "s"}`, slides };
+}
+
+/** The row's view; a live-folder deck reads its slides from `folders` (the store's liveFolderFiles). */
+export function slidesRowViewFor(row: RowLike, deck: Deck | null | undefined, folders?: LiveFolderMap): SlidesRowView | null {
   if (row.kind !== "slides") return null;
   const d = deck?.deletedAt ? null : deck;
+  if (d?.liveFolderId) return folderSlidesRowView(row, d, folders?.[d.liveFolderId]);
   return slidesRowView(row as SlidesRowFields, d);
 }
 
@@ -124,6 +167,7 @@ export function slidesStripNotice(
     (c) => c?.slidesSession?.rowId === row.id && c.slidesSession.atEnd,
   );
   if (atEnd) return SLIDES_END_OF_DECK;
+  if (view.blockedReason) return view.blockedReason;
   if (view.missingDeck) return "Missing deck — restore it from Slides";
   if (view.missingSlides > 0) {
     return `${view.missingSlides} slide${view.missingSlides === 1 ? "" : "s"} no longer in the deck were skipped`;
@@ -161,10 +205,11 @@ export function slidesBlankMessage(channel = "program"): ClientMessage | null {
 export const MISSING_DECK_TITLE = "Missing deck — restore it from Slides";
 export function slidesControlState(
   row: RowLike,
-  c: { deckCache: Record<string, Deck>; deckNotFound?: Record<string, true> },
+  c: { deckCache: Record<string, Deck>; deckNotFound?: Record<string, true>; liveFolderFiles?: LiveFolderMap },
 ): { enabled: boolean; title?: string } {
   const deckId = (row as { deckId?: string }).deckId;
-  const view = slidesRowViewFor(row, deckId ? (c.deckNotFound?.[deckId] ? null : c.deckCache[deckId]) : null);
+  const view = slidesRowViewFor(row, deckId ? (c.deckNotFound?.[deckId] ? null : c.deckCache[deckId]) : null, c.liveFolderFiles);
   if (view && !view.missingDeck && view.slides.length > 0) return { enabled: true };
-  return view?.missingDeck ? { enabled: false, title: MISSING_DECK_TITLE } : { enabled: false };
+  if (view?.missingDeck) return { enabled: false, title: MISSING_DECK_TITLE };
+  return view?.blockedReason ? { enabled: false, title: view.blockedReason } : { enabled: false };
 }

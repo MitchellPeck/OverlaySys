@@ -247,18 +247,27 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
       }
       case "slides": {
         const deckId = (row as { deckId?: string }).deckId;
-        const view = slidesRowViewFor(row, deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null);
+        const view = slidesRowViewFor(
+          row,
+          deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null,
+          ctx.liveFolderFiles,
+        );
         if (!view) return [placeholder(row.id, "Slides decks aren't available yet")];
         return view.slides.map((s, i) => ({
           key: s.key,
           label: s.label ?? `Slide ${i + 1}`,
           group: null,
-          render: {
-            kind: "template" as const,
-            templateId: s.templateId,
-            data: slideAirData(s.data, ctx.templateCache[s.templateId]),
-            airData: true as const,
-          },
+          // A live folder's graphic shows the file itself (a video has no poster there).
+          render: s.media
+            ? s.media.mediaType === "image"
+              ? { kind: "image" as const, src: s.media.assetUrl }
+              : { kind: "poster" as const, src: null }
+            : {
+                kind: "template" as const,
+                templateId: s.templateId,
+                data: slideAirData(s.data, ctx.templateCache[s.templateId]),
+                airData: true as const,
+              },
           state: slidesThumbState(row, i, ctx.channelStates),
           blanked: false,
         }));

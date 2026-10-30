@@ -152,3 +152,41 @@ describe("auto-advance on Live", () => {
     expect(a.slidesCountdownSec(2_000, 1_000, 2_000)).toBe(0);
   });
 });
+
+describe("live-folder decks on Live", () => {
+  const folderDeck = deck({ slides: [], liveFolderId: "f1", folderOrder: [{ file: "b.png", holdSec: 3 }], defaultHoldSec: 8, loop: true });
+  const file = (name: string, mediaType: "image" | "video" = "image") => ({ name, mediaType, size: 1, mtimeMs: 1 });
+  it("slides come from the folder's files in play order, with their media", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, { f1: { files: [file("a.png"), file("b.png"), file("c.mp4", "video")], configured: true } })!;
+    expect(v.slides.map((s) => s.label)).toEqual(["b.png", "a.png", "c.mp4"]);
+    expect(v.slides.map((s) => s.position)).toEqual([0, 1, 2]);
+    expect(v.slides[2]!.media).toEqual({ assetUrl: "/media-folders/f1/c.mp4", mediaType: "video" });
+    expect(v.detail).toBe("3 graphics");
+    expect(v.blockedReason).toBeUndefined();
+    expect(a.slidesControlState({ ...row }, { deckCache: { d1: folderDeck }, liveFolderFiles: { f1: { files: [file("a.png")], configured: true } } })).toEqual({ enabled: true });
+  });
+  it("an empty folder: no slides, with a plain reason", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, { f1: { files: [], configured: true } })!;
+    expect(v.slides).toEqual([]);
+    expect(v.blockedReason).toBe("This folder has no photos or videos yet.");
+    expect(a.slidesControlState(row, { deckCache: { d1: folderDeck }, liveFolderFiles: { f1: { files: [], configured: true } } })).toEqual({
+      enabled: false,
+      title: "This folder has no photos or videos yet.",
+    });
+  });
+  it("a folder not set up on this computer: no slides, says where the graphics are", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, { f1: { files: [], configured: false } })!;
+    expect(v.slides).toEqual([]);
+    expect(v.blockedReason).toBe("These graphics are on the show computer.");
+  });
+  it("still loading the folder: no slides, no reason yet", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, {})!;
+    expect(v.slides).toEqual([]);
+    expect(v.detail).toBe("Loading…");
+    expect(v.blockedReason).toBeUndefined();
+  });
+  it("the strip notice gives the reason", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, { f1: { files: [], configured: true } })!;
+    expect(a.slidesStripNotice(row, v, {})).toBe("This folder has no photos or videos yet.");
+  });
+});

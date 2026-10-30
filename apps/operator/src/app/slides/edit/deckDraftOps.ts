@@ -110,6 +110,14 @@ export function setAdvanceOnEnd(deck: Deck, id: string, on: boolean): Deck {
   return mapSlide(deck, id, (s) => ({ ...s, advanceOnEnd: on }));
 }
 
+/** A video slide plays silently when muted; off (the default) plays its sound. */
+export function setSlideMuted(deck: Deck, id: string, on: boolean): Deck {
+  return mapSlide(deck, id, (s) => {
+    const { muted: _old, ...rest } = s;
+    return on ? { ...rest, muted: true } : rest;
+  });
+}
+
 /** Hold-time text → seconds; blank or not a positive number → undefined (use the default). */
 export function parseHoldText(text: string): number | undefined {
   const t = text.trim();
