@@ -110,6 +110,48 @@ describe("channelPlayer", () => {
     return { player, loader, mounts, errors };
   }
 
+  it("a mount that throws is logged with the template id and the player takes the next state", async () => {
+    const mounts: FakeMount[] = [];
+    const mountErrors: string[] = [];
+    let failNext = true;
+    const player = createChannelPlayer<FakeMount>({
+      loadTemplate: (id) => Promise.resolve(tpl(id)),
+      mount: (t, data) => {
+        if (failNext) {
+          failNext = false;
+          throw new Error("bad tracks");
+        }
+        const m = new FakeMount(t.id, data);
+        mounts.push(m);
+        return m;
+      },
+      onMountError: (id) => mountErrors.push(id),
+    });
+    await expect(player.apply(take("a", 1))).resolves.toBeUndefined();
+    expect(mountErrors).toEqual(["a"]);
+    expect(player.currentTemplate).toBeNull();
+    expect(player.loading).toBe(false);
+    await player.apply(take("b", 2));
+    expect(mounts).toHaveLength(1);
+    expect(player.currentTemplate?.id).toBe("b");
+  });
+
+  it("an update that throws is logged and leaves the mount usable", async () => {
+    const { player, loader, mounts } = setup();
+    const p = player.apply(take("a", 1, { v: "1" }));
+    loader.received(tpl("a"));
+    await p;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mounts[0]!.update = () => {
+      throw new Error("bad data");
+    };
+    await expect(player.apply(take("a", 1, { v: "2" }))).resolves.toBeUndefined();
+    await expect(player.apply(take("a", 2, { v: "3" }))).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    expect(player.currentTemplate?.id).toBe("a");
+    warn.mockRestore();
+  });
+
   it("mounts a take and plays it in", async () => {
     const { player, loader, mounts } = setup();
     const done = player.apply(take("a", 1, { x: "1" }));

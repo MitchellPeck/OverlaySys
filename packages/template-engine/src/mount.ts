@@ -281,8 +281,16 @@ export function mountTemplate(
   // and similar passive hosts can't accidentally interact.
   if (mode === "edit") root.style.pointerEvents = "auto";
 
-  let inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
-  let outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
+  let inTl: gsap.core.Timeline;
+  let outTl: gsap.core.Timeline;
+  try {
+    inTl = buildGsapTimeline(template.timelines.in, nodes, { paused: true });
+    outTl = buildGsapTimeline(template.timelines.out, nodes, { paused: true });
+  } catch (err) {
+    // Malformed tracks: don't leave the already-attached root orphaned on the stage.
+    root.remove();
+    throw err;
+  }
   // Note: edit-mode callers (the Canvas component) drive initial scrub
   // explicitly via seek()/scrub() so they own the "design pose" semantics.
   let lastScrub: { which: "in" | "out"; time: number } | null = null;

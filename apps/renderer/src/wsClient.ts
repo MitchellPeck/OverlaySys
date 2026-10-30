@@ -31,6 +31,33 @@ export function heartbeatAction(now: number, lastInboundAt: number, deadAfterMs:
   return now - lastInboundAt > deadAfterMs ? "reconnect" : "ping";
 }
 
+/**
+ * Decode one server frame and hand it to every listener. A bad frame is a
+ * decode failure; a throwing listener is its own failure and never keeps the
+ * later listeners from seeing the message.
+ */
+export function dispatchServerMessage(raw: string, listeners: Iterable<Listener>): void {
+  let msg: ServerMessage;
+  try {
+    msg = ServerMessageSchema.parse(JSON.parse(raw));
+  } catch (e) {
+    console.warn("[ws] failed to decode", e);
+    return;
+  }
+  if (msg.type === "hello" && protocolMismatch(msg.protocolVersion)) {
+    console.warn(
+      `[ws] server protocol v${msg.protocolVersion}, renderer speaks v${PROTOCOL_VERSION} — update the older side`,
+    );
+  }
+  for (const l of [...listeners]) {
+    try {
+      l(msg);
+    } catch (e) {
+      console.warn("[ws] listener failed", e);
+    }
+  }
+}
+
 export class WsClient {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
@@ -82,17 +109,7 @@ export class WsClient {
     ws.addEventListener("message", (ev) => {
       if (this.ws !== ws) return;
       this.lastInboundAt = Date.now();
-      try {
-        const msg = ServerMessageSchema.parse(JSON.parse(ev.data));
-        if (msg.type === "hello" && protocolMismatch(msg.protocolVersion)) {
-          console.warn(
-            `[ws] server protocol v${msg.protocolVersion}, renderer speaks v${PROTOCOL_VERSION} — update the older side`,
-          );
-        }
-        for (const l of this.listeners) l(msg);
-      } catch (e) {
-        console.warn("[ws] failed to decode", e);
-      }
+      dispatchServerMessage(ev.data, this.listeners);
     });
     ws.addEventListener("close", () => {
       if (this.ws !== ws) return;

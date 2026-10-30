@@ -21,6 +21,8 @@ export interface ChannelPlayerDeps<M extends PlayerMount> {
   /** Called right after a fresh mount (blink, session-start ramp). */
   afterFreshMount?(template: Template, mount: M, sessionStart: boolean): void;
   onLoadError?(templateId: string, err: unknown): void;
+  /** mount() threw: nothing is on screen for this take, the player carries on. */
+  onMountError?(templateId: string, err: unknown): void;
 }
 
 export interface ChannelPlayer {
@@ -68,6 +70,15 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
     }
   }
 
+  /** A template's update threw (bad data): keep what is on screen and carry on. */
+  function safeUpdate(m: M, templateId: string, data: Record<string, string>): void {
+    try {
+      m.update(data);
+    } catch (err) {
+      console.warn(`[renderer] update failed for template ${templateId}`, err);
+    }
+  }
+
   function retire(m: M, auto = false): Promise<void> {
     const existing = retiring.get(m);
     if (existing) return existing;
@@ -107,7 +118,7 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
         return;
       }
       latestData = data;
-      current?.mount.update(data);
+      if (current) safeUpdate(current.mount, current.template.id, data);
       return;
     }
 
@@ -131,7 +142,7 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
       loading = false;
       await m.playOutTimeline().catch(() => {});
       if (myGen !== gen) return;
-      m.update(latestData);
+      safeUpdate(m, templateId, latestData);
       await m.playIn().catch(() => {});
       return;
     }
@@ -153,7 +164,15 @@ export function createChannelPlayer<M extends PlayerMount>(deps: ChannelPlayerDe
     loading = false;
 
     const sessionStart = deps.beforeFreshMount?.() ?? false;
-    const m = deps.mount(tpl, latestData);
+    let m: M;
+    try {
+      m = deps.mount(tpl, latestData);
+    } catch (err) {
+      // The engine removes any root it had already attached; nothing to retire.
+      if (deps.onMountError) deps.onMountError(templateId, err);
+      else console.warn(`[renderer] template ${templateId} failed to mount`, err);
+      return;
+    }
     current = { mount: m, template: tpl };
     m.playIn().catch(() => {});
     deps.afterFreshMount?.(tpl, m, sessionStart);

@@ -164,6 +164,9 @@ export function Renderer({ channel, debug = false }: Props) {
           });
         }
       },
+      onMountError: (id, err) => {
+        console.warn(`[renderer] ${channel}: template ${id} failed to mount — graphic skipped`, err);
+      },
       onLoadError: (id, err) => {
         console.warn(`[renderer] ${channel}: template ${id} failed to load — stage cleared`, err);
       },
@@ -173,7 +176,7 @@ export function Renderer({ channel, debug = false }: Props) {
     function applyState(state: ChannelState) {
       if (!stageRef.current) return;
       if (isStageRef.current) return;
-      void player.apply(state);
+      player.apply(state).catch((err) => console.warn(`[renderer] ${channel}: apply failed`, err));
     }
 
     const subscription = subscriptionRef.current;
