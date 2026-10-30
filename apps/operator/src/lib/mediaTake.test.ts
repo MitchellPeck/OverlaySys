@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChannelMedia, ChannelState, VideoRow } from "@overlaysys/core";
-import { onAirMediaFor, posterPathFor, seekTargetForKey, videoRowTakeMessage } from "./mediaTake";
+import type { ChannelMedia, ChannelState, ImageRow, VideoRow } from "@overlaysys/core";
+import { mediaRowTakeMessage, onAirMediaFor, posterPathFor, seekTargetForKey, videoRowTakeMessage } from "./mediaTake";
 
 const row = (over: Partial<VideoRow> = {}): VideoRow => ({
   kind: "video", id: "v1", assetUrl: "/a.mp4", volume: 1, endAction: "clear", transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, ...over,
@@ -50,6 +50,33 @@ describe("videoRowTakeMessage showId", () => {
   });
   it("omits showId without one", () => {
     expect(videoRowTakeMessage(row())).not.toHaveProperty("showId");
+  });
+});
+
+describe("mediaRowTakeMessage", () => {
+  it("mediaRowTakeMessage builds image and video takes with loop and muted", () => {
+    expect(mediaRowTakeMessage(row({ loop: true, muted: true }), "show-1")).toEqual({
+      type: "media_take", channel: "program", rowId: "v1", showId: "show-1",
+      assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", loop: true, muted: true,
+      transitionIn: { style: "fade", durationMs: 500 }, transitionOut: { style: "fade", durationMs: 500 },
+    });
+    const img: ImageRow = {
+      kind: "media", mediaType: "image", id: "p1", assetUrl: "/assets/p.png", label: "Welcome", fit: "cover",
+      channelHint: "alt", transitionIn: { style: "cut", durationMs: 0 }, transitionOut: { style: "fade", durationMs: 500 },
+    };
+    expect(mediaRowTakeMessage(img)).toEqual({
+      type: "media_take", channel: "alt", rowId: "p1", assetUrl: "/assets/p.png", label: "Welcome",
+      volume: 1, endAction: "hold", mediaType: "image", fit: "cover",
+      transitionIn: { style: "cut", durationMs: 0 }, transitionOut: { style: "fade", durationMs: 500 },
+    });
+  });
+  it("leaves loop and muted off a video take that doesn't set them", () => {
+    const msg = mediaRowTakeMessage(row());
+    expect(msg).not.toHaveProperty("loop");
+    expect(msg).not.toHaveProperty("muted");
+  });
+  it("keeps videoRowTakeMessage as an alias", () => {
+    expect(videoRowTakeMessage).toBe(mediaRowTakeMessage);
   });
 });
 

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ChannelMedia, MediaPlayback, MediaStatus, MediaTransition } from "@overlaysys/core";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { defaultServerUrl } from "./wsClient";
 import type { StageSize } from "./stageSize";
 import {
   initialMountPlan,
+  mediaElementProps,
   mirrorCorrection,
   pendingSeek,
   pickAudioSink,
@@ -48,7 +49,7 @@ type Props = {
 };
 
 /**
- * Full-frame video slot beneath the template stage. Each take is its own
+ * Full-frame media slot (video or photo) beneath the template stage. Each take is its own
  * keyed element; an outgoing take stays mounted while its Out transition
  * plays, so a clear fades and a new take crossfades over the old one.
  */
@@ -66,15 +67,13 @@ export function MediaLayer(props: Props) {
 
   return (
     <>
-      {layers.map((l) => (
-        <MediaVideo
-          key={l.media.takenAt}
-          {...props}
-          media={l.media}
-          leaving={l.leaving}
-          onGone={remove}
-        />
-      ))}
+      {layers.map((l) =>
+        l.media.mediaType === "image" ? (
+          <MediaImage key={l.media.takenAt} {...props} media={l.media} leaving={l.leaving} onGone={remove} />
+        ) : (
+          <MediaVideo key={l.media.takenAt} {...props} media={l.media} leaving={l.leaving} onGone={remove} />
+        ),
+      )}
     </>
   );
 }
@@ -100,6 +99,7 @@ function MediaVideo({
 }: VideoProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animRef = useRef<HTMLDivElement | null>(null);
+  const element = mediaElementProps(media, isMirror);
   const appliedRef = useRef<AppliedSeek>(initialMountPlan(media).applied);
   const warningRef = useRef<string | undefined>(undefined);
   const mediaRef = useRef(media);
@@ -211,7 +211,7 @@ function MediaVideo({
     const plan = initialMountPlan(mediaRef.current);
     let disposed = false;
 
-    if (isMirror) {
+    if (element.muted) {
       v.setAttribute("muted", "");
       v.muted = true;
     }
@@ -392,6 +392,36 @@ function MediaVideo({
   }, [media.paused, media.seek?.seq, media.volume, isMirror]);
 
   return (
+    <MediaFrame matte={matte} scale={scale} stageSize={stageSize} animRef={animRef} animateIn={animateIn}>
+      <video
+        ref={videoRef}
+        playsInline
+        preload="auto"
+        disablePictureInPicture
+        loop={element.loop}
+        style={{ width: "100%", height: "100%", objectFit: element.objectFit, background: "#000" }}
+      />
+    </MediaFrame>
+  );
+}
+
+/** The stage-sized, scaled box the media sits in; `animRef` is what the transitions move. */
+function MediaFrame({
+  matte,
+  scale,
+  stageSize,
+  animRef,
+  animateIn,
+  children,
+}: {
+  matte: boolean;
+  scale: number;
+  stageSize: StageSize;
+  animRef: RefObject<HTMLDivElement | null>;
+  animateIn: boolean;
+  children: ReactNode;
+}) {
+  return (
     <div
       style={{
         position: "absolute",
@@ -401,7 +431,7 @@ function MediaVideo({
         height: stageSize.h,
         transform: `translate(-50%, -50%) scale(${scale})`,
         transformOrigin: "50% 50%",
-        // Same silhouette trick as the template stage: the video area keys solid white.
+        // Same silhouette trick as the template stage: the media area keys solid white.
         filter: matte ? "brightness(0) invert(1)" : undefined,
         zIndex: 1,
         pointerEvents: "none",
@@ -411,14 +441,110 @@ function MediaVideo({
         ref={animRef}
         style={{ width: "100%", height: "100%", opacity: animateIn ? 0 : 1, willChange: "opacity, transform" }}
       >
-        <video
-          ref={videoRef}
-          playsInline
-          preload="auto"
-          disablePictureInPicture
-          style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
-        />
+        {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * A photo in the media slot: same In/Out transitions as a video, no audio
+ * and no transport. Reports "playing" once it has loaded so the operator
+ * sees it on air; it never ends on its own.
+ */
+function MediaImage({ media, channel, isMirror, matte, scale, stageSize, send, leaving, onGone }: VideoProps) {
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const animRef = useRef<HTMLDivElement | null>(null);
+  const mediaRef = useRef(media);
+  mediaRef.current = media;
+  const element = mediaElementProps(media, isMirror);
+  const takenAt = media.takenAt;
+  const animateIn = useRef(shouldAnimateIn(media)).current;
+  const leavingRef = useRef(false);
+  const stopTransitionRef = useRef<() => void>(() => {});
+
+  function runTransition(dir: TransitionDirection, t: MediaTransition): Promise<void> {
+    stopTransitionRef.current();
+    const el = animRef.current;
+    const frames = transitionKeyframes(t.style, dir);
+    if (!el || !frames || t.durationMs <= 0) {
+      if (el) {
+        el.style.opacity = dir === "in" ? "1" : "0";
+        el.style.transform = "";
+      }
+      return Promise.resolve();
+    }
+    if (dir === "in") el.style.opacity = "";
+    const anim = el.animate(dir === "in" ? frames : frames.slice(-1), {
+      duration: t.durationMs,
+      easing: transitionEasing(t.style, dir),
+      fill: "forwards",
+    });
+    let finish: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    anim.addEventListener("finish", () => finish(), { once: true });
+    stopTransitionRef.current = () => {
+      try {
+        anim.commitStyles();
+      } catch {
+        // commitStyles throws if the element isn't rendered; nothing to keep then.
+      }
+      anim.cancel();
+      finish();
+    };
+    return done;
+  }
+
+  function report(status: MediaStatus, error?: string) {
+    if (isMirror || leavingRef.current) return;
+    send({ type: "media_status", channel, takenAt, status, currentTime: 0, duration: 0, ...(error ? { error } : {}) });
+  }
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
+    const onLoad = () => {
+      report("playing");
+      if (animateIn && !leavingRef.current) void runTransition("in", mediaRef.current.transitionIn);
+    };
+    const onError = () => report("error", "image failed to load");
+    img.addEventListener("load", onLoad, { once: true });
+    img.addEventListener("error", onError);
+    img.src = resolveMediaUrl(mediaRef.current.assetUrl, defaultServerUrl());
+    return () => {
+      stopTransitionRef.current();
+      img.removeEventListener("load", onLoad);
+      img.removeEventListener("error", onError);
+    };
+    // Mount-once per take; parent keys this component by takenAt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!leaving || leavingRef.current) return;
+    leavingRef.current = true;
+    let cancelled = false;
+    const out = leaving.cut ? Promise.resolve() : runTransition("out", mediaRef.current.transitionOut);
+    if (leaving.cut) stopTransitionRef.current();
+    void out.then(() => {
+      if (!cancelled) onGone(takenAt);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaving]);
+
+  return (
+    <MediaFrame matte={matte} scale={scale} stageSize={stageSize} animRef={animRef} animateIn={animateIn}>
+      <img
+        ref={imgRef}
+        alt=""
+        draggable={false}
+        style={{ width: "100%", height: "100%", objectFit: element.objectFit, background: "#000", display: "block" }}
+      />
+    </MediaFrame>
   );
 }

@@ -220,6 +220,35 @@ describe("mediaStatus", () => {
   });
 });
 
+describe("photos, loops and mutes", () => {
+  it("mediaTake of an image stores mediaType \"image\" and never reports ended", () => {
+    channels.mediaTake(ch, { ...ARGS, assetUrl: "/assets/p.png", mediaType: "image", fit: "cover" }, 1000);
+    expect(media()).toMatchObject({ mediaType: "image", fit: "cover", assetUrl: "/assets/p.png" });
+    channels.mediaStatus(ch, 1000, { status: "ended", currentTime: 0, duration: 0 }, 2000);
+    expect(media()).toMatchObject({ mediaType: "image", paused: false });
+    expect(media()?.playback.status).not.toBe("ended");
+  });
+
+  it("mediaTake defaults to a video that neither loops nor mutes", () => {
+    channels.mediaTake(ch, ARGS, 1000);
+    expect(media()).toMatchObject({ mediaType: "video", fit: "contain", loop: false, muted: false });
+    expect(media()).not.toHaveProperty("owner");
+  });
+
+  it("mediaTake carries loop, muted and owner", () => {
+    channels.mediaTake(ch, { ...ARGS, loop: true, muted: true, owner: "deck:d1" }, 1000);
+    expect(media()).toMatchObject({ loop: true, muted: true, owner: "deck:d1" });
+  });
+
+  it("mediaStatus \"ended\" on a looping video seeks to 0 and keeps playing", () => {
+    channels.mediaTake(ch, { ...ARGS, loop: true }, 1000);
+    states = [];
+    channels.mediaStatus(ch, 1000, { status: "ended", currentTime: 300, duration: 300 }, 2000);
+    expect(media()).toMatchObject({ paused: false, seek: { time: 0, seq: 1 }, playback: { status: "playing" } });
+    expect(states).toHaveLength(1);
+  });
+});
+
 describe("takePvwToPgm", () => {
   it("does not promote media", () => {
     const pvw = `${ch}-pvw`;

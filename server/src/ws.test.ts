@@ -259,6 +259,18 @@ describe("ws song takes set liveRow", () => {
     songSession.end(ch);
   });
 
+  it("media_take carries photo, fit, loop, muted and owner to the media slot", async () => {
+    const ch = `t-${Date.now()}-media`;
+    const sock = connect();
+    await sock.client({
+      type: "media_take", channel: ch, rowId: "p1", assetUrl: "/assets/p.png", volume: 1, endAction: "hold",
+      mediaType: "image", fit: "cover", loop: true, muted: true, owner: "deck:d1",
+    });
+    await vi.waitFor(() =>
+      expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "cover", loop: true, muted: true, owner: "deck:d1" }),
+    );
+  });
+
   it("song_take sets liveRow on its channel", async () => {
     mockLibrary();
     const ch = `t-${Date.now()}-song`;

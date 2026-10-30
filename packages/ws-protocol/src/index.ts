@@ -236,6 +236,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     label: z.string().optional(),
     volume: z.number().min(0).max(1),
     endAction: MediaEndActionSchema,
+    /** Omitted by older senders; the server treats the take as a video that fits "contain". */
+    mediaType: z.enum(["image", "video"]).optional(),
+    fit: z.enum(["contain", "cover", "fill"]).optional(),
+    loop: z.boolean().optional(),
+    /** Full-screen videos play audio unless this is true. */
+    muted: z.boolean().optional(),
+    /** Who sent the take (a media-deck session marks its own). */
+    owner: z.string().optional(),
     /** Omitted by older senders; the server falls back to a 500 ms fade. */
     transitionIn: MediaTransitionSchema.optional(),
     transitionOut: MediaTransitionSchema.optional(),

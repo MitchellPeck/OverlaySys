@@ -48,10 +48,11 @@ export function rampGain(from: number, to: number, elapsedMs: number, durationMs
 /**
  * Playback time (s) at which a self-clearing video should start its Out
  * transition so the fade lands on the last frame. Null when the video holds
- * at the end, cuts out, or its duration isn't known yet.
+ * at the end, loops, cuts out, or its duration isn't known yet.
  */
 export function endFadeStartsAt(media: ChannelMedia, duration: number): number | null {
   if (media.endAction !== "clear") return null;
+  if (media.loop) return null;
   if (media.transitionOut.style === "cut") return null;
   if (!Number.isFinite(duration) || duration <= 0) return null;
   return Math.max(0, duration - media.transitionOut.durationMs / 1000);

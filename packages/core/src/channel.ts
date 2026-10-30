@@ -90,6 +90,8 @@ export const ChannelMediaSchema = z.object({
   fit: z.enum(["contain", "cover", "fill"]).default("contain"),
   loop: z.boolean().default(false),
   muted: z.boolean().default(false),
+  /** Who took this media (e.g. a media-deck session), so it can tell its own takes apart. */
+  owner: z.string().optional(),
   // Defaulted so state from a pre-transition server still parses.
   transitionIn: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),
   transitionOut: MediaTransitionSchema.default(DEFAULT_MEDIA_TRANSITION),

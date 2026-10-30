@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChannelMedia } from "@overlaysys/core";
 import {
   initialMountPlan,
+  mediaElementProps,
   mirrorCorrection,
   pendingSeek,
   pickAudioSink,
@@ -22,6 +23,25 @@ describe("resolveMediaUrl", () => {
   });
   it("leaves absolute urls alone", () => {
     expect(resolveMediaUrl("https://cdn/x.mp4", "ws://h:4000/ws")).toBe("https://cdn/x.mp4");
+  });
+});
+
+describe("mediaElementProps", () => {
+  it("renders a photo as an image with its fit", () => {
+    expect(mediaElementProps({ ...base, mediaType: "image", fit: "cover" }, false)).toEqual({
+      element: "img", objectFit: "cover", loop: false, muted: false,
+    });
+  });
+  it("a video plays its audio, fits contain, and does not loop by default", () => {
+    expect(mediaElementProps(base, false)).toEqual({ element: "video", objectFit: "contain", loop: false, muted: false });
+  });
+  it("carries loop, muted and fill onto the video", () => {
+    expect(mediaElementProps({ ...base, loop: true, muted: true, fit: "fill" }, false)).toEqual({
+      element: "video", objectFit: "fill", loop: true, muted: true,
+    });
+  });
+  it("a mirror window is always muted", () => {
+    expect(mediaElementProps(base, true).muted).toBe(true);
   });
 });
 

@@ -71,6 +71,10 @@ describe("endFadeStartsAt", () => {
     expect(endFadeStartsAt(media(1), Number.NaN)).toBeNull();
   });
 
+  it("is null for a looping video, which never reaches its end", () => {
+    expect(endFadeStartsAt(media(1, { loop: true }), 300)).toBeNull();
+  });
+
   it("never goes below zero for a clip shorter than the fade", () => {
     expect(endFadeStartsAt(media(1, { transitionOut: { style: "fade", durationMs: 3000 } }), 2)).toBe(0);
   });

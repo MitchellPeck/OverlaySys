@@ -136,24 +136,9 @@ function rowMessages(
   if (row.kind === "scripture") {
     return [{ type: "scripture_take_slide", showId: state.loadedShowId ?? "", rowId: row.id, slideIdx: 0, channel }];
   }
-  if (row.kind === "video") {
-    return [
-      {
-        type: "media_take",
-        channel,
-        rowId: row.id,
-        assetUrl: row.assetUrl,
-        ...(row.label !== undefined ? { label: row.label } : {}),
-        volume: row.volume,
-        endAction: row.endAction,
-        transitionIn: row.transitionIn,
-        transitionOut: row.transitionOut,
-        ...(showId ? { showId } : {}),
-      },
-    ];
+  if (row.kind === "video" || row.kind === "media") {
+    return [mediaRowTakeMessage(row, channel, showId)];
   }
-  // Photo rows are not takeable from Companion yet.
-  if (row.kind === "media") return [];
   // [P3.21]
   if (row.kind === "slides") {
     return [{ type: "slides_take", showId: state.loadedShowId ?? "", rowId: row.id, channel }];
@@ -1479,5 +1464,34 @@ export function actionDefinitions(
       options: [timerDropdown(state), timerAmountInput],
       callback: wrap("stage_timer_adjust"),
     },
+  };
+}
+
+/** Same media_take the operator builds for a video or photo row. */
+function mediaRowTakeMessage(
+  row: Extract<RundownRow, { kind: "video" | "media" }>,
+  channel: string,
+  showId: string | null | undefined,
+): ClientMessage {
+  const common = {
+    type: "media_take" as const,
+    channel,
+    rowId: row.id,
+    assetUrl: row.assetUrl,
+    ...(row.label !== undefined ? { label: row.label } : {}),
+    transitionIn: row.transitionIn,
+    transitionOut: row.transitionOut,
+    ...(showId ? { showId } : {}),
+  };
+  if (row.kind === "media") {
+    return { ...common, volume: 1, endAction: "hold", mediaType: "image", fit: row.fit };
+  }
+  return {
+    ...common,
+    volume: row.volume,
+    endAction: row.endAction,
+    mediaType: "video",
+    ...(row.loop !== undefined ? { loop: row.loop } : {}),
+    ...(row.muted !== undefined ? { muted: row.muted } : {}),
   };
 }

@@ -558,6 +558,8 @@ export type MediaTakeArgs = {
   fit?: "contain" | "cover" | "fill";
   loop?: boolean;
   muted?: boolean;
+  /** Marks who took this media (a media-deck session); stored, not acted on here. */
+  owner?: string;
   transitionIn?: MediaTransition;
   transitionOut?: MediaTransition;
 };
@@ -578,6 +580,7 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
     fit: args.fit ?? "contain",
     loop: args.loop ?? false,
     muted: args.muted ?? false,
+    ...(args.owner !== undefined ? { owner: args.owner } : {}),
     transitionIn: args.transitionIn ?? DEFAULT_MEDIA_TRANSITION,
     transitionOut: args.transitionOut ?? DEFAULT_MEDIA_TRANSITION,
     takenAt,
@@ -651,6 +654,8 @@ export function mediaStatus(
 ): void {
   const m = states.get(channel)?.media;
   if (!m || m.takenAt !== takenAt) return;
+  // A photo has no end; a stray "ended" must not clear or pause it.
+  if (m.mediaType === "image" && report.status === "ended") return;
   const prev = m.playback;
   const next: MediaPlayback = {
     status: report.status,
@@ -662,7 +667,13 @@ export function mediaStatus(
   m.playback = next;
 
   if (report.status === "ended") {
-    if (m.endAction === "clear") {
+    if (m.loop) {
+      // Loop through the seek path so every window (and mirrors) restarts together.
+      m.seek = { time: 0, seq: (m.seek?.seq ?? 0) + 1 };
+      m.paused = false;
+      m.playback = { ...next, status: "playing", currentTime: 0 };
+      emit(channel);
+    } else if (m.endAction === "clear") {
       mediaClear(channel);
     } else {
       m.paused = true;

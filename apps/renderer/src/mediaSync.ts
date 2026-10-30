@@ -103,3 +103,24 @@ export function mirrorCorrection(localTime: number, primary: MediaPlayback, serv
   }
   return { action: "none" };
 }
+
+export type MediaElementProps = {
+  element: "img" | "video";
+  objectFit: ChannelMedia["fit"];
+  loop: boolean;
+  muted: boolean;
+};
+
+/**
+ * What the media slot mounts for a take: a photo as `<img>`, anything else
+ * as `<video>`. Full-screen video plays audio unless the take is muted;
+ * mirror windows are always silent.
+ */
+export function mediaElementProps(media: ChannelMedia, isMirror: boolean): MediaElementProps {
+  return {
+    element: media.mediaType === "image" ? "img" : "video",
+    objectFit: media.fit,
+    loop: media.mediaType !== "image" && media.loop,
+    muted: isMirror || media.muted,
+  };
+}

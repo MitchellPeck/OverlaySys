@@ -558,11 +558,31 @@ describe("dispatchAction — take_row_song_aware", () => {
             volume: 1,
             endAction: "clear",
           },
+          {
+            kind: "media",
+            mediaType: "image",
+            id: "r4",
+            assetUrl: "/assets/p.png",
+            fit: "cover",
+            transitionIn: { style: "fade", durationMs: 500 },
+            transitionOut: { style: "fade", durationMs: 500 },
+          },
         ],
       },
     });
     return s;
   }
+
+  it("by index on a photo row sends an image media_take", () => {
+    const r = dispatchAction(state(), "take_row_by_index", { rowIndex: 4, channel: "program" });
+    expect(r.messages).toEqual([
+      {
+        type: "media_take", channel: "program", rowId: "r4", showId: "show-1", assetUrl: "/assets/p.png",
+        volume: 1, endAction: "hold", mediaType: "image", fit: "cover",
+        transitionIn: { style: "fade", durationMs: 500 }, transitionOut: { style: "fade", durationMs: 500 },
+      },
+    ]);
+  });
 
   it("cursor on a song row sends take_song_sub with the chosen sub", () => {
     const s = apply(state(), { type: "local_cursor_set", rowId: "r2" });
