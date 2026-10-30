@@ -29,6 +29,7 @@ import * as projects from "./projects";
 import * as songSession from "./songSession";
 import { handleScriptureMessage } from "./scriptureHandlers";
 import { handleSlidesMessage } from "./slidesHandlers";
+import { handleMediaMessage } from "./mediaHandlers";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
@@ -1016,6 +1017,13 @@ export function handleConnection(
           await handleSlidesMessage(parsed, send);
           break;
         // [/P3.4]
+        case "list_media":
+        case "get_media_item":
+        case "save_media_item":
+        case "delete_media_item":
+        case "restore_media_item":
+          await handleMediaMessage(parsed, send);
+          break;
         // [P2b.33] stage layout
         case "set_stage_layout": {
           const cfg = await channelConfigs.getChannelConfig(parsed.channel);

@@ -15,6 +15,7 @@ import {
   DeckSchema,
   DeckMetaSchema,
   DeckLicensingSchema,
+  MediaItemSchema,
   HotcardSchema,
   HotkeySchema,
   ProjectSchema,
@@ -367,6 +368,12 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete_deck"), deckId: z.string() }),
   z.object({ type: z.literal("restore_deck"), deckId: z.string() }),
   z.object({ type: z.literal("duplicate_deck"), deckId: z.string() }),
+  // media library
+  z.object({ type: z.literal("list_media") }),
+  z.object({ type: z.literal("get_media_item"), id: z.string() }),
+  z.object({ type: z.literal("save_media_item"), item: MediaItemSchema }),
+  z.object({ type: z.literal("delete_media_item"), id: z.string() }),
+  z.object({ type: z.literal("restore_media_item"), id: z.string() }),
   z.object({
     type: z.literal("slides_take"),
     showId: z.string(),
@@ -653,6 +660,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     decks: z.array(DeckMetaSchema),
   }),
   z.object({ type: z.literal("deck"), deck: DeckSchema }),
+  // media library
+  z.object({
+    type: z.literal("media_list"),
+    items: z.array(MediaItemSchema.and(z.object({ usedBy: z.number() }))),
+  }),
+  z.object({ type: z.literal("media_item"), item: MediaItemSchema }),
   z.object({
     type: z.literal("song_converted"),
     conversionId: z.string(),
@@ -698,7 +711,7 @@ export type PcoLiveStateMessage = Extract<ServerMessage, { type: "pco_live_state
 // ───── Helpers ──────────────────────────────────────────────────────────────
 
 /** Payload keys whose `.id` names the entity a save request is about. */
-const REQUEST_ENTITY_KEYS = ["deck", "template", "layout", "show", "project", "hotcard", "song", "config"] as const;
+const REQUEST_ENTITY_KEYS = ["deck", "template", "layout", "show", "project", "hotcard", "song", "config", "item"] as const;
 /** Id fields that name the entity of a delete/get/duplicate/... request, in priority order. */
 const REQUEST_ID_KEYS = [
   "deckId",
@@ -712,6 +725,7 @@ const REQUEST_ID_KEYS = [
   "conversionId",
   "filename",
   "jobId",
+  "id",
 ] as const;
 
 /**

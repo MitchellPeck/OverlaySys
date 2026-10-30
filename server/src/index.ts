@@ -14,6 +14,7 @@ import { startHeaderMigration } from "./pco/headerMigration";
 // [/P1.20]
 // [P3.3]
 import { reloadDecks } from "./decks";
+import { reloadMedia } from "./media";
 import { reloadItemMappings } from "./pco/itemMappings";
 // [/P3.3]
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -142,6 +143,7 @@ await reloadTemplates();
 await reloadShows();
 // [P3.3] deck + PCO item-mapping registries
 await reloadDecks();
+await reloadMedia();
 await reloadItemMappings();
 // [/P3.3]
 // [P1.20] one-time PCO header migration (background; needs PCO or its cache)

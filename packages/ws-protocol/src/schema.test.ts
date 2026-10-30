@@ -169,3 +169,15 @@ describe("[I5] error op/id and requestRef", () => {
     expect(requestRef({ type: "clear_all_channels" } as never)).toEqual({ op: "clear_all_channels" });
   });
 });
+
+describe("media library messages", () => {
+  it("save_media_item round-trips", () => {
+    const item = { id: "m1", name: "A", kind: "file", mediaType: "image", assetUrl: "/assets/a.png", createdAt: "2026-01-01" };
+    const m = decodeClient(encode({ type: "save_media_item", item } as never));
+    expect(m.type).toBe("save_media_item");
+    expect(requestRef(m)).toEqual({ op: "save_media_item", id: "m1" });
+    expect(requestRef({ type: "delete_media_item", id: "m1" } as never)).toEqual({ op: "delete_media_item", id: "m1" });
+    const s = decodeServer(encode({ type: "media_list", items: [{ ...item, usedBy: 2 }] } as never));
+    expect(s.type).toBe("media_list");
+  });
+});
