@@ -18,6 +18,7 @@ import { DEFAULT_MEDIA_TRANSITION } from "@overlaysys/core";
 import * as scriptureSession from "./scriptureSession";
 import * as songSession from "./songSession";
 import * as slidesSession from "./slidesSession";
+import * as mediaDeckSession from "./mediaDeckSession";
 import * as templates from "./templates";
 import { isDraftTemplateId } from "./templateDrafts"; // [P2b.11]
 
@@ -216,7 +217,7 @@ export function take(
       delete s.queuedSong;
     }
     // [P3.5] slides session
-    if (slidesSession.dropAll(channel)) delete s.slidesSession;
+    if (slidesSession.dropAll(channel)) showMediaDeckSummary(s);
     // [/P3.5]
   }
   // Every take replaces whatever scripture owned the channel — including song
@@ -295,7 +296,7 @@ export function clear(
     }
     // [P3.5] slides session
     if (slidesSession.dropAll(channel)) {
-      delete getOrInit(channel).slidesSession;
+      showMediaDeckSummary(getOrInit(channel));
       droppedSlides = true;
     }
     // [/P3.5]
@@ -382,12 +383,37 @@ export function setSlidesSessionSummary(
   options?: { deferEmit?: boolean },
 ): void {
   const s = getOrInit(channel);
-  if (summary === null) delete s.slidesSession;
+  if (summary === null) showMediaDeckSummary(s);
   else s.slidesSession = summary;
   states.set(channel, s);
   if (!options?.deferEmit) emit(channel);
 }
 // [/P3.5]
+
+/**
+ * `slidesSession` carries one summary per channel. A graphics-slot deck owns
+ * it while live; otherwise it shows a media-slot deck running underneath
+ * (`slot: "media"`), or nothing.
+ */
+function showMediaDeckSummary(s: ChannelState): void {
+  const media = mediaDeckSession.summary(s.channel);
+  if (media) s.slidesSession = media;
+  else delete s.slidesSession;
+}
+
+/** A media-deck session's summary; held back while a graphics-slot deck owns `slidesSession`. */
+export function setMediaDeckSummary(
+  channel: string,
+  summary: SlidesSessionSummary | null,
+  options?: { deferEmit?: boolean },
+): void {
+  if (slidesSession.getSession(channel)) return;
+  const s = getOrInit(channel);
+  if (summary === null) delete s.slidesSession;
+  else s.slidesSession = summary;
+  states.set(channel, s);
+  if (!options?.deferEmit) emit(channel);
+}
 
 export function setQueuedSong(
   channel: string,
@@ -423,6 +449,9 @@ export function setActiveNull(channel: string): void {
  * This is the standard PVW→PGM behavior of a broadcast switcher.
  */
 export function takePvwToPgm(fromChannel: string, toChannel: string): void {
+  // A media deck on preview goes to program's media slot; a graphic on
+  // preview (if any) still promotes below.
+  mediaDeckSession.promote(fromChannel, toChannel);
   const src = states.get(fromChannel);
   if (!src || !src.active) return;
   const queued = src.active;
@@ -469,7 +498,7 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
   // promoted scripture intro carries its queue.
   if (scriptureSession.dropLive(toChannel)) delete pgm.scriptureSession;
   // [P3.5] a promoted graphic replaces any slides session live on the destination
-  if (slidesSession.dropAll(toChannel)) delete pgm.slidesSession;
+  if (slidesSession.dropAll(toChannel)) showMediaDeckSummary(pgm);
   // [/P3.5]
   let carriedScripture: QueuedScripture | null = null;
   if (queued.scriptureContext?.sub === "intro") {
@@ -558,13 +587,15 @@ export type MediaTakeArgs = {
   fit?: "contain" | "cover" | "fill";
   loop?: boolean;
   muted?: boolean;
-  /** Marks who took this media (a media-deck session); stored, not acted on here. */
+  /** Marks who took this media (a media-deck session); a take that isn't the running deck's stops it. */
   owner?: string;
   transitionIn?: MediaTransition;
   transitionOut?: MediaTransition;
 };
 
 export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()): void {
+  // Anything that takes the media slot stops a media deck it doesn't belong to.
+  mediaDeckSession.releaseForMediaTake(channel, args.owner);
   const s = getOrInit(channel);
   // takenAt is the take's identity — a late `ended` from the previous take
   // must never match, so force it strictly increasing even within one ms.
@@ -596,8 +627,12 @@ export function mediaTake(channel: string, args: MediaTakeArgs, now = Date.now()
 }
 
 export function mediaClear(channel: string, opts: { cut?: boolean } = {}): void {
+  const droppedDeck = mediaDeckSession.dropAll(channel, { deferEmit: true });
   const s = getOrInit(channel);
-  if (!s.media) return;
+  if (!s.media) {
+    if (droppedDeck) emit(channel);
+    return;
+  }
   s.media = null;
   if (opts.cut) s.mediaClearCut = true;
   else delete s.mediaClearCut;
@@ -679,6 +714,8 @@ export function mediaStatus(
       m.paused = true;
       emit(channel);
     }
+    // A media deck moves on from a video that advances on its end.
+    mediaDeckSession.mediaEnded(channel, takenAt);
     return;
   }
 

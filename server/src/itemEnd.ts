@@ -3,15 +3,19 @@ import type { ChannelState, RowSource } from "@overlaysys/core";
 /**
  * The rundown rows a channel is showing right now: the graphic's row while it
  * is on screen, the row of a live song/scripture/slides session, and a video's
- * row until it finishes. Queued (armed) items don't count.
+ * row until it finishes. Queued (armed) items don't count, nor does a
+ * non-looping media deck holding its last slide.
  */
 export function rowsOnAir(st: ChannelState, activeSource: RowSource | null): Set<string> {
   const rows = new Set<string>();
   if (st.active && st.active.phase !== "out" && activeSource) rows.add(activeSource.rowId);
   if (st.songSession?.rowId) rows.add(st.songSession.rowId);
   if (st.scriptureSession?.rowId) rows.add(st.scriptureSession.rowId);
-  if (st.slidesSession?.rowId) rows.add(st.slidesSession.rowId);
-  if (st.media && st.media.playback.status !== "ended") rows.add(st.media.rowId);
+  // A media-slot deck that has passed its last slide (no loop) holds it, but it has ended.
+  const mediaDeckEnded = st.slidesSession?.slot === "media" && st.slidesSession.atEnd;
+  if (st.slidesSession?.rowId && !mediaDeckEnded) rows.add(st.slidesSession.rowId);
+  const heldByEndedDeck = mediaDeckEnded && !!st.media?.owner && st.media.rowId === st.slidesSession?.rowId;
+  if (st.media && st.media.playback.status !== "ended" && !heldByEndedDeck) rows.add(st.media.rowId);
   return rows;
 }
 
@@ -38,7 +42,9 @@ export function createItemEndTracker(
       const autoOut = st.active?.phase === "out" && st.active.outReason === "auto";
       for (const rowId of before) {
         if (now.has(rowId)) continue;
-        if (autoOut && !st.songSession && !st.scriptureSession && !st.slidesSession) continue;
+        // A media-slot deck runs beneath graphics: a graphic's auto-out over it is still not an end.
+        const graphicsSlides = st.slidesSession && st.slidesSession.slot !== "media";
+        if (autoOut && !st.songSession && !st.scriptureSession && !graphicsSlides) continue;
         onEnded(channel, rowId);
       }
     },

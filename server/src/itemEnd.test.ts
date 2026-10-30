@@ -81,6 +81,21 @@ describe("item end tracker", () => {
     expect(ended).toEqual([["program", "r1"]]);
   });
 
+  it("reports a non-looping media deck that holds its last slide, not a lower third auto-outing over a loop", () => {
+    const { set, ended } = setup();
+    const deckOn = (atEnd: boolean) => ({
+      slidesSession: { rowId: "deck", slot: "media", atEnd } as never,
+      media: { rowId: "deck", owner: "mediaDeck:deck", playback: { status: "playing" } } as never,
+    });
+    set({});
+    set(deckOn(false));
+    set({ ...deckOn(false), active: graphic("in") }, src("lt"));
+    set({ ...deckOn(false), active: graphic("out", "auto") }, null);
+    expect(ended).toEqual([]);
+    set(deckOn(true), null);
+    expect(ended).toEqual([["program", "deck"]]);
+  });
+
   it("says nothing the first time it sees a channel", () => {
     const { set, ended } = setup();
     set({ active: graphic("out") }, null);

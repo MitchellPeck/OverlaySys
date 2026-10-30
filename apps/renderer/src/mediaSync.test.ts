@@ -21,6 +21,11 @@ describe("resolveMediaUrl", () => {
     expect(resolveMediaUrl("/assets/a.mp4", "ws://10.0.0.5:4000/ws")).toBe("http://10.0.0.5:4000/assets/a.mp4");
     expect(resolveMediaUrl("/assets/a.mp4", "wss://h.example/ws")).toBe("https://h.example/assets/a.mp4");
   });
+  it("prefixes live-folder /media-folders paths the same way", () => {
+    expect(resolveMediaUrl("/media-folders/lf1/a%20b.png", "ws://10.0.0.5:4000/ws")).toBe(
+      "http://10.0.0.5:4000/media-folders/lf1/a%20b.png",
+    );
+  });
   it("leaves absolute urls alone", () => {
     expect(resolveMediaUrl("https://cdn/x.mp4", "ws://h:4000/ws")).toBe("https://cdn/x.mp4");
   });

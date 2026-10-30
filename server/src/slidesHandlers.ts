@@ -5,10 +5,11 @@ import { scheduleSync } from "./cloudSync";
 import * as stageFeedHub from "./stageFeedHub";
 // [P3.9]
 import type { Template } from "@overlaysys/core";
-import { slidesRowView } from "@overlaysys/core";
+import { isMediaOnlyDeck, slidesRowView } from "@overlaysys/core";
 import * as shows from "./shows";
 import * as templates from "./templates";
 import * as slidesSession from "./slidesSession";
+import * as mediaDeckSession from "./mediaDeckSession";
 // [/P3.9]
 // [P3.12]
 import {
@@ -63,6 +64,17 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
     send({ type: "error", code: "not_found", message: "This slides row's deck was deleted or hasn't synced" });
     return;
   }
+  // A media-only deck (photos/videos, or a live folder) plays in the media slot, beneath graphics.
+  if (deck && isMediaOnlyDeck(deck)) {
+    const res = mediaDeckSession.start(msg.channel ?? row.channelHint ?? "program", {
+      rowId: row.id,
+      showId: show.id,
+      deck,
+      ...(msg.slideIdx !== undefined ? { slideIdx: msg.slideIdx } : {}),
+    });
+    if (!res.ok) send({ type: "error", code: "not_found", message: res.error });
+    return;
+  }
   if (view.slides.length === 0) {
     send({ type: "error", code: "not_found", message: "This slides row has no slides" });
     return;
@@ -98,6 +110,11 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
   );
 }
 // [/P3.9]
+
+/** Slides controls drive the channel's media deck unless a graphics-slot deck is live there. */
+function isMediaSession(channel: string): boolean {
+  return !slidesSession.getSession(channel) && mediaDeckSession.has(channel);
+}
 
 async function broadcastList(): Promise<void> {
   broadcast({ type: "deck_list", decks: await decks.listDeckMetas() });
@@ -192,18 +209,22 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       await takeSlides(msg, send);
       return;
     case "slides_advance":
-      slidesSession.advance(msg.channel, msg.delta);
+      if (isMediaSession(msg.channel)) mediaDeckSession.step(msg.channel, msg.delta);
+      else slidesSession.advance(msg.channel, msg.delta);
       return;
-    case "slides_goto":
-      if (!slidesSession.goTo(msg.channel, msg.slideIdx)) {
-        send({ type: "error", code: "not_found", message: `slide ${msg.slideIdx}` });
-      }
+    case "slides_goto": {
+      const ok = isMediaSession(msg.channel)
+        ? mediaDeckSession.goTo(msg.channel, msg.slideIdx)
+        : slidesSession.goTo(msg.channel, msg.slideIdx);
+      if (!ok) send({ type: "error", code: "not_found", message: `slide ${msg.slideIdx}` });
       return;
+    }
     case "slides_blank":
       slidesSession.blank(msg.channel);
       return;
     case "slides_end":
-      slidesSession.end(msg.channel);
+      if (isMediaSession(msg.channel)) mediaDeckSession.end(msg.channel);
+      else slidesSession.end(msg.channel);
       return;
     // [/P3.9]
     // [P3.12] convert a song to a slide deck

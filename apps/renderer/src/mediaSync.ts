@@ -7,12 +7,13 @@ import type { ChannelMedia, MediaPlayback } from "@overlaysys/core";
  */
 
 /**
- * Stored asset URLs are relative (`/assets/<sha>.mp4`). The renderer page
- * may be served from a different origin than the asset server (Vite :3001
- * in dev), so resolve against the WS server's HTTP origin.
+ * Stored asset URLs are relative (`/assets/<sha>.mp4`, or a live-folder file
+ * at `/media-folders/<id>/<name>`). The renderer page may be served from a
+ * different origin than the asset server (Vite :3001 in dev), so resolve
+ * against the WS server's HTTP origin.
  */
 export function resolveMediaUrl(stored: string, wsUrl: string): string {
-  if (!stored.startsWith("/assets/")) return stored;
+  if (!stored.startsWith("/assets/") && !stored.startsWith("/media-folders/")) return stored;
   try {
     const u = new URL(wsUrl);
     const proto = u.protocol === "wss:" ? "https:" : "http:";

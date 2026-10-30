@@ -19,6 +19,7 @@ import {
   resolveSongChannel,
 } from "@overlaysys/core";
 import * as channels from "./channels";
+import * as mediaDeckSession from "./mediaDeckSession";
 import { createItemEndTracker } from "./itemEnd";
 import * as templates from "./templates";
 import { isDraftTemplateId, isProtectedTemplateId } from "@overlaysys/core";
@@ -279,6 +280,8 @@ export async function clearAllChannels(cutVideo: boolean): Promise<string[]> {
   for (const st of channels.allStates()) if (!mirrors.has(st.channel)) ids.add(st.channel);
   for (const id of ids) {
     channels.clear(id);
+    // A media deck stops either way; without cutVideo its current slide stays up.
+    mediaDeckSession.dropAll(id);
     if (cutVideo) channels.mediaClear(id, { cut: true });
   }
   return [...ids];

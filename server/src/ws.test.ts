@@ -2,8 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { _settleWritesForTest } from "./storage";
 import { EventEmitter } from "node:events";
 import type { ServerMessage } from "@overlaysys/ws-protocol";
-import { handleConnection, replyTo } from "./ws";
+import { clearAllChannels, handleConnection, replyTo } from "./ws";
 import * as channels from "./channels";
+import * as mediaDeckSession from "./mediaDeckSession";
 import * as outputs from "./outputs";
 import * as shows from "./shows";
 import * as songs from "./songs";
@@ -269,6 +270,24 @@ describe("ws song takes set liveRow", () => {
     await vi.waitFor(() =>
       expect(channels.getState(ch).media).toMatchObject({ mediaType: "image", fit: "cover", loop: true, muted: true, owner: "deck:d1" }),
     );
+  });
+
+  it("clear all channels stops a media deck; without cutting video its current slide stays up", async () => {
+    const ch = `t-${Date.now()}-mdeck`;
+    const media = (id: string) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.png`, mediaType: "image" as const } });
+    const deck = {
+      id: "dm", name: "Loop", tags: [], defaultTemplateId: "t", licensing: { kind: "own" as const },
+      slides: [media("a"), media("b")], createdAt: "2026-10-30T00:00:00.000Z",
+    };
+    expect(mediaDeckSession.start(ch, { rowId: "r", deck })).toEqual({ ok: true });
+    await clearAllChannels(false);
+    expect(mediaDeckSession.has(ch)).toBe(false);
+    expect(channels.getState(ch).slidesSession).toBeUndefined();
+    expect(channels.getState(ch).media?.assetUrl).toBe("/assets/a.png");
+    mediaDeckSession.start(ch, { rowId: "r", deck });
+    await clearAllChannels(true);
+    expect(mediaDeckSession.has(ch)).toBe(false);
+    expect(channels.getState(ch).media).toBeNull();
   });
 
   it("song_take sets liveRow on its channel", async () => {

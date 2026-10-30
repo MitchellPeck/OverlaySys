@@ -24,6 +24,7 @@ import { handleSlidesMessage } from "./slidesHandlers";
 import * as templates from "./templates";
 import * as channels from "./channels";
 import * as slidesSession from "./slidesSession";
+import * as mediaDeckSession from "./mediaDeckSession";
 import * as scriptureSession from "./scriptureSession";
 // [/P3.9]
 
@@ -159,6 +160,8 @@ describe("slides live handlers", () => {
     { kind: "slides", id: "rowNoTpl", deckId: "dNoTpl" },
     { kind: "slides", id: "rowAllMissing", deckId: "d1", slideIds: ["x", "y"] },
     { kind: "graphic", id: "rowGraphic", templateId: "t", fieldValues: {} },
+    { kind: "slides", id: "rowMedia", deckId: "dMedia" },
+    { kind: "slides", id: "rowFolder", deckId: "dFolder" },
   ];
   const show = { id: "s", name: "Show", projectId: "p", rows, songs: [] } as unknown as Show;
   const threeSlides = deck({
@@ -174,6 +177,11 @@ describe("slides live handlers", () => {
     vi.spyOn(templates, "getTemplate").mockImplementation(async (id) => knownTemplates.get(id) ?? null);
     await decks.saveDeck(threeSlides);
     await decks.saveDeck(deck({ id: "dNoTpl", defaultTemplateId: "" }));
+    const media = (id: string) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.png`, mediaType: "image" as const } });
+    await decks.saveDeck(deck({ id: "dMedia", name: "Announcements", slides: [media("m1"), media("m2"), media("m3")] }));
+    await decks.saveDeck(deck({ id: "dFolder", slides: [], liveFolderId: "lf-empty", loop: true, defaultHoldSec: 5 }));
+    mediaDeckSession.resetAll();
+    for (const ch of ["program", "preview", "lower"]) channels.mediaClear(ch);
     // External take first: it drops the previous test's sessions from channel state.
     for (const ch of ["program", "preview", "lower"]) channels.take(ch, "before", {});
     slidesSession.resetAll();
@@ -286,6 +294,38 @@ describe("slides live handlers", () => {
     await handleSlidesMessage({ type: "slides_end", channel: "program" }, send);
     expect(channels.getState("program").slidesSession).toBeUndefined();
     expect(channels.getState("program").active?.phase).toBe("out");
+  });
+
+  it("slides_take of a media-only deck plays it in the media slot and leaves graphics alone", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMedia", slideIdx: 1 }, send);
+    expect(sent).toEqual([]);
+    const pgm = channels.getState("program");
+    expect(pgm.active?.templateId).toBe("before");
+    expect(pgm.media).toMatchObject({ rowId: "rowMedia", assetUrl: "/assets/m2.png", mediaType: "image", owner: "mediaDeck:rowMedia" });
+    expect(pgm.slidesSession).toMatchObject({ rowId: "rowMedia", deckId: "dMedia", title: "Announcements", slideIdx: 1, slideCount: 3, slot: "media" });
+    expect(pgm.liveRow).toEqual({ showId: "s", rowId: "rowMedia" });
+    expect(slidesSession.getSession("program")).toBeNull();
+  });
+
+  it("slides_advance / goto / end drive a media deck (Companion's go to slide N)", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMedia" }, send);
+    await handleSlidesMessage({ type: "slides_advance", channel: "program", delta: 1 }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m2.png");
+    await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 2 }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m3.png");
+    await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 7 }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_found", message: "slide 7" }]);
+    await handleSlidesMessage({ type: "slides_end", channel: "program" }, send);
+    expect(channels.getState("program").media).toBeNull();
+    expect(channels.getState("program").slidesSession).toBeUndefined();
+    expect(channels.getState("program").active?.templateId).toBe("before");
+  });
+
+  it("slides_take of an empty live-folder deck fails with a plain message", async () => {
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowFolder" }, send);
+    expect(sent).toEqual([{ type: "error", code: "not_found", message: "This folder has no photos or videos yet." }]);
+    expect(channels.getState("program").media).toBeNull();
+    expect(channels.getState("program").slidesSession).toBeUndefined();
   });
 });
 // [/P3.9]
