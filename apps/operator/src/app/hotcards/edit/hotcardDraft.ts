@@ -1,4 +1,4 @@
-import type { Hotcard, TemplateMeta } from "@overlaysys/core";
+import type { Hotcard, Hotkey, TemplateMeta } from "@overlaysys/core";
 import { templatesFor } from "../../../lib/templateRoles";
 
 export const LAST_HOTCARD_TEMPLATE_KEY = "overlaysys:hotcards:lastTemplate";
@@ -43,4 +43,29 @@ export function hotcardEqual(a: Hotcard, b: Hotcard): boolean {
     return JSON.stringify(canon(rest));
   };
   return strip(a) === strip(b);
+}
+
+export type NewHotcardValues = {
+  name: string;
+  templateId: string;
+  hotkey: Hotkey | null;
+  data: Record<string, string>;
+};
+
+/** Field values to keep when the template changes: only keys the new template declares. */
+export function carryFieldValues(
+  prev: Record<string, string>,
+  fields: { key: string }[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fields) {
+    const v = prev[f.key];
+    if (v !== undefined) out[f.key] = v;
+  }
+  return out;
+}
+
+/** The hotcard the New step creates. */
+export function buildNewHotcard(v: NewHotcardValues, projectId: string, id: string): Hotcard {
+  return { id, name: v.name, projectId, templateId: v.templateId, data: v.data, hotkey: v.hotkey };
 }

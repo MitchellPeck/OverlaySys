@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { produce } from "immer";
 import { MoreHorizontal } from "lucide-react";
 import { v4 as uuid } from "uuid";
-import { type ChannelConfig, type Hotcard, type Template } from "@overlaysys/core";
+import { type ChannelConfig, type Hotcard } from "@overlaysys/core";
 import {
   Field,
   IconButton,
@@ -22,7 +22,6 @@ import {
 import { hotkeyConflictWarning, hotkeyOwners } from "@/lib/hotcardKeys";
 import { useWs, getClient } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
-import { FieldInput } from "@/lib/FieldInput";
 import { useResolvedChannelConfigs } from "@/lib/useResolvedChannels";
 import { PageBody } from "@/app/components/PageShell";
 import { PageChrome } from "@/app/shell/PageChrome";
@@ -43,8 +42,10 @@ import {
   refreshTemplateMetasCloud,
   saveHotcardCloud,
 } from "@/lib/cloudData";
-import { LAST_HOTCARD_TEMPLATE_KEY, hotcardEqual } from "./hotcardDraft";
-import { HotcardNewStep, HotkeySelect, TemplateSelect, type NewHotcardValues } from "./HotcardNewStep";
+import { LAST_HOTCARD_TEMPLATE_KEY, buildNewHotcard, hotcardEqual } from "./hotcardDraft";
+import { FieldsEditor } from "./FieldsEditor";
+import { HotcardNewStep, HotkeySelect, TemplateSelect } from "./HotcardNewStep";
+import type { NewHotcardValues } from "./hotcardDraft";
 
 const PREVIEW_WIDTH = 480;
 
@@ -162,21 +163,29 @@ function HotcardEditPageInner() {
     void loadCard();
   }, [isNew, cloud, conn, hotcardId, loadCard]);
 
+  /** Fetch a template into the cache unless it is already there. */
+  const ensureTemplate = useCallback(
+    (templateId: string) => {
+      if (!templateId || templateCache[templateId]) return;
+      if (cloud) {
+        getTemplateCloud(templateId)
+          .then((t) => {
+            if (t) setTemplate(t);
+          })
+          .catch((err) => console.warn(`[hotcards/edit] template ${templateId}`, err));
+        return;
+      }
+      if (conn === "open") {
+        send({ type: "get_template", templateId });
+      }
+    },
+    [templateCache, cloud, conn, send, setTemplate],
+  );
+
+  const draftTemplateId = draft?.templateId;
   useEffect(() => {
-    if (!draft) return;
-    if (templateCache[draft.templateId]) return;
-    if (cloud) {
-      getTemplateCloud(draft.templateId)
-        .then((t) => {
-          if (t) setTemplate(t);
-        })
-        .catch((err) => console.warn(`[hotcards/edit] template ${draft.templateId}`, err));
-      return;
-    }
-    if (conn === "open") {
-      send({ type: "get_template", templateId: draft.templateId });
-    }
-  }, [draft, templateCache, cloud, conn, send, setTemplate]);
+    if (draftTemplateId) ensureTemplate(draftTemplateId);
+  }, [draftTemplateId, ensureTemplate]);
 
   function update(recipe: (h: Hotcard) => void) {
     setDraft((cur) => {
@@ -295,14 +304,7 @@ function HotcardEditPageInner() {
   async function create(v: NewHotcardValues) {
     setCreating(true);
     setCreateError(null);
-    const h: Hotcard = {
-      id: `hotcard-${uuid().slice(0, 8)}`,
-      name: v.name,
-      projectId: currentProjectId,
-      templateId: v.templateId,
-      data: {},
-      hotkey: v.hotkey,
-    };
+    const h = buildNewHotcard(v, currentProjectId, `hotcard-${uuid().slice(0, 8)}`);
     try {
       await persist(h, { checkNewer: false });
       try {
@@ -328,6 +330,8 @@ function HotcardEditPageInner() {
             existing={allHotcards}
             projectId={currentProjectId}
             lastUsedId={readLastTemplate()}
+            templateCache={templateCache}
+            ensureTemplate={ensureTemplate}
             creating={creating}
             error={createError}
             onCreate={(v) => void create(v)}
@@ -552,67 +556,5 @@ function ChannelHintSelect({
         </option>
       ))}
     </Select>
-  );
-}
-
-function FieldsEditor({
-  template,
-  data,
-  onChange,
-}: {
-  template: Template | null;
-  data: Record<string, string>;
-  onChange: (key: string, value: string) => void;
-}) {
-  const declaredKeys = useMemo(
-    () => template?.fields.map((f) => f.key) ?? [],
-    [template],
-  );
-  const orphanKeys = Object.keys(data).filter((k) => !declaredKeys.includes(k));
-  const fieldsToShow = template?.fields ?? [];
-
-  if (!template) {
-    return (
-      <span style={{ color: colors.textDim, fontSize: 11 }}>
-        Loading template…
-      </span>
-    );
-  }
-
-  if (fieldsToShow.length === 0 && orphanKeys.length === 0) {
-    return (
-      <span style={{ color: colors.textDim, fontSize: 11 }}>
-        Template declares no fields.
-      </span>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {fieldsToShow.map((f) => (
-        <div key={f.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 110, fontSize: 12, color: colors.textDim, flexShrink: 0 }}>
-            {f.label}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <FieldInput field={f} value={data[f.key]} onChange={(v) => onChange(f.key, v)} />
-          </div>
-        </div>
-      ))}
-      {orphanKeys.map((k) => (
-        <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.7 }}>
-          <span
-            style={{ width: 110, fontSize: 12, color: colors.accent2, flexShrink: 0 }}
-            title="Not declared by the template — will still be sent on take."
-          >
-            {k}*
-          </span>
-          <Input
-            value={data[k] ?? ""}
-            onChange={(e) => onChange(k, e.target.value)}
-          />
-        </div>
-      ))}
-    </div>
   );
 }

@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { HOTKEYS, type HotcardMeta, type Hotkey, type TemplateMeta } from "@overlaysys/core";
+import { useEffect, useMemo, useState } from "react";
+import { HOTKEYS, type HotcardMeta, type Hotkey, type Template, type TemplateMeta } from "@overlaysys/core";
 import { Button, Field, Input, Select, colors, fontSize } from "@overlaysys/ui";
 import { hotkeyConflictWarning, hotkeyOwners } from "@/lib/hotcardKeys";
-import { templatesForHotcard } from "./hotcardDraft";
+import { carryFieldValues, templatesForHotcard, type NewHotcardValues } from "./hotcardDraft";
+import { FieldsEditor } from "./FieldsEditor";
+
+export type { NewHotcardValues };
 
 /** Template picker grouped "Suggested" / "Other templates". */
 export function TemplateSelect({
@@ -75,14 +78,14 @@ export function HotkeySelect({
   );
 }
 
-export type NewHotcardValues = { name: string; templateId: string; hotkey: Hotkey | null };
-
 /** First step of "New hotcard": name, template and F-key, then Create. */
 export function HotcardNewStep({
   metas,
   existing,
   projectId,
   lastUsedId,
+  templateCache,
+  ensureTemplate,
   creating,
   error,
   onCreate,
@@ -92,6 +95,8 @@ export function HotcardNewStep({
   existing: HotcardMeta[];
   projectId: string;
   lastUsedId?: string;
+  templateCache: Record<string, Template>;
+  ensureTemplate: (templateId: string) => void;
   creating: boolean;
   error?: string | null;
   onCreate: (v: NewHotcardValues) => void;
@@ -101,7 +106,16 @@ export function HotcardNewStep({
   const [name, setName] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [hotkey, setHotkey] = useState<Hotkey | null>(null);
+  const [data, setData] = useState<Record<string, string>>({});
   const templateId = picked ?? defaultId;
+  const template = templateCache[templateId] ?? null;
+  useEffect(() => {
+    if (templateId) ensureTemplate(templateId);
+  }, [templateId, ensureTemplate]);
+  // Keep what was typed for fields the chosen template also declares; drop the rest.
+  useEffect(() => {
+    if (template) setData((d) => carryFieldValues(d, template.fields));
+  }, [template]);
   const warning = hotkeyConflictWarning(existing, { id: "new", name, projectId, hotkey });
   const canCreate = name.trim().length > 0 && !!templateId && !creating;
 
@@ -109,7 +123,7 @@ export function HotcardNewStep({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (canCreate) onCreate({ name: name.trim(), templateId, hotkey });
+        if (canCreate) onCreate({ name: name.trim(), templateId, hotkey, data: template ? carryFieldValues(data, template.fields) : data });
       }}
       style={{ maxWidth: 520, display: "grid", gap: 14 }}
     >
@@ -145,6 +159,18 @@ export function HotcardNewStep({
           </div>
         )}
       </Field>
+      {templateId && (
+        <div>
+          <h3 style={{ margin: "6px 0 8px", fontSize: fontSize.xs, fontWeight: 600, color: colors.textDim }}>
+            Fields
+          </h3>
+          <FieldsEditor
+            template={template}
+            data={data}
+            onChange={(key, value) => setData((d) => ({ ...d, [key]: value }))}
+          />
+        </div>
+      )}
       {error && (
         <div role="alert" style={{ fontSize: fontSize.sm, color: colors.dangerText }}>
           {error}
