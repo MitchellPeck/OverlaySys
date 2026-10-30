@@ -17,6 +17,7 @@ import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
 import { useDialog } from "@/lib/dialog";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
+import { guardedNavigate } from "@/lib/unsavedGuardFlow";
 import { ackErrorText, sendAndAwaitAck } from "@/lib/awaitAck";
 import { exportFileName } from "@/lib/exportName";
 import { downloadJson } from "@/lib/download";
@@ -468,7 +469,7 @@ function SongNotFound({
       <div style={{ display: "flex", gap: 8 }}>
         {/* [P3.20] */}
         {deleted?.deckId && (
-          <Button variant="primary" size="sm" onClick={() => router.push(`/slides/edit?id=${encodeURIComponent(deleted.deckId!)}`)}>
+          <Button variant="primary" size="sm" onClick={() => void guardedNavigate(`/slides/edit?id=${encodeURIComponent(deleted.deckId!)}`, router)}>
             Open deck
           </Button>
         )}

@@ -14,6 +14,7 @@ import {
 } from "@/lib/cloudSession";
 import { getCloudClient } from "@/lib/cloudAuth";
 import { copyText } from "@/app/shell/clipboard";
+import { guardedNavigate } from "@/lib/unsavedGuardFlow";
 
 /**
  * Account UI in the primary header. Three modes:
@@ -82,7 +83,7 @@ export function AccountMenu() {
         window.open("https://apps.mitchellpeck.com/account", "_blank");
       }
     } else {
-      router.push("/account");
+      void guardedNavigate("/account", router);
     }
   }
 

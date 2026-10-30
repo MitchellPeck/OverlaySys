@@ -11,6 +11,7 @@ import { copyText } from "./clipboard";
 import { StatusPopoverButton } from "./StatusPopoverButton";
 import { statusPopoverModel } from "./statusPopover";
 import type { Tone } from "./shellStatus";
+import { guardedNavigate } from "@/lib/unsavedGuardFlow";
 
 async function copyWithToast(text: string, what: string): Promise<void> {
   const ok = await copyText(text);
@@ -93,7 +94,7 @@ function ServerDot() {
       onAction={(id) => {
         if (id === "retry") reconnectNow();
         else if (id === "copy") void copyWithToast(`Server: ${state}\nURL: ${url || "unknown"}`, "Details");
-        else if (id === "settings") router.push("/settings/connection");
+        else if (id === "settings") void guardedNavigate("/settings/connection", router);
       }}
     />
   );
@@ -124,7 +125,7 @@ function SttDot() {
         if (id === "stop") send({ type: "stt_spawner_stop" });
         else if (id === "start" && config) send({ type: "stt_spawner_start", config });
         else if (id === "copy-error" && lastError) void copyWithToast(lastError, "Error");
-        else if (id === "settings") router.push("/settings/stt");
+        else if (id === "settings") void guardedNavigate("/settings/stt", router);
       }}
     />
   );

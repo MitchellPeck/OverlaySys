@@ -12,6 +12,7 @@ import { useShellChrome } from "./ShellChromeContext";
 import { StatusBar } from "./StatusBar";
 import { FirstRunChecklist } from "./FirstRunChecklist";
 import { AREAS, areasFor, defaultRouteFor, lastRouteKey, routeToArea, showsProjectSwitcher, type AreaId } from "./areas";
+import { guardedNavigate } from "@/lib/unsavedGuardFlow";
 
 /**
  * Navigate to an area's last-visited route, falling back to its default.
@@ -63,7 +64,7 @@ export function TopBar() {
         linkComponent={Link}
         active={area}
         onSelect={(id) => {
-          if (id !== area) enterArea(router, id, cloud);
+          if (id !== area) enterArea({ push: (href) => void guardedNavigate(href, router) }, id, cloud);
         }}
       />
       {chrome.title !== undefined && (
