@@ -386,6 +386,28 @@ describe("buildStageFeed", () => {
     expect(base(media("ended")).video).toBeNull();
   });
 
+  it("a media loop with a lower third on top shows the lower third; a photo is not a video", () => {
+    const loop: ChannelState = {
+      channel: "program",
+      active: { templateId: "lt", data: { name: "Jane" }, phase: "in", takenAt: 2 },
+      slidesSession: {
+        rowId: "r-loop", title: "Welcome loop", slideIdx: 0, slideCount: 3, label: "Photo 1", lines: [],
+        nextLabel: "Photo 2", blanked: false, atEnd: false, slot: "media",
+      },
+      media: {
+        rowId: "r-loop", assetUrl: "/assets/p.png", volume: 1, endAction: "hold", mediaType: "image",
+        fit: "cover", position: "center", loop: false, muted: false, owner: "mediaDeck:r-loop",
+        transitionIn: { style: "cut", durationMs: 0 }, transitionOut: { style: "cut", durationMs: 0 },
+        takenAt: 1, paused: false, playback: { status: "playing", currentTime: 0, duration: 0, updatedAt: 900 },
+      },
+      liveRow: { showId: "show-1", rowId: "r-welcome" },
+    };
+    const f = base(loop);
+    expect(f.current).toEqual({ kind: "graphic", lines: ["Jane"], reference: "Lower third" });
+    expect(f.next.reference).not.toBe("Photo 2");
+    expect(f.video).toBeNull();
+  });
+
   it("includes the active notes with a clamped point index", () => {
     const f = base(null, {
       stage: { ...INITIAL_STAGE_STATE, notes: { showId: "show-1", notesId: "n" }, pointIdx: 9, scrollOffset: 0.5 },

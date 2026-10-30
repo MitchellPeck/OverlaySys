@@ -169,6 +169,11 @@ export function firstContentOf(
   }
 }
 
+/** A graphics-slot slides session; a media loop (media-slot deck) runs beneath graphics and is not shown on stage. */
+function graphicsSlides(s: ChannelState): ChannelState["slidesSession"] {
+  return s.slidesSession?.slot === "media" ? undefined : s.slidesSession;
+}
+
 function currentOf(s: ChannelState, songs: Map<string, Song>, templates: Map<string, Template>): SlideView {
   if (s.songSession) {
     if (s.songSession.blanked) return NONE_SLIDE;
@@ -182,8 +187,8 @@ function currentOf(s: ChannelState, songs: Map<string, Song>, templates: Map<str
       reference: s.scriptureSession.slideReference,
     };
   }
-  if (s.slidesSession) {
-    const ss = s.slidesSession;
+  const ss = graphicsSlides(s);
+  if (ss) {
     if (ss.blanked) return NONE_SLIDE;
     return { kind: "lyric", lines: ss.lines, reference: ss.label ?? ss.title };
   }
@@ -243,7 +248,8 @@ function timersOf(
 
 function videoOf(s: ChannelState | null): StageVideo | null {
   const m = s?.media;
-  if (!m) return null;
+  // A photo has no playback to show.
+  if (!m || m.mediaType === "image") return null;
   const { status, currentTime, duration, updatedAt } = m.playback;
   if (status === "ended" || status === "error") return null;
   return { status, currentTime, duration, at: updatedAt, ...(m.label !== undefined ? { label: m.label } : {}) };
@@ -262,14 +268,15 @@ export function buildStageFeed(i: StageFeedInputs): StageFeed {
   if (followed) {
     const sess = followed.songSession;
     const song = sess ? songs.get(sess.songId) : undefined;
+    const slides = graphicsSlides(followed);
     if (sess && song) {
       const c = nextLyricCursor(song, sess.arrangement, sess.cursor);
       if (c) next = lyricSlideAt(song, sess.arrangement, c);
     } else if (followed.scriptureSession && row?.kind === "scripture" && row.id === followed.scriptureSession.rowId) {
       const n = followed.scriptureSession.slideIdx + 1;
       if (n < row.slides.length) next = scriptureView(row, n);
-    } else if (followed.slidesSession) {
-      const ss = followed.slidesSession;
+    } else if (slides) {
+      const ss = slides;
       if (ss.nextLines) next = { kind: "lyric", lines: ss.nextLines, reference: ss.nextLabel ?? ss.title };
     } else if (
       show &&
