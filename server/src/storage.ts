@@ -26,6 +26,7 @@ import {
   type SttSpawnerConfig,
   type PcoConfig,
 } from "@overlaysys/core";
+import { recordFile } from "./recordId";
 
 // Resolve repo root (../../ from server/src). Templates and shows live at <root>/data.
 const __filename = fileURLToPath(import.meta.url);
@@ -180,9 +181,8 @@ export async function loadAllTemplates(): Promise<Template[]> {
 }
 
 export async function loadTemplate(id: string): Promise<Template | null> {
-  const file = path.join(TEMPLATES_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(TEMPLATES_DIR(), id), "utf8");
     return TemplateSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -191,7 +191,7 @@ export async function loadTemplate(id: string): Promise<Template | null> {
 
 export async function saveTemplate(template: Template): Promise<void> {
   await ensureDir(TEMPLATES_DIR());
-  const file = path.join(TEMPLATES_DIR(), `${template.id}.json`);
+  const file = recordFile(TEMPLATES_DIR(), template.id);
   // The caller has already validated against TemplateSchema at the WS
   // boundary — `ClientMessageSchema.parse` covers it for `save_template`.
   // Re-parsing here would run the recursive LayerSchema walk a second
@@ -202,9 +202,8 @@ export async function saveTemplate(template: Template): Promise<void> {
 }
 
 export async function deleteTemplate(id: string): Promise<boolean> {
-  const file = path.join(TEMPLATES_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(TEMPLATES_DIR(), id));
     return true;
   } catch {
     return false;
@@ -218,9 +217,8 @@ export async function loadAllShows(): Promise<Show[]> {
 }
 
 export async function loadShow(id: string): Promise<Show | null> {
-  const file = path.join(SHOWS_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(SHOWS_DIR(), id), "utf8");
     return ShowSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -229,15 +227,14 @@ export async function loadShow(id: string): Promise<Show | null> {
 
 export async function saveShow(show: Show): Promise<void> {
   await ensureDir(SHOWS_DIR());
-  const file = path.join(SHOWS_DIR(), `${show.id}.json`);
+  const file = recordFile(SHOWS_DIR(), show.id);
   // Trust the WS-layer validation — see saveTemplate for why.
   await trackedWrite(file, JSON.stringify(show, null, 2));
 }
 
 export async function deleteShow(id: string): Promise<boolean> {
-  const file = path.join(SHOWS_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(SHOWS_DIR(), id));
     return true;
   } catch {
     return false;
@@ -251,9 +248,8 @@ export async function loadAllChannelConfigs(): Promise<ChannelConfig[]> {
 }
 
 export async function loadChannelConfig(id: string): Promise<ChannelConfig | null> {
-  const file = path.join(CHANNELS_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(CHANNELS_DIR(), id), "utf8");
     return ChannelConfigSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -262,15 +258,14 @@ export async function loadChannelConfig(id: string): Promise<ChannelConfig | nul
 
 export async function saveChannelConfig(config: ChannelConfig): Promise<void> {
   await ensureDir(CHANNELS_DIR());
-  const file = path.join(CHANNELS_DIR(), `${config.id}.json`);
+  const file = recordFile(CHANNELS_DIR(), config.id);
   const parsed = ChannelConfigSchema.parse(config);
   await trackedWrite(file, JSON.stringify(parsed, null, 2));
 }
 
 export async function deleteChannelConfig(id: string): Promise<boolean> {
-  const file = path.join(CHANNELS_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(CHANNELS_DIR(), id));
     return true;
   } catch {
     return false;
@@ -284,9 +279,8 @@ export async function loadAllSongs(): Promise<Song[]> {
 }
 
 export async function loadSong(id: string): Promise<Song | null> {
-  const file = path.join(SONGS_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(SONGS_DIR(), id), "utf8");
     return SongSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -295,14 +289,13 @@ export async function loadSong(id: string): Promise<Song | null> {
 
 export async function saveSong(song: Song): Promise<void> {
   await ensureDir(SONGS_DIR());
-  const file = path.join(SONGS_DIR(), `${song.id}.json`);
+  const file = recordFile(SONGS_DIR(), song.id);
   await trackedWrite(file, JSON.stringify(song, null, 2));
 }
 
 export async function deleteSong(id: string): Promise<boolean> {
-  const file = path.join(SONGS_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(SONGS_DIR(), id));
     return true;
   } catch {
     return false;
@@ -316,9 +309,8 @@ export async function loadAllHotcards(): Promise<Hotcard[]> {
 }
 
 export async function loadHotcard(id: string): Promise<Hotcard | null> {
-  const file = path.join(HOTCARDS_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(HOTCARDS_DIR(), id), "utf8");
     return HotcardSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -327,14 +319,13 @@ export async function loadHotcard(id: string): Promise<Hotcard | null> {
 
 export async function saveHotcard(hotcard: Hotcard): Promise<void> {
   await ensureDir(HOTCARDS_DIR());
-  const file = path.join(HOTCARDS_DIR(), `${hotcard.id}.json`);
+  const file = recordFile(HOTCARDS_DIR(), hotcard.id);
   await trackedWrite(file, JSON.stringify(hotcard, null, 2));
 }
 
 export async function deleteHotcard(id: string): Promise<boolean> {
-  const file = path.join(HOTCARDS_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(HOTCARDS_DIR(), id));
     return true;
   } catch {
     return false;
@@ -374,9 +365,8 @@ export async function loadAllProjects(): Promise<Project[]> {
 }
 
 export async function loadProject(id: string): Promise<Project | null> {
-  const file = path.join(PROJECTS_DIR(), `${id}.json`);
   try {
-    const raw = await fs.readFile(file, "utf8");
+    const raw = await fs.readFile(recordFile(PROJECTS_DIR(), id), "utf8");
     return ProjectSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -385,15 +375,14 @@ export async function loadProject(id: string): Promise<Project | null> {
 
 export async function saveProject(project: Project): Promise<void> {
   await ensureDir(PROJECTS_DIR());
-  const file = path.join(PROJECTS_DIR(), `${project.id}.json`);
+  const file = recordFile(PROJECTS_DIR(), project.id);
   const parsed = ProjectSchema.parse(project);
   await trackedWrite(file, JSON.stringify(parsed, null, 2));
 }
 
 export async function deleteProject(id: string): Promise<boolean> {
-  const file = path.join(PROJECTS_DIR(), `${id}.json`);
   try {
-    await fs.unlink(file);
+    await fs.unlink(recordFile(PROJECTS_DIR(), id));
     return true;
   } catch {
     return false;

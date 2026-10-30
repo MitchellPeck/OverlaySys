@@ -542,3 +542,55 @@ describe("ws: a draft on preview never reaches program", () => {
   });
 });
 // [/P2b.11]
+
+// S1: a record id becomes a filename, so a LAN client must not be able to
+// steer a save outside its directory (e.g. into data/stt/config.json, whose
+// customCommand the STT spawner runs).
+describe("ws: record ids can't escape their directory", () => {
+  const sttConfig = (): string => path.join(dataDir, "stt", "config.json");
+  const exists = (p: string): Promise<boolean> =>
+    fs.stat(p).then(
+      () => true,
+      () => false,
+    );
+
+  it("save_deck with a traversal id errors and writes nothing", async () => {
+    const sock = connect();
+    await sock.client({
+      type: "save_deck",
+      deck: {
+        id: "../stt/config",
+        name: "x",
+        tags: [],
+        defaultTemplateId: "t",
+        licensing: { kind: "own" },
+        slides: [],
+        createdAt: "2026-10-30T00:00:00.000Z",
+        customCommand: "touch /tmp/pwned",
+      },
+    });
+    await vi.waitFor(() =>
+      expect(sock.sent.some((m) => m.type === "error" && m.op === "save_deck" && /record id/i.test(m.message))).toBe(true),
+    );
+    expect(sock.sent.some((m) => m.type === "ack" && m.op === "save_deck")).toBe(false);
+    expect(await exists(sttConfig())).toBe(false);
+  });
+
+  it("save_song with a traversal id errors; an ordinary id still saves", async () => {
+    const sock = connect();
+    const song = {
+      title: "Be Thou My Vision",
+      sections: [{ id: "v1", kind: "verse", label: "Verse 1", slides: [{ id: "s1", lines: ["Be thou my vision"] }] }],
+      defaultArrangement: ["v1"],
+    };
+    await sock.client({ type: "save_song", song: { ...song, id: "../stt/config" } });
+    await vi.waitFor(() =>
+      expect(sock.sent.some((m) => m.type === "error" && m.op === "save_song" && /record id/i.test(m.message))).toBe(true),
+    );
+    expect(await exists(sttConfig())).toBe(false);
+    await sock.client({ type: "save_song", song: { ...song, id: "be-thou-my-vision" } });
+    await vi.waitFor(() =>
+      expect(sock.sent).toContainEqual({ type: "ack", op: "save_song", id: "be-thou-my-vision" }),
+    );
+  });
+});

@@ -3,6 +3,7 @@ import path from "node:path";
 import writeAtomic from "write-file-atomic";
 import { DeckSchema, type Deck } from "@overlaysys/core";
 import { dataRoot } from "./storage";
+import { recordFile } from "./recordId";
 
 const DECKS_DIR = (): string => path.join(dataRoot(), "decks");
 
@@ -29,7 +30,7 @@ export async function loadAllDecks(): Promise<Deck[]> {
 
 export async function loadDeck(id: string): Promise<Deck | null> {
   try {
-    const raw = await fs.readFile(path.join(DECKS_DIR(), `${id}.json`), "utf8");
+    const raw = await fs.readFile(recordFile(DECKS_DIR(), id), "utf8");
     return DeckSchema.parse(JSON.parse(raw));
   } catch {
     return null;
@@ -37,6 +38,7 @@ export async function loadDeck(id: string): Promise<Deck | null> {
 }
 
 export async function writeDeck(d: Deck): Promise<void> {
+  const file = recordFile(DECKS_DIR(), d.id);
   await fs.mkdir(DECKS_DIR(), { recursive: true });
-  await writeAtomic(path.join(DECKS_DIR(), `${d.id}.json`), JSON.stringify(d, null, 2));
+  await writeAtomic(file, JSON.stringify(d, null, 2));
 }
