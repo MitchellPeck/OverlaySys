@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   RateLimiter,
+  ReloadBackoff,
   isRecoverableLoadFailure,
   respawnDelayMs,
   shouldReloadAfterGone,
@@ -33,6 +34,60 @@ describe("RateLimiter", () => {
     rl.reset();
     expect(rl.tryAcquire(1)).toBe(true);
     expect(rl.count(2)).toBe(1);
+  });
+});
+
+describe("ReloadBackoff (D8)", () => {
+  const MIN = 60_000;
+  it("reloads up to 3 times a minute, then waits a minute instead of giving up", () => {
+    const b = new ReloadBackoff();
+    expect(b.failed(0)).toEqual({ reload: true });
+    expect(b.failed(1000)).toEqual({ reload: true });
+    expect(b.failed(2000)).toEqual({ reload: true });
+    expect(b.failed(3000)).toEqual({ reload: false, attempt: 1, delayMs: MIN });
+  });
+
+  it("doubles the wait each time the window keeps crashing, capped at 10 minutes", () => {
+    const b = new ReloadBackoff();
+    let now = 0;
+    const waits: number[] = [];
+    for (let round = 0; round < 6; round++) {
+      // Crash on every load until the burst budget runs out.
+      for (;;) {
+        const d = b.failed(now);
+        now += 1000;
+        if (!d.reload) {
+          waits.push(d.delayMs);
+          now += d.delayMs;
+          b.retrying(now);
+          break;
+        }
+      }
+    }
+    expect(waits).toEqual([MIN, 2 * MIN, 4 * MIN, 8 * MIN, 10 * MIN, 10 * MIN]);
+  });
+
+  it("the retry after a wait counts toward the next burst", () => {
+    const b = new ReloadBackoff();
+    for (const t of [0, 1, 2]) b.failed(t);
+    expect(b.failed(3)).toMatchObject({ reload: false, attempt: 1 });
+    b.retrying(MIN + 3);
+    expect(b.failed(MIN + 10)).toEqual({ reload: true });
+    expect(b.failed(MIN + 20)).toEqual({ reload: true });
+    expect(b.failed(MIN + 30)).toMatchObject({ reload: false, attempt: 2 });
+  });
+
+  it("starts over once the window has run a minute without crashing", () => {
+    const b = new ReloadBackoff();
+    for (const t of [0, 1, 2]) b.failed(t);
+    expect(b.failed(3)).toMatchObject({ attempt: 1 });
+    b.retrying(MIN + 3);
+    // Stable for over a minute after the retry.
+    const t = 3 * MIN;
+    expect(b.failed(t)).toEqual({ reload: true });
+    b.failed(t + 1);
+    b.failed(t + 2);
+    expect(b.failed(t + 3)).toEqual({ reload: false, attempt: 1, delayMs: MIN });
   });
 });
 

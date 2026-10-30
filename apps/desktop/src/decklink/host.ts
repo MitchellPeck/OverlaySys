@@ -9,7 +9,7 @@ import os from "node:os";
 import type { DeckLinkErrorCode, DeckLinkOutputPref, DeckLinkStatus } from "@overlaysys/core";
 import { deckLinkErrorText, findFormat } from "./shared";
 import type { DesktopEvent } from "../supervisor";
-import { checkDevice, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
+import { checkDevice, checkFfmpegPath, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
 import { frameFromImage } from "./frame";
 import { DeckLinkOutput, type ChildLike } from "./output";
 import { respawnDelayMs } from "../supervisor";
@@ -28,6 +28,8 @@ export interface DeckLinkHostDeps {
   notify: (ev: DesktopEvent) => void;
   /** Configured ffmpeg path (unexpanded; blank = default). */
   ffmpegSetting: () => string | undefined;
+  /** What's at a path, or null when nothing is there. */
+  stat: (p: string) => { isFile(): boolean } | null;
   /** An output opened or closed (power-save blocker, operator dots). */
   onOpenChange: (channelId: string, open: boolean) => void;
 }
@@ -72,6 +74,13 @@ export function createDeckLinkHost(deps: DeckLinkHostDeps) {
 
   async function listDevices(): Promise<DeckLinkListResult> {
     const bin = ffmpeg();
+    // Never run a stored path that isn't a real ffmpeg (prefs edited by hand,
+    // or the file was replaced since it was saved).
+    const checked = checkFfmpegPath(bin, os.homedir(), deps.stat);
+    if (!checked.ok) {
+      console.warn(`[decklink] not running ${bin}: ${checked.message}`);
+      return { ok: false, ffmpeg: bin, code: "ffmpeg-not-found", message: deckLinkErrorText("ffmpeg-not-found", "") };
+    }
     const { out, err } = await run(bin, ["-hide_banner", "-sinks", "decklink"]);
     // Missing, not executable, a directory, or hung: all an ffmpeg-path problem.
     if (err && (typeof err.code === "string" || err.killed)) {
@@ -114,6 +123,15 @@ export function createDeckLinkHost(deps: DeckLinkHostDeps) {
     if (!r) return;
     running.delete(channelId);
     await capped(r.output.stop(), CLOSE_CAP_MS);
+    if (!r.win.isDestroyed()) r.win.destroy();
+    deps.onOpenChange(channelId, false);
+  }
+
+  /** Close an output whose ffmpeg is gone for good; `wanted` stays, so a retry reopens it. */
+  async function dropFailed(channelId: string, output: DeckLinkOutput): Promise<void> {
+    const r = running.get(channelId);
+    if (r?.output !== output) return;
+    running.delete(channelId);
     if (!r.win.isDestroyed()) r.win.destroy();
     deps.onOpenChange(channelId, false);
   }
@@ -173,7 +191,12 @@ export function createDeckLinkHost(deps: DeckLinkHostDeps) {
       now: () => Date.now(),
       setTimer: (fn, ms) => setTimeout(fn, ms),
       clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
-      onStatus: (s) => status(channelId, device, s),
+      onStatus: (s) => {
+        status(channelId, device, s);
+        // A failure a restart can't fix: close the output so a later open (or
+        // retryFailed) starts it afresh instead of finding it "already running".
+        if (s.state === "failed") void enqueue(channelId, () => dropFailed(channelId, output));
+      },
       log: (line) => console.log(line),
     });
 
@@ -216,6 +239,17 @@ export function createDeckLinkHost(deps: DeckLinkHostDeps) {
     return enqueue(channelId, () => reconcile(channelId));
   }
 
+  /** Try again every output that's wanted but not running (e.g. after the ffmpeg path changed). */
+  function retryFailed(): Promise<void> {
+    const ids = [...wanted].filter(([id, want]) => want && !running.has(id)).map(([id]) => id);
+    return Promise.all(
+      ids.map((id) => {
+        cancelRetry(id);
+        return enqueue(id, () => reconcile(id));
+      }),
+    ).then(() => undefined);
+  }
+
   async function stopAll(): Promise<void> {
     const ids = [...new Set([...running.keys(), ...wanted.keys()])];
     await capped(Promise.all(ids.map((id) => close(id))).then(() => undefined), CLOSE_CAP_MS);
@@ -225,6 +259,7 @@ export function createDeckLinkHost(deps: DeckLinkHostDeps) {
     open,
     close,
     stopAll,
+    retryFailed,
     listDevices,
     check,
     isOpen: (channelId: string) => running.has(channelId),

@@ -47,6 +47,40 @@ export class RateLimiter {
 }
 
 /**
+ * When to reload a window whose renderer crashed or whose page failed to
+ * load. Up to `max` reloads per `windowMs` go out at once; past that the
+ * window waits (1 min, doubling, capped at 10 min) and then tries again, so a
+ * page that crashes on every load neither spins nor stays dead for good. A
+ * window that runs a full `windowMs` without a reload starts over.
+ */
+export class ReloadBackoff {
+  private readonly limiter: RateLimiter;
+  private attempt = 0;
+
+  constructor(
+    max = 3,
+    windowMs = 60_000,
+    private readonly baseMs = 60_000,
+    private readonly maxMs = 10 * 60_000,
+  ) {
+    this.limiter = new RateLimiter(max, windowMs);
+  }
+
+  /** The window just failed: reload now, or wait `delayMs` first. */
+  failed(now: number): { reload: true } | { reload: false; attempt: number; delayMs: number } {
+    if (this.limiter.count(now) === 0) this.attempt = 0;
+    if (this.limiter.tryAcquire(now)) return { reload: true };
+    this.attempt++;
+    return { reload: false, attempt: this.attempt, delayMs: respawnDelayMs(this.attempt, this.baseMs, this.maxMs) };
+  }
+
+  /** The wait is over and a reload goes out now; it counts toward the next burst. */
+  retrying(now: number): void {
+    this.limiter.tryAcquire(now);
+  }
+}
+
+/**
  * Chromium `did-fail-load` codes that are NOT real failures: -3 ERR_ABORTED
  * fires whenever a navigation is superseded (in-app route changes, a reload
  * racing a load). Reloading on those would loop.
@@ -74,6 +108,6 @@ export type DesktopEvent =
   | { kind: "server-restarted"; port: number }
   | { kind: "server-failed"; reason: string }
   | { kind: "window-reloaded"; target: string; reason: string }
-  | { kind: "window-reload-gave-up"; target: string; reason: string }
+  | { kind: "window-reload-waiting"; target: string; reason: string; delayMs: number }
   | { kind: "output-hidden"; channelId: string; reason: string }
   | { kind: "decklink-status"; channelId: string; device: string; status: DeckLinkStatus };

@@ -37,7 +37,7 @@ export type DesktopEvent =
   | { kind: "server-restarted"; port: number }
   | { kind: "server-failed"; reason: string }
   | { kind: "window-reloaded"; target: string; reason: string }
-  | { kind: "window-reload-gave-up"; target: string; reason: string }
+  | { kind: "window-reload-waiting"; target: string; reason: string; delayMs: number }
   | { kind: "output-hidden"; channelId: string; reason: string }
   | { kind: "decklink-status"; channelId: string; device: string; status: DeckLinkStatus };
 

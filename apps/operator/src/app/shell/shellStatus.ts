@@ -54,12 +54,14 @@ export function describeDesktopEvent(ev: DesktopEvent): DesktopToast {
       return { tone: "bad", text: `Server restart failed: ${ev.reason}. Retrying.`, sticky: true };
     case "window-reloaded":
       return { tone: "warn", text: `${targetLabel(ev.target)} crashed and was reloaded (${ev.reason}).`, sticky: false };
-    case "window-reload-gave-up":
+    case "window-reload-waiting": {
+      const mins = Math.max(1, Math.round(ev.delayMs / 60_000));
       return {
         tone: "bad",
-        text: `${targetLabel(ev.target)} keeps crashing (${ev.reason}). Close and reopen it from Settings → Channels.`,
+        text: `${targetLabel(ev.target)} keeps crashing (${ev.reason}). Trying again in ${mins} min, or close and reopen it from Settings → Channels.`,
         sticky: true,
       };
+    }
     case "decklink-status": {
       const s = ev.status;
       if (s.state === "running") return { tone: "good", text: `“${ev.device}” is on air for ${ev.channelId}.`, sticky: false };

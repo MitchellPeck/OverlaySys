@@ -34,7 +34,9 @@ describe("describeDesktopEvent", () => {
   });
 
   it("makes give-ups and display losses sticky", () => {
-    expect(describeDesktopEvent({ kind: "window-reload-gave-up", target: "program", reason: "x" }).sticky).toBe(true);
+    const waiting = describeDesktopEvent({ kind: "window-reload-waiting", target: "program", reason: "x", delayMs: 120_000 });
+    expect(waiting.sticky).toBe(true);
+    expect(waiting.text).toContain("Trying again in 2 min");
     expect(describeDesktopEvent({ kind: "output-hidden", channelId: "program", reason: "display disconnected" }).sticky).toBe(true);
     expect(describeDesktopEvent({ kind: "window-reloaded", target: "operator", reason: "x" }).text).toMatch(/^The console/);
   });

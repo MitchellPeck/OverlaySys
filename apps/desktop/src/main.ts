@@ -66,7 +66,7 @@ import {
 } from "./serverProcess";
 import { resolveServerCloudEnv } from "./serverEnv";
 import {
-  RateLimiter,
+  ReloadBackoff,
   isRecoverableLoadFailure,
   respawnDelayMs,
   shouldReloadAfterGone,
@@ -301,12 +301,22 @@ function notifyOperator(event: DesktopEvent): void {
   }
 }
 
+/** What's at a path, or null when nothing is there. */
+function statOrNull(p: string): fs.Stats | null {
+  try {
+    return fs.statSync(p);
+  } catch {
+    return null;
+  }
+}
+
 // Channels sent to a Blackmagic device instead of a display (decklink/host.ts).
 const deckLink = createDeckLinkHost({
   rendererUrl: (channelId, label) => rendererChannelUrl(channelId, label),
   attachAutoReload: (win, target, url) => attachAutoReload(win, target, url),
   notify: notifyOperator,
   ffmpegSetting: () => loadPrefs(prefsFilePath()).decklinkFfmpegPath,
+  stat: statOrNull,
   onOpenChange: (channelId, open) => {
     updatePowerSaveBlocker();
     // Switched to a display window while the device output was closing:
@@ -807,21 +817,30 @@ function trackOperatorBounds(win: BrowserWindow): void {
 
 /**
  * Rate-limited auto-reload for a window whose renderer crashed or whose page
- * failed to load. Gives up after 3 reloads a minute so a page that crashes on
- * every load doesn't spin; the operator is told either way.
+ * failed to load. Past 3 reloads a minute it backs off (ReloadBackoff) so a
+ * page that crashes on every load doesn't spin, then tries again; the
+ * operator is told either way.
  */
 function attachAutoReload(
   win: BrowserWindow,
   target: string,
   reloadUrl: () => string,
 ): void {
-  const limiter = new RateLimiter(3, 60_000);
+  const backoff = new ReloadBackoff();
   let pending: NodeJS.Timeout | null = null;
   const recover = (reason: string) => {
     if (appQuitting || win.isDestroyed() || pending) return;
-    if (!limiter.tryAcquire(Date.now())) {
-      console.error(`[desktop] ${target}: giving up auto-reload (${reason})`);
-      notifyOperator({ kind: "window-reload-gave-up", target, reason });
+    const next = backoff.failed(Date.now());
+    if (!next.reload) {
+      console.error(`[desktop] ${target}: keeps failing (${reason}); next auto-reload in ${next.delayMs / 1000}s`);
+      notifyOperator({ kind: "window-reload-waiting", target, reason, delayMs: next.delayMs });
+      pending = setTimeout(() => {
+        pending = null;
+        if (appQuitting || win.isDestroyed()) return;
+        backoff.retrying(Date.now());
+        void win.loadURL(reloadUrl()).catch(() => undefined);
+        notifyOperator({ kind: "window-reloaded", target, reason });
+      }, next.delayMs);
       return;
     }
     console.warn(`[desktop] ${target}: auto-reloading after ${reason}`);
@@ -868,10 +887,16 @@ function openExternalSafely(url: string): void {
  * preload, so they get the same lock.
  */
 function lockToOwnOrigin(win: BrowserWindow, ownOrigin: () => string): void {
-  win.webContents.on("will-navigate", (e, url) => {
+  const guard = (e: Electron.Event, url: string) => {
     if (isAllowedOrigin(url, [ownOrigin()])) return;
     e.preventDefault();
     openExternalSafely(url);
+  };
+  win.webContents.on("will-navigate", guard);
+  // A same-origin navigation the server redirects elsewhere. Main frame only,
+  // like will-navigate: embedded frames don't get the preload.
+  win.webContents.on("will-redirect", (e, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) guard(e, url);
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedOrigin(url, appOrigins())) return { action: "allow" };
@@ -1438,18 +1463,14 @@ function registerIpc(): void {
   ipcMain.handle("overlaysys:decklink-check", () => deckLink.check());
   ipcMain.handle("overlaysys:set-decklink-ffmpeg-path", (_event, ffmpegPath: string): WindowPrefsFile => {
     if (typeof ffmpegPath !== "string") throw new Error("path required");
-    const checked = checkFfmpegPath(ffmpegPath, os.homedir(), (p) => {
-      try {
-        return fs.statSync(p);
-      } catch {
-        return null;
-      }
-    });
+    const checked = checkFfmpegPath(ffmpegPath, os.homedir(), statOrNull);
     if (!checked.ok) throw new Error(checked.message);
     const file = loadPrefs(prefsFilePath());
     if (checked.path) file.decklinkFfmpegPath = checked.path;
     else delete file.decklinkFfmpegPath;
     savePrefs(prefsFilePath(), file);
+    // Outputs that failed for want of a working ffmpeg get another go.
+    void deckLink.retryFailed();
     return file;
   });
 
