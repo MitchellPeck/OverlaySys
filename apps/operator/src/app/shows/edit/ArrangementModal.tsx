@@ -77,6 +77,7 @@ export function ArrangementModal({
     <Modal
       open
       onClose={onClose}
+      closeOnBackdrop={false}
       size="md"
       title={`Arrangement — ${level === "show" ? "Show override" : "This row"}`}
       footer={

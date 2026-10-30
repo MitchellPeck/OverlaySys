@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { colors, fontSize, fontWeight, radius, shadow, space } from "./tokens";
-import { nextTrapFocus, shouldConfirmOnEnter } from "./modalKeys";
+import { nextTrapFocus, shouldCloseOnBackdropClick, shouldConfirmOnEnter } from "./modalKeys";
 
 type Size = "sm" | "md" | "lg";
 
@@ -88,6 +88,7 @@ export function Modal({
 }: Props) {
   const lastFocused = useRef<Element | null>(null);
   const wasOpen = useRef(false);
+  const backdropPressTarget = useRef<EventTarget | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
   const tokenRef = useRef<symbol>(Symbol("modal"));
@@ -220,7 +221,15 @@ export function Modal({
   // also discard the operator's entire song draft. Fix that consumer first.
   return (
     <div
-      onClick={closeOnBackdrop ? () => onClose?.() : undefined}
+      onMouseDown={closeOnBackdrop ? (e) => { backdropPressTarget.current = e.target; } : undefined}
+      onClick={
+        closeOnBackdrop
+          ? (e) => {
+              if (shouldCloseOnBackdropClick(backdropPressTarget.current, e.target, e.currentTarget)) onClose?.();
+              backdropPressTarget.current = null;
+            }
+          : undefined
+      }
       style={{
         position: "fixed",
         inset: 0,

@@ -36,3 +36,13 @@ export function nextTrapFocus(count: number, current: number, shift: boolean): n
   if (shift && current === 0) return count - 1;
   return null;
 }
+
+/**
+ * Whether a click on the modal backdrop should close it. Both the press
+ * (mousedown) and the click must land on the backdrop itself: dragging a text
+ * selection out of a field releases over the backdrop (the click targets the
+ * backdrop) but the press started inside the dialog, so it must not close.
+ */
+export function shouldCloseOnBackdropClick<T>(pressTarget: T | null, clickTarget: T, backdrop: T): boolean {
+  return pressTarget === backdrop && clickTarget === backdrop;
+}

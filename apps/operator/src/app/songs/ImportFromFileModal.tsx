@@ -121,6 +121,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
       onConfirm={sections.length > 0 && slug && title && !duplicate ? () => save() : undefined}
       size="md"
       containerStyle={{ width: 560, minWidth: 560, maxWidth: 560 }}
+      closeOnBackdrop={false}
       title="Import song from file"
       footer={
         duplicate ? (

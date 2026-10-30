@@ -161,6 +161,7 @@ export function VideoRowModal({
     <Modal
       open={open}
       onClose={onClose}
+      closeOnBackdrop={false}
       title={editingRow ? "Edit video" : "Add video"}
       size="md"
       footer={

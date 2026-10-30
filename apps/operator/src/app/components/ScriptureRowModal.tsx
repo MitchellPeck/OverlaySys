@@ -165,6 +165,7 @@ export function ScriptureRowModal({ open, onClose, onSave, editingRow, changePas
       onClose={onClose}
       onCancel={onClose}
       onConfirm={!passage && canContinue ? onContinue : undefined}
+      closeOnBackdrop={false}
       size="sm"
       title={editingRow || changePassageOf ? "Edit scripture" : "Add scripture"}
       footer={
