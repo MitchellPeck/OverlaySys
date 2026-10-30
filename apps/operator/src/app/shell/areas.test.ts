@@ -73,12 +73,10 @@ describe("areas model", () => {
     expect(liveToggleTarget("library", null, true)).toBe("/shows");
   });
 
-  it("library destinations include /media right after /slides, desktop and web", () => {
-    for (const cloud of [false, true]) {
-      const routes = destinationsFor("library", cloud).map((d) => d.route);
-      expect(routes).toContain("/media");
-      if (!cloud) expect(routes.indexOf("/media")).toBe(routes.indexOf("/slides") + 1);
-    }
+  it("library destinations include /media right after /slides on desktop only", () => {
+    const routes = destinationsFor("library", false).map((d) => d.route);
+    expect(routes.indexOf("/media")).toBe(routes.indexOf("/slides") + 1);
+    expect(destinationsFor("library", true).map((d) => d.route)).not.toContain("/media");
     expect(routeToArea("/media")).toBe("library");
   });
 

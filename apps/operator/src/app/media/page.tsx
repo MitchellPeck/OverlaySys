@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MediaItemMeta } from "@overlaysys/core";
-import { Button, LibraryList, offlineCopy, useConfirm, usePrompt, useToast, colors, radius } from "@overlaysys/ui";
+import { Button, LibraryList, Tooltip, offlineCopy, useConfirm, usePrompt, useToast, colors, radius } from "@overlaysys/ui";
 import { useStore } from "../../lib/store";
 import { getClient } from "../../lib/useWs";
 import { useConnection } from "../../lib/useConnection";
@@ -19,6 +19,7 @@ import {
   DEFAULT_MEDIA_SORT,
   MEDIA_LIST_STORAGE_KEY,
   folderNames,
+  importErrorText,
   mediaDeleteConfirm,
   mediaFilters,
   mediaMenuItems,
@@ -40,6 +41,7 @@ export default function MediaLibraryPage() {
   const [liveOpen, setLiveOpen] = useState(false);
   const [liveTarget, setLiveTarget] = useState<MediaItemMeta | undefined>();
   const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
   const [importing, setImporting] = useState(0);
   const pickRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -77,7 +79,7 @@ export default function MediaLibraryPage() {
         await saveMediaItem(item);
         added++;
       } catch (e) {
-        toast({ tone: "error", message: `Couldn't add ${file.name}: ${displayServerError(e)}` });
+        toast({ tone: "error", message: `Couldn't add ${file.name}: ${importErrorText(e)}` });
       } finally {
         setImporting((n) => n - 1);
       }
@@ -170,18 +172,24 @@ export default function MediaLibraryPage() {
     <PageBody variant="list">
       <PageChrome title="Media" />
       <div
-        onDragOver={(e) => {
+        onDragEnter={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
-          e.preventDefault();
-          setDragging(true);
+          dragDepth.current++;
+          if (!offline) setDragging(true);
         }}
-        onDragLeave={(e) => {
-          if (e.currentTarget === e.target) setDragging(false);
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+        }}
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1);
+          if (dragDepth.current === 0) setDragging(false);
         }}
         onDrop={(e) => {
           e.preventDefault();
+          dragDepth.current = 0;
           setDragging(false);
-          if (!offline) void importFiles([...e.dataTransfer.files]);
+          if (offline) toast({ tone: "error", message: "Reconnect to add media." });
+          else void importFiles([...e.dataTransfer.files]);
         }}
         style={{
           display: "flex",
@@ -209,9 +217,19 @@ export default function MediaLibraryPage() {
           onOpen={(m) => (m.kind === "live-folder" ? actions.chooseFolder(m) : actions.rename(m))}
           views={{ grid: { renderCard: (m) => <MediaCard item={m} liveFiles={liveFolderFiles[m.id]?.files} />, minCardWidth: 200 } }}
           headerActions={
-            <Button variant="secondary" size="md" disabled={offline} onClick={openAddLive}>
-              Add live folder
-            </Button>
+            offline ? (
+              <Tooltip content="Reconnect to add a live folder" side="bottom">
+                <span tabIndex={0} style={{ display: "inline-flex" }}>
+                  <Button variant="secondary" size="md" disabled style={{ pointerEvents: "none" }}>
+                    Add live folder
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : (
+              <Button variant="secondary" size="md" onClick={openAddLive}>
+                Add live folder
+              </Button>
+            )
           }
           primaryAction={{
             label: importing > 0 ? "Importing…" : "Import media",

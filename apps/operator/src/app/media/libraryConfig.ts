@@ -95,3 +95,17 @@ export function mediaDeleteConfirm(
     danger: true,
   };
 }
+
+export function liveFolderCountText(n: number): string {
+  return n === 1 ? "1 photo or video" : `${n} photos and videos`;
+}
+
+/** Plain-language text for a failed import; never shows raw status text. */
+export function importErrorText(e: unknown): string {
+  const text = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+  const status = /\((\d{3})\)/.exec(text)?.[1];
+  if (status === "413") return "That file is too large for this computer's upload limit.";
+  if (/failed to fetch|networkerror|\bload failed/i.test(text)) return "Couldn't reach the show computer.";
+  if (status || /^asset upload/i.test(text)) return "The upload didn't work. Try again.";
+  return text.replace(/^Error:\s*/, "") || "Something went wrong.";
+}

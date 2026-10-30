@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MediaItemMeta } from "@overlaysys/core";
 import {
-  NO_FOLDER, mediaDeleteConfirm, mediaFilters, mediaMenuItems, mediaSorts, folderNames, formatDuration, thumbnailSource,
+  NO_FOLDER, mediaDeleteConfirm, mediaFilters, mediaMenuItems, mediaSorts, folderNames, formatDuration, thumbnailSource, liveFolderCountText, importErrorText,
 } from "./libraryConfig";
 
 const item = (o: Partial<MediaItemMeta> & { id: string }): MediaItemMeta => ({
@@ -62,5 +62,19 @@ describe("misc", () => {
     expect(real.every((i) => i.disabled === "Reconnect")).toBe(true);
     const live = mediaMenuItems(c, { rename: noop, move: noop, replace: noop, chooseFolder: noop, delete: noop }).filter((i): i is Extract<typeof i, { id: string }> => "id" in i);
     expect(live.map((i) => i.id)).toEqual(["rename", "move", "folder", "delete"]);
+  });
+});
+
+describe("copy helpers", () => {
+  it("count text is singular and plural", () => {
+    expect(liveFolderCountText(1)).toBe("1 photo or video");
+    expect(liveFolderCountText(0)).toBe("0 photos and videos");
+    expect(liveFolderCountText(5)).toBe("5 photos and videos");
+  });
+  it("import errors are plain language", () => {
+    expect(importErrorText(new Error("asset upload failed (413): Payload Too Large"))).toBe("That file is too large for this computer's upload limit.");
+    expect(importErrorText(new Error("asset upload failed (500): boom"))).toBe("The upload didn't work. Try again.");
+    expect(importErrorText(new TypeError("Failed to fetch"))).toBe("Couldn't reach the show computer.");
+    expect(importErrorText(new Error("That file isn't a photo or video."))).toBe("That file isn't a photo or video.");
   });
 });

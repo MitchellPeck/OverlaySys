@@ -7,14 +7,11 @@ import { useStore } from "../../lib/store";
 import { getDesktopApi } from "../../lib/desktop";
 import { deleteMediaItem, displayServerError, requestLiveFolder, saveMediaItem, setLiveFolderPath } from "../../lib/mediaRequests";
 import { newMediaId } from "./importMedia";
+import { liveFolderCountText } from "./libraryConfig";
 
 const NOT_DESKTOP = "Choose the folder on the show computer";
 /** Files appear after a few seconds of being unchanged, so keep asking while the dialog is open. */
 const REFRESH_MS = 4000;
-
-export function liveFolderCountText(n: number): string {
-  return n === 1 ? "1 photo or video" : `${n} photos and videos`;
-}
 
 /**
  * Add a live folder (name it, choose the folder) or, with `existing`, change which

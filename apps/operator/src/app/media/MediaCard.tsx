@@ -5,7 +5,7 @@ import { Film, FolderOpen, Image as ImageIcon } from "lucide-react";
 import type { LiveFolderFile, MediaItemMeta } from "@overlaysys/core";
 import { colors, fontSize, fontWeight, radius } from "@overlaysys/ui";
 import { resolveAssetUrl, videoPosterUrl } from "../../lib/uploadAsset";
-import { formatDuration, thumbnailSource, typeLabel } from "./libraryConfig";
+import { formatDuration, liveFolderCountText, thumbnailSource, typeLabel } from "./libraryConfig";
 
 /** Where the browser loads a thumbnail from: asset (resolved), video poster, or live-folder file. */
 function thumbSrc(item: MediaItemMeta, liveFiles: LiveFolderFile[] | undefined): string | null {
@@ -68,7 +68,7 @@ export function MediaThumb({ item, liveFiles }: { item: MediaItemMeta; liveFiles
 /** Grid card: thumbnail, name, and a muted line (folder, live-folder count, usage). */
 export function MediaCard({ item, liveFiles }: { item: MediaItemMeta; liveFiles?: LiveFolderFile[] }) {
   const bits = [
-    item.kind === "live-folder" && liveFiles ? `${liveFiles.length} photos and videos` : null,
+    item.kind === "live-folder" && liveFiles ? liveFolderCountText(liveFiles.length) : null,
     item.folder ?? null,
     item.usedBy > 0 ? `Used by ${item.usedBy}` : null,
   ].filter(Boolean);

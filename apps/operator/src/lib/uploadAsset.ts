@@ -4,6 +4,7 @@ import { defaultServerUrl } from "./wsClient";
 import { isCloudMode } from "./mode";
 import { resolveAssetUrlCloud, uploadAssetCloud } from "./cloudData";
 import { posterPathFor } from "./mediaTake";
+import { prefixServerPath } from "./localServerUrl";
 
 /**
  * Derive the HTTP base for asset uploads from the WS URL the operator is
@@ -91,8 +92,7 @@ export function resolveAssetUrl(stored: string): string {
   if (isCloudMode()) {
     return resolveAssetUrlCloud(stored);
   }
-  if (stored.startsWith("/assets/")) return `${httpBase()}${stored}`;
-  return stored;
+  return prefixServerPath(stored, httpBase());
 }
 
 /**

@@ -33,7 +33,7 @@ export const AREAS: Record<AreaId, Area> = {
       { route: "/shows", label: "Shows", icon: ListOrdered },
       { route: "/songs", label: "Songs", icon: Music },
       { route: "/slides", label: "Slides", icon: Presentation, desktopOnly: true },
-      { route: "/media", label: "Media", icon: Images },
+      { route: "/media", label: "Media", icon: Images, desktopOnly: true },
       { route: "/design", label: "Designs", icon: Palette },
       { route: "/hotcards", label: "Hotcards", icon: Zap },
       { route: "/pco", label: "Planning Center", icon: CloudDownload, desktopOnly: true },
