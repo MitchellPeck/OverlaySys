@@ -119,11 +119,11 @@ type StoreState = {
   // [/P3.13]
   // [P3.14] true once the first deck list has arrived
   decksLoaded: boolean;
+  // [/P3.14]
   /** Media library entries (files and live folders), sorted by name. */
   mediaItems: MediaItemMeta[];
   /** Last listing of each live folder, by folder id. */
   liveFolderFiles: Record<string, { files: LiveFolderFile[]; configured: boolean }>;
-  // [/P3.14]
   songs: SongMeta[];
   // [P1.13] true once the first song list has arrived
   songsLoaded: boolean;

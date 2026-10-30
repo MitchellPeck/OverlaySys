@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MediaItem, MediaItemMeta } from "@overlaysys/core";
 import type { ClientMessage, ServerMessage } from "@overlaysys/ws-protocol";
 import type { AckClient } from "./awaitAck";
-import { displayServerError, deleteMediaItem, restoreMediaItem, saveMediaItem } from "./mediaRequests";
+import { setLiveFolderPath, displayServerError, deleteMediaItem, restoreMediaItem, saveMediaItem } from "./mediaRequests";
 import { useStore } from "./store";
 
 const meta = (id: string, name: string, usedBy = 0): MediaItemMeta => ({ id, name, kind: "file", mediaType: "image", assetUrl: `/a/${id}.png`, createdAt: "x", usedBy });
@@ -64,5 +64,19 @@ describe("media requests", () => {
     expect(displayServerError("Error: Name taken")).toBe("Name taken");
     expect(displayServerError("Plain")).toBe("Plain");
     expect(displayServerError(new Error("Error: x"))).toBe("x");
+  });
+});
+
+describe("setLiveFolderPath errors", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const stub = (status: number, body: unknown) =>
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+  it("shows the server message on a 400", async () => {
+    stub(400, { message: "That folder doesn't exist." });
+    await expect(setLiveFolderPath("f1", "/nope")).rejects.toThrow("That folder doesn't exist.");
+  });
+  it("shows friendly text on a 403", async () => {
+    stub(403, { error: "only allowed from this machine" });
+    await expect(setLiveFolderPath("f1", "/x")).rejects.toThrow("Choose the folder on the show computer.");
   });
 });

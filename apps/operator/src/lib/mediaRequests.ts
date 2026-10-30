@@ -33,8 +33,9 @@ export async function setLiveFolderPath(id: string, path: string | null): Promis
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
   });
+  if (res.status === 403) throw new Error("Choose the folder on the show computer.");
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? (res.status === 403 ? "The folder can only be set from the computer running OverlaySys." : `Couldn't set the folder (${res.status})`));
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Couldn't set the folder (${res.status}).`);
   }
 }
