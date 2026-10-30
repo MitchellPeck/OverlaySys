@@ -17,6 +17,7 @@ export function BlackmagicPanel() {
   const [saved, setSaved] = useState("");
   const [result, setResult] = useState<DeckLinkCheckResult | null>(null);
   const [checking, setChecking] = useState(false);
+  const [pathError, setPathError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!api) return;
@@ -30,12 +31,20 @@ export function BlackmagicPanel() {
 
   const check = async () => {
     setChecking(true);
+    setPathError(null);
     try {
       if (path.trim() !== saved.trim()) {
-        await api.setDecklinkFfmpegPath!(path);
-        setSaved(path);
+        const file = await api.setDecklinkFfmpegPath!(path);
+        // Saved as the full path (a leading ~ expanded).
+        setPath(file.decklinkFfmpegPath ?? "");
+        setSaved(file.decklinkFfmpegPath ?? "");
       }
       setResult(await api.decklinkCheck!());
+    } catch (err) {
+      // Electron wraps a refused path as "Error invoking remote method '…': Error: <reason>".
+      const message = err instanceof Error ? err.message : String(err);
+      setPathError(message.replace(/^Error invoking remote method '[^']*': (Error: )?/, ""));
+      setResult(null);
     } finally {
       setChecking(false);
     }
@@ -59,6 +68,7 @@ export function BlackmagicPanel() {
           {checking ? "Checking…" : path.trim() !== saved.trim() ? "Save and check" : "Check"}
         </Button>
       </div>
+      {pathError && <div style={{ marginTop: 8, fontSize: fontSize.sm, color: colors.danger }}>{pathError}</div>}
       {result && (
         <div style={{ marginTop: 8, fontSize: fontSize.sm }}>
           {result.version && <div style={{ color: colors.textDim, fontFamily: fontFamily.mono }}>{result.version}</div>}

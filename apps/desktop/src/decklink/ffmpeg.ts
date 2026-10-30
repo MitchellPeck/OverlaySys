@@ -4,6 +4,7 @@
 // codec that shows a picture, there is no -pix_fmt on the output and no
 // -format_code, and the mode is picked from the raw stream's size and rate.
 
+import path from "node:path";
 import type { DeckLinkErrorCode, SignalFormat } from "@overlaysys/core";
 
 export const DEFAULT_FFMPEG_PATH = "~/.local/bin/ffmpeg-decklink";
@@ -12,6 +13,34 @@ export const DEFAULT_FFMPEG_PATH = "~/.local/bin/ffmpeg-decklink";
 export function resolveFfmpegPath(configured: string | undefined, home: string): string {
   const p = configured?.trim() || DEFAULT_FFMPEG_PATH;
   return p.startsWith("~/") ? `${home}/${p.slice(2)}` : p;
+}
+
+export type FfmpegPathCheck = { ok: true; path: string | undefined } | { ok: false; message: string };
+
+/**
+ * Whether a typed ffmpeg path is safe to save and later run: blank clears the
+ * setting; otherwise an absolute path (after `~` expansion) to an existing
+ * file whose name starts with "ffmpeg". `stat` returns null when nothing is
+ * there.
+ */
+export function checkFfmpegPath(
+  input: string,
+  home: string,
+  stat: (p: string) => { isFile(): boolean } | null,
+): FfmpegPathCheck {
+  const trimmed = input.trim();
+  if (!trimmed) return { ok: true, path: undefined };
+  const p = trimmed === "~" ? home : trimmed.startsWith("~/") ? `${home}/${trimmed.slice(2)}` : trimmed;
+  if (!path.isAbsolute(p)) {
+    return { ok: false, message: "Enter the full path to ffmpeg, starting with / or ~/." };
+  }
+  if (!path.basename(p).startsWith("ffmpeg")) {
+    return { ok: false, message: "That file isn't ffmpeg. Its name should start with \"ffmpeg\"." };
+  }
+  if (!stat(p)?.isFile()) {
+    return { ok: false, message: `No ffmpeg file found at ${p}.` };
+  }
+  return { ok: true, path: p };
 }
 
 /**

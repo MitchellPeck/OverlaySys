@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findFormat } from "@overlaysys/core";
-import { buildOutputArgs, checkDevice, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
+import { buildOutputArgs, checkDevice, checkFfmpegPath, classifyFfmpegError, parseSinks, resolveFfmpegPath } from "./ffmpeg";
 
 describe("buildOutputArgs", () => {
   it("builds the Narthex-proven output command, device as one argv element, with low latency", () => {
@@ -60,5 +60,35 @@ describe("resolveFfmpegPath", () => {
     expect(resolveFfmpegPath("  ", "/Users/a")).toBe("/Users/a/.local/bin/ffmpeg-decklink");
     expect(resolveFfmpegPath("~/bin/ff", "/Users/a")).toBe("/Users/a/bin/ff");
     expect(resolveFfmpegPath("/opt/ff", "/Users/a")).toBe("/opt/ff");
+  });
+});
+
+describe("checkFfmpegPath", () => {
+  const files: Record<string, "file" | "dir"> = {
+    "/Users/a/.local/bin/ffmpeg-decklink": "file",
+    "/opt/homebrew/bin/ffmpeg": "file",
+    "/opt/ffmpeg-dir": "dir",
+    "/bin/sh": "file",
+  };
+  const stat = (p: string) => (p in files ? { isFile: () => files[p] === "file" } : null);
+
+  it("clears the setting when blank", () => {
+    expect(checkFfmpegPath("  ", "/Users/a", stat)).toEqual({ ok: true, path: undefined });
+  });
+
+  it("accepts an absolute path to an ffmpeg file, expanding ~", () => {
+    expect(checkFfmpegPath(" /opt/homebrew/bin/ffmpeg ", "/Users/a", stat)).toEqual({ ok: true, path: "/opt/homebrew/bin/ffmpeg" });
+    expect(checkFfmpegPath("~/.local/bin/ffmpeg-decklink", "/Users/a", stat)).toEqual({
+      ok: true,
+      path: "/Users/a/.local/bin/ffmpeg-decklink",
+    });
+  });
+
+  it("refuses relative paths, other programs, folders and missing files", () => {
+    for (const p of ["ffmpeg", "bin/ffmpeg", "/bin/sh", "/opt/ffmpeg-dir", "/opt/missing/ffmpeg", "~"]) {
+      const r = checkFfmpegPath(p, "/Users/a", stat);
+      expect(r.ok, p).toBe(false);
+      if (!r.ok) expect(r.message).toMatch(/ffmpeg/);
+    }
   });
 });

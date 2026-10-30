@@ -74,6 +74,8 @@ import {
 } from "./supervisor";
 import { outputsOnRemovedDisplays } from "./displayGuard";
 import { createDeckLinkHost } from "./decklink/host";
+import { checkFfmpegPath } from "./decklink/ffmpeg";
+import { isAllowedOrigin, isSafeExternalUrl } from "./navigation";
 import {
   clampBoundsToWorkAreas,
   loadOperatorBounds,
@@ -841,6 +843,47 @@ function attachAutoReload(
   });
 }
 
+/** Origins the app's own pages come from. Read live: the server port can change. */
+function appOrigins(): string[] {
+  const origins = [new URL(operatorUrl()).origin, `http://${serverHost}:${serverPort}`];
+  if (isDev) origins.push(new URL(process.env["RENDERER_URL"] ?? "http://localhost:3001").origin);
+  return origins;
+}
+
+/** Hand a link to the system browser or mail app; anything else is refused. */
+function openExternalSafely(url: string): void {
+  if (!isSafeExternalUrl(url)) {
+    console.warn(`[desktop] refused to open external link: ${url}`);
+    return;
+  }
+  void shell.openExternal(url).catch((err: unknown) => {
+    console.error(`[desktop] couldn't open external link ${url}:`, err);
+  });
+}
+
+/**
+ * Keeps a window that has the preload on its own origin: navigating away is
+ * cancelled (web links open in the system browser instead), so no other site
+ * ever gets `window.overlaysys`. Popups on the app's origins inherit the
+ * preload, so they get the same lock.
+ */
+function lockToOwnOrigin(win: BrowserWindow, ownOrigin: () => string): void {
+  win.webContents.on("will-navigate", (e, url) => {
+    if (isAllowedOrigin(url, [ownOrigin()])) return;
+    e.preventDefault();
+    openExternalSafely(url);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedOrigin(url, appOrigins())) return { action: "allow" };
+    openExternalSafely(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("did-create-window", (child, { url }) => {
+    const origin = new URL(url).origin;
+    lockToOwnOrigin(child, () => origin);
+  });
+}
+
 function createOperatorWindow(): BrowserWindow {
   const bounds = initialOperatorBounds();
   const win = new BrowserWindow({
@@ -890,15 +933,7 @@ function createOperatorWindow(): BrowserWindow {
   if (bounds?.maximized) win.maximize();
   trackOperatorBounds(win);
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    const sameOrigin =
-      url.startsWith(`http://${serverHost}:${serverPort}`) ||
-      url.startsWith("http://localhost:3000") ||
-      url.startsWith("http://localhost:3001");
-    if (sameOrigin) return { action: "allow" };
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
+  lockToOwnOrigin(win, () => new URL(operatorUrl()).origin);
 
   win.on("closed", () => {
     operatorWindow = null;
@@ -1403,9 +1438,16 @@ function registerIpc(): void {
   ipcMain.handle("overlaysys:decklink-check", () => deckLink.check());
   ipcMain.handle("overlaysys:set-decklink-ffmpeg-path", (_event, ffmpegPath: string): WindowPrefsFile => {
     if (typeof ffmpegPath !== "string") throw new Error("path required");
+    const checked = checkFfmpegPath(ffmpegPath, os.homedir(), (p) => {
+      try {
+        return fs.statSync(p);
+      } catch {
+        return null;
+      }
+    });
+    if (!checked.ok) throw new Error(checked.message);
     const file = loadPrefs(prefsFilePath());
-    const trimmed = ffmpegPath.trim();
-    if (trimmed) file.decklinkFfmpegPath = trimmed;
+    if (checked.path) file.decklinkFfmpegPath = checked.path;
     else delete file.decklinkFfmpegPath;
     savePrefs(prefsFilePath(), file);
     return file;
@@ -1603,9 +1645,9 @@ function registerIpc(): void {
   // page externally rather than navigating in the renderer.
   ipcMain.handle("overlaysys:open-external", async (_event, url: string) => {
     if (typeof url !== "string" || !url) return;
-    // Restrict to http(s) so a malicious renderer-side bug can't shell out
-    // to file:// or custom URI handlers.
-    if (!/^https?:\/\//i.test(url)) return;
+    // Web and mail links only, so a malicious renderer-side bug can't shell
+    // out to file:// or custom URI handlers.
+    if (!isSafeExternalUrl(url)) return;
     await shell.openExternal(url);
   });
 }

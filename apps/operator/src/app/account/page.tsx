@@ -105,7 +105,7 @@ export default function AccountPage() {
                   {!orgId && (
                     <p style={{ color: colors.textDim, fontSize: fontSize.sm, margin: "8px 0 0" }}>
                       No workspace context. Re-launch OverlaySys from{" "}
-                      <a href={PORTAL} style={{ color: colors.brandText }}>
+                      <a href={PORTAL} target="_blank" rel="noreferrer" style={{ color: colors.brandText }}>
                         apps.mitchellpeck.com
                       </a>{" "}
                       so the registry workspace lands on the URL.
