@@ -120,6 +120,10 @@ The goal is to build the announcements loop once, keep it in the library, and dr
 
 A "Media" tab beside hotcards on Live shows the library (same thumbnails, search and folders). Each item has **Cue** (to preview) and **Take** (to program), like hotcards. A photo holds until the next take; a video plays with sound and holds its last frame; anything else taken into the media slot replaces it. A **live folder** takes as a looping deck with an 8 s default hold and keeps running under graphics. Nothing taken from the panel changes the show.
 
+## Size and position (user's decision, added 2026-10-30)
+
+Photos and videos get a size (Fill screen / Fit inside / Shrink to fit / Stretch) and a 3×3 position. Each deck has a default that a live-folder deck applies to every graphic (e.g. lower-third strips: Shrink to fit + bottom-centre); any slide or folder graphic can override; Media rows have the same controls. Photos are see-through outside the image (no black behind them) so a lower third can sit over what's beneath on a transparent output; videos keep a black background. Thumbnails show the real placement.
+
 ## Overlays on a running loop (user's decision)
 
 Taking a lower third, scripture, hotcard or other graphic over a running loop **does not stop it**. The loop keeps cycling underneath, and it's still running when the overlay clears.

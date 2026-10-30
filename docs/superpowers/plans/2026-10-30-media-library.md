@@ -537,3 +537,29 @@
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4:** Run `npx vitest run apps/operator` + operator tsc. Expected: PASS.
 - [ ] **Step 5: Commit** `fix(hotcards): the New hotcard step shows and saves the template's fields`.
+
+### Task 19: Size and position for photos and videos (user-approved addition)
+
+**Files:**
+- Modify: `packages/core/src/channel.ts` (`ChannelMediaSchema`), `packages/core/src/show.ts` (`ImageRow`, `VideoRow`), `packages/core/src/deck.ts` (`DeckSchema`, `DeckSlideSchema`, `folderOrder` entries), `packages/core/src/mediaDeck.ts` (`MediaDeckSlide`, `resolveFolderDeckSlides`, `mediaDeckSlidesFromDeck`), `packages/ws-protocol/src/mediaTake.ts` + `media_take` schema, `server/src/channels.ts` (`MediaTakeArgs`), `server/src/mediaDeckSession.ts` (pass fit/position per slide), `apps/renderer/src/MediaLayer.tsx` + its pure props helper, operator: `MediaItemForm.tsx` / `MediaRowModal.tsx`, `DeckTiming.tsx` (or a new `DeckPlacement.tsx`), `DeckEditor.tsx` (per-slide / per-graphic override), `folderDeckOps.ts`, `deckDraftOps.ts`, thumb rendering (`thumbClick.ts` `thumbImageSrc` callers / ThumbStrip / ItemPreview / MediaThumb in the deck editor) so thumbnails show the real placement.
+- Test: the existing `*.test.ts` beside each pure module touched.
+
+**Interfaces:**
+- core: `MediaFitSchema = z.enum(["cover", "contain", "scale-down", "fill"])` (labels: Fill screen / Fit inside / Shrink to fit / Stretch); `MediaPositionSchema = z.enum(["top-left","top","top-right","left","center","right","bottom-left","bottom","bottom-right"])`; `mediaObjectPosition(p: MediaPosition): string` → CSS `object-position` (e.g. "bottom" → "50% 100%").
+- `ChannelMedia` gains `position` (default `"center"`); `fit` widens to `MediaFitSchema` (default stays `"contain"` for video, photos default `"cover"` as today).
+- `ImageRow.fit` widens to `MediaFitSchema`; `ImageRow` and `VideoRow` gain optional `position`.
+- Deck gains optional `mediaFit` and `mediaPosition` (deck default for media slides and every live-folder graphic); `DeckSlide` and `folderOrder` entries gain optional `fit` / `position` overrides. `MediaDeckSlide` gains `fit` and `position` (resolved: slide/file override → deck default → `"cover"` / `"center"`).
+- `media_take` / `MediaTakeArgs` / `mediaRowTakeMessage` carry `position`.
+
+**Behaviour (user-approved):**
+- Size options: Fill screen (cover, crops), Fit inside (contain), Shrink to fit (scale-down: never enlarges, shrinks if larger), Stretch (fill). Position: 3×3 picker.
+- Each deck has a default size/position; a live-folder deck applies it to every graphic; any slide or folder graphic can override. Media rows have the same two controls.
+- **Photos are see-through** outside the image: the renderer paints no background behind a photo (transparent output windows show what's beneath; opaque outputs show black). Videos keep their black background.
+- Thumbnails in the deck editor, ThumbStrip and ItemPreview render with the same fit/position (and see-through over the checker/dark tile background) so preview matches output.
+- Existing decks/rows without these fields render exactly as before.
+
+- [ ] **Step 1: Write failing tests:** core `mediaObjectPosition` for all nine; `resolveFolderDeckSlides` applies deck default then per-file override; `mediaDeckSlidesFromDeck` same for slides; schema accepts old rows/decks unchanged; ws-protocol `mediaRowTakeMessage` carries `position`; server media deck takes carry the slide's fit/position; renderer props helper: photo → transparent background + objectFit/objectPosition, video keeps black; operator `deckDraftOps` `setDeckPlacement` / `setSlidePlacement`, `folderDeckOps` `setFolderFilePlacement`; thumb src/style helper returns fit/position.
+- [ ] **Step 2:** Run them. Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4:** Run `npx vitest run packages/core packages/ws-protocol server apps/renderer apps/operator` + tsc for each. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(media): size and position for photos and videos; photos are see-through`.
