@@ -579,3 +579,21 @@
 - [ ] **Step 3: Implement** the shared hook/component and wire every site listed (grep to confirm none is missed; list them all in the report).
 - [ ] **Step 4:** Run `npx vitest run apps/operator packages/editor-kit` + tsc for operator and editor-kit. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(operator): every image and video choice offers Choose from Media or Upload`.
+
+### Task 21: The media picker can choose a file from a live folder (user-approved addition)
+
+**Files:** `apps/operator/src/app/media/MediaPicker.tsx` (and `pickerModel.ts` `pickableItems` / `pickFromItem`), `apps/operator/src/app/media/useMediaSourceChoice.ts` (or wherever Task 20's shared hook lives), tests beside them.
+
+**Behaviour (user, 2026-10-30):** "Choose from Media" lists live folders alongside file items. Opening a live folder shows its settled files (store `liveFolderFiles[id]`, requesting via `requestLiveFolder(id)` when not loaded) filtered to the field's type; picking one returns `{ assetUrl: liveFolderFileUrl(folderId, name), mediaType, name, liveFolderId? }` with no `mediaItemId`. A folder not configured on this machine shows "These graphics are on the show computer." and offers no files. A file picked from a folder plays from the folder (if it's later removed/renamed there, the use shows nothing — say so in a one-line note under the folder's file list). Bundles/publish already skip `/media-folders/` URLs. Works everywhere the picker is used (Media rows, deck media slides, template fields, designer layers).
+
+- [ ] Step 1: failing tests — `pickableItems` includes live folders; a folder's files filter by accept; picking a folder file yields the `/media-folders/` URL and correct mediaType; unconfigured folder yields no files with the message.
+- [ ] Step 2: run → FAIL. Step 3: implement. Step 4: `npx vitest run apps/operator` + operator tsc → PASS. Step 5: commit `feat(operator): the media picker can choose a single file from a live folder`.
+
+### Task 22: Choose size and position when airing from the Live media drawer (user-approved addition)
+
+**Files:** `apps/operator/src/app/components/live/MediaPanel.tsx`, `mediaPanelModel.ts` (+ test); server `mediaHandlers.ts` / `mediaDeckSession.startFolder` + ws-protocol `media_folder_take` (optional `fit`/`position`); tests.
+
+**Behaviour (user, 2026-10-30):** each panel item has compact size (Fill screen / Fit inside / Shrink to fit / Stretch) and position (3×3) controls beside Cue/Take, starting from the item's own defaults (live folders: the linked deck's placement, else Fill screen / centre). Changing them affects only the next Cue/Take from the panel — not the library item. `mediaItemTakeMessage(item, channel, placement?)` sends the chosen fit/position; `media_folder_take` gains optional `fit`/`position` that override the deck default for that loop. Controls must not keep keyboard focus after use (Space/Enter keep driving the show — follow the panel's existing blur pattern).
+
+- [ ] Step 1: failing tests — `mediaItemTakeMessage` uses the chosen placement over the item's; server `media_folder_take` with fit/position applies them to every slide of that loop; placement controls' state resets to the item default when the item changes.
+- [ ] Step 2: run → FAIL. Step 3: implement. Step 4: `npx vitest run apps/operator server packages/ws-protocol` + tsc → PASS. Step 5: commit `feat(live): choose size and position when airing from the Media drawer`.
