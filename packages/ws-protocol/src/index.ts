@@ -796,3 +796,5 @@ export function decodeServerTolerant(raw: string): ServerMessage | null {
 }
 
 export type { TemplateMeta };
+
+export { mediaRowTakeMessage } from "./mediaTake";

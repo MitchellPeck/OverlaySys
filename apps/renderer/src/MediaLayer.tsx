@@ -127,33 +127,21 @@ function MediaVideo({
    */
   function runTransition(dir: TransitionDirection, t: MediaTransition, durationMs = t.durationMs): Promise<void> {
     stopTransitionRef.current();
-    const el = animRef.current;
-    const frames = transitionKeyframes(t.style, dir);
     const target = dir === "in" ? 1 : 0;
-    if (!el || !frames || durationMs <= 0) {
+    const layer = animateLayer(animRef.current, t, dir, durationMs);
+    if (!layer.animating) {
       gainRef.current = target;
       applyVolume();
-      if (el) {
-        el.style.opacity = String(target);
-        el.style.transform = "";
-      }
       return Promise.resolve();
     }
-    // An In starts off-stage; an Out starts from wherever the picture is now
-    // (implicit first keyframe), so interrupting a half-done In doesn't pop.
-    if (dir === "in") el.style.opacity = "";
-    const anim = el.animate(dir === "in" ? frames : frames.slice(-1), {
-      duration: durationMs,
-      easing: transitionEasing(t.style, dir),
-      fill: "forwards",
-    });
     const from = gainRef.current;
     const started = performance.now();
     let finish: () => void = () => {};
     const done = new Promise<void>((resolve) => {
       finish = resolve;
     });
-    // Interval, not rAF: audio must keep ramping even when nothing repaints.
+    // Interval, not rAF: audio must keep ramping even when nothing repaints,
+    // so the ramp (not the animation) decides when the transition is done.
     const ramp = setInterval(() => {
       const elapsed = performance.now() - started;
       gainRef.current = rampGain(from, target, elapsed, durationMs);
@@ -165,13 +153,7 @@ function MediaVideo({
     }, RAMP_STEP_MS);
     stopTransitionRef.current = () => {
       clearInterval(ramp);
-      // Freeze the current pose into inline style before dropping the animation.
-      try {
-        anim.commitStyles();
-      } catch {
-        // commitStyles throws if the element isn't rendered; nothing to keep then.
-      }
-      anim.cancel();
+      layer.stop();
       finish();
     };
     return done;
@@ -405,6 +387,60 @@ function MediaVideo({
   );
 }
 
+type LayerAnimation = {
+  /** False for a cut (or no element): the pose was set at once and `done` is already resolved. */
+  animating: boolean;
+  done: Promise<void>;
+  /** Freeze the current pose, drop the animation, and resolve `done`. */
+  stop: () => void;
+};
+
+/**
+ * Move a media layer on or off stage. An In starts off-stage; an Out starts
+ * from wherever the picture is now (implicit first keyframe), so
+ * interrupting a half-done In doesn't pop.
+ */
+function animateLayer(
+  el: HTMLElement | null,
+  t: MediaTransition,
+  dir: TransitionDirection,
+  durationMs: number,
+): LayerAnimation {
+  const frames = transitionKeyframes(t.style, dir);
+  if (!el || !frames || durationMs <= 0) {
+    if (el) {
+      el.style.opacity = dir === "in" ? "1" : "0";
+      el.style.transform = "";
+    }
+    return { animating: false, done: Promise.resolve(), stop: () => {} };
+  }
+  if (dir === "in") el.style.opacity = "";
+  const anim = el.animate(dir === "in" ? frames : frames.slice(-1), {
+    duration: durationMs,
+    easing: transitionEasing(t.style, dir),
+    fill: "forwards",
+  });
+  let finish: () => void = () => {};
+  const done = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  anim.addEventListener("finish", () => finish(), { once: true });
+  return {
+    animating: true,
+    done,
+    stop: () => {
+      // Freeze the current pose into inline style before dropping the animation.
+      try {
+        anim.commitStyles();
+      } catch {
+        // commitStyles throws if the element isn't rendered; nothing to keep then.
+      }
+      anim.cancel();
+      finish();
+    },
+  };
+}
+
 /** The stage-sized, scaled box the media sits in; `animRef` is what the transitions move. */
 function MediaFrame({
   matte,
@@ -465,36 +501,9 @@ function MediaImage({ media, channel, isMirror, matte, scale, stageSize, send, l
 
   function runTransition(dir: TransitionDirection, t: MediaTransition): Promise<void> {
     stopTransitionRef.current();
-    const el = animRef.current;
-    const frames = transitionKeyframes(t.style, dir);
-    if (!el || !frames || t.durationMs <= 0) {
-      if (el) {
-        el.style.opacity = dir === "in" ? "1" : "0";
-        el.style.transform = "";
-      }
-      return Promise.resolve();
-    }
-    if (dir === "in") el.style.opacity = "";
-    const anim = el.animate(dir === "in" ? frames : frames.slice(-1), {
-      duration: t.durationMs,
-      easing: transitionEasing(t.style, dir),
-      fill: "forwards",
-    });
-    let finish: () => void = () => {};
-    const done = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    anim.addEventListener("finish", () => finish(), { once: true });
-    stopTransitionRef.current = () => {
-      try {
-        anim.commitStyles();
-      } catch {
-        // commitStyles throws if the element isn't rendered; nothing to keep then.
-      }
-      anim.cancel();
-      finish();
-    };
-    return done;
+    const layer = animateLayer(animRef.current, t, dir, t.durationMs);
+    stopTransitionRef.current = layer.stop;
+    return layer.done;
   }
 
   function report(status: MediaStatus, error?: string) {

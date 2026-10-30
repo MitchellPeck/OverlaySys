@@ -86,6 +86,13 @@ describe("shouldAnimateIn", () => {
     expect(shouldAnimateIn(media(1, { playback: { status: "playing", currentTime: 42, duration: 300, updatedAt: 0 } }))).toBe(false);
   });
 
+  it("animates a photo while it loads but not a renderer rejoining a photo already up", () => {
+    const photo = (status: "loading" | "playing") =>
+      media(1, { mediaType: "image", playback: { status, currentTime: 0, duration: 0, updatedAt: 0 } });
+    expect(shouldAnimateIn(photo("loading"))).toBe(true);
+    expect(shouldAnimateIn(photo("playing"))).toBe(false);
+  });
+
   it("does not animate a cut", () => {
     expect(shouldAnimateIn(media(1, { transitionIn: { style: "cut", durationMs: 500 } }))).toBe(false);
   });

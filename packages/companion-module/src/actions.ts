@@ -1,4 +1,4 @@
-import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { mediaRowTakeMessage, type ClientMessage } from "@overlaysys/ws-protocol";
 import type { RundownRow } from "@overlaysys/core";
 import { pickNextShow, CURRENT_ITEM_TIMER_ID, hotcardRoute } from "@overlaysys/core";
 import type {
@@ -1464,34 +1464,5 @@ export function actionDefinitions(
       options: [timerDropdown(state), timerAmountInput],
       callback: wrap("stage_timer_adjust"),
     },
-  };
-}
-
-/** Same media_take the operator builds for a video or photo row. */
-function mediaRowTakeMessage(
-  row: Extract<RundownRow, { kind: "video" | "media" }>,
-  channel: string,
-  showId: string | null | undefined,
-): ClientMessage {
-  const common = {
-    type: "media_take" as const,
-    channel,
-    rowId: row.id,
-    assetUrl: row.assetUrl,
-    ...(row.label !== undefined ? { label: row.label } : {}),
-    transitionIn: row.transitionIn,
-    transitionOut: row.transitionOut,
-    ...(showId ? { showId } : {}),
-  };
-  if (row.kind === "media") {
-    return { ...common, volume: 1, endAction: "hold", mediaType: "image", fit: row.fit };
-  }
-  return {
-    ...common,
-    volume: row.volume,
-    endAction: row.endAction,
-    mediaType: "video",
-    ...(row.loop !== undefined ? { loop: row.loop } : {}),
-    ...(row.muted !== undefined ? { muted: row.muted } : {}),
   };
 }

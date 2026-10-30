@@ -1,32 +1,9 @@
 import type { ChannelMedia, ChannelState, ImageRow, VideoRow } from "@overlaysys/core";
-import type { ClientMessage } from "@overlaysys/ws-protocol";
+import { mediaRowTakeMessage as buildMediaTake, type ClientMessage } from "@overlaysys/ws-protocol";
 
-/**
- * Media takes go straight to their channel — there is no PVW stage for media.
- * A photo holds until cleared; a video carries its loop/mute settings.
- */
+/** Media takes go straight to the row's channel — there is no PVW stage for media. */
 export function mediaRowTakeMessage(row: VideoRow | ImageRow, showId?: string): ClientMessage {
-  const common = {
-    type: "media_take" as const,
-    channel: row.channelHint ?? "program",
-    rowId: row.id,
-    assetUrl: row.assetUrl,
-    ...(row.label !== undefined ? { label: row.label } : {}),
-    transitionIn: row.transitionIn,
-    transitionOut: row.transitionOut,
-    ...(showId ? { showId } : {}),
-  };
-  if (row.kind === "media") {
-    return { ...common, volume: 1, endAction: "hold", mediaType: "image", fit: row.fit };
-  }
-  return {
-    ...common,
-    volume: row.volume,
-    endAction: row.endAction,
-    mediaType: "video",
-    ...(row.loop !== undefined ? { loop: row.loop } : {}),
-    ...(row.muted !== undefined ? { muted: row.muted } : {}),
-  };
+  return buildMediaTake(row, row.channelHint ?? "program", showId);
 }
 
 /** @deprecated Use mediaRowTakeMessage. */

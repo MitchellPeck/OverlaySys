@@ -58,9 +58,11 @@ export function endFadeStartsAt(media: ChannelMedia, duration: number): number |
   return Math.max(0, duration - media.transitionOut.durationMs / 1000);
 }
 
-/** A renderer rejoining mid-video shows it immediately rather than replaying the In. */
+/** A renderer rejoining mid-video (or on a photo already up) shows it immediately rather than replaying the In. */
 export function shouldAnimateIn(media: ChannelMedia): boolean {
   if (media.transitionIn.style === "cut") return false;
+  // A photo always reports time 0, so "already playing" is how a rejoin shows.
+  if (media.mediaType === "image" && media.playback.status === "playing") return false;
   return initialMountPlan(media).startAt === 0;
 }
 
