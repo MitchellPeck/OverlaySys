@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HOTKEYS, type HotcardMeta, type Hotkey, type Template, type TemplateMeta } from "@overlaysys/core";
 import { Button, Field, Input, Select, colors, fontSize } from "@overlaysys/ui";
 import { hotkeyConflictWarning, hotkeyOwners } from "@/lib/hotcardKeys";
-import { carryFieldValues, templatesForHotcard, type NewHotcardValues } from "./hotcardDraft";
+import { carryFieldValues, dataForTemplate, templatesForHotcard, type NewHotcardValues } from "./hotcardDraft";
 import { FieldsEditor } from "./FieldsEditor";
 
 export type { NewHotcardValues };
@@ -123,7 +123,7 @@ export function HotcardNewStep({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (canCreate) onCreate({ name: name.trim(), templateId, hotkey, data: template ? carryFieldValues(data, template.fields) : data });
+        if (canCreate) onCreate({ name: name.trim(), templateId, hotkey, data: dataForTemplate(data, template?.fields ?? null) });
       }}
       style={{ maxWidth: 520, display: "grid", gap: 14 }}
     >

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Hotcard, TemplateMeta } from "@overlaysys/core";
-import { buildNewHotcard, carryFieldValues, hotcardEqual, templatesForHotcard } from "./hotcardDraft";
+import { buildNewHotcard, carryFieldValues, dataForTemplate, hotcardEqual, templatesForHotcard } from "./hotcardDraft";
 
 const meta = (id: string, name: string) => ({ id, name, size: { w: 1920, h: 1080 } }) as TemplateMeta;
 const metas = [meta("lyric-default", "Lyric — Default"), meta("lt", "Lower Third")];
@@ -64,5 +64,14 @@ describe("buildNewHotcard", () => {
       data: { title: "Welcome" },
       hotkey: "F2",
     });
+  });
+});
+
+describe("dataForTemplate", () => {
+  it("saves nothing while the picked template's fields are not known", () => {
+    expect(dataForTemplate({ old: "x" }, null)).toEqual({});
+  });
+  it("keeps only declared keys once known", () => {
+    expect(dataForTemplate({ old: "x", title: "T" }, [{ key: "title" }])).toEqual({ title: "T" });
   });
 });

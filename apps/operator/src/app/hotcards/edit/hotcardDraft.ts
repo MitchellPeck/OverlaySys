@@ -65,6 +65,17 @@ export function carryFieldValues(
   return out;
 }
 
+/**
+ * Field values to save for the picked template. While its fields are not known
+ * yet (still loading) nothing is saved, so a previous template's keys never leak in.
+ */
+export function dataForTemplate(
+  data: Record<string, string>,
+  fields: { key: string }[] | null,
+): Record<string, string> {
+  return fields ? carryFieldValues(data, fields) : {};
+}
+
 /** The hotcard the New step creates. */
 export function buildNewHotcard(v: NewHotcardValues, projectId: string, id: string): Hotcard {
   return { id, name: v.name, projectId, templateId: v.templateId, data: v.data, hotkey: v.hotkey };

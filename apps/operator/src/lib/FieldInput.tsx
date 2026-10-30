@@ -116,6 +116,7 @@ function TimeFieldInput({ field, value, onChange }: Props) {
     return (
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <button
+          type="button"
           onClick={() => onChange(encodeTimerValue({ anchor: Date.now() + offset }))}
           style={smallBtnStyle}
           title="Set the count-up start to right now"
