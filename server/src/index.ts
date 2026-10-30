@@ -15,6 +15,7 @@ import { startHeaderMigration } from "./pco/headerMigration";
 // [P3.3]
 import { reloadDecks } from "./decks";
 import { reloadMedia } from "./media";
+import { broadcast } from "./broadcast";
 import { reloadItemMappings } from "./pco/itemMappings";
 // [/P3.3]
 import { listChannelConfigs, reloadChannelConfigs } from "./channelConfigs";
@@ -24,6 +25,7 @@ import * as sttSpawner from "./sttSpawner";
 import * as sttInstaller from "./sttInstaller";
 import { loadSttConfig } from "./storage";
 import { registerAssetRoutes } from "./assets";
+import { getLiveFolderPath, onLiveFolderChange, registerLiveFolderRoutes, startLiveFolderWatchers } from "./liveFolders";
 import { registerImportRoutes } from "./importRoute";
 import { registerPublishRoutes } from "./publishRoute";
 import { defaultDevEnvFiles, loadDevEnvFiles } from "./devEnv";
@@ -144,6 +146,12 @@ await reloadShows();
 // [P3.3] deck + PCO item-mapping registries
 await reloadDecks();
 await reloadMedia();
+// Live folders: push each settled-file change to every client, then watch
+// every live-folder item that has a folder on this machine.
+onLiveFolderChange((id, files) => {
+  void getLiveFolderPath(id).then((p) => broadcast({ type: "live_folder_files", id, files, configured: p !== null }));
+});
+await startLiveFolderWatchers();
 await reloadItemMappings();
 // [/P3.3]
 // [P1.20] one-time PCO header migration (background; needs PCO or its cache)
@@ -194,6 +202,7 @@ await registerPcoRoutes(app);
 initPcoAuthFromEnv();
 await registerScriptureRoutes(app);
 await registerStageSettingsRoutes(app);
+await registerLiveFolderRoutes(app);
 await registerApiBibleRoutes(app);
 await registerSongLibraryRoutes(app);
 // [P2b.12]

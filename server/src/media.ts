@@ -84,3 +84,11 @@ export async function restoreMediaItem(id: string): Promise<MediaItem | null> {
   REGISTRY.set(id, restored);
   return restored;
 }
+
+/** Ids of the live (not deleted) live-folder items. Cheap: no usage counting. */
+export async function listLiveFolderItemIds(): Promise<string[]> {
+  await ensureLoaded();
+  return liveOnly(REGISTRY.values())
+    .filter((m) => m.kind === "live-folder")
+    .map((m) => m.id);
+}

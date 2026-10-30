@@ -30,6 +30,7 @@ import * as songSession from "./songSession";
 import { handleScriptureMessage } from "./scriptureHandlers";
 import { handleSlidesMessage } from "./slidesHandlers";
 import { handleMediaMessage } from "./mediaHandlers";
+import { getLiveFolderPath, listLiveFolderFiles, syncLiveFolderWatchers } from "./liveFolders";
 import * as channelConfigs from "./channelConfigs";
 import * as sttListener from "./sttListener";
 import * as sttSpawner from "./sttSpawner";
@@ -1023,6 +1024,16 @@ export function handleConnection(
         case "delete_media_item":
         case "restore_media_item":
           await handleMediaMessage(parsed, send);
+          // A live-folder item may have been added or removed.
+          if (parsed.type !== "list_media" && parsed.type !== "get_media_item") void syncLiveFolderWatchers();
+          break;
+        case "list_live_folder":
+          send({
+            type: "live_folder_files",
+            id: parsed.id,
+            files: listLiveFolderFiles(parsed.id),
+            configured: (await getLiveFolderPath(parsed.id)) !== null,
+          });
           break;
         // [P2b.33] stage layout
         case "set_stage_layout": {

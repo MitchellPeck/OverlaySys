@@ -374,6 +374,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("save_media_item"), item: MediaItemSchema }),
   z.object({ type: z.literal("delete_media_item"), id: z.string() }),
   z.object({ type: z.literal("restore_media_item"), id: z.string() }),
+  z.object({ type: z.literal("list_live_folder"), id: z.string() }),
   z.object({
     type: z.literal("slides_take"),
     showId: z.string(),
@@ -666,6 +667,15 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     items: z.array(MediaItemSchema.and(z.object({ usedBy: z.number() }))),
   }),
   z.object({ type: z.literal("media_item"), item: MediaItemSchema }),
+  /** Settled files of a live folder; broadcast whenever the list changes. */
+  z.object({
+    type: z.literal("live_folder_files"),
+    id: z.string(),
+    files: z.array(
+      z.object({ name: z.string(), mediaType: z.enum(["image", "video"]), size: z.number(), mtimeMs: z.number() }),
+    ),
+    configured: z.boolean(),
+  }),
   z.object({
     type: z.literal("song_converted"),
     conversionId: z.string(),
