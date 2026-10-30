@@ -158,3 +158,30 @@ describe("draft templates", () => {
   });
 });
 // [/P2b.11]
+
+describe("channels clear grace timer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(templates, "getTemplate").mockResolvedValue(TEMPLATE_PLAIN);
+    channels.clear("grace");
+    channels.setActiveNull("grace");
+  });
+  afterEach(() => {
+    channels.setActiveNull("grace");
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("an earlier clear's grace timer does not null a later take's out state", () => {
+    channels.take("grace", TEMPLATE_PLAIN.id, {});
+    channels.clear("grace"); // A: grace armed for 1500ms
+    vi.advanceTimersByTime(500);
+    channels.take("grace", TEMPLATE_PLAIN.id, {}); // B
+    vi.advanceTimersByTime(100);
+    channels.clear("grace"); // B out; its own grace ends at t=2100
+    vi.advanceTimersByTime(900); // t=1500: A's timer fires
+    expect(channels.getState("grace").active?.phase).toBe("out");
+    vi.advanceTimersByTime(700); // t=2200: B's timer fires
+    expect(channels.getState("grace").active).toBeNull();
+  });
+});

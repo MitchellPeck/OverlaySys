@@ -272,6 +272,9 @@ process.once("SIGINT", () => {
   process.exit(0);
 });
 process.on("exit", shutdownStt);
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] unhandled rejection", reason);
+});
 
 // Parent-death watchdog. When the Electron host spawns us it passes a stdin
 // pipe and sets OVERLAYSYS_HOST_PIPE=1. If the host dies for ANY reason —

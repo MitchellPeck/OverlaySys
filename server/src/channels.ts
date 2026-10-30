@@ -248,7 +248,9 @@ export function take(
   // pause. Scripture slide takes (those carrying a session) do the same so
   // an auto-out can't end the session mid-passage; scripture intros keep it.
   if (!takeIsInternal && !scripture?.session) {
-    void maybeScheduleAutoOut(channel, templateId, s.active.takenAt);
+    maybeScheduleAutoOut(channel, templateId, s.active.takenAt).catch((err) =>
+      console.warn("[channels] maybeScheduleAutoOut failed", err),
+    );
   }
 }
 
@@ -321,9 +323,11 @@ export function clear(
   states.set(channel, s);
   emit(channel);
   // After a short grace, drop to null so reconnecting renderers don't replay.
+  // Only if it is still the same take this clear was armed for.
+  const clearedTakenAt = s.active.takenAt;
   setTimeout(() => {
     const cur = states.get(channel);
-    if (cur && cur.active && cur.active.phase === "out") {
+    if (cur && cur.active && cur.active.phase === "out" && cur.active.takenAt === clearedTakenAt) {
       cur.active = null;
       emit(channel);
     }
@@ -502,7 +506,9 @@ export function takePvwToPgm(fromChannel: string, toChannel: string): void {
 
   // Schedule auto-out on the destination if the promoted template defines
   // it. Same async-with-takenAt-recheck pattern as take().
-  void maybeScheduleAutoOut(toChannel, queued.templateId, pgm.active.takenAt);
+  maybeScheduleAutoOut(toChannel, queued.templateId, pgm.active.takenAt).catch((err) =>
+    console.warn("[channels] maybeScheduleAutoOut failed", err),
+  );
 }
 
 // ───── Media slot ──────────────────────────────────────────────────────────

@@ -317,7 +317,8 @@ export function handleConnection(
     .then(() => {
       send(timers.timersStateMessage());
       send(pcoLiveSync.liveSyncStateMessage());
-    });
+    })
+    .catch((err) => console.warn("[ws] initial state send failed", err));
 
   // Messages from one socket are handled strictly in arrival order: each
   // handler (most await disk) runs after the previous one settles. Without
