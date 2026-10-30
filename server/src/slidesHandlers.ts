@@ -98,11 +98,20 @@ async function takeSlides(msg: Extract<SlidesMessage, { type: "slides_take" }>, 
   }
   // Each slide holds for its own holdSec, else the deck's default; neither means it waits for the operator.
   const sourceSlides = row.deckId ? (deck?.slides ?? []) : (row.localSlides ?? []);
-  const holdById = new Map(sourceSlides.map((sl) => [sl.id, sl.holdSec] as const));
+  const byId = new Map(sourceSlides.map((sl) => [sl.id, sl] as const));
   const defaultHoldSec = row.deckId ? deck?.defaultHoldSec : undefined;
+  // A video slide plays as in a media-only deck: it advances on its end unless it opts out
+  // (then only its own hold applies); the deck's default hold never cuts a video short.
+  const isVideo = (sl: (typeof view.slides)[number]) => sl.media?.mediaType === "video";
+  const advanceOnEnd = view.slides.map((sl) => isVideo(sl) && (byId.get(sl.slideId)?.advanceOnEnd ?? true));
   const timing = {
-    holdSecs: view.slides.map((sl) => holdById.get(sl.slideId) ?? defaultHoldSec),
+    holdSecs: view.slides.map((sl, i) => {
+      if (advanceOnEnd[i]) return undefined;
+      const own = byId.get(sl.slideId)?.holdSec;
+      return isVideo(sl) ? own : (own ?? defaultHoldSec);
+    }),
     loop: row.deckId ? deck?.loop === true : false,
+    ...(advanceOnEnd.some(Boolean) ? { advanceOnEnd } : {}),
   };
   const channel = msg.channel ?? row.channelHint ?? "program";
   slidesSession.start(

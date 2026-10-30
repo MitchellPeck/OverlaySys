@@ -13,7 +13,12 @@ export type StartArgs = {
   licensing: DeckLicensing | null;
   templates: Map<string, Template>;
   /** Auto-advance: seconds each slide holds (undefined waits for the operator), and whether the deck wraps. */
-  timing?: { holdSecs: (number | undefined)[]; loop: boolean };
+  timing?: {
+    holdSecs: (number | undefined)[];
+    loop: boolean;
+    /** Video slides that move on when the video ends (as in a media-only deck) instead of on a hold. */
+    advanceOnEnd?: boolean[];
+  };
 };
 
 interface Session {
@@ -26,6 +31,10 @@ interface Session {
   autoEnded: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   nextAdvanceAt?: number;
+  /** takenAt of the video this session put on air, so only its own "ended" advances. */
+  mediaTakenAt?: number;
+  /** This playthrough already advanced; cleared by a new take or a "playing" report. */
+  playthroughEnded?: boolean;
 }
 
 const PREVIEW = "preview";
@@ -71,7 +80,7 @@ function stopTimer(s: Session): void {
 /** (Re)start the current slide's hold. Never on preview, while blanked, or at the end. */
 function arm(s: Session): void {
   stopTimer(s);
-  if (s.channel === PREVIEW || s.blanked || s.atEnd) return;
+  if (s.channel === PREVIEW || s.blanked || s.atEnd || advancesOnEnd(s)) return;
   const sec = s.args.timing?.holdSecs[s.idx];
   if (sec === undefined || !(sec > 0)) return;
   const ms = sec * 1000;
@@ -80,22 +89,32 @@ function arm(s: Session): void {
     s.timer = null;
     delete s.nextAdvanceAt;
     if (sessions.get(s.channel) !== s) return;
-    const onAir = s.idx;
-    try {
-      autoAdvance(s);
-    } catch (err) {
-      // Never leave a timer re-firing a failing render on air: hold here until the operator moves.
-      stopTimer(s);
-      console.warn("[slidesSession] auto-advance failed", err);
-      // Back to the slide actually on air, so the summary and the next step agree with the screen.
-      s.idx = onAir;
-      try {
-        channels.setSlidesSessionSummary(s.channel, summarize(s));
-      } catch (e) {
-        console.warn("[slidesSession] summary after a failed auto-advance failed", e);
-      }
-    }
+    guardedAutoAdvance(s);
   }, ms);
+}
+
+/** The current slide is a video that moves on when it ends. */
+function advancesOnEnd(s: Session): boolean {
+  return s.args.slides[s.idx]?.media?.mediaType === "video" && s.args.timing?.advanceOnEnd?.[s.idx] === true;
+}
+
+/** Auto-advance (timer or a video's end); a failure holds the slide on air instead of crashing. */
+function guardedAutoAdvance(s: Session): void {
+  const onAir = s.idx;
+  try {
+    autoAdvance(s);
+  } catch (err) {
+    // Never leave a timer re-firing a failing render on air: hold here until the operator moves.
+    stopTimer(s);
+    console.warn("[slidesSession] auto-advance failed", err);
+    // Back to the slide actually on air, so the summary and the next step agree with the screen.
+    s.idx = onAir;
+    try {
+      channels.setSlidesSessionSummary(s.channel, summarize(s));
+    } catch (e) {
+      console.warn("[slidesSession] summary after a failed auto-advance failed", e);
+    }
+  }
 }
 
 /** The hold ran out: next slide, wrap when the deck loops, else hold the last slide at the end. */
@@ -142,6 +161,8 @@ function renderMedia(s: Session, media: NonNullable<ResolvedSlide["media"]>, lab
     muted: media.muted === true,
     owner: mediaOwner(s),
   });
+  s.mediaTakenAt = channels.getState(s.channel).media?.takenAt;
+  s.playthroughEnded = false;
   const cur = channels.getState(s.channel).active;
   if (cur && cur.phase !== "out") channels.clearInternal(s.channel);
 }
@@ -285,6 +306,21 @@ export function promote(from: string, to: string): boolean {
   // End the source after the destination is on air.
   end(from);
   return true;
+}
+
+/** The renderer reported the channel's media ended: a video slide that advances on its end moves on, once per playthrough. */
+export function mediaEnded(channel: string, takenAt: number): void {
+  const s = sessions.get(channel);
+  if (!s || channel === PREVIEW || s.blanked || s.atEnd || !advancesOnEnd(s)) return;
+  if (s.mediaTakenAt !== takenAt || s.playthroughEnded) return;
+  s.playthroughEnded = true;
+  guardedAutoAdvance(s);
+}
+
+/** The renderer reports the channel's media playing: a new playthrough may end (and advance) again. */
+export function mediaPlaying(channel: string, takenAt: number): void {
+  const s = sessions.get(channel);
+  if (s && s.mediaTakenAt === takenAt) s.playthroughEnded = false;
 }
 
 /** The channel's session has one of its photo/video slides up in the media slot. */

@@ -359,6 +359,28 @@ describe("slides live handlers", () => {
     expect(sent).toEqual([]);
   });
 
+  it("a mixed deck's video slide advances on its end by default; the deck hold never cuts it short", async () => {
+    const vid = (id: string, over: object = {}) => ({ id, data: {}, media: { assetUrl: `/assets/${id}.mp4`, mediaType: "video" as const }, ...over });
+    await decks.saveDeck(
+      deck({
+        id: "dMixed",
+        defaultTemplateId: "t",
+        defaultHoldSec: 5,
+        slides: [{ id: "x1", data: { text: "Welcome" } }, vid("v1"), vid("v2", { advanceOnEnd: false, holdSec: 9 }), vid("v3", { advanceOnEnd: false })],
+      }),
+    );
+    const spy = vi.spyOn(slidesSession, "start");
+    await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMixed" }, send);
+    expect(sent).toEqual([]);
+    expect(spy.mock.calls[0]![1].timing).toEqual({
+      holdSecs: [5, undefined, 9, undefined],
+      loop: false,
+      advanceOnEnd: [false, true, false, false],
+    });
+    spy.mockRestore();
+    slidesSession.end("program");
+  });
+
   it("a refused media-deck take says so in plain words", async () => {
     await handleSlidesMessage({ type: "slides_take", showId: "s", rowId: "rowMedia", slideIdx: 9 }, send);
     expect(sent).toEqual([{ type: "error", code: "not_found", message: "That slide is no longer in this deck." }]);

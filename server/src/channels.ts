@@ -745,8 +745,9 @@ export function mediaStatus(
       m.paused = true;
       emit(channel);
     }
-    // A media deck moves on from a video that advances on its end.
+    // A media deck (or a mixed deck's video slide) moves on from a video that advances on its end.
     mediaDeckSession.mediaEnded(channel, takenAt);
+    slidesSession.mediaEnded(channel, takenAt);
     return;
   }
 
@@ -758,5 +759,8 @@ export function mediaStatus(
   else notifyPlayback({ channel, takenAt, playback: next });
   // A media deck skips a slide that can't play.
   if (report.status === "error") mediaDeckSession.mediaFailed(channel, takenAt);
-  else if (report.status === "playing") mediaDeckSession.mediaPlaying(channel, takenAt);
+  else if (report.status === "playing") {
+    mediaDeckSession.mediaPlaying(channel, takenAt);
+    slidesSession.mediaPlaying(channel, takenAt);
+  }
 }

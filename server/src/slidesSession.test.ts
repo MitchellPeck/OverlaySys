@@ -563,6 +563,57 @@ describe("mixed deck: media slides air in the media slot", () => {
       expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png" });
       slidesSession.end("program");
     });
+    const ended = (ch = "program") => {
+      const m = channels.getState(ch).media!;
+      channels.mediaStatus(ch, m.takenAt, { status: "ended", currentTime: 10, duration: 10 });
+    };
+    const withVideo = [rs(0, "a", "T1", "Line A"), video, rs(2, "c", "T1", "Line C")];
+
+    it("a video slide that advances on end waits for its end, not the hold; a duplicate end advances once", () => {
+      slidesSession.start(
+        "program",
+        { ...args({ slides: withVideo }), timing: { holdSecs: [5, undefined, 5], loop: true, advanceOnEnd: [false, true, false] } },
+        1,
+      );
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBeUndefined();
+      vi.advanceTimersByTime(600000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1 });
+      const m = channels.getState("program").media!;
+      ended();
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      expect(channels.getState("program").active).toMatchObject({ data: { text: "Line C" }, phase: "in" });
+      // A late duplicate "ended" for the same playthrough does nothing.
+      channels.mediaStatus("program", m.takenAt, { status: "ended", currentTime: 10, duration: 10 });
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      slidesSession.end("program");
+    });
+
+    it("a duplicate end for the same playthrough advances once (even while still on that slide)", () => {
+      slidesSession.start(
+        "program",
+        { ...args({ slides: [video, rs(1, "a", "T1", "Line A"), rs(2, "c", "T1", "Line C")] }), timing: { holdSecs: [undefined, undefined, undefined], loop: false, advanceOnEnd: [true, false, false] } },
+        0,
+      );
+      const m = channels.getState("program").media!;
+      slidesSession.mediaEnded("program", m.takenAt);
+      slidesSession.mediaEnded("program", m.takenAt);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1 });
+      slidesSession.end("program");
+    });
+
+    it("a video slide without advance-on-end uses its hold, and an end does not advance it", () => {
+      slidesSession.start(
+        "program",
+        { ...args({ slides: withVideo }), timing: { holdSecs: [5, 7, 5], loop: true, advanceOnEnd: [false, false, false] } },
+        1,
+      );
+      ended();
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1 });
+      vi.advanceTimersByTime(7000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      slidesSession.end("program");
+    });
+
     it("PVW→PGM still promotes a deck on a media slide once preview's graphic has gone", () => {
       slidesSession.start("preview", args({ slides: mixed }), 1);
       vi.advanceTimersByTime(2000);
