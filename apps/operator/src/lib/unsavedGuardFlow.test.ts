@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterChoice, guardActions, guardedNavigate, leaveMethod, registerLeaveGuard } from "./unsavedGuardFlow";
+import { afterChoice, appRouteFromHref, guardActions, guardedNavigate, leaveMethod, registerLeaveGuard } from "./unsavedGuardFlow";
 
 describe("unsavedGuardFlow", () => {
   it("replaces the sentinel entry when leaving by link", () => {
@@ -57,5 +57,26 @@ describe("guardedNavigate", () => {
     registerLeaveGuard(async () => ({ navigate: false, method: "push" }))();
     await guardedNavigate("/a", r);
     expect(r.calls).toEqual(["push /a"]);
+  });
+});
+
+describe("appRouteFromHref", () => {
+  // A rendered <Link> href already carries the basePath; router.push adds it
+  // again, so the packaged app landed on /operator/operator/... (404).
+  it("strips the basePath a rendered link carries", () => {
+    expect(appRouteFromHref("/operator/shows", "/operator")).toBe("/shows");
+    expect(appRouteFromHref("/operator/shows/edit?id=s1", "/operator")).toBe("/shows/edit?id=s1");
+  });
+
+  it("maps the basePath itself to the app root", () => {
+    expect(appRouteFromHref("/operator", "/operator")).toBe("/");
+    expect(appRouteFromHref("/operator/", "/operator")).toBe("/");
+    expect(appRouteFromHref("/operator?x=1", "/operator")).toBe("/?x=1");
+  });
+
+  it("leaves hrefs alone without a basePath or outside it", () => {
+    expect(appRouteFromHref("/shows", "")).toBe("/shows");
+    expect(appRouteFromHref("/operatorx/a", "/operator")).toBe("/operatorx/a");
+    expect(appRouteFromHref("/shows", "/operator")).toBe("/shows");
   });
 });

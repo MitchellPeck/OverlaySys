@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { chooseAction } from "@overlaysys/ui";
-import { afterChoice, guardActions, leaveMethod, registerLeaveGuard, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
+import { afterChoice, appRouteFromHref, guardActions, leaveMethod, registerLeaveGuard, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
 import { sentinelPopAction, shouldConfirmLinkNavigation, shouldDisarmSentinel } from "@/lib/stageDesigner";
 
 export const DEFAULT_UNSAVED_PROMPT = "You have unsaved changes.";
@@ -135,7 +135,7 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
       e.preventDefault();
       e.stopPropagation();
       if (askingRef.current) return;
-      const href = a.getAttribute("href") ?? "";
+      const href = appRouteFromHref(a.getAttribute("href") ?? "");
       void askRef.current("link").then((r) => {
         if (!r.navigate) return;
         leavingRef.current = true;

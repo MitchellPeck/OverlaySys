@@ -69,3 +69,19 @@ export async function guardedNavigate(
   if (decision.method === "replace") router.replace(href);
   else router.push(href);
 }
+
+/** The app's basePath ("/operator" in the packaged static export, "" in dev). */
+export const APP_BASE_PATH = process.env["NEXT_PUBLIC_BASE_PATH"] ?? "";
+
+/**
+ * A rendered link's href, as a route `router.push` accepts. Next writes the
+ * basePath into every <Link>'s href and adds it again on push, so pushing
+ * the raw attribute lands on /operator/operator/... in the packaged app.
+ */
+export function appRouteFromHref(href: string, basePath: string = APP_BASE_PATH): string {
+  if (!basePath || !href.startsWith(basePath)) return href;
+  const rest = href.slice(basePath.length);
+  if (rest === "") return "/";
+  if (rest.startsWith("?") || rest.startsWith("#")) return `/${rest}`;
+  return rest.startsWith("/") ? rest : href;
+}

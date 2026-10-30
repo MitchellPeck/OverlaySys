@@ -20,6 +20,9 @@ const nextConfig = {
   // emitted with that prefix.
   output: process.env.NEXT_BUILD_STATIC === "1" ? "export" : undefined,
   basePath: process.env.NEXT_BUILD_STATIC === "1" ? "/operator" : "",
+  // Exposed so client code can turn a rendered <Link> href back into a route
+  // (lib/unsavedGuardFlow.ts appRouteFromHref).
+  env: { NEXT_PUBLIC_BASE_PATH: process.env.NEXT_BUILD_STATIC === "1" ? "/operator" : "" },
   assetPrefix: process.env.NEXT_BUILD_STATIC === "1" ? "/operator" : undefined,
   // Static-export needs trailingSlash so internal routes resolve as
   // foo/index.html instead of foo.html. Doesn't affect dev mode.
