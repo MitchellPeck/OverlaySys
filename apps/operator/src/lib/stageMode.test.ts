@@ -9,6 +9,7 @@ const show = {
     { id: "s", kind: "song", songId: "wm", lyricTemplateId: "lyr" },
     { id: "x", kind: "scripture", reference: "John 3:16" },
     { id: "v", kind: "video", label: "Giving" },
+    { id: "p", kind: "media", mediaType: "image", assetUrl: "/assets/p.png", label: "Welcome" },
   ],
 } as unknown as Show;
 
@@ -29,6 +30,12 @@ describe("stageModeFor", () => {
     expect(stageModeFor({ ...base, selectedRowId: "s" }).kind).toBe("song");
     expect(stageModeFor({ ...base, selectedRowId: "x" }).kind).toBe("scripture");
     expect(stageModeFor({ ...base, selectedRowId: "v" }).kind).toBe("video");
+  });
+
+  it("image row is a media item", () => {
+    expect(stageModeFor({ ...base, selectedRowId: "p" })).toEqual({ kind: "media", row: show.rows[4] });
+    expect(shortcutHint({ kind: "media", row: show.rows[4] as never })).toContain("Space take");
+    expect(shortcutHint({ kind: "media", row: show.rows[4] as never })).not.toContain("play-pause");
   });
 
   it("shows the hotcard when a hotcard is selected", () => {

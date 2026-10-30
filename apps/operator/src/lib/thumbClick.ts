@@ -2,7 +2,7 @@ import type { ChannelState, SectionKind, Song, SongRow, SongSessionSummary } fro
 import { resolveArrangement, slideAirData } from "@overlaysys/core";
 import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
-import { posterPathFor } from "./mediaTake";
+import { mediaRowTakeMessage, posterPathFor } from "./mediaTake";
 import { effectiveRowData, graphicRowMessage } from "./rowData";
 import { rowAirState, sessionPlaysRow, songRowIsUnique, type AirContext } from "./rowAirState";
 import type { RowLike } from "./rowLike";
@@ -29,6 +29,8 @@ export type ThumbRender =
       airData?: true;
     }
   | { kind: "poster"; src: string | null }
+  /** A photo row: the card shows the stored image itself. */
+  | { kind: "image"; src: string }
   | { kind: "placeholder"; text: string };
 
 export type ThumbSpec = {
@@ -229,6 +231,20 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
           },
         ];
       }
+      case "media": {
+        const p = row as Extract<RowLike, { kind: "media" }>;
+        const air = rowAirState(p, ctx.channelStates, ctx.songSessions);
+        return [
+          {
+            key: p.id,
+            label: "",
+            group: null,
+            render: { kind: "image", src: p.assetUrl },
+            state: air === "program" ? "live" : null,
+            blanked: false,
+          },
+        ];
+      }
       case "slides": {
         const deckId = (row as { deckId?: string }).deckId;
         const view = slidesRowViewFor(row, deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null);
@@ -315,6 +331,12 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
         const live = rowAirState(row as Extract<RowLike, { kind: "video" }>, ctx.channelStates, ctx.songSessions) === "program";
         if (live) return { messages: [] };
         return { messages: [], toast: "Videos play straight to their output: use Take" };
+      }
+      case "media": {
+        // A photo has no cue or playback: a click takes it, unless it is already up.
+        const p = row as Extract<RowLike, { kind: "media" }>;
+        if (rowAirState(p, ctx.channelStates, ctx.songSessions) === "program") return { messages: [] };
+        return { messages: [mediaRowTakeMessage(p, ctx.show.id)] };
       }
       case "slides": {
         // Live on any output (program or the row's routed one): jump that session.

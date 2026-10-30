@@ -143,6 +143,11 @@ describe("rowCanFire (keys and buttons agree)", () => {
     expect(rowCanFire({ kind: "video", id: "v" } as never, "take", ok)).toBe(true);
     expect(rowCanFire({ kind: "video", id: "v" } as never, "cue", ok)).toBe(false);
   });
+  it("an image row takes but has no cue", () => {
+    const p = { kind: "media", mediaType: "image", id: "p" } as never;
+    expect(rowCanFire(p, "take", ok)).toBe(true);
+    expect(rowCanFire(p, "cue", ok)).toBe(false);
+  });
   it("scripture needs slides", () => {
     expect(rowCanFire({ kind: "scripture", id: "x", slides: [] } as never, "cue", ok)).toBe(false);
     expect(rowCanFire({ kind: "scripture", id: "x", slides: [{}] } as never, "take", ok)).toBe(true);

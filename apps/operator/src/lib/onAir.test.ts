@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelState, Show } from "@overlaysys/core";
-import { anythingOnAir, channelHasContent, clearChannelMessages, onAirCaption, pvwTakeMessages } from "./onAir";
+import { anythingOnAir, channelHasContent, channelIsLive, clearChannelMessages, onAirCaption, pvwTakeMessages } from "./onAir";
 
 const show = {
   id: "show",
@@ -86,6 +86,26 @@ const videoMedia = {
   paused: false,
   playback: { status: "playing", currentTime: 3, duration: 60, updatedAt: 1 },
 } as NonNullable<ChannelState["media"]>;
+
+const photoMedia = {
+  ...videoMedia,
+  rowId: "p1",
+  assetUrl: "/assets/p.png",
+  label: "Welcome",
+  mediaType: "image",
+  // A photo has no playback; the server leaves it idle rather than reporting "ended".
+  playback: { status: "ended", currentTime: 0, duration: 0, updatedAt: 1 },
+} as NonNullable<ChannelState["media"]>;
+
+describe("photos in the media slot", () => {
+  it("an image row in the media slot is on air", () => {
+    const st: ChannelState = { channel: "program", active: null, media: photoMedia };
+    expect(channelIsLive(st)).toBe(true);
+    expect(anythingOnAir({ program: st })).toBe(true);
+    expect(onAirCaption(st, ctx)).toBe("Photo: Welcome");
+    expect(clearChannelMessages(st, "program")).toContainEqual({ type: "media_clear", channel: "program" });
+  });
+});
 
 describe("clearChannelMessages", () => {
   it("clears graphics only when no media is on the channel", () => {

@@ -217,6 +217,7 @@ export function useGlobalShortcuts(): void {
         }
       } else if (e.code === "Space") {
         e.preventDefault();
+        // Only videos have transport; a photo falls through to Take (a no-op while it is up).
         if (row && row.kind === "video") {
           const onAir = onAirMediaFor(row, store.channelStates);
           if (onAir) {

@@ -12,7 +12,7 @@ import { fetchHotcardForFire } from "@/lib/hotcardFetchFire";
 import type { RowLike } from "@/lib/rowLike";
 import { rowView } from "@/lib/rowView";
 import { formatDuration } from "@/lib/listFormat";
-import { onAirMediaFor, videoRowTakeMessage } from "@/lib/mediaTake";
+import { mediaRowTakeMessage, onAirMediaFor } from "@/lib/mediaTake";
 import { editedFieldKeys, effectiveRowData, graphicRowMessage } from "@/lib/rowData";
 import { songCueChannel, songTakeChannel } from "@/lib/songChannel";
 import { hotcardFireMessage } from "@/lib/shortcutGuards";
@@ -220,7 +220,13 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
     case "video": {
       const v = row as Extract<RowLike, { kind: "video" }>;
       if (onAirMediaFor(v, channelStates)) return <MediaTransportStrip inline size="lg" />;
-      return <CueTake take={() => videoRowTakeMessage(v, useStore.getState().show?.id)} />;
+      return <CueTake take={() => mediaRowTakeMessage(v, useStore.getState().show?.id)} />;
+    }
+    case "media": {
+      // A photo has no transport, timeline or duration: just Take, or "On air" while it is up.
+      const p = row as Extract<RowLike, { kind: "media" }>;
+      if (onAirMediaFor(p, channelStates)) return <span style={{ fontSize: 12, color: colors.textMuted }}>On air</span>;
+      return <CueTake take={() => mediaRowTakeMessage(p, useStore.getState().show?.id)} />;
     }
     case "slides": {
       const cue = slidesRowTakeMessages(show.id, row, "cue");

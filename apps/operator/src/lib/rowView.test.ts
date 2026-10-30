@@ -4,7 +4,7 @@ import type { Section, Show, Song, Template } from "@overlaysys/core";
 const slidesMock = vi.fn();
 vi.mock("./slidesRowView", () => ({ slidesRowViewFor: (...a: unknown[]) => slidesMock(...a) }));
 
-import { rowView, sectionShortLabel, type RowViewCtx } from "./rowView";
+import { isMediaRow, rowView, sectionShortLabel, type RowViewCtx } from "./rowView";
 
 const template = {
   id: "t1",
@@ -98,6 +98,17 @@ describe("rowView", () => {
     expect(rowView(row as never, ctx({ mediaItems }))).toMatchObject({ title: "Countdown" });
     expect(rowView({ ...row, label: "Walk-in" } as never, ctx({ mediaItems }))).toMatchObject({ title: "Walk-in" });
     expect(rowView(row as never, ctx())).toMatchObject({ title: "b.mp4" });
+  });
+  it("image row label/thumb from its asset", () => {
+    const row = { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/a/pic.png", mediaItemId: "m1", fit: "cover" };
+    expect(rowView(row as never, ctx())).toMatchObject({ kind: "video", title: "pic.png", detail: null, supported: true });
+    expect(rowView(row as never, ctx({ mediaItems: [{ id: "m1", name: "Welcome slide" }] }))).toMatchObject({ title: "Welcome slide" });
+    expect(rowView({ ...row, label: "Opening" } as never, ctx())).toMatchObject({ title: "Opening" });
+  });
+  it("isMediaRow is true for video and image rows only", () => {
+    expect(isMediaRow({ kind: "video", id: "v" } as never)).toBe(true);
+    expect(isMediaRow({ kind: "media", id: "p" } as never)).toBe(true);
+    expect(isMediaRow({ kind: "graphic", id: "g" } as never)).toBe(false);
   });
   it("an unknown kind renders as unsupported, never throws", () => {
     expect(rowView({ kind: "future", id: "x" }, ctx())).toMatchObject({ supported: false, title: "Unsupported item" });

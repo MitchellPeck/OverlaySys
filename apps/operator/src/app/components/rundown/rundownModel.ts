@@ -1,6 +1,7 @@
 import { groupRowsBySection, type Show, type SlidesRowView } from "@overlaysys/core";
 import type { AirState } from "../../../lib/rowAirState";
 import type { RowLike } from "../../../lib/rowLike";
+import { isMediaRow } from "../../../lib/rowView";
 import { nextRowId } from "../../../lib/liveNext";
 import { formatRowLength, showTotal } from "../../../lib/rowLength";
 import { nudgeRow } from "../../shows/edit/showEditOps";
@@ -47,11 +48,12 @@ export function rowCanFire(
   o: { supported: boolean; slidesView?: Pick<SlidesRowView, "missingDeck" | "slides"> | null },
 ): boolean {
   if (!o.supported) return false;
-  if (action === "cue" && row.kind === "video") return false;
+  if (action === "cue" && isMediaRow(row)) return false;
   switch (row.kind) {
     case "graphic":
     case "song":
     case "video":
+    case "media":
       return true;
     case "scripture":
       return ((row as { slides?: unknown[] }).slides ?? []).length > 0;

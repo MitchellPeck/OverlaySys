@@ -1,4 +1,4 @@
-import type { ChannelState, GraphicRow, ScriptureRow, Show, SlidesRow, SongRow, SongSessionSummary, VideoRow } from "@overlaysys/core";
+import type { ChannelState, GraphicRow, ImageRow, ScriptureRow, Show, SlidesRow, SongRow, SongSessionSummary, VideoRow } from "@overlaysys/core";
 
 export type StageMode =
   | { kind: "song-live"; channel: "program" | "preview"; session: SongSessionSummary; selection: StageMode }
@@ -8,6 +8,7 @@ export type StageMode =
   | { kind: "scripture"; row: ScriptureRow }
   | { kind: "graphic"; row: GraphicRow }
   | { kind: "video"; row: VideoRow }
+  | { kind: "media"; row: ImageRow }
   | { kind: "slides"; row: SlidesRow } // [P3.8]
   | { kind: "hotcard"; hotcardId: string }
   | { kind: "empty" };
@@ -53,6 +54,8 @@ function selectionModeFor(input: StageInput): StageMode {
         return { kind: "graphic", row };
       case "video":
         return { kind: "video", row };
+      case "media":
+        return { kind: "media", row };
       case "slides": // [P3.8]
         return { kind: "slides", row };
     }

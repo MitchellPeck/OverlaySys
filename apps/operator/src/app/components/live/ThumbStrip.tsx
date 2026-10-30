@@ -9,7 +9,7 @@ import { thumbActivate, thumbsFor, type ThumbCtx, type ThumbSpec } from "@/lib/t
 import type { RowLike } from "@/lib/rowLike";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
-import { videoPosterUrl } from "@/lib/uploadAsset";
+import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
 import { measureTextLayers, overflowSummary } from "@/lib/textOverflow";
 import { sectionKindColor } from "@/app/songs/edit/slides/sectionColors";
 import { useOverflowStore } from "./overflowStore";
@@ -210,6 +210,9 @@ function CardBody({
         measure={measure}
       />
     );
+  }
+  if (r.kind === "image") {
+    return <img src={resolveAssetUrl(r.src)} alt="" loading="lazy" style={{ display: "block", width, height, objectFit: "cover", background: colors.bg }} />;
   }
   if (r.kind === "poster") {
     const asset = row.kind === "video" ? (row as { assetUrl?: string }).assetUrl : undefined;

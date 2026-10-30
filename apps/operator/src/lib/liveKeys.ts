@@ -2,7 +2,7 @@ import type { ChannelState, SectionKind, Show, Song, Template } from "@overlaysy
 import type { ClientMessage } from "@overlaysys/ws-protocol";
 import { graphicRowMessage, type RowDataOverrides } from "./rowData";
 import { songCueChannel, songTakeChannel } from "./songChannel";
-import { onAirMediaFor, videoRowTakeMessage } from "./mediaTake";
+import { onAirMediaFor, mediaRowTakeMessage } from "./mediaTake";
 import { slidesRowTakeMessages } from "./slidesRowView";
 import { sectionAvailable } from "./songNav";
 import { channelHasContent } from "./onAir";
@@ -44,9 +44,10 @@ export function rowFireMessages(row: Row, action: "cue" | "take", ctx: RowFireCt
       return [{ type: "scripture_take_slide", showId: show.id, rowId: row.id, slideIdx, channel }];
     }
     case "video":
+    case "media":
       if (action === "cue") return [];
       if (onAirMediaFor(row, ctx.channelStates)) return [];
-      return [videoRowTakeMessage(row, show.id)];
+      return [mediaRowTakeMessage(row, show.id)];
     case "slides":
       return slidesRowTakeMessages(show.id, row, action) ?? [];
     default:

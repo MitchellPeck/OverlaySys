@@ -22,6 +22,7 @@ const show = {
     { kind: "scripture", id: "sc", reference: "Ref 1:1", slides: [{ text: "Line one" }, { text: "Line two" }] },
     { kind: "scripture", id: "empty", reference: "Ref 2:2", slides: [] },
     { kind: "video", id: "v", assetUrl: "/a/clip.mp4" },
+    { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/p.png", fit: "cover" },
   ],
   songs: [],
 } as unknown as Show;
@@ -40,6 +41,17 @@ describe("rowFireMessages", () => {
     expect(rowFireMessages(row("sc"), "cue", ctx)).toEqual([
       { type: "scripture_take_slide", showId: "show-1", rowId: "sc", slideIdx: 0, channel: "preview" },
     ]);
+  });
+
+  it("take key on an image row sends media_take; no cue; no re-take while on air", () => {
+    expect(rowFireMessages(row("p"), "take", ctx)).toEqual([
+      expect.objectContaining({ type: "media_take", channel: "program", rowId: "p", mediaType: "image" }),
+    ]);
+    expect(rowFireMessages(row("p"), "cue", ctx)).toEqual([]);
+    const onAir = {
+      program: { channel: "program", active: null, media: { rowId: "p", mediaType: "image", playback: { status: "ended" } } },
+    } as unknown as Record<string, ChannelState>;
+    expect(rowFireMessages(row("p"), "take", { ...ctx, channelStates: onAir })).toEqual([]);
   });
 
   it("video has no cue; scripture with no slides sends nothing", () => {

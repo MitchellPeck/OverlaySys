@@ -85,6 +85,18 @@ describe("rowAirState", () => {
     expect(rowAirState(video("v1"), { program: { channel: "program", active: null, media: media("error") } }, {})).toBeNull();
   });
 
+  it("image row never reports ended", () => {
+    const photo = { id: "p1", kind: "media", mediaType: "image", assetUrl: "/a.png" } as unknown as Row;
+    const media = (status: "loading" | "playing" | "ended") => ({
+      rowId: "p1", assetUrl: "/a.png", volume: 1, endAction: "hold" as const, mediaType: "image" as const, fit: "cover" as const, loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
+      playback: { status, currentTime: 0, duration: 0, updatedAt: 1 },
+    });
+    for (const status of ["loading", "playing", "ended"] as const) {
+      expect(rowAirState(photo, { program: { channel: "program", active: null, media: media(status) } }, {})).toBe("program");
+    }
+    expect(rowAirState(photo, { program: { channel: "program", active: null } }, {})).toBeNull();
+  });
+
   it("scripture lights from its session or its intro context", () => {
     const row = { kind: "scripture", id: "sr", reference: "John 3:16", translation: "KJV", templateId: "body", slides: [] } as unknown as Show["rows"][number];
     const live = {

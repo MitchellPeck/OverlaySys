@@ -1,5 +1,6 @@
 import type {
   Deck,
+  ImageRow,
   MediaItem,
   Section,
   Show,
@@ -8,6 +9,7 @@ import type {
   SongMeta,
   Template,
   TemplateMeta,
+  VideoRow,
 } from "@overlaysys/core";
 import { resolveArrangement } from "@overlaysys/core";
 import type { ItemKind } from "@overlaysys/ui";
@@ -42,6 +44,11 @@ export function mediaRowName(
   const item = row.mediaItemId ? mediaItems.find((m) => m.id === row.mediaItemId) : undefined;
   if (item?.name) return item.name;
   return row.assetUrl.split("/").pop() ?? row.assetUrl;
+}
+
+/** A video row or a photo row: both play in the media slot and read as "Media". */
+export function isMediaRow(row: RowLike): row is VideoRow | ImageRow {
+  return row.kind === "video" || row.kind === "media";
 }
 
 export type RowView = {
@@ -142,6 +149,11 @@ function rowViewInner(row: RowLike, ctx: RowViewCtx): RowView {
         title: mediaRowName(r, ctx.mediaItems) || "Video",
         detail: typeof r.durationSec === "number" ? formatClock(r.durationSec) : null,
       };
+    }
+    case "media": {
+      // Photo rows share the video bar colour; they have no length.
+      const r = row as Extract<RowLike, { kind: "media" }>;
+      return { ...base(row, "video"), title: mediaRowName(r, ctx.mediaItems) || "Photo", lengthSec: null };
     }
     case "slides": {
       const deckId = (row as { deckId?: string }).deckId;

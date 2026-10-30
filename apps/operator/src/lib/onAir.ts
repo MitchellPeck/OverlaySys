@@ -11,12 +11,17 @@ type Ctx = {
   templates: Pick<TemplateMeta, "id" | "name">[];
 };
 
+/** A photo stays up until cleared and never "ends"; a video is showing until it ends or errors. */
+function mediaIsShowing(media: NonNullable<ChannelState["media"]>): boolean {
+  return media.mediaType === "image" || (media.playback.status !== "ended" && media.playback.status !== "error");
+}
+
 /** True when the channel is showing something the audience can see. */
 export function channelIsLive(st: ChannelState | undefined): boolean {
   if (!st) return false;
   if (st.songSession && !st.songSession.blanked) return true;
   if (st.scriptureSession) return true;
-  if (st.media && st.media.playback.status !== "ended" && st.media.playback.status !== "error") return true;
+  if (st.media && mediaIsShowing(st.media)) return true;
   return !!st.active && st.active.phase !== "out";
 }
 
@@ -79,7 +84,9 @@ export function onAirCaption(st: ChannelState | undefined, ctx: Ctx): string | n
   if (!st) return null;
   const parts: string[] = [];
   if (st.songSession?.blanked) parts.push("Blanked");
-  if (st.media && st.media.playback.status !== "ended") {
+  if (st.media && st.media.mediaType === "image") {
+    parts.push(`Photo: ${st.media.label || "Photo"}`);
+  } else if (st.media && st.media.playback.status !== "ended") {
     parts.push(`Video: ${st.media.label || "Video"}`);
   }
   if (st.songSession) {

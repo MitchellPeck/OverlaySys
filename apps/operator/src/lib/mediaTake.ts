@@ -15,11 +15,13 @@ export const videoRowTakeMessage = mediaRowTakeMessage;
  * re-take the row; Space toggles pause instead.
  */
 export function onAirMediaFor(
-  row: VideoRow,
+  row: VideoRow | ImageRow,
   channelStates: Record<string, ChannelState>,
 ): ChannelMedia | null {
   const media = channelStates[row.channelHint ?? "program"]?.media;
   if (!media || media.rowId !== row.id) return null;
+  // A photo has no playback, so it never counts as ended or errored.
+  if (row.kind === "media") return media;
   if (media.playback.status === "ended" || media.playback.status === "error") return null;
   return media;
 }

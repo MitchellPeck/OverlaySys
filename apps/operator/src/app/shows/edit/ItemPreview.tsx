@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Show } from "@overlaysys/core";
 import { colors, fontSize } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
+import { resolveAssetUrl } from "@/lib/uploadAsset";
 import type { RowLike } from "@/lib/rowLike";
 import { thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
@@ -61,6 +62,12 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
             <VideoThumb assetUrl={asset} width={width} />
           </div>
         )}
+      </div>
+    );
+  } else if (spec?.render.kind === "image") {
+    body = (
+      <div style={{ width, height, background: colors.surface2, position: "relative", overflow: "hidden" }}>
+        <img src={resolveAssetUrl(spec.render.src)} alt="" style={{ display: "block", width, height, objectFit: "cover" }} />
       </div>
     );
   } else if (spec?.render.kind === "template") {

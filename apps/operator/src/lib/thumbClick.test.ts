@@ -105,6 +105,13 @@ describe("thumbsFor", () => {
     expect(thumbsFor({ ...v, assetUrl: "https://x/y.mp4" } as never, mkCtx())[0]!.render).toEqual({ kind: "poster", src: null });
   });
 
+  it("image row thumb is the photo itself", () => {
+    const p = { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/p.png" };
+    expect(thumbsFor(p as never, mkCtx())[0]).toMatchObject({ render: { kind: "image", src: "/assets/p.png" }, state: null });
+    const live = mkCtx({ channelStates: { program: { media: { rowId: "p", playback: { status: "ended" } } } as unknown as ChannelState } });
+    expect(thumbsFor(p as never, live)[0]!.state).toBe("live");
+  });
+
   it("slides without plan 3: placeholder thumb, click sends nothing", () => {
     slidesMock.mockReturnValue(null);
     const row = { kind: "slides", id: "s1", deckId: "d" };
@@ -315,6 +322,15 @@ describe("thumbActivate", () => {
   it("video never sends from a thumbnail", () => {
     const v = { kind: "video", id: "v", assetUrl: "/assets/abc.mp4" };
     expect(thumbActivate(v as never, 0, mkCtx())).toEqual({ messages: [], toast: "Videos play straight to their output: use Take" });
+  });
+
+  it("clicking an image row takes it to the media slot", () => {
+    const p = { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/p.png", fit: "cover" };
+    expect(thumbActivate(p as never, 0, mkCtx()).messages).toEqual([
+      expect.objectContaining({ type: "media_take", channel: "program", rowId: "p", mediaType: "image" }),
+    ]);
+    const live = mkCtx({ channelStates: { program: { media: { rowId: "p", playback: { status: "loading" } } } as unknown as ChannelState } });
+    expect(thumbActivate(p as never, 0, live)).toEqual({ messages: [] });
   });
 
   it("slides: live goes to the slide on program, otherwise cues preview", () => {
