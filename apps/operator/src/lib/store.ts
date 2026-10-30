@@ -15,6 +15,9 @@ import type {
   SongMeta,
   Deck,
   DeckMeta,
+  MediaItem,
+  MediaItemMeta,
+  LiveFolderFile,
   SongSessionSummary,
   Hotcard,
   HotcardMeta,
@@ -31,6 +34,8 @@ import type { PcoLiveStateMessage, ServerMessage } from "@overlaysys/ws-protocol
 import { DEFAULT_PROJECT_ID } from "@overlaysys/core";
 import { getCurrentProjectId } from "./currentProject";
 import { requestedDecks } from "./deckRequests";
+
+const sortMedia = (items: MediaItemMeta[]) => [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
 export type StageStateMessage = Extract<ServerMessage, { type: "stage_state" }>;
 type ConnState = "connecting" | "open" | "closed";
@@ -114,6 +119,10 @@ type StoreState = {
   // [/P3.13]
   // [P3.14] true once the first deck list has arrived
   decksLoaded: boolean;
+  /** Media library entries (files and live folders), sorted by name. */
+  mediaItems: MediaItemMeta[];
+  /** Last listing of each live folder, by folder id. */
+  liveFolderFiles: Record<string, { files: LiveFolderFile[]; configured: boolean }>;
   // [/P3.14]
   songs: SongMeta[];
   // [P1.13] true once the first song list has arrived
@@ -178,6 +187,10 @@ type StoreState = {
   removeProjectChannelOverride: (projectId: string, channelId: string) => void;
   setSongs: (songs: SongMeta[]) => void;
   // [P3.13]
+  setMediaItems: (items: MediaItemMeta[]) => void;
+  /** A bare item (media_item reply) keeps its known usedBy count. */
+  upsertMediaItem: (item: MediaItem | MediaItemMeta) => void;
+  setLiveFolderFiles: (id: string, files: LiveFolderFile[], configured: boolean) => void;
   setDecks: (d: DeckMeta[]) => void;
   upsertDeck: (d: Deck) => void;
   setLastSongConversion: (m: Extract<ServerMessage, { type: "song_converted" }> | null) => void;
@@ -287,6 +300,8 @@ export const useStore = create<StoreState>((set) => ({
   deckEpoch: 0,
   // [/P3.13]
   decksLoaded: false, // [P3.14]
+  mediaItems: [],
+  liveFolderFiles: {},
   songs: [],
   songsLoaded: false, // [P1.13]
   showsLoaded: false, // [P1.12]
@@ -451,6 +466,15 @@ export const useStore = create<StoreState>((set) => ({
     }),
   setSongs: (songs) => set({ songs, songsLoaded: true }), // [P1.13]
   // [P3.13]
+  setMediaItems: (items) => set({ mediaItems: sortMedia(items) }),
+  upsertMediaItem: (item) =>
+    set((s) => {
+      const prev = s.mediaItems.find((m) => m.id === item.id);
+      const usedBy = "usedBy" in item && typeof item.usedBy === "number" ? item.usedBy : (prev?.usedBy ?? 0);
+      return { mediaItems: sortMedia([...s.mediaItems.filter((m) => m.id !== item.id), { ...item, usedBy }]) };
+    }),
+  setLiveFolderFiles: (id, files, configured) =>
+    set((s) => ({ liveFolderFiles: { ...s.liveFolderFiles, [id]: { files, configured } } })),
   setDecks: (decks) =>
     set((s) => {
       // A cached deck that fell out of the list was deleted (the server sends only the list):

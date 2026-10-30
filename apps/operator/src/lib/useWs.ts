@@ -115,6 +115,7 @@ function bootstrap(): void {
         client.send({ type: "list_decks" });
         store.resetDeckLookups();
         // [/P3.13]
+        client.send({ type: "list_media" });
         client.send({ type: "list_hotcards" });
         client.send({ type: "list_channels" });
         client.send({ type: "list_projects" });
@@ -162,6 +163,15 @@ function bootstrap(): void {
       // [P3.13]
       case "deck_list":
         store.setDecks(msg.decks);
+        break;
+      case "media_list":
+        store.setMediaItems(msg.items);
+        break;
+      case "media_item":
+        store.upsertMediaItem(msg.item);
+        break;
+      case "live_folder_files":
+        store.setLiveFolderFiles(msg.id, msg.files, msg.configured);
         break;
       case "deck":
         store.upsertDeck(msg.deck);
