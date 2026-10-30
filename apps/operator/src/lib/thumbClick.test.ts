@@ -8,13 +8,13 @@ vi.mock("./slidesRowView", () => ({
     Object.keys(st).find((ch) => ch !== "preview" && st[ch]?.slidesSession?.rowId === row.id) ?? null,
   slidesThumbState: (row: { id: string }, pos: number, st: Record<string, ChannelState>) =>
     st.program?.slidesSession?.rowId === row.id && st.program.slidesSession.slideIdx === pos ? "live" : null,
-  slidesThumbMessages: (showId: string, row: { id: string }, pos: number, target: string, ch = "program") =>
+  slidesThumbMessages: (showId: string, row: { id: string }, pos: number, target: string, ch = "program", key?: string) =>
     target === "program-live"
-      ? [{ type: "slides_goto", channel: ch, slideIdx: pos }]
+      ? [{ type: "slides_goto", channel: ch, slideIdx: pos, ...(key ? { key } : {}) }]
       : [{ type: "slides_take", showId, rowId: row.id, slideIdx: pos, channel: "preview" }],
 }));
 
-import { thumbActivate, thumbsFor, type ThumbCtx } from "./thumbClick";
+import { thumbActivate, thumbImageSrc, thumbsFor, type ThumbCtx } from "./thumbClick";
 
 const sec = (id: string, kind: Section["kind"], slides: string[][]): Section => ({
   id,
@@ -101,8 +101,8 @@ describe("thumbsFor", () => {
 
   it("video thumb is the poster frame", () => {
     const v = { kind: "video", id: "v", assetUrl: "/assets/abc.mp4" };
-    expect(thumbsFor(v as never, mkCtx())[0]!.render).toEqual({ kind: "poster", src: "/api/assets/poster/abc.mp4" });
-    expect(thumbsFor({ ...v, assetUrl: "https://x/y.mp4" } as never, mkCtx())[0]!.render).toEqual({ kind: "poster", src: null });
+    expect(thumbsFor(v as never, mkCtx())[0]!.render).toEqual({ kind: "poster", src: "/api/assets/poster/abc.mp4", assetUrl: "/assets/abc.mp4" });
+    expect(thumbsFor({ ...v, assetUrl: "https://x/y.mp4" } as never, mkCtx())[0]!.render).toEqual({ kind: "poster", src: null, assetUrl: "https://x/y.mp4" });
   });
 
   it("image row thumb is the photo itself", () => {
@@ -138,9 +138,41 @@ describe("thumbsFor", () => {
     const t = thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, ctx);
     expect(t.map((x) => x.render)).toEqual([
       { kind: "image", src: "/media-folders/f1/a.png" },
-      { kind: "poster", src: null },
+      { kind: "poster", src: null, assetUrl: "/media-folders/f1/v.mp4" },
     ]);
     expect(slidesMock.mock.calls[0]![2]).toBe(ctx.liveFolderFiles);
+    slidesMock.mockReset();
+  });
+
+  it("thumbs for an on-air folder row come from the view built with the channel states (the session's slideKeys)", () => {
+    slidesMock.mockReturnValue({ slides: [{ key: "k1", slideId: "1.png", position: 0, templateId: "", data: {}, media: { assetUrl: "/media-folders/f1/1.png", mediaType: "image" } }] });
+    const ctx = mkCtx();
+    thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, ctx);
+    expect(slidesMock.mock.calls[0]![3]).toBe(ctx.channelStates);
+    slidesMock.mockReset();
+  });
+
+  it("a thumb click on an on-air media session sends the slide's key", () => {
+    slidesMock.mockReturnValue({
+      slides: [
+        { key: "k1", slideId: "1.png", position: 0, templateId: "", data: {} },
+        { key: "k2", slideId: "3.png", position: 1, templateId: "", data: {} },
+      ],
+    });
+    const ctx = mkCtx({ channelStates: { program: { slidesSession: { rowId: "s1", slideIdx: 0, slot: "media" } } as never } });
+    expect(thumbActivate({ kind: "slides", id: "s1", deckId: "d" } as never, 1, ctx).messages).toEqual([
+      { type: "slides_goto", channel: "program", slideIdx: 1, key: "3.png" },
+    ]);
+    slidesMock.mockReset();
+  });
+
+  it("a media slide's video in an ordinary deck shows its poster", () => {
+    slidesMock.mockReturnValue({ slides: [{ key: "k1", slideId: "v", position: 0, templateId: "t", data: {}, media: { assetUrl: "/assets/abc.mp4", mediaType: "video" } }] });
+    expect(thumbsFor({ kind: "slides", id: "s1", deckId: "d" } as never, mkCtx())[0]!.render).toEqual({
+      kind: "poster",
+      src: "/api/assets/poster/abc.mp4",
+      assetUrl: "/assets/abc.mp4",
+    });
     slidesMock.mockReset();
   });
 
@@ -361,5 +393,18 @@ describe("thumbActivate", () => {
     const row = { kind: "slides", id: "s1", deckId: "d", channelHint: "lyrics" };
     const live = mkCtx({ channelStates: { lyrics: { slidesSession: { rowId: "s1", slideIdx: 0 } } as unknown as ChannelState } });
     expect(thumbActivate(row as never, 2, live).messages).toEqual([{ type: "slides_goto", channel: "lyrics", slideIdx: 2 }]);
+  });
+});
+
+describe("thumbImageSrc", () => {
+  const deps = { resolveAsset: (u: string) => `http://srv${u}`, posterUrl: (u: string) => (u.startsWith("/assets/") ? `http://srv/poster${u}` : null) };
+  it("photos (library or live folder) go through the asset resolver", () => {
+    expect(thumbImageSrc({ kind: "image", src: "/media-folders/f1/a%20b.png" }, deps)).toBe("http://srv/media-folders/f1/a%20b.png");
+    expect(thumbImageSrc({ kind: "image", src: "/assets/p.png" }, deps)).toBe("http://srv/assets/p.png");
+  });
+  it("videos use the poster route; none for a live-folder video; templates and placeholders have no image", () => {
+    expect(thumbImageSrc({ kind: "poster", src: "/api/assets/poster/abc.mp4", assetUrl: "/assets/abc.mp4" }, deps)).toBe("http://srv/poster/assets/abc.mp4");
+    expect(thumbImageSrc({ kind: "poster", src: null, assetUrl: "/media-folders/f1/v.mp4" }, deps)).toBeNull();
+    expect(thumbImageSrc({ kind: "placeholder", text: "x" }, deps)).toBeNull();
   });
 });

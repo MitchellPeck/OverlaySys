@@ -28,7 +28,8 @@ export type ThumbRender =
        */
       airData?: true;
     }
-  | { kind: "poster"; src: string | null }
+  /** A video: `src` is the server poster path (null when there is none); `assetUrl` the video itself. */
+  | { kind: "poster"; src: string | null; assetUrl?: string }
   /** A photo row: the card shows the stored image itself. */
   | { kind: "image"; src: string }
   | { kind: "placeholder"; text: string };
@@ -225,7 +226,7 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
             key: v.id,
             label: "",
             group: null,
-            render: { kind: "poster", src: posterPathFor(v.assetUrl) },
+            render: { kind: "poster", src: posterPathFor(v.assetUrl), assetUrl: v.assetUrl },
             state: air === "program" ? "live" : null,
             blanked: false,
           },
@@ -251,17 +252,18 @@ export function thumbsFor(row: RowLike, ctx: ThumbCtx): ThumbSpec[] {
           row,
           deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null,
           ctx.liveFolderFiles,
+          ctx.channelStates,
         );
         if (!view) return [placeholder(row.id, "Slides decks aren't available yet")];
         return view.slides.map((s, i) => ({
           key: s.key,
           label: s.label ?? `Slide ${i + 1}`,
           group: null,
-          // A live folder's graphic shows the file itself (a video has no poster there).
+          // A photo/video slide (or a live folder's graphic) shows the file itself, not its deck's design.
           render: s.media
             ? s.media.mediaType === "image"
               ? { kind: "image" as const, src: s.media.assetUrl }
-              : { kind: "poster" as const, src: null }
+              : { kind: "poster" as const, src: posterPathFor(s.media.assetUrl), assetUrl: s.media.assetUrl }
             : {
                 kind: "template" as const,
                 templateId: s.templateId,
@@ -350,7 +352,19 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
       case "slides": {
         // Live on any output (program or the row's routed one): jump that session.
         const live = slidesLiveChannel(row, ctx.channelStates);
-        const msgs = slidesThumbMessages(ctx.show.id, row, index, live ? "program-live" : "preview", live ?? undefined);
+        // A media session indexes its own list: send the slide's key so the server lands on that graphic.
+        let key: string | undefined;
+        if (live && ctx.channelStates[live]?.slidesSession?.slot === "media") {
+          const deckId = (row as { deckId?: string }).deckId;
+          const view = slidesRowViewFor(
+            row,
+            deckId ? (ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId]) : null,
+            ctx.liveFolderFiles,
+            ctx.channelStates,
+          );
+          key = view?.slides[index]?.slideId;
+        }
+        const msgs = slidesThumbMessages(ctx.show.id, row, index, live ? "program-live" : "preview", live ?? undefined, key);
         return msgs ? { messages: msgs } : { messages: [], toast: "Slides decks aren't available yet" };
       }
       default:
@@ -359,4 +373,19 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
   } catch {
     return { messages: [] };
   }
+}
+
+/**
+ * The image a thumbnail shows: photos (library files, live-folder files) go
+ * through the asset resolver, so server paths load from the server in dev;
+ * videos use the poster route (none for a live-folder video). Resolvers are
+ * passed in so this stays pure.
+ */
+export function thumbImageSrc(
+  r: ThumbRender,
+  d: { resolveAsset(url: string): string; posterUrl(assetUrl: string): string | null },
+): string | null {
+  if (r.kind === "image") return d.resolveAsset(r.src);
+  if (r.kind === "poster") return r.assetUrl ? d.posterUrl(r.assetUrl) : null;
+  return null;
 }

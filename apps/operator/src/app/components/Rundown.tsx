@@ -77,7 +77,7 @@ export function Rundown() {
   const model = useMemo(() => {
     if (!show) return null;
     const rows = liveGroups(show).flatMap((g) => g.rows) as Row[];
-    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles };
+    const ctx = { show, songs, songCache, templates, templateCache, overrides, deckCache, deckNotFound, liveFolderFiles, channelStates };
     const air: Record<string, AirState> = {};
     const views: Record<string, RowView> = {};
     const edited = new Set<string>();
@@ -100,7 +100,7 @@ export function Rundown() {
       const deckId = row.kind === "slides" ? row.deckId : undefined;
       const slidesView =
         row.kind === "slides"
-          ? slidesRowViewFor(row, deckId ? (deckNotFound[deckId] ? null : deckCache[deckId]) : null, liveFolderFiles)
+          ? slidesRowViewFor(row, deckId ? (deckNotFound[deckId] ? null : deckCache[deckId]) : null, liveFolderFiles, channelStates)
           : null;
       return rowCanFire(row, action, { supported: !!views[id]?.supported, slidesView });
     };

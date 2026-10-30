@@ -223,6 +223,11 @@ export async function handleSlidesMessage(msg: SlidesMessage, send: Send): Promi
       else slidesSession.advance(msg.channel, msg.delta);
       return;
     case "slides_goto": {
+      // A media session goes by key when one is sent: its list may have changed under a client's index.
+      if (msg.key !== undefined && isMediaSession(msg.channel)) {
+        mediaDeckSession.goToKey(msg.channel, msg.key, msg.slideIdx);
+        return;
+      }
       const ok = isMediaSession(msg.channel)
         ? mediaDeckSession.goTo(msg.channel, msg.slideIdx)
         : slidesSession.goTo(msg.channel, msg.slideIdx);

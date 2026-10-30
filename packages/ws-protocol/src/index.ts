@@ -399,6 +399,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("slides_goto"),
     channel: z.string(),
     slideIdx: z.number().int().nonnegative(),
+    /** Media sessions: the slide's key (wins over a stale index; an unknown key is ignored). */
+    key: z.string().optional(),
   }),
   z.object({ type: z.literal("slides_blank"), channel: z.string() }),
   z.object({ type: z.literal("slides_end"), channel: z.string() }),

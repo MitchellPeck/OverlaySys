@@ -1,4 +1,5 @@
 import { nextFolderOrder, type Deck, type LiveFolderFile } from "@overlaysys/core";
+import { validHold } from "./deckDraftOps";
 
 /** Pure edits on a live-folder deck's saved play order. Every op returns a new order, or the same one when nothing changes. */
 
@@ -39,7 +40,8 @@ export function moveFolderFile(order: FolderOrder, from: string, to: string): Fo
 
 /** One file's own hold; `undefined` falls back to the deck's. A file not in the order yet joins the end. */
 export function setFolderFileHold(order: FolderOrder, file: string, sec: number | undefined): FolderOrder {
-  const entry = sec !== undefined && Number.isFinite(sec) && sec > 0 ? { file, holdSec: sec } : { file };
+  const hold = validHold(sec);
+  const entry = hold !== undefined ? { file, holdSec: hold } : { file };
   const i = order.findIndex((o) => o.file === file);
   if (i < 0) return [...order, entry];
   const next = order.slice();

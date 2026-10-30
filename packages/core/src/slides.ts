@@ -9,6 +9,8 @@ export type ResolvedSlide = {
   templateId: string;
   data: Record<string, string>;
   label?: string;
+  /** A photo/video slide: what it shows (its `data` is empty). */
+  media?: { assetUrl: string; mediaType: "image" | "video" };
 };
 
 export type SlidesRowView = {
@@ -61,6 +63,7 @@ export function resolveSlidesRow(
       data: { ...s.data, ...(row.fieldOverrides?.[s.id] ?? {}) },
     };
     if (s.label !== undefined) out.label = s.label;
+    if (s.media) out.media = { assetUrl: s.media.assetUrl, mediaType: s.media.mediaType };
     slides.push(out);
   }
   return { slides, missingSlides };
@@ -151,6 +154,8 @@ export const SlidesSessionSummarySchema = z.object({
   nextAdvanceAt: z.number().optional(),
   loops: z.boolean().optional(),
   slot: z.enum(["graphics", "media"]).optional(),
+  /** Media sessions: the keys of the list the session is playing (frozen until a wrap), so clients index the same list. */
+  slideKeys: z.array(z.string()).optional(),
   /** The deck's own timer reached the end of a non-looping deck: it holds the last slide, but it has ended. */
   autoEnded: z.boolean().optional(),
 });

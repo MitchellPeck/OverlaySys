@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { Deck } from "@overlaysys/core";
 import { Input, NumberInput, Switch, colors, fontSize } from "@overlaysys/ui";
 import { FOLDER_DECK_HOLD_SEC } from "./folderDeckOps";
-import { parseHoldText, setDefaultHold, setLoop } from "./deckDraftOps";
+import { MIN_HOLD_SEC, parseHoldText, setDefaultHold, setLoop } from "./deckDraftOps";
 
 const labelStyle = { fontSize: fontSize.sm, color: colors.textDim } as const;
 
@@ -30,7 +30,7 @@ export function DeckTimingFields({ deck, onChange }: { deck: Deck; onChange(fn: 
           <NumberInput
             id="deck-hold"
             value={deck.defaultHoldSec!}
-            min={0.5}
+            min={MIN_HOLD_SEC}
             step={1}
             precision={1}
             suffix="s"

@@ -243,3 +243,12 @@ describe("setSlideMuted", () => {
     expect("muted" in setSlideMuted(d, "v", false).slides[3]!).toBe(false);
   });
 });
+
+describe("hold minimum", () => {
+  it("holds under 0.5 s are refused, like the deck hold field", () => {
+    expect(parseHoldText("0.4")).toBeUndefined();
+    expect(parseHoldText("0.5")).toBe(0.5);
+    expect("holdSec" in setSlideHold(three(), "a", 0.2).slides[0]!).toBe(false);
+    expect("defaultHoldSec" in setDefaultHold(three(), 0.3)).toBe(false);
+  });
+});

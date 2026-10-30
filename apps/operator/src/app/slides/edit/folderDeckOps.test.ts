@@ -64,3 +64,9 @@ describe("folderDeckEntries", () => {
     ]);
   });
 });
+
+describe("folder hold minimum", () => {
+  it("a per-file hold under 0.5 s is cleared", () => {
+    expect(setFolderFileHold([{ file: "a.png", holdSec: 3 }], "a.png", 0.2)).toEqual([{ file: "a.png" }]);
+  });
+});

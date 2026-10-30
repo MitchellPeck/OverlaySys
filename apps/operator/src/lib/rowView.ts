@@ -1,4 +1,5 @@
 import type {
+  ChannelState,
   Deck,
   ImageRow,
   MediaItem,
@@ -34,6 +35,8 @@ export type RowViewCtx = {
   mediaItems?: Pick<MediaItem, "id" | "name">[];
   /** Live-folder files (store liveFolderFiles): a live-folder deck's slides come from its folder. */
   liveFolderFiles?: LiveFolderMap;
+  /** Live: an on-air live-folder row counts the server session's own list. */
+  channelStates?: Record<string, ChannelState | undefined>;
 };
 
 /** A Media row's name: its label, else its library item's name, else the file name. */
@@ -160,7 +163,7 @@ function rowViewInner(row: RowLike, ctx: RowViewCtx): RowView {
     case "slides": {
       const deckId = (row as { deckId?: string }).deckId;
       const deck = !deckId ? null : ctx.deckNotFound?.[deckId] ? null : ctx.deckCache[deckId];
-      const v = slidesRowViewFor(row, deck, ctx.liveFolderFiles);
+      const v = slidesRowViewFor(row, deck, ctx.liveFolderFiles, ctx.channelStates);
       if (!v) {
         return { ...base(row, "slides"), title: "Slides deck", detail: "Needs Slides decks", supported: false };
       }

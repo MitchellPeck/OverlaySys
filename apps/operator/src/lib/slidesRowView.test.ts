@@ -190,3 +190,39 @@ describe("live-folder decks on Live", () => {
     expect(a.slidesStripNotice(row, v, {})).toBe("This folder has no photos or videos yet.");
   });
 });
+
+describe("an on-air live-folder row follows the session's own list", () => {
+  const folderDeck = deck({ slides: [], liveFolderId: "f1", folderOrder: [], defaultHoldSec: 8, loop: true });
+  const file = (name: string, mediaType: "image" | "video" = "image") => ({ name, mediaType, size: 1, mtimeMs: 1 });
+  // The folder now has a new file and lost 2.png, but the session plays its frozen list until the wrap.
+  const folders = { f1: { files: [file("0-new.png"), file("1.png"), file("3.mp4", "video")], configured: true } };
+  const onAirCs = { program: st({ slidesSession: session("r1", { slideIdx: 2, slot: "media", slideKeys: ["1.png", "2.png", "3.mp4"] }) }) };
+  it("thumbs, count and positions come from slideKeys", () => {
+    const v = a.slidesRowViewFor(row, folderDeck, folders, onAirCs)!;
+    expect(v.slides.map((s) => [s.slideId, s.position, s.media?.mediaType])).toEqual([
+      ["1.png", 0, "image"],
+      ["2.png", 1, "image"],
+      ["3.mp4", 2, "video"],
+    ]);
+    expect(v.slides[1]!.media?.assetUrl).toBe("/media-folders/f1/2.png");
+    expect(v.detail).toBe("3 graphics");
+  });
+  it("a cued folder row follows its preview session too; with no session it resolves the folder", () => {
+    const cued = { preview: st({ slidesSession: session("r1", { slideIdx: 0, slot: "media", slideKeys: ["1.png"] }) }) };
+    expect(a.slidesRowViewFor(row, folderDeck, folders, cued)!.slides.map((s) => s.slideId)).toEqual(["1.png"]);
+    expect(a.slidesRowViewFor(row, folderDeck, folders, {})!.slides.map((s) => s.slideId)).toEqual(["0-new.png", "1.png", "3.mp4"]);
+  });
+  it("a thumb click on a media session sends the slide's key", () => {
+    expect(a.slidesThumbMessages("s", row, 2, "program-live", "program", "3.mp4")).toEqual([
+      { type: "slides_goto", channel: "program", slideIdx: 2, key: "3.mp4" },
+    ]);
+  });
+});
+
+describe("deckAutoAdvances for a live folder", () => {
+  it("auto only with a deck hold or a per-file hold", () => {
+    expect(a.deckAutoAdvances(deck({ slides: [], liveFolderId: "f1" }))).toBe(false);
+    expect(a.deckAutoAdvances(deck({ slides: [], liveFolderId: "f1", defaultHoldSec: 8 }))).toBe(true);
+    expect(a.deckAutoAdvances(deck({ slides: [], liveFolderId: "f1", folderOrder: [{ file: "a.png", holdSec: 4 }] }))).toBe(true);
+  });
+});

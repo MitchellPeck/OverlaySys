@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Show } from "@overlaysys/core";
 import { colors, fontSize } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
-import { resolveAssetUrl } from "@/lib/uploadAsset";
+import { resolveAssetUrl, videoPosterUrl } from "@/lib/uploadAsset";
 import type { RowLike } from "@/lib/rowLike";
-import { thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
+import { thumbImageSrc, thumbsFor, type ThumbCtx } from "@/lib/thumbClick";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { VideoThumb } from "@/app/components/VideoThumb";
 
@@ -23,6 +23,7 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
   const deckCache = useStore((s) => s.deckCache);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
   const boxRef = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(MAX_WIDTH);
 
@@ -44,11 +45,12 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
       templateCache,
       overrides: {},
       deckCache,
+      liveFolderFiles,
       channelStates: {},
       songSessions: {},
     };
     return thumbsFor(row, ctx)[0] ?? null;
-  }, [row, show, songs, songCache, templates, templateCache, deckCache]);
+  }, [row, show, songs, songCache, templates, templateCache, deckCache, liveFolderFiles]);
 
   const height = Math.round((width * 9) / 16);
   let body: ReactNode;
@@ -64,10 +66,16 @@ export function ItemPreview({ row, show }: { row: RowLike; show: Show }) {
         )}
       </div>
     );
-  } else if (spec?.render.kind === "image") {
+  } else if (spec?.render.kind === "image" || spec?.render.kind === "poster") {
+    // A photo row, or a deck's first slide that is a photo or video.
+    const src = thumbImageSrc(spec.render, { resolveAsset: resolveAssetUrl, posterUrl: videoPosterUrl });
     body = (
       <div style={{ width, height, background: colors.surface2, position: "relative", overflow: "hidden" }}>
-        <img src={resolveAssetUrl(spec.render.src)} alt="" style={{ display: "block", width, height, objectFit: "cover" }} />
+        {src ? (
+          <img src={src} alt="" style={{ display: "block", width, height, objectFit: "cover" }} />
+        ) : (
+          <PreviewText text="No preview" />
+        )}
       </div>
     );
   } else if (spec?.render.kind === "template") {

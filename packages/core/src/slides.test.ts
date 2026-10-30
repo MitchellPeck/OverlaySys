@@ -85,3 +85,12 @@ describe("slides resolvers", () => {
     expect(deckTextToSlides("   \n", "text", id)).toEqual([]);
   });
 });
+
+describe("media slides in a row", () => {
+  it("resolveSlidesRow carries a slide's media; design slides have none", () => {
+    const d = { ...deck, slides: [...deck.slides, { id: "m", data: {}, media: { mediaItemId: "i1", assetUrl: "/assets/x.png", mediaType: "image" } }] } as Deck;
+    const s = resolveSlidesRow(row(), d).slides;
+    expect(s[3]!.media).toEqual({ assetUrl: "/assets/x.png", mediaType: "image" });
+    expect("media" in s[0]!).toBe(false);
+  });
+});

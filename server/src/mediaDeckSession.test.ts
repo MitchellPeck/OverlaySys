@@ -353,6 +353,34 @@ describe("mediaDeckSession", () => {
     expect(onAir()).toBe("/media-folders/lf1/0-new.png");
   });
 
+  it("the summary's slideKeys stay frozen across a mid-loop folder change until the wrap", () => {
+    folder.files.set("lf1", [img("1.png"), img("2.png"), img("3.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    expect(mediaDeckSession.summary("program")?.slideKeys).toEqual(["1.png", "2.png", "3.png"]);
+    setFolder("lf1", [img("0-new.png"), img("1.png"), img("3.png")]);
+    sec(5);
+    // 2.png is gone and skipped, but the session's list (and its indices) hold until the wrap.
+    expect(onAir()).toBe("/media-folders/lf1/3.png");
+    expect(mediaDeckSession.summary("program")).toMatchObject({ slideIdx: 2, slideKeys: ["1.png", "2.png", "3.png"] });
+    expect(channels.getState("program").slidesSession?.slideKeys).toEqual(["1.png", "2.png", "3.png"]);
+    sec(5);
+    expect(onAir()).toBe("/media-folders/lf1/1.png");
+    expect(mediaDeckSession.summary("program")?.slideKeys).toEqual(["1.png", "3.png", "0-new.png"]);
+  });
+
+  it("goToKey lands on that slide after a deletion shifted indices", () => {
+    folder.files.set("lf1", [img("1.png"), img("2.png"), img("3.png")]);
+    mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });
+    setFolder("lf1", [img("1.png"), img("3.png")]);
+    sec(15); // 1 → (2 skipped) 3 → wrap re-resolves to [1, 3]
+    expect(mediaDeckSession.summary("program")?.slideKeys).toEqual(["1.png", "3.png"]);
+    // A client that still counted 3.png as index 2 would miss; the key finds it.
+    expect(mediaDeckSession.goToKey("program", "3.png")).toBe(true);
+    expect(onAir()).toBe("/media-folders/lf1/3.png");
+    expect(mediaDeckSession.goToKey("program", "nope.png")).toBe(false);
+    expect(onAir()).toBe("/media-folders/lf1/3.png");
+  });
+
   it("a folder video advances on ended", () => {
     folder.files.set("lf1", [vid("1.mp4"), img("2.png")]);
     mediaDeckSession.start("program", { rowId: "r1", deck: folderDeck() });

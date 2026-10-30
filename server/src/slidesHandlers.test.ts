@@ -350,6 +350,12 @@ describe("slides live handlers", () => {
     expect(channels.getState("program").media?.assetUrl).toBe("/assets/m2.png");
     await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 2 }, send);
     expect(channels.getState("program").media?.assetUrl).toBe("/assets/m3.png");
+    // A media session goes by key when one is sent (the index may be stale); an unknown key is ignored.
+    await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 2, key: "m1" }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m1.png");
+    await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 2, key: "gone" }, send);
+    expect(channels.getState("program").media?.assetUrl).toBe("/assets/m1.png");
+    expect(sent).toEqual([]);
     await handleSlidesMessage({ type: "slides_goto", channel: "program", slideIdx: 7 }, send);
     expect(sent).toEqual([{ type: "error", code: "not_found", message: "slide 7" }]);
     await handleSlidesMessage({ type: "slides_end", channel: "program" }, send);

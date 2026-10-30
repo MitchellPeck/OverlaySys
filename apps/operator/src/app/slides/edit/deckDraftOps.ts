@@ -82,7 +82,11 @@ export function addMediaSlide(deck: Deck, ref: MediaRef, newId: string): Deck {
   return { ...deck, slides: [...keptSlides(deck), { id: newId, data: {}, media }] };
 }
 
-const validHold = (sec: number | undefined) => (sec !== undefined && Number.isFinite(sec) && sec > 0 ? sec : undefined);
+/** The shortest hold the editor accepts (same as the deck's hold field). */
+export const MIN_HOLD_SEC = 0.5;
+
+export const validHold = (sec: number | undefined) =>
+  sec !== undefined && Number.isFinite(sec) && sec >= MIN_HOLD_SEC ? sec : undefined;
 
 /** Seconds every slide is held; `undefined` (or not a positive number) turns auto-advance off. */
 export function setDefaultHold(deck: Deck, sec: number | undefined): Deck {
@@ -118,7 +122,7 @@ export function setSlideMuted(deck: Deck, id: string, on: boolean): Deck {
   });
 }
 
-/** Hold-time text → seconds; blank or not a positive number → undefined (use the default). */
+/** Hold-time text → seconds; blank, not a number, or under MIN_HOLD_SEC → undefined (use the default). */
 export function parseHoldText(text: string): number | undefined {
   const t = text.trim();
   return t ? validHold(Number(t)) : undefined;

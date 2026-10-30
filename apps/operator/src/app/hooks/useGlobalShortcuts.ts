@@ -187,11 +187,12 @@ export function useGlobalShortcuts(): void {
           deckCache: store.deckCache,
           deckNotFound: store.deckNotFound,
           liveFolderFiles: store.liveFolderFiles,
+          channelStates: store.channelStates,
         });
         const deckId = row.kind === "slides" ? row.deckId : undefined;
         const slidesView =
           row.kind === "slides"
-            ? slidesRowViewFor(row, deckId ? (store.deckNotFound[deckId] ? null : store.deckCache[deckId]) : null, store.liveFolderFiles)
+            ? slidesRowViewFor(row, deckId ? (store.deckNotFound[deckId] ? null : store.deckCache[deckId]) : null, store.liveFolderFiles, store.channelStates)
             : null;
         return rowCanFire(row, action, { supported: view.supported, slidesView });
       };

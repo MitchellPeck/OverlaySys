@@ -234,7 +234,7 @@ function RowControls({ row, editOpen, onEditToggle, noText }: { row: RowLike; ed
       const cue = slidesRowTakeMessages(show.id, row, "cue");
       const take = slidesRowTakeMessages(show.id, row, "take");
       if (!cue || !take) return <span style={{ fontSize: 12, color: colors.textMuted }}>Slides decks arrive with plan 3</span>;
-      const can = slidesControlState(row, { deckCache, deckNotFound, liveFolderFiles });
+      const can = slidesControlState(row, { deckCache, deckNotFound, liveFolderFiles, channelStates });
       return (
         <>
           <SlidesAutoNote row={row} />

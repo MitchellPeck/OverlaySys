@@ -5,7 +5,7 @@ import { slideAirData } from "@overlaysys/core";
 import { colors, radius, useToast } from "@overlaysys/ui";
 import { useWs } from "@/lib/useWs";
 import { useStore } from "@/lib/store";
-import { thumbActivate, thumbsFor, type ThumbCtx, type ThumbSpec } from "@/lib/thumbClick";
+import { thumbActivate, thumbImageSrc, thumbsFor, type ThumbCtx, type ThumbSpec } from "@/lib/thumbClick";
 import type { RowLike } from "@/lib/rowLike";
 import { TemplateThumbnail } from "@/lib/thumbnails/TemplateThumbnail";
 import { useTemplateBody } from "@/lib/thumbnails/useTemplateBody";
@@ -211,14 +211,10 @@ function CardBody({
       />
     );
   }
-  if (r.kind === "image") {
-    return <img src={resolveAssetUrl(r.src)} alt="" loading="lazy" style={{ display: "block", width, height, objectFit: "cover", background: colors.bg }} />;
-  }
-  if (r.kind === "poster") {
-    const asset = row.kind === "video" ? (row as { assetUrl?: string }).assetUrl : undefined;
-    const src = asset ? videoPosterUrl(asset) : r.src;
+  if (r.kind === "image" || r.kind === "poster") {
+    const src = thumbImageSrc(r, { resolveAsset: resolveAssetUrl, posterUrl: videoPosterUrl });
     if (src) return <img src={src} alt="" loading="lazy" style={{ display: "block", width, height, objectFit: "cover", background: colors.bg }} />;
-    return <Placeholder text="No poster" width={width} height={height} />;
+    return <Placeholder text={r.kind === "poster" ? "No poster" : "No image"} width={width} height={height} />;
   }
   return <Placeholder text={r.text} width={width} height={height} />;
 }

@@ -142,6 +142,7 @@ function summarize(s: Session): SlidesSessionSummary {
     ...(s.nextAdvanceAt !== undefined ? { nextAdvanceAt: s.nextAdvanceAt } : {}),
     loops: s.deck.loop === true,
     slot: "media",
+    slideKeys: s.slides.map((sl) => sl.key),
   };
 }
 
@@ -354,6 +355,17 @@ export function goTo(channel: string, idx: number): boolean {
   s.starved = false;
   show(s);
   return true;
+}
+
+/**
+ * Go to the slide with `key` in the session's own list. `idxHint` (the
+ * client's index) picks among repeats of the same key. False when the key isn't there.
+ */
+export function goToKey(channel: string, key: string, idxHint?: number): boolean {
+  const s = sessions.get(channel);
+  if (!s) return false;
+  const idx = idxHint !== undefined && s.slides[idxHint]?.key === key ? idxHint : s.slides.findIndex((sl) => sl.key === key);
+  return idx >= 0 && goTo(channel, idx);
 }
 
 /** Stop the deck and clear the media slot. */
