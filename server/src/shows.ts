@@ -19,7 +19,13 @@ export async function reloadShows(): Promise<void> {
     const normalized = normalizeAssetUrlsInShow(raw);
     REGISTRY.set(normalized.id, normalized);
     if (normalized !== raw) {
-      await storage.saveShow(normalized);
+      // One legacy record the save layer refuses (e.g. an unsafe id) must
+      // not abort the whole boot reload — keep it in memory, log, move on.
+      try {
+        await storage.saveShow(normalized);
+      } catch (err) {
+        console.warn(`[shows] asset-URL migration skipped for ${normalized.id}:`, err);
+      }
     }
   }
   loaded = true;

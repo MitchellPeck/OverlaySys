@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { ChannelConfig, Project, Template } from "@overlaysys/core";
+import type { ChannelConfig, Project, Show, Template } from "@overlaysys/core";
 import * as storage from "./storage";
 import * as templates from "./templates";
 import * as channelConfigs from "./channelConfigs";
@@ -223,5 +223,47 @@ describe("duplicateShow", () => {
     expect(copy?.rows[0]?.id).not.toBe("r1");
     expect(copy?.name).toBe("Sunday (copy)");
     expect(copy?.deletedAt).toBeUndefined();
+  });
+});
+
+describe("boot reload with a legacy record the save layer refuses", () => {
+  const SHA = "a".repeat(64);
+
+  it("templates: keeps loading the rest when one unsafe-id record can't be migrated", async () => {
+    const dir = path.join(tmpDir, "templates");
+    await fs.mkdir(dir, { recursive: true });
+    const legacy = (id: string): Template => ({
+      ...makeTemplate(id),
+      fields: [{ key: "logo", label: "Logo", type: "image", default: `http://127.0.0.1:4000/assets/${SHA}.png` }],
+    });
+    await fs.writeFile(path.join(dir, "bad.json"), JSON.stringify(legacy("../bad")));
+    await fs.writeFile(path.join(dir, "good.json"), JSON.stringify(legacy("good")));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(templates.reloadTemplates()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    expect(await templates.getTemplate("good")).toBeDefined();
+    // The migrated record was rewritten to relative form on disk.
+    expect(await fs.readFile(path.join(dir, "good.json"), "utf8")).toContain(`"/assets/${SHA}.png"`);
+  });
+
+  it("shows: keeps loading the rest when one unsafe-id record can't be migrated", async () => {
+    const dir = path.join(tmpDir, "shows");
+    await fs.mkdir(dir, { recursive: true });
+    const legacy = (id: string): Show => ({
+      id,
+      name: id,
+      projectId: "p1",
+      rows: [{ kind: "graphic", id: "r1", templateId: "t1", data: { logo: `http://127.0.0.1:4000/assets/${SHA}.png` } }],
+      songs: [],
+    });
+    await fs.writeFile(path.join(dir, "bad.json"), JSON.stringify(legacy("../bad")));
+    await fs.writeFile(path.join(dir, "good.json"), JSON.stringify(legacy("good")));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(shows.reloadShows()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    expect(await shows.getShow("good")).toBeDefined();
+    expect(await fs.readFile(path.join(dir, "good.json"), "utf8")).toContain(`"/assets/${SHA}.png"`);
   });
 });

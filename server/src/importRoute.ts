@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import type {
-  Hotcard,
-  Project,
-  Show,
-  Song,
-  Template,
+import {
+  BundleSchema,
+  type Hotcard,
+  type Project,
+  type Show,
+  type Song,
+  type Template,
 } from "@overlaysys/core";
+import { isSafeRecordId } from "./recordId";
 import * as templates from "./templates";
 import * as hotcards from "./hotcards";
 import * as shows from "./shows";
@@ -33,6 +35,16 @@ import * as stageFeedHub from "./stageFeedHub";
  */
 
 const BODY_LIMIT = 1024 * 1024 * 1024;
+
+/** The import body is a bundle minus the `format`/`version`/`exportedAt` wrapper. */
+const ImportBodySchema = BundleSchema.pick({
+  project: true,
+  songs: true,
+  templates: true,
+  shows: true,
+  hotcards: true,
+  assets: true,
+});
 
 interface ImportBody {
   templates?: Template[];
@@ -68,14 +80,35 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
     "/api/import",
     { bodyLimit: BODY_LIMIT },
     async (req, reply): Promise<ImportResponse> => {
-      const body = (req.body ?? {}) as ImportBody;
-      if (typeof body !== "object" || body === null) {
+      const emptyCounts = { templates: 0, hotcards: 0, shows: 0, songs: 0, projects: 0, assets: 0 };
+      const reject = (kind: string, id: string, message: string): ImportResponse => {
         reply.code(400);
-        return {
-          ok: false,
-          counts: { templates: 0, hotcards: 0, shows: 0, songs: 0, projects: 0, assets: 0 },
-          errors: [{ kind: "body", id: "", message: "expected JSON object" }],
-        };
+        return { ok: false, counts: emptyCounts, errors: [{ kind, id, message }] };
+      };
+
+      // Validate the whole bundle before saving anything: a bad entity
+      // rejects the import rather than landing half of it in the registries.
+      if (typeof req.body !== "object" || req.body === null || Array.isArray(req.body)) {
+        return reject("body", "", "expected JSON object");
+      }
+      const parsed = ImportBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        const issue = parsed.error.issues[0];
+        const where = issue?.path.join(".") ?? "";
+        return reject("body", "", `invalid import bundle at ${where || "body"}: ${issue?.message ?? "invalid"}`);
+      }
+      const body = parsed.data as ImportBody;
+      const ids: [string, string | undefined][] = [
+        ...(body.project ? [["project", body.project.id] as [string, string]] : []),
+        ...(body.templates ?? []).map((e): [string, string] => ["template", e.id]),
+        ...(body.songs ?? []).map((e): [string, string] => ["song", e.id]),
+        ...(body.hotcards ?? []).map((e): [string, string] => ["hotcard", e.id]),
+        ...(body.shows ?? []).map((e): [string, string] => ["show", e.id]),
+      ];
+      for (const [kind, id] of ids) {
+        if (!isSafeRecordId(id)) {
+          return reject(kind, String(id), `invalid ${kind} id: use letters, digits, '_' or '-'`);
+        }
       }
 
       const errors: ImportResponse["errors"] = [];

@@ -22,7 +22,13 @@ export async function reloadTemplates(): Promise<void> {
     const normalized = normalizeAssetUrlsInTemplate(raw);
     REGISTRY.set(normalized.id, normalized);
     if (normalized !== raw) {
-      await storage.saveTemplate(normalized);
+      // One legacy record the save layer refuses (e.g. an unsafe id) must
+      // not abort the whole boot reload — keep it in memory, log, move on.
+      try {
+        await storage.saveTemplate(normalized);
+      } catch (err) {
+        console.warn(`[templates] asset-URL migration skipped for ${normalized.id}:`, err);
+      }
     }
   }
   loaded = true;
