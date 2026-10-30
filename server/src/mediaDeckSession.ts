@@ -174,7 +174,18 @@ function arm(s: Session): void {
   s.timer = setTimeout(() => {
     s.timer = null;
     if (sessions.get(s.channel) !== s) return;
-    forward(s, false);
+    try {
+      forward(s, false);
+    } catch (err) {
+      // Never leave a timer re-firing a failing take on air: hold here until the operator moves.
+      stopTimer(s);
+      console.warn("[mediaDeckSession] auto-advance failed", err);
+      try {
+        if (sessions.get(s.channel) === s) publish(s.channel, summarize(s));
+      } catch (e) {
+        console.warn("[mediaDeckSession] summary after a failed auto-advance failed", e);
+      }
+    }
   }, ms);
 }
 

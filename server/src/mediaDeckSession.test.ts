@@ -594,6 +594,26 @@ describe("mediaDeckSession", () => {
     expect(seq()).toBe(2);
   });
 
+  it("a take that throws inside the timer doesn't crash: the timer stops and the session stays", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mediaDeckSession.start("program", { rowId: "r1", deck: deck() });
+    const spy = vi.spyOn(channels, "mediaTake").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    try {
+      expect(() => sec(5)).not.toThrow();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalled();
+      expect(mediaDeckSession.has("program")).toBe(true);
+      expect(mediaDeckSession.summary("program")!.nextAdvanceAt).toBeUndefined();
+      sec(60);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   it("refuses an out-of-range start slide", () => {
     expect(mediaDeckSession.start("program", { rowId: "r1", deck: deck(), slideIdx: 3 })).toEqual({
       ok: false, error: "That slide is no longer in this deck.",
