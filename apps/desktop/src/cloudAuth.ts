@@ -29,6 +29,7 @@ import http from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { isDifferentUser } from "./tokenUser";
 
 export interface CloudTokens {
   accessToken: string;
@@ -104,6 +105,11 @@ export async function updateTokens(input: {
   registryOrgId?: string | null;
 }): Promise<CloudTokens> {
   const existing = await loadTokens();
+  // Refreshes keep the stored org, so tokens for another account would be
+  // paired with an org that account can't access — every RLS check fails.
+  if (existing && isDifferentUser(existing.accessToken, input.accessToken)) {
+    throw new Error("refusing token update for a different account than the signed-in one");
+  }
   const tokens: CloudTokens = {
     accessToken: input.accessToken,
     refreshToken: input.refreshToken,
