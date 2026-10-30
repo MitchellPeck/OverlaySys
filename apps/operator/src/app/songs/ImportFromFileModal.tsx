@@ -8,7 +8,7 @@ import {
 } from "@overlaysys/core";
 import { Button, Field, FileDrop, Input, Modal, colors } from "@overlaysys/ui";
 import { parsePastedLyrics } from "./pasteLyrics";
-import { findCcliDuplicate, parseSongImportJson, resolveImportId, stripServerFields, uniqueSlug, type ImportChoice } from "./songImport";
+import { findCcliDuplicate, parseSongImportJson, resolveImportId, stripServerFields, uniqueSlug, finalSlug, slugInput, type ImportChoice } from "./songImport";
 
 interface Props {
   /** Receives the song with its final id already resolved (replace or suffixed copy). */
@@ -88,8 +88,13 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
       setParseError("Couldn't find any verses or choruses in this file.");
       return;
     }
-    if (!slug || !title) {
+    if (!title) {
       setParseError("Add a title before saving.");
+      return;
+    }
+    const cleanSlug = finalSlug(slug);
+    if (!cleanSlug) {
+      setParseError("The slug needs at least one letter or number (a-z, 0-9).");
       return;
     }
     const dup = findCcliDuplicate(ccli, existingSongs);
@@ -102,7 +107,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
     const song: Song = {
       customFields: {},
       ...(base ? stripServerFields(base, dup && choice === "replace" ? dup : null) : {}),
-      id: resolveImportId(slug, existingIds, dup, choice ?? "copy"),
+      id: resolveImportId(cleanSlug, existingIds, dup, choice ?? "copy"),
       title,
       sections,
       defaultArrangement: arrangement,
@@ -233,7 +238,7 @@ export function ImportFromFileModal({ onSubmit, onCancel, existingIds, existingS
                 <Input
                   value={slug}
                   onChange={(e) => {
-                    setSlug(e.target.value.replace(/\s+/g, "-").toLowerCase());
+                    setSlug(slugInput(e.target.value));
                     setDuplicate(null);
                   }}
                 />

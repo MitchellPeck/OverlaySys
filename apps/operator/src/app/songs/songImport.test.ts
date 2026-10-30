@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { exportFileName } from "../../lib/exportName";
 import type { Song } from "@overlaysys/core";
-import { findCcliDuplicate, parseSongImportJson, resolveImportId, stripServerFields, uniqueSlug } from "./songImport";
+import { findCcliDuplicate, parseSongImportJson, resolveImportId, stripServerFields, uniqueSlug, slugInput, finalSlug } from "./songImport";
 
 describe("stripServerFields", () => {
   const song = {
@@ -75,5 +75,23 @@ describe("song JSON import", () => {
   it("import rejects JSON that isn't a song", () => {
     expect(parseSongImportJson("{}")).toMatchObject({ ok: false });
     expect(parseSongImportJson("nope")).toMatchObject({ ok: false });
+  });
+});
+
+describe("slugInput / finalSlug", () => {
+  it("lowercases, strips accents and turns other characters into dashes", () => {
+    expect(slugInput("Café Dël Mar's Song")).toBe("cafe-del-mar-s-song");
+  });
+  it("collapses dashes while typing but keeps a trailing one so a dash can be typed", () => {
+    expect(slugInput("a  --b-")).toBe("a-b-");
+  });
+  it("keeps underscores and digits", () => {
+    expect(slugInput("psalm_23")).toBe("psalm_23");
+  });
+  it("finalSlug trims the dashes", () => {
+    expect(finalSlug("-a-b-")).toBe("a-b");
+  });
+  it("finalSlug is empty when nothing usable is left", () => {
+    expect(finalSlug("日本語 !!")).toBe("");
   });
 });

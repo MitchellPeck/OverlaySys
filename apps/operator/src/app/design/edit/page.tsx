@@ -32,7 +32,7 @@ import { useEditor } from "@/lib/editorStore";
 import { isLocalDraftEdit, shouldAdoptIncoming } from "@/lib/stageDesigner";
 import { useUnsavedGuard } from "@/lib/useUnsavedGuard";
 import { resolveAssetUrl, uploadAsset } from "@/lib/uploadAsset";
-import { ackErrorText, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
+import { ackErrorText, errorMatches, requestOne, sendAndAwaitAck } from "@/lib/awaitAck";
 import { downloadJson } from "@/lib/download";
 import { exportFileName } from "@/lib/exportName";
 import { PageBody } from "@/app/components/PageShell";
@@ -173,8 +173,8 @@ function DesignPageInner() {
       } else if (msg.type === "error") {
         if (msg.code === "not_found" && msg.message === templateId) {
           setError(`Template "${templateId}" not found.`);
-        } else if (savingRef.current) {
-          // The server reports handler failures without an id; one save is in flight.
+        } else if (savingRef.current && errorMatches(msg, { op: "save_template", id: templateId })) {
+          // Only an error that answers this template's save counts as the save failing.
           endSave(`Save failed: ${msg.message}`);
         }
       }

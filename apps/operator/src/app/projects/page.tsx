@@ -181,11 +181,21 @@ export default function ProjectsIndexPage() {
         await saveProjectCloud(project);
         await refreshProjectsCloud();
       } else {
-        send({ type: "save_project", project });
+        if (!(await saveLocal(project, "Not created"))) return;
       }
       setCurrentProjectId(id);
     } catch (err) {
       await showError("create", err);
+    }
+  }
+
+  async function saveLocal(project: Project, failure: string): Promise<boolean> {
+    try {
+      await sendAndAwaitAck(getClient(), { type: "save_project", project }, { op: "save_project", id: project.id });
+      return true;
+    } catch (err) {
+      toast({ message: `${failure}: ${ackErrorText(err)}`, tone: "error" });
+      return false;
     }
   }
 
@@ -212,7 +222,7 @@ export default function ProjectsIndexPage() {
         await showError("save custom fields", err);
       }
     } else {
-      send({ type: "save_project", project: updated });
+      await saveLocal(updated, "Not saved");
     }
   }
 
@@ -236,7 +246,7 @@ export default function ProjectsIndexPage() {
         await showError("rename", err);
       }
     } else {
-      send({ type: "save_project", project: updated });
+      await saveLocal(updated, "Not renamed");
     }
   }
 
@@ -245,7 +255,12 @@ export default function ProjectsIndexPage() {
       await deleteProjectCloud(p.id);
       await refreshProjectsCloud();
     } else {
-      send({ type: "delete_project", projectId: p.id });
+      try {
+        await sendAndAwaitAck(getClient(), { type: "delete_project", projectId: p.id }, { op: "delete_project", id: p.id });
+      } catch (err) {
+        toast({ message: `Not deleted: ${ackErrorText(err)}`, tone: "error" });
+        return;
+      }
     }
     if (currentProjectId === p.id) setCurrentProjectId(DEFAULT_PROJECT_ID);
   }

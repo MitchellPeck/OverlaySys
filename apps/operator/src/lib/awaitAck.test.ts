@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientMessage, ServerMessage } from "@overlaysys/ws-protocol";
-import { AckError, ackErrorText, requestOne, sendAndAwaitAck, type AckClient } from "./awaitAck";
+import { AckError, ackErrorText, errorMatches, requestOne, sendAndAwaitAck, type AckClient } from "./awaitAck";
 import type { WsStatus } from "./wsClient";
 
 function fake(status: WsStatus = "open") {
@@ -137,5 +137,19 @@ describe("awaitAck", () => {
     expect(ackErrorText(new AckError("timeout"))).toBe("The server didn't confirm in time.");
     expect(ackErrorText(new AckError("not_connected"))).toBe("Not connected to the server.");
     expect(ackErrorText(new AckError("disconnected"))).toBe("Disconnected before the server confirmed.");
+  });
+});
+
+describe("errorMatches for a template save", () => {
+  const save = { op: "save_template", id: "t1" };
+  it("matches an error tagged with this save", () => {
+    expect(errorMatches({ type: "error", code: "invalid", message: "x", op: "save_template", id: "t1" }, save)).toBe(true);
+  });
+  it("ignores an error from another request or template", () => {
+    expect(errorMatches({ type: "error", code: "invalid", message: "x", op: "save_deck", id: "d1" }, save)).toBe(false);
+    expect(errorMatches({ type: "error", code: "invalid", message: "x", op: "save_template", id: "t2" }, save)).toBe(false);
+  });
+  it("ignores an untagged error that doesn't name the template", () => {
+    expect(errorMatches({ type: "error", code: "handler_error", message: "boom" }, save)).toBe(false);
   });
 });

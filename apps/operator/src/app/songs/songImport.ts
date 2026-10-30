@@ -8,6 +8,25 @@ export function uniqueSlug(base: string, taken: ReadonlySet<string>): string {
   return `${base}-${n}`;
 }
 
+/**
+ * Make typed text safe as a song id (the server only accepts letters, digits,
+ * `_` and `-`): lowercase, accents stripped, anything else becomes a dash.
+ * A trailing dash stays so one can be typed; `finalSlug` trims it on save.
+ */
+export function slugInput(raw: string): string {
+  return raw
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-{2,}/g, "-");
+}
+
+/** The slug to save with; empty when nothing usable is left. */
+export function finalSlug(raw: string): string {
+  return slugInput(raw).replace(/^-+|-+$/g, "");
+}
+
 /** An existing song with the same CCLI number (ignoring blanks/whitespace). */
 export function findCcliDuplicate(
   ccli: string | undefined,

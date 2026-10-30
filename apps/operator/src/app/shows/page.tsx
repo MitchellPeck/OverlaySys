@@ -134,16 +134,17 @@ export default function ShowsIndexPage() {
       downloadJson(exportFileName("show", cached), cached);
       return;
     }
-    if (conn !== "open") return;
-    send({ type: "get_show", showId: id });
-    const start = Date.now();
-    const tick = () => {
-      const c = useStore.getState().showCache[id];
-      if (c) { downloadJson(exportFileName("show", c), c); return; }
-      if (Date.now() - start > 2000) return;
-      setTimeout(tick, 50);
-    };
-    setTimeout(tick, 50);
+    try {
+      const show = await requestOne(
+        getClient(),
+        { type: "get_show", showId: id },
+        (m) => (m.type === "show" && m.show.id === id ? m.show : undefined),
+        { timeoutMs: 2000 },
+      );
+      downloadJson(exportFileName("show", show), show);
+    } catch (err) {
+      toast({ message: `Couldn't export: ${ackErrorText(err)}`, tone: "error" });
+    }
   }
 
   async function deleteShow(meta: ShowMeta): Promise<void> {
