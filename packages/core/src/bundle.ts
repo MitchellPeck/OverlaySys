@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SongSchema, type Song } from "./song";
 import { TemplateSchema, type Template } from "./template";
 import { ShowSchema, type Show } from "./show";
+import { type Deck } from "./deck";
 import { HotcardSchema, type Hotcard } from "./hotcard";
 import { ProjectSchema, type Project } from "./project";
 import {
@@ -119,7 +120,8 @@ export function collectDependencies(
           templateIds.add(row.templateId);
           break;
         case "video":
-          // Video rows reference an asset, not a template; the asset is
+        case "media":
+          // Video and photo rows reference an asset, not a template; the asset is
           // picked up by collectReferencedAssetFilenames.
           break;
         // [P3.8] Deck templates are not bundled yet: the bundle store has no decks (Task 11+).
@@ -306,6 +308,8 @@ export function collectReferencedAssetFilenames(payload: {
   templates: Template[];
   hotcards: Hotcard[];
   shows: Show[];
+  /** Decks whose media slides travel with the bundle. */
+  decks?: Deck[];
 }): Set<string> {
   const out = new Set<string>();
   const add = (s: string | undefined): void => {
@@ -326,10 +330,16 @@ export function collectReferencedAssetFilenames(payload: {
     for (const row of sh.rows) {
       if (row.kind === "graphic") {
         for (const v of Object.values(row.data)) add(v);
-      } else if (row.kind === "video") {
+      } else if (row.kind === "video" || row.kind === "media") {
+        // Live-folder urls (/media-folders/...) have no /assets/ part, so they are never collected.
         add(row.assetUrl);
+      } else if (row.kind === "slides") {
+        for (const s of row.localSlides ?? []) add(s.media?.assetUrl);
       }
     }
+  }
+  for (const deck of payload.decks ?? []) {
+    for (const s of deck.slides) add(s.media?.assetUrl);
   }
   return out;
 }
@@ -404,7 +414,9 @@ export function rewriteShowAssetUrls(s: Show, originBase: string): Show {
     ...s,
     rows: s.rows.map((row) => {
       if (row.kind === "graphic") return { ...row, data: rewriteDataRecord(row.data, originBase) };
-      if (row.kind === "video") return { ...row, assetUrl: rewriteAssetUrlToHost(row.assetUrl, originBase) };
+      if (row.kind === "video" || row.kind === "media") {
+        return { ...row, assetUrl: rewriteAssetUrlToHost(row.assetUrl, originBase) };
+      }
       return row;
     }),
   };

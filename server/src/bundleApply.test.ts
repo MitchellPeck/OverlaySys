@@ -316,3 +316,21 @@ describe("video rows", () => {
     expect(vOut.assetUrl).toBe(gOut.data.v);
   });
 });
+
+describe("photo rows", () => {
+  const show = {
+    id: "s1", name: "Sun", projectId: "p1", songs: [],
+    rows: [{ kind: "media" as const, id: "i1", mediaType: "image" as const, assetUrl: "http://old-host:5555/assets/abc.png" }],
+  };
+
+  it("normalizes an absolute image asset url to relative", () => {
+    const out = normalizeAssetUrlsInShow(show as never);
+    expect((out.rows[0] as { assetUrl: string }).assetUrl).toBe("/assets/abc.png");
+  });
+
+  it("bundleApply retargets an image row url", () => {
+    const rel = { ...show, rows: [{ ...show.rows[0]!, assetUrl: "/assets/abc.png" }] };
+    const out = rewriteAssetUrlsInShow(rel as never, "http://new:4000").rows[0] as { assetUrl: string };
+    expect(out.assetUrl).toBe("http://new:4000/assets/abc.png");
+  });
+});

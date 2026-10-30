@@ -1,6 +1,8 @@
 import type { Deck, Show } from "@overlaysys/core";
 import { listShowMetas, getShow, saveShow } from "./shows";
-import { listDecks, saveDeck } from "./decks";
+import { listDecks, listDeckMetas, saveDeck } from "./decks";
+import { broadcast } from "./broadcast";
+import * as stageFeedHub from "./stageFeedHub";
 
 type MediaType = "image" | "video";
 
@@ -15,8 +17,8 @@ export async function rewriteMediaRefs(
   assetUrl: string,
   mediaType: MediaType,
 ): Promise<{ shows: number; decks: number }> {
-  let showCount = 0;
-  let deckCount = 0;
+  const changedShows: Show[] = [];
+  const changedDecks: Deck[] = [];
 
   for (const meta of await listShowMetas()) {
     const show = await getShow(meta.id);
@@ -31,8 +33,7 @@ export async function rewriteMediaRefs(
       return { ...r, assetUrl };
     });
     if (!changed) continue;
-    await saveShow({ ...show, rows } as Show);
-    showCount++;
+    changedShows.push(await saveShow({ ...show, rows } as Show));
   }
 
   for (const deck of await listDecks()) {
@@ -44,9 +45,19 @@ export async function rewriteMediaRefs(
       return { ...s, media: { ...s.media, assetUrl, mediaType } };
     });
     if (!changed) continue;
-    await saveDeck({ ...deck, slides } as Deck);
-    deckCount++;
+    changedDecks.push(await saveDeck({ ...deck, slides } as Deck));
   }
 
-  return { shows: showCount, decks: deckCount };
+  // Tell connected clients, the way the normal save handlers do.
+  if (changedShows.length) {
+    broadcast({ type: "show_list", shows: await listShowMetas() });
+    for (const show of changedShows) broadcast({ type: "show", show });
+  }
+  if (changedDecks.length) {
+    broadcast({ type: "deck_list", decks: await listDeckMetas() });
+    for (const deck of changedDecks) broadcast({ type: "deck", deck });
+  }
+  if (changedShows.length || changedDecks.length) stageFeedHub.invalidateAll();
+
+  return { shows: changedShows.length, decks: changedDecks.length };
 }

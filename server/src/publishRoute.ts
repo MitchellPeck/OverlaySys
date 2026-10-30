@@ -8,6 +8,7 @@ import {
   type Bundle,
   type BundleAsset,
   type ChannelConfig,
+  type Deck,
   type Hotcard,
   type Show,
   type Song,
@@ -18,6 +19,7 @@ import * as shows from "./shows";
 import * as hotcards from "./hotcards";
 import * as templates from "./templates";
 import * as songs from "./songs";
+import * as decks from "./decks";
 import * as channelConfigs from "./channelConfigs";
 import { dataRoot } from "./storage";
 import { isSafeAssetFilename, mimeFromFilename } from "./assets";
@@ -89,11 +91,21 @@ export async function buildProjectPublishBundle(projectId: string): Promise<Bund
   const stampedChannels: ChannelConfig[] = [];
   for (const c of channels) stampedChannels.push(await channelConfigs.saveChannelConfig(c));
 
+  // Decks the project's shows play: their media slides' files travel with the bundle.
+  const deckIds = new Set<string>();
+  for (const s of stampedShows) {
+    for (const r of s.rows) if (r.kind === "slides" && r.deckId) deckIds.add(r.deckId);
+  }
+  const referencedDecks = (await Promise.all([...deckIds].map((id) => decks.getDeck(id)))).filter(
+    (d): d is Deck => d !== null,
+  );
+
   const assets = await readAssets(
     collectReferencedAssetFilenames({
       templates: stampedTemplates,
       hotcards: stampedHotcards,
       shows: stampedShows,
+      decks: referencedDecks,
     }),
   );
 

@@ -8,6 +8,8 @@ import * as decks from "./decks";
 import * as shows from "./shows";
 import * as channels from "./channels";
 import { rewriteMediaRefs } from "./mediaRefs";
+import { registerSender } from "./broadcast";
+import type { ServerMessage } from "@overlaysys/ws-protocol";
 
 let tmpDir: string;
 let prevData: string | undefined;
@@ -135,5 +137,37 @@ describe("rewriteMediaRefs", () => {
     expect((await media.getMediaItem("m1"))!.assetUrl).toBe("/assets/old.png");
     expect((await decks.getDeck("d1"))!.slides[0]!.media!.assetUrl).toBe("/assets/old.png");
     expect((await shows.getShow("s1"))!.rows.find((r) => r.id === "r3")).toMatchObject({ assetUrl: "/assets/old.png" });
+  });
+
+  it("a replace broadcasts the changed show and deck to connected clients", async () => {
+    await media.saveMediaItem(item());
+    await seed();
+    const sent: ServerMessage[] = [];
+    const off = registerSender((m) => sent.push(m));
+    try {
+      await media.saveMediaItem(item({ assetUrl: "/assets/new.png" }));
+    } finally {
+      off();
+    }
+    const types = sent.map((m) => m.type);
+    expect(types).toContain("show_list");
+    expect(types).toContain("deck_list");
+    const show = sent.find((m) => m.type === "show");
+    const deck = sent.find((m) => m.type === "deck");
+    expect(show).toMatchObject({ show: { id: "s1" } });
+    expect((show as { show: { rows: Array<{ id: string; assetUrl?: string }> } }).show.rows.find((r) => r.id === "r1")!.assetUrl).toBe("/assets/new.png");
+    expect((deck as { deck: { id: string; slides: Array<{ media?: { assetUrl: string } }> } }).deck.slides[0]!.media!.assetUrl).toBe("/assets/new.png");
+  });
+
+  it("broadcasts nothing when no show or deck used the item", async () => {
+    await media.saveMediaItem(item());
+    const sent: ServerMessage[] = [];
+    const off = registerSender((m) => sent.push(m));
+    try {
+      await media.saveMediaItem(item({ assetUrl: "/assets/new.png" }));
+    } finally {
+      off();
+    }
+    expect(sent).toEqual([]);
   });
 });

@@ -231,7 +231,7 @@ export function normalizeAssetUrlsInHotcard(h: Hotcard): Hotcard {
 export function normalizeAssetUrlsInShow(s: Show): Show {
   let changed = false;
   const rows = s.rows.map((row) => {
-    if (row.kind === "video") {
+    if (row.kind === "video" || row.kind === "media") {
       const assetUrl = normalizeOne(row.assetUrl);
       if (assetUrl === row.assetUrl) return row;
       changed = true;
@@ -295,7 +295,9 @@ export function rewriteAssetUrlsInShow(s: Show, originBase: string): Show {
     ...s,
     rows: s.rows.map((row) => {
       if (row.kind === "graphic") return { ...row, data: retargetRecord(row.data, originBase) };
-      if (row.kind === "video") return { ...row, assetUrl: retargetOne(row.assetUrl, originBase) };
+      if (row.kind === "video" || row.kind === "media") {
+        return { ...row, assetUrl: retargetOne(row.assetUrl, originBase) };
+      }
       return row;
     }),
   };

@@ -15,6 +15,7 @@ import {
 } from "./bundle";
 import { type Hotcard } from "./hotcard";
 import { type Project } from "./project";
+import { type Deck } from "./deck";
 
 describe("BundleSchema", () => {
   it("accepts a minimal valid bundle", () => {
@@ -477,5 +478,49 @@ describe("video rows in bundles", () => {
     const graphicRow = rewriteShowAssetUrls(graphicShow, "http://host:4000").rows[0] as { data: Record<string, string> };
     expect(videoRow.assetUrl).toBe(graphicRow.data.v);
     expect(videoRow.assetUrl).not.toBe("/assets/abc123.mp4");
+  });
+});
+
+describe("photo rows and media slides in bundles", () => {
+  const imageShow: Show = {
+    id: "s1", name: "Sun", projectId: "p1", songs: [],
+    rows: [{
+      kind: "media", id: "i1", mediaType: "image", assetUrl: "/assets/abc123.png", mediaItemId: "m1",
+    }],
+  } as unknown as Show;
+  const deck = (url: string): Deck => ({
+    id: "d1", name: "Deck", tags: [], defaultTemplateId: "t", licensing: { kind: "own" },
+    slides: [{ id: "x", data: {}, media: { assetUrl: url, mediaType: "image" } }],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }) as Deck;
+
+  it("collects an image row's asset", () => {
+    const files = collectReferencedAssetFilenames({ templates: [], hotcards: [], shows: [imageShow] });
+    expect([...files]).toEqual(["abc123.png"]);
+  });
+
+  it("collects deck media slide assets when decks are passed", () => {
+    const payload = { templates: [], hotcards: [], shows: [] };
+    expect([...collectReferencedAssetFilenames(payload)]).toEqual([]);
+    const files = collectReferencedAssetFilenames({ ...payload, decks: [deck("/assets/def456.mp4")] });
+    expect([...files]).toEqual(["def456.mp4"]);
+  });
+
+  it("ignores /media-folders urls", () => {
+    const folderShow = {
+      ...imageShow,
+      rows: [{ kind: "media", id: "i2", mediaType: "image", assetUrl: "/media-folders/f1/a%20b.png" }],
+    } as unknown as Show;
+    const files = collectReferencedAssetFilenames({
+      templates: [], hotcards: [], shows: [folderShow], decks: [deck("/media-folders/f1/a.png")],
+    });
+    expect(files.size).toBe(0);
+  });
+
+  it("rewrites an image row's asset url and leaves a folder url alone", () => {
+    const out = rewriteShowAssetUrls(imageShow, "http://host:4000").rows[0] as { assetUrl: string };
+    expect(out.assetUrl).toBe("http://host:4000/assets/abc123.png");
+    const folder = { ...imageShow, rows: [{ kind: "media", id: "i2", mediaType: "image", assetUrl: "/media-folders/f1/a.png" }] } as unknown as Show;
+    expect((rewriteShowAssetUrls(folder, "http://host:4000").rows[0] as { assetUrl: string }).assetUrl).toBe("/media-folders/f1/a.png");
   });
 });

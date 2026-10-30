@@ -137,6 +137,20 @@ describe("rowTitle", () => {
     expect(rowTitle(show.rows[2]!, songs, templates)).toBe("John 3:16-17");
     expect(rowTitle(show.rows[3]!, songs, templates)).toBe("Announcements");
   });
+
+  it("stage feed treats an image row like a video row", () => {
+    const vid = show.rows[3]!;
+    const img = { kind: "media", id: "r-img", mediaType: "image", assetUrl: "/assets/p.png", label: "Welcome photo" } as never;
+    const bare = { kind: "media", id: "r-img2", mediaType: "image", assetUrl: "/assets/p.png" } as never;
+    expect(rowTitle(img, songs, templates)).toBe("Welcome photo");
+    expect(rowTitle(bare, songs, templates)).toBe("Photo");
+    expect(firstContentOf(vid, show, songs, templates)).toMatchObject({ kind: "graphic", lines: ["Announcements"] });
+    expect(firstContentOf(img, show, songs, templates)).toMatchObject({ kind: "graphic", lines: ["Welcome photo"] });
+    const showWithImg = { ...show, rows: [...show.rows, img] } as Show;
+    const state: ChannelState = { channel: "program", active: null, liveRow: { showId: "show-1", rowId: "r-img" } } as ChannelState;
+    const feed = base(state, { show: showWithImg });
+    expect(feed.video).toBeNull();
+  });
 });
 
 describe("buildStageFeed", () => {
