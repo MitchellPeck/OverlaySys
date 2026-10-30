@@ -158,6 +158,12 @@ type StoreState = {
   setRequestedShowId: (id: string | null) => void;
   /** Adopt a broadcast show if it is the loaded show or the requested one. Returns whether it was adopted. */
   adoptRequestedShow: (s: Show) => boolean;
+  /**
+   * Apply a `show` message from the server: it updates the loaded show, or
+   * becomes the Live show only if Live asked for it (requestedShowId). Shows
+   * fetched for exports, editors or other consoles' saves are ignored.
+   */
+  receiveShow: (s: Show) => void;
   setSelectedRow: (id: string | null) => void;
   setSelectedHotcard: (id: string | null) => void;
   setChannelState: (s: ChannelState) => void;
@@ -347,6 +353,11 @@ export const useStore = create<StoreState>((set) => ({
     if (cur.show?.id === s.id || cur.requestedShowId !== s.id) return false;
     cur.setShow(s);
     return true;
+  },
+  receiveShow: (s) => {
+    const cur = useStore.getState();
+    if (cur.show?.id === s.id) cur.setShow(s);
+    else cur.adoptRequestedShow(s);
   },
   setRowFieldOverride: (rowId, key, value, original) =>
     set((cur) => {

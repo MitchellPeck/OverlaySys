@@ -174,7 +174,9 @@ function bootstrap(): void {
         store.setSong(msg.song);
         break;
       case "show":
-        if (!store.show || store.show.id === msg.show.id) store.setShow(msg.show);
+        // Only the loaded show or the one Live asked for; an export or
+        // editor fetch must not pick which show Live loads.
+        store.receiveShow(msg.show);
         store.setShowFull(msg.show);
         break;
       case "hotcard_list":

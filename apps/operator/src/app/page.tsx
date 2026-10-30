@@ -47,6 +47,8 @@ function LivePageLocal() {
       typeof window !== "undefined" ? localStorage.getItem(SELECTED_SHOW_KEY) : null;
     const targetId =
       saved && showMetas.some((m) => m.id === saved) ? saved : showMetas[0]!.id;
+    // useWs only adopts a show Live asked for.
+    useStore.getState().setRequestedShowId(targetId);
     send({ type: "get_show", showId: targetId });
   }, [show, showMetas, send]);
 

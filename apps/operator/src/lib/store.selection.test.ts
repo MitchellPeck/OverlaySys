@@ -63,6 +63,31 @@ describe("adoptRequestedShow", () => {
   });
 });
 
+describe("receiveShow (every `show` message from the server)", () => {
+  it("does not make an unrequested show the Live show when none is loaded", () => {
+    // e.g. an export or editor fetch, or another console's save
+    useStore.getState().receiveShow(show("x"));
+    expect(useStore.getState().show).toBeNull();
+  });
+
+  it("adopts the show Live asked for when none is loaded", () => {
+    useStore.getState().setRequestedShowId("a");
+    useStore.getState().receiveShow(show("x"));
+    expect(useStore.getState().show).toBeNull();
+    useStore.getState().receiveShow(show("a"));
+    expect(useStore.getState().show?.id).toBe("a");
+    expect(useStore.getState().requestedShowId).toBeNull();
+  });
+
+  it("updates the loaded show and ignores other shows", () => {
+    useStore.getState().setShow(show("a", ["r1"]));
+    useStore.getState().receiveShow(show("a", ["r1", "r2"]));
+    expect(useStore.getState().show?.rows).toHaveLength(2);
+    useStore.getState().receiveShow(show("b"));
+    expect(useStore.getState().show?.id).toBe("a");
+  });
+});
+
 describe("selection follows a row taken elsewhere (e.g. Companion)", () => {
   const live = (channel: string, rowId: string, showId = "a"): ChannelState => ({
     channel,
