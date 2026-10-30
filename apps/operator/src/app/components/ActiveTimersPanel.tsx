@@ -114,11 +114,14 @@ function ActiveTimerRow({
   // Tick a local clock so the displayed remaining/elapsed values stay
   // current. Half-second is enough for human-paced operation without
   // burning CPU on a manage view that isn't critical-path.
-  const [now, setNow] = useState<number>(() => Date.now());
+  const [localNow, setNow] = useState<number>(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
   }, []);
+  // Timer anchors are server-clock timestamps, so read and stamp them on the server clock.
+  const offset = useStore((s) => s.serverTimeOffsetMs);
+  const now = localNow + offset;
 
   // A channel's set of time fields is treated as one logical timer for
   // controls — pause one, pause all; +30s on all. Mixing countdown +
@@ -135,7 +138,7 @@ function ActiveTimerRow({
       nowMs: number,
     ) => ReturnType<typeof decodeTimerValue> | null,
   ): void {
-    const t = Date.now();
+    const t = Date.now() + offset;
     const patch: Record<string, string> = {};
     for (const f of timeFields) {
       const current = decodeTimerValue(data[f.key]);

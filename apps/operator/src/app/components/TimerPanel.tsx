@@ -35,6 +35,7 @@ export function TimerPanel() {
   const conn = useStore((s) => s.conn);
   const templates = useStore((s) => s.templates);
   const templateCache = useStore((s) => s.templateCache);
+  const serverOffset = useStore((s) => s.serverTimeOffsetMs);
   const channelConfigs = useResolvedChannelConfigs();
 
   const [templateId, setTemplateId] = useState<string>("");
@@ -161,11 +162,13 @@ export function TimerPanel() {
   /**
    * Stamp anchors at fire-time so each Start / Cue restarts the clock. Each
    * time field becomes a `data[key]` entry pointing at an epoch-ms anchor
-   * (clock fields skip — the renderer reads `Date.now()`).
+   * (clock fields skip — the renderer reads `Date.now()`). Anchors are on the
+   * server clock, like the stage timers, so a console whose clock is off
+   * doesn't shift the on-air countdown.
    */
   function buildData(): Record<string, string> {
     const data: Record<string, string> = { ...otherData };
-    const now = Date.now();
+    const now = Date.now() + serverOffset;
     for (const f of timeFields) {
       const mode = f.timeMode ?? "countdown";
       if (mode === "countdown") {
