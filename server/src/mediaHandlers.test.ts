@@ -1,0 +1,135 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Deck, LiveFolderFile, MediaItem } from "@overlaysys/core";
+import type { ServerMessage } from "@overlaysys/ws-protocol";
+
+const fx = vi.hoisted(() => ({
+  files: new Map<string, LiveFolderFile[]>(),
+  items: new Map<string, MediaItem>(),
+  decks: [] as Deck[],
+}));
+vi.mock("./liveFolders", () => ({
+  listLiveFolderFiles: (id: string) => fx.files.get(id) ?? [],
+  onLiveFolderChange: () => () => {},
+}));
+vi.mock("./media", () => ({
+  getMediaItem: async (id: string) => fx.items.get(id) ?? null,
+  listMediaMetas: async () => [],
+}));
+vi.mock("./decks", () => ({ listDecks: async () => fx.decks }));
+vi.mock("./broadcast", () => ({ broadcast: () => {}, registerSender: () => () => {} }));
+vi.mock("./cloudSync", () => ({ scheduleSync: () => {} }));
+vi.mock("./stageFeedHub", () => ({ invalidateAll: () => {} }));
+vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
+
+import * as channels from "./channels";
+import * as mediaDeckSession from "./mediaDeckSession";
+import { handleMediaMessage } from "./mediaHandlers";
+
+const img = (name: string): LiveFolderFile => ({ name, mediaType: "image", size: 1, mtimeMs: 1 });
+const folderItem = (id: string, name = "Baptisms"): MediaItem => ({ id, name, kind: "live-folder", createdAt: "2026-10-30T00:00:00.000Z" });
+
+let sent: ServerMessage[];
+const send = (m: ServerMessage) => void sent.push(m);
+const onAir = (channel = "program") => channels.getState(channel).media?.assetUrl;
+const sec = (n: number) => vi.advanceTimersByTime(n * 1000);
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-30T12:00:00.000Z"));
+  mediaDeckSession.resetAll();
+  fx.files.clear();
+  fx.items.clear();
+  fx.decks = [];
+  sent = [];
+  for (const ch of ["program", "preview"]) {
+    channels.mediaClear(ch);
+    channels.setActiveNull(ch);
+  }
+});
+
+afterEach(() => {
+  mediaDeckSession.resetAll();
+  vi.useRealTimers();
+});
+
+describe("media_folder_take", () => {
+  it("media_folder_take starts a looping folder deck with 8 s hold", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("b.png"), img("a.png")]);
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(sent).toEqual([]);
+    expect(onAir()).toBe("/media-folders/lf1/a.png");
+    expect(channels.getState("program").media).toMatchObject({ rowId: "media-folder:lf1", mediaType: "image", endAction: "hold" });
+    expect(mediaDeckSession.summary("program")).toMatchObject({ rowId: "media-folder:lf1", title: "Baptisms", loops: true, slot: "media" });
+    sec(7.9);
+    expect(onAir()).toBe("/media-folders/lf1/a.png");
+    sec(0.1);
+    expect(onAir()).toBe("/media-folders/lf1/b.png");
+    sec(8);
+    expect(onAir()).toBe("/media-folders/lf1/a.png");
+  });
+
+  it("plays in the saved order of a deck that links the folder", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    fx.decks = [
+      {
+        id: "d1",
+        name: "Loop",
+        tags: [],
+        defaultTemplateId: "",
+        licensing: { kind: "own" },
+        slides: [],
+        createdAt: "2026-10-30T00:00:00.000Z",
+        liveFolderId: "lf1",
+        folderOrder: [{ file: "b.png" }, { file: "a.png" }],
+        defaultHoldSec: 3,
+      },
+    ];
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(onAir()).toBe("/media-folders/lf1/b.png");
+    // The panel's 8 s hold, not the deck's.
+    sec(3);
+    expect(onAir()).toBe("/media-folders/lf1/b.png");
+    sec(5);
+    expect(onAir()).toBe("/media-folders/lf1/a.png");
+  });
+
+  it("media_folder_take on an empty folder is refused with the plain message", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    channels.mediaTake("program", { rowId: "r0", assetUrl: "/assets/keep.png", volume: 1, endAction: "hold", mediaType: "image" });
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(sent).toEqual([
+      expect.objectContaining({ type: "error", message: "This folder has no photos or videos yet.", op: "media_folder_take", id: "lf1" }),
+    ]);
+    expect(onAir()).toBe("/assets/keep.png");
+    expect(mediaDeckSession.has("program")).toBe(false);
+  });
+
+  it("refuses an id that isn't a live folder", async () => {
+    fx.items.set("m1", { id: "m1", name: "Photo", kind: "file", mediaType: "image", assetUrl: "/assets/p.png", createdAt: "" });
+    await handleMediaMessage({ type: "media_folder_take", id: "m1", channel: "program" }, send);
+    await handleMediaMessage({ type: "media_folder_take", id: "gone", channel: "program" }, send);
+    expect(sent.map((m) => m.type)).toEqual(["error", "error"]);
+    expect(mediaDeckSession.has("program")).toBe(false);
+  });
+
+  it("a graphics take leaves a panel-started loop running", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    channels.take("program", "lower-third", { name: "Pastor" });
+    expect(mediaDeckSession.has("program")).toBe(true);
+    sec(8);
+    expect(onAir()).toBe("/media-folders/lf1/b.png");
+  });
+
+  it("a cue to preview shows the first file and holds it", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "preview" }, send);
+    expect(onAir("preview")).toBe("/media-folders/lf1/a.png");
+    sec(30);
+    expect(onAir("preview")).toBe("/media-folders/lf1/a.png");
+  });
+});

@@ -1,0 +1,183 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { LiveFolderFile, MediaItemMeta } from "@overlaysys/core";
+import { Button, Input, OfflineState, Select, colors, fontSize, radius, useToast } from "@overlaysys/ui";
+import { useStore } from "@/lib/store";
+import { getClient, useWs } from "@/lib/useWs";
+import { useConnection } from "@/lib/useConnection";
+import { MediaThumb } from "../../media/MediaCard";
+import { NO_FOLDER, folderNames, liveFolderCountText } from "../../media/libraryConfig";
+import { useLivePrefs } from "../../hooks/useLivePrefs";
+import {
+  filterPanelItems,
+  mediaFolderTakeMessage,
+  mediaItemTakeMessage,
+  panelAirState,
+  type PanelChannel,
+} from "./mediaPanelModel";
+
+/** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
+const noFocus = (e: React.MouseEvent) => e.preventDefault();
+
+const EMPTY_FOLDER = "This folder has no photos or videos yet.";
+
+/**
+ * Live drawer's Media section: the library with Cue (preview) and Take
+ * (program) per item, like hotcards. Photos and videos go straight to the
+ * media slot; a live folder loops on the server. Nothing here changes the show.
+ */
+export function MediaPanel() {
+  const { send } = useWs();
+  const toast = useToast();
+  const { connected, conn, retry } = useConnection();
+  const { doubleClickTakes } = useLivePrefs();
+  const items = useStore((s) => s.mediaItems);
+  const liveFolderFiles = useStore((s) => s.liveFolderFiles);
+  const channelStates = useStore((s) => s.channelStates);
+  const [query, setQuery] = useState("");
+  const [folder, setFolder] = useState("");
+  const disconnected = conn !== "open";
+
+  useEffect(() => {
+    if (connected) send({ type: "list_media" });
+  }, [connected, send]);
+
+  // File counts (and the empty-folder guard) for every live folder.
+  const liveIds = items.filter((m) => m.kind === "live-folder" && !m.deletedAt).map((m) => m.id).join(",");
+  useEffect(() => {
+    if (!connected) return;
+    for (const id of liveIds.split(",").filter(Boolean)) send({ type: "list_live_folder", id });
+  }, [connected, liveIds, send]);
+
+  // A refused folder take (emptied since the list loaded) says why.
+  useEffect(
+    () =>
+      getClient().on((m) => {
+        if (m.type === "error" && m.op === "media_folder_take") toast({ tone: "error", message: m.message });
+      }),
+    [toast],
+  );
+
+  const folders = useMemo(() => folderNames(items), [items]);
+  const shown = filterPanelItems(items, query, folder);
+  const hasAny = filterPanelItems(items, "", "").length > 0;
+
+  function fire(m: MediaItemMeta, channel: PanelChannel) {
+    send(m.kind === "live-folder" ? mediaFolderTakeMessage(m, channel) : mediaItemTakeMessage(m, channel));
+  }
+
+  if (!hasAny) {
+    return (
+      <div style={{ padding: 8 }}>
+        {disconnected ? (
+          <OfflineState noun="media" onRetry={retry} compact />
+        ) : (
+          <p style={{ color: colors.textDim, fontSize: 12, margin: 0 }}>
+            No photos or videos yet.{" "}
+            <Link href="/media" style={{ color: colors.accent2 }}>
+              Add some in Media
+            </Link>
+            .
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Input aria-label="Search Media" placeholder="Search" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: 1 }} />
+        <Link href="/media" style={{ color: colors.textDim, fontSize: 11, textDecoration: "none" }}>
+          Manage
+        </Link>
+      </div>
+      {folders.length > 0 && (
+        <Select aria-label="Folder" value={folder} onChange={(e) => setFolder(e.target.value)}>
+          <option value="">All folders</option>
+          {folders.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+          <option value={NO_FOLDER}>No folder</option>
+        </Select>
+      )}
+      {disconnected && <OfflineState noun="media" variant="stale" onRetry={retry} />}
+      {shown.length === 0 ? (
+        <p style={{ color: colors.textDim, fontSize: 12, margin: 0 }}>Nothing matches that search.</p>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+          {shown.map((m) => (
+            <PanelCard
+              key={m.id}
+              item={m}
+              live={m.kind === "live-folder" ? liveFolderFiles[m.id] : undefined}
+              air={panelAirState(m, channelStates)}
+              disconnected={disconnected}
+              onFire={(ch) => fire(m, ch)}
+              onDouble={() => fire(m, doubleClickTakes ? "program" : "preview")}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PanelCard({
+  item,
+  live,
+  air,
+  disconnected,
+  onFire,
+  onDouble,
+}: {
+  item: MediaItemMeta;
+  live: { files: LiveFolderFile[]; configured: boolean } | undefined;
+  air: PanelChannel | null;
+  disconnected: boolean;
+  onFire: (channel: PanelChannel) => void;
+  onDouble: () => void;
+}) {
+  // Known empty: nothing to take. Still loading: let the server decide.
+  const empty = item.kind === "live-folder" && !!live && live.files.length === 0;
+  const blocked = disconnected || empty;
+  const sub = item.kind === "live-folder" ? (live ? liveFolderCountText(live.files.length) : "Live folder") : (item.folder ?? "");
+  return (
+    <div
+      onMouseDown={noFocus}
+      onDoubleClick={() => !blocked && onDouble()}
+      aria-label={`${item.name}${air === "program" ? " (on air)" : air === "preview" ? " (on preview)" : ""}`}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        padding: air === "program" ? 5 : 6,
+        background: colors.panel2,
+        border:
+          air === "program" ? `2px solid ${colors.onair}` : air === "preview" ? `1px solid ${colors.ok}` : `1px solid ${colors.border}`,
+        borderRadius: radius.md,
+        minWidth: 0,
+      }}
+    >
+      <MediaThumb item={item} liveFiles={live?.files} />
+      <div title={item.name} style={{ fontSize: fontSize.sm, color: colors.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {item.name}
+      </div>
+      <div style={{ fontSize: fontSize.xs, color: colors.textMuted, minHeight: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {sub}
+      </div>
+      <div style={{ display: "flex", gap: 4 }} title={empty ? EMPTY_FOLDER : undefined}>
+        <Button onMouseDown={noFocus} onClick={() => onFire("preview")} size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
+          Cue
+        </Button>
+        <Button onMouseDown={noFocus} onClick={() => onFire("program")} variant="onair" size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
+          Take
+        </Button>
+      </div>
+    </div>
+  );
+}

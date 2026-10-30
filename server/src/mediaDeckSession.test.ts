@@ -572,3 +572,20 @@ describe("mediaDeckSession", () => {
     });
   });
 });
+
+describe("startFolder (Media panel)", () => {
+  it("loops a live folder with no show row on an 8 s hold, in the given order", () => {
+    setFolder("lf1", [img("a.png"), img("b.png"), img("c.png")]);
+    const res = mediaDeckSession.startFolder("program", { folderId: "lf1", name: "Baptisms", folderOrder: [{ file: "c.png" }] });
+    expect(res).toEqual({ ok: true });
+    expect(onAir()).toBe("/media-folders/lf1/c.png");
+    expect(channels.getState("program").media?.rowId).toBe("media-folder:lf1");
+    expect(mediaDeckSession.summary("program")).toMatchObject({ rowId: "media-folder:lf1", title: "Baptisms", loops: true });
+    sec(8);
+    expect(onAir()).toBe("/media-folders/lf1/a.png");
+  });
+
+  it("refuses an empty folder with the plain message", () => {
+    expect(mediaDeckSession.startFolder("program", { folderId: "lf1", name: "Baptisms" })).toEqual({ ok: false, error: EMPTY });
+  });
+});

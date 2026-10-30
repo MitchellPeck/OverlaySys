@@ -1,27 +1,29 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, MonitorSpeaker, Timer, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, Images, MonitorSpeaker, Timer, Zap } from "lucide-react";
 import { IconButton, Switch, colors, fontSize, fontWeight } from "@overlaysys/ui";
 import { drawerSectionKey, readBool } from "@/lib/liveDrawerModel";
 import { useLivePrefs } from "../hooks/useLivePrefs";
 import { TimersRail } from "./TimersRail";
 import { StagePanel } from "./StagePanel";
 import { HotcardsPanel } from "./HotcardsPanel";
+import { MediaPanel } from "./live/MediaPanel";
 
 /** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
 const noFocus = (e: React.MouseEvent) => e.preventDefault();
 
-type SectionId = "timers" | "stage" | "hotcards";
+type SectionId = "timers" | "stage" | "hotcards" | "media";
 
 const SECTIONS: { id: SectionId; title: string; icon: typeof Timer; label: string; body: () => ReactNode }[] = [
   { id: "timers", title: "Timers", icon: Timer, label: "Show timers", body: () => <TimersRail /> },
   { id: "stage", title: "Stage", icon: MonitorSpeaker, label: "Show stage controls", body: () => <StagePanel /> },
   { id: "hotcards", title: "Hotcards", icon: Zap, label: "Show hotcards", body: () => <HotcardsPanel /> },
+  { id: "media", title: "Media", icon: Images, label: "Show media", body: () => <MediaPanel /> },
 ];
 
 /**
- * The Live page's right drawer: timers, stage controls and hotcards as
+ * The Live page's right drawer: timers, stage controls, hotcards and media as
  * collapsible sections. Collapsed it shrinks to a 40 px icon rail. Hotcard
  * F-keys are handled by useGlobalShortcuts, so they keep working either way.
  */
@@ -37,11 +39,12 @@ export function LiveDrawer() {
       timers: readBool(s, drawerSectionKey("timers"), true),
       stage: readBool(s, drawerSectionKey("stage"), true),
       hotcards: readBool(s, drawerSectionKey("hotcards"), true),
+      media: readBool(s, drawerSectionKey("media"), true),
     });
   }, []);
 
   function setSection(id: SectionId, value: boolean): void {
-    setOpen((cur) => ({ timers: true, stage: true, hotcards: true, ...cur, [id]: value }));
+    setOpen((cur) => ({ timers: true, stage: true, hotcards: true, media: true, ...cur, [id]: value }));
     try {
       window.localStorage.setItem(drawerSectionKey(id), String(value));
     } catch {

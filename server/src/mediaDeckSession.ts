@@ -332,6 +332,32 @@ export function start(channel: string, args: StartArgs): StartResult {
   return { ok: true };
 }
 
+/** A live folder taken from the Live Media panel holds each photo this long. */
+export const FOLDER_TAKE_HOLD_SEC = 8;
+
+export type StartFolderArgs = { folderId: string; name: string; folderOrder?: FolderOrder };
+
+/**
+ * Loop a live folder from the Media panel: no show row (so nothing in the
+ * show changes), an 8 s hold, and the given saved order (else name order).
+ */
+export function startFolder(channel: string, args: StartFolderArgs): StartResult {
+  const deck: Deck = {
+    id: `media-folder:${args.folderId}`,
+    name: args.name,
+    tags: [],
+    defaultTemplateId: "",
+    licensing: { kind: "own" },
+    slides: [],
+    createdAt: "",
+    liveFolderId: args.folderId,
+    defaultHoldSec: FOLDER_TAKE_HOLD_SEC,
+    loop: true,
+    ...(args.folderOrder ? { folderOrder: args.folderOrder } : {}),
+  };
+  return start(channel, { rowId: `media-folder:${args.folderId}`, deck });
+}
+
 export function has(channel: string): boolean {
   return sessions.has(channel);
 }

@@ -1031,9 +1031,12 @@ export function handleConnection(
         case "save_media_item":
         case "delete_media_item":
         case "restore_media_item":
+        case "media_folder_take":
           await handleMediaMessage(parsed, send);
           // A live-folder item may have been added or removed.
-          if (parsed.type !== "list_media" && parsed.type !== "get_media_item") void syncLiveFolderWatchers();
+          if (parsed.type !== "list_media" && parsed.type !== "get_media_item" && parsed.type !== "media_folder_take") {
+            void syncLiveFolderWatchers();
+          }
           break;
         case "list_live_folder":
           send({
