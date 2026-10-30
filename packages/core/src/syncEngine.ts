@@ -313,6 +313,27 @@ function isMissingTableError(err: unknown): boolean {
   return typeof message === "string" && /relation .* does not exist|could not find the table/i.test(message);
 }
 
+/**
+ * A readable message for a sync error. The Supabase adapter throws plain
+ * PostgREST error objects ({ code, message, … }), not Errors, and
+ * String() on those is "[object Object]".
+ */
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null) {
+    const { code, message } = err as { code?: unknown; message?: unknown };
+    if (typeof message === "string" && message) {
+      return typeof code === "string" && code ? `${message} (${code})` : message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      /* circular — fall through */
+    }
+  }
+  return String(err);
+}
+
 interface ReconcileArgs<T extends { updatedAt?: string; deletedAt?: string }> {
   kind: SyncEntityKind;
   listLocal: () => Promise<T[]>;
@@ -365,7 +386,7 @@ async function reconcileTable<
       kind,
       id: "(list)",
       direction: "pull",
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
     });
     return;
   }
@@ -438,7 +459,7 @@ async function reconcileTable<
         kind,
         id,
         direction: L && !R ? "push" : "pull",
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       });
     }
   }

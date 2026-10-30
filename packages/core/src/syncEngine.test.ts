@@ -449,6 +449,16 @@ describe("syncEngine.sync", () => {
     expect(r.errors).toEqual([expect.objectContaining({ kind: "templates", id: "(list)" })]);
   });
 
+  it("reports a plain PostgREST error object's message and code, not [object Object]", async () => {
+    remote.listTemplatesSince = async () => {
+      throw { code: "42501", message: "permission denied for table templates", details: null, hint: null };
+    };
+    const r = await sync(local, remote, ORG);
+    expect(r.errors).toEqual([
+      expect.objectContaining({ kind: "templates", message: "permission denied for table templates (42501)" }),
+    ]);
+  });
+
   it("aggregates per-record errors without aborting the pass", async () => {
     // Wire one adapter to fail saveChannelConfig but succeed everything else.
     const failingRemote: StorageAdapter = {

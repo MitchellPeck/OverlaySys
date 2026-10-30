@@ -307,12 +307,28 @@ async function fanOutSyncWrites(result: SyncResult): Promise<void> {
   }
 }
 
+/** The `sub` claim of a JWT, without verifying it — display only. */
+function jwtSubject(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { sub?: unknown };
+    return typeof claims.sub === "string" ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Snapshot of the current sync state — used by the /api/cloud/sync GET
  * endpoint so the operator UI can surface "last synced at" + error info.
  */
 export function getCloudSyncStatus(): {
   paired: boolean;
+  /** Org the pass is scoped to — RLS refuses everything if it's the wrong one. */
+  orgId: string | null;
+  /** Auth user the session belongs to (the JWT's `sub`), for RLS diagnosis. */
+  userId: string | null;
   running: boolean;
   lastRanAt: string | null;
   lastError: string | null;
@@ -320,6 +336,8 @@ export function getCloudSyncStatus(): {
 } {
   return {
     paired: state.tokens !== null,
+    orgId: state.tokens?.orgId ?? null,
+    userId: state.tokens ? jwtSubject(state.tokens.accessToken) : null,
     running: state.running,
     lastRanAt: state.lastRanAt,
     lastError: state.lastError,
