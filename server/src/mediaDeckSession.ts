@@ -337,11 +337,19 @@ export function start(channel: string, args: StartArgs): StartResult {
 /** A live folder taken from the Live Media panel holds each photo this long. */
 export const FOLDER_TAKE_HOLD_SEC = 8;
 
-export type StartFolderArgs = { folderId: string; name: string; folderOrder?: FolderOrder };
+export type StartFolderArgs = {
+  folderId: string;
+  name: string;
+  folderOrder?: FolderOrder;
+  /** A linked deck's size/position for the folder's files. */
+  mediaFit?: Deck["mediaFit"];
+  mediaPosition?: Deck["mediaPosition"];
+};
 
 /**
  * Loop a live folder from the Media panel: no show row (so nothing in the
- * show changes), an 8 s hold, and the given saved order (else name order).
+ * show changes), an 8 s hold, and the given saved order (else name order)
+ * and size/position.
  */
 export function startFolder(channel: string, args: StartFolderArgs): StartResult {
   const deck: Deck = {
@@ -356,6 +364,8 @@ export function startFolder(channel: string, args: StartFolderArgs): StartResult
     defaultHoldSec: FOLDER_TAKE_HOLD_SEC,
     loop: true,
     ...(args.folderOrder ? { folderOrder: args.folderOrder } : {}),
+    ...(args.mediaFit ? { mediaFit: args.mediaFit } : {}),
+    ...(args.mediaPosition ? { mediaPosition: args.mediaPosition } : {}),
   };
   return start(channel, { rowId: `media-folder:${args.folderId}`, deck });
 }

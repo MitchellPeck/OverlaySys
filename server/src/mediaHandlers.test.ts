@@ -6,10 +6,13 @@ const fx = vi.hoisted(() => ({
   files: new Map<string, LiveFolderFile[]>(),
   items: new Map<string, MediaItem>(),
   decks: [] as Deck[],
+  /** Live folders with no path on this machine. */
+  unset: new Set<string>(),
 }));
 vi.mock("./liveFolders", () => ({
   listLiveFolderFiles: (id: string) => fx.files.get(id) ?? [],
   onLiveFolderChange: () => () => {},
+  getLiveFolderPath: async (id: string) => (fx.unset.has(id) ? null : `/folders/${id}`),
 }));
 vi.mock("./media", () => ({
   getMediaItem: async (id: string) => fx.items.get(id) ?? null,
@@ -40,6 +43,7 @@ beforeEach(() => {
   fx.files.clear();
   fx.items.clear();
   fx.decks = [];
+  fx.unset.clear();
   sent = [];
   for (const ch of ["program", "preview"]) {
     channels.mediaClear(ch);
@@ -104,6 +108,43 @@ describe("media_folder_take", () => {
     ]);
     expect(onAir()).toBe("/assets/keep.png");
     expect(mediaDeckSession.has("program")).toBe(false);
+  });
+
+  it("a folder not set up on this computer is refused as such, not as empty", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.unset.add("lf1");
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(sent).toEqual([
+      { type: "error", code: "not_configured", message: "This folder is set up on another computer.", op: "media_folder_take", id: "lf1" },
+    ]);
+    expect(mediaDeckSession.has("program")).toBe(false);
+  });
+
+  it("uses the placement and order of the most recently updated deck linking the folder", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    const linked = (id: string, updatedAt: string, over: Partial<Deck>): Deck => ({
+      id, name: id, tags: [], defaultTemplateId: "", licensing: { kind: "own" }, slides: [],
+      createdAt: "2026-10-01T00:00:00.000Z", updatedAt, liveFolderId: "lf1", ...over,
+    });
+    fx.decks = [
+      linked("old", "2026-10-02T00:00:00.000Z", { folderOrder: [{ file: "a.png" }, { file: "b.png" }], mediaFit: "fill" }),
+      linked("new", "2026-10-29T00:00:00.000Z", {
+        folderOrder: [{ file: "b.png" }, { file: "a.png" }], mediaFit: "contain", mediaPosition: "top-left",
+      }),
+      linked("mid", "2026-10-10T00:00:00.000Z", { mediaFit: "scale-down" }),
+    ];
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(sent).toEqual([]);
+    expect(channels.getState("program").media).toMatchObject({
+      assetUrl: "/media-folders/lf1/b.png", fit: "contain", position: "top-left",
+    });
+    // Same answer whatever order the decks are listed in.
+    fx.decks.reverse();
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program" }, send);
+    expect(channels.getState("program").media).toMatchObject({
+      assetUrl: "/media-folders/lf1/b.png", fit: "contain", position: "top-left",
+    });
   });
 
   it("refuses an id that isn't a live folder", async () => {

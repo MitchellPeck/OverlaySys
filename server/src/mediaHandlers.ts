@@ -5,6 +5,10 @@ import * as mediaDeckSession from "./mediaDeckSession";
 import { broadcast } from "./broadcast";
 import { scheduleSync } from "./cloudSync";
 import * as stageFeedHub from "./stageFeedHub";
+import { getLiveFolderPath } from "./liveFolders";
+
+/** A live folder whose path isn't set on this machine. */
+export const FOLDER_ELSEWHERE_MESSAGE = "This folder is set up on another computer.";
 
 export type MediaMessage = Extract<
   ClientMessage,
@@ -21,8 +25,9 @@ async function broadcastList(): Promise<void> {
 
 /**
  * Live Media panel: loop a live folder on `channel`. It plays in the saved
- * order of a deck that links the folder, if one does. Refused (and nothing on
- * air changes) when the id isn't a live folder or the folder is empty.
+ * order and size/position of a deck that links the folder, if one does.
+ * Refused (and nothing on air changes) when the id isn't a live folder, the
+ * folder isn't set up on this machine, or it is empty.
  */
 async function takeFolder(msg: Extract<MediaMessage, { type: "media_folder_take" }>, send: Send): Promise<void> {
   const refuse = (code: string, message: string) => send({ type: "error", code, message, op: msg.type, id: msg.id });
@@ -31,11 +36,20 @@ async function takeFolder(msg: Extract<MediaMessage, { type: "media_folder_take"
     refuse("not_found", "That live folder is gone.");
     return;
   }
-  const linked = (await decks.listDecks()).find((d) => d.liveFolderId === msg.id && d.folderOrder);
+  if (!(await getLiveFolderPath(msg.id))) {
+    refuse("not_configured", FOLDER_ELSEWHERE_MESSAGE);
+    return;
+  }
+  // The most recently updated deck linking the folder (ties by id), so the choice never depends on list order.
+  const linked = (await decks.listDecks())
+    .filter((d) => d.liveFolderId === msg.id)
+    .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "") || a.id.localeCompare(b.id))[0];
   const res = mediaDeckSession.startFolder(msg.channel, {
     folderId: msg.id,
     name: item.name,
     ...(linked?.folderOrder ? { folderOrder: linked.folderOrder } : {}),
+    ...(linked?.mediaFit ? { mediaFit: linked.mediaFit } : {}),
+    ...(linked?.mediaPosition ? { mediaPosition: linked.mediaPosition } : {}),
   });
   // The only refusal for a folder started at its first file: nothing to play.
   if (!res.ok) refuse("empty", res.error);
