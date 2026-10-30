@@ -8,7 +8,12 @@ export type KeyLike = Pick<
   "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "repeat" | "defaultPrevented"
 >;
 
-export type TargetLike = { tagName?: string; type?: string; isContentEditable?: boolean } | null;
+export type TargetLike = {
+  tagName?: string;
+  type?: string;
+  isContentEditable?: boolean;
+  closest?: (selector: string) => unknown;
+} | null;
 
 // Input types that don't take typed text. Keys on these belong to the show,
 // so a clicked checkbox or button doesn't leave the shortcuts dead.
@@ -26,6 +31,41 @@ export function isTextEntryTarget(t: TargetLike): boolean {
   if (tag === "TEXTAREA" || tag === "SELECT") return true;
   if (tag === "INPUT") return !NON_TEXT_INPUTS.has((t.type ?? "text").toLowerCase());
   return false;
+}
+
+const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"], dialog[open]';
+const ACTIVATABLE_SELECTOR = 'button, a[href], summary, [role="button"], input[type="checkbox"], input[type="radio"], select';
+
+/** True when the element sits inside an open dialog / modal. */
+export function isInsideDialog(t: TargetLike): boolean {
+  return !!t?.closest?.(DIALOG_SELECTOR);
+}
+
+function isFormFieldTarget(t: TargetLike): boolean {
+  const tag = t?.tagName?.toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t?.isContentEditable === true;
+}
+
+/**
+ * Whether a canvas/designer shortcut must stand down: the target (or the
+ * focused element) is a form field, or inside an open dialog. A confirm in
+ * front of the designer must not let Backspace delete layers behind it.
+ */
+export function isShortcutBlocked(target: TargetLike, active: TargetLike = null): boolean {
+  return isFormFieldTarget(target) || isFormFieldTarget(active) || isInsideDialog(target) || isInsideDialog(active);
+}
+
+/**
+ * True when the focused element is something Enter/Space activates itself
+ * (button, link, [role=button], checkbox/radio, select, summary), so the show
+ * shortcuts must leave those two keys to it.
+ */
+export function isActivatableTarget(t: TargetLike): boolean {
+  if (!t) return false;
+  if (t.closest?.(ACTIVATABLE_SELECTOR)) return true;
+  const tag = t.tagName;
+  if (tag === "BUTTON" || tag === "SELECT" || tag === "SUMMARY" || tag === "A") return true;
+  return tag === "INPUT" && NON_TEXT_INPUTS.has((t.type ?? "text").toLowerCase());
 }
 
 /**

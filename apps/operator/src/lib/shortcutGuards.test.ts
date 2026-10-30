@@ -13,6 +13,8 @@ import {
   hotcardRoute,
   hotkeyForEvent,
   isIgnoredRepeat,
+  isActivatableTarget,
+  isShortcutBlocked,
   isTextEntryTarget,
   shouldIgnoreGlobalKey,
   songEscapeMessages,
@@ -229,5 +231,24 @@ describe("advanceMessage / blankMessage", () => {
     expect(keyMode({ songSessions: {}, channelStates })).toBe("slides");
     expect(advanceMessage("slides", -1, channelStates)).toEqual({ type: "slides_advance", channel: "lyrics", delta: -1 });
     expect(blankMessage("slides", channelStates)).toEqual({ type: "slides_blank", channel: "lyrics" });
+  });
+});
+
+describe("isShortcutBlocked / isActivatableTarget", () => {
+  const inDialog = { tagName: "DIV", closest: (s: string) => (s.includes("dialog") ? {} : null) };
+  it("blocks inside a dialog, in text fields, via the active element too", () => {
+    expect(isShortcutBlocked(inDialog)).toBe(true);
+    expect(isShortcutBlocked({ tagName: "INPUT", type: "text" })).toBe(true);
+    expect(isShortcutBlocked({ tagName: "BODY" }, inDialog)).toBe(true);
+    expect(isShortcutBlocked({ tagName: "DIV", closest: () => null })).toBe(false);
+    expect(isShortcutBlocked(null)).toBe(false);
+  });
+  it("treats buttons, links, checkboxes, selects, summaries and role=button as activatable", () => {
+    for (const t of [{ tagName: "BUTTON" }, { tagName: "A" }, { tagName: "SUMMARY" }, { tagName: "SELECT" }, { tagName: "INPUT", type: "checkbox" }])
+      expect(isActivatableTarget(t)).toBe(true);
+    expect(isActivatableTarget({ tagName: "SPAN", closest: (s: string) => (s.includes('role="button"') ? {} : null) })).toBe(true);
+    expect(isActivatableTarget({ tagName: "DIV", closest: () => null })).toBe(false);
+    expect(isActivatableTarget({ tagName: "BODY" })).toBe(false);
+    expect(isActivatableTarget(null)).toBe(false);
   });
 });

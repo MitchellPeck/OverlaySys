@@ -28,6 +28,7 @@ import {
   hotcardForEvent,
   hotcardFireMessage,
   hotkeyForEvent,
+  isActivatableTarget,
   isIgnoredRepeat,
   shouldIgnoreGlobalKey,
   songEscapeMessages,
@@ -74,6 +75,8 @@ export function useGlobalShortcuts(): void {
       const dialogOpen = !!document.querySelector('[role="dialog"], [aria-modal="true"], dialog[open]');
       if (shouldIgnoreGlobalKey(e, e.target as TargetLike, dialogOpen)) return;
       if (isIgnoredRepeat(e)) return;
+      // A focused button/link/checkbox/etc. takes plain Enter and Space itself.
+      if ((e.code === "Enter" || e.code === "Space") && !hasCommandModifier(e) && isActivatableTarget(e.target as TargetLike)) return;
 
       const store = useStore.getState();
       const client = getClient();

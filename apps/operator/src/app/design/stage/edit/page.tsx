@@ -1,5 +1,6 @@
 "use client";
 
+import { isShortcutBlocked, type TargetLike } from "@/lib/shortcutGuards";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { v4 as uuid } from "uuid";
@@ -20,7 +21,6 @@ import {
   StageCanvas,
   StageInspector,
   StageWidgetList,
-  isEditableTarget,
   moveInOrder,
 } from "@overlaysys/editor-kit";
 import { Button, IconButton, Menu, NumberInput, Select, colors, toast, useConfirm, type MenuItem, type SaveBarProps } from "@overlaysys/ui";
@@ -429,7 +429,7 @@ function StageLayoutEditor() {
         e.preventDefault();
         return;
       }
-      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      if (isShortcutBlocked(e.target as TargetLike, document.activeElement as TargetLike)) return;
       e.preventDefault();
       if (a.readOnly) return;
       if (action === "undo") a.undo();

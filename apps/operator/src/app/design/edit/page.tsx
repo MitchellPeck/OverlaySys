@@ -1,5 +1,6 @@
 "use client";
 
+import { isShortcutBlocked, type TargetLike } from "@/lib/shortcutGuards";
 import { spaceAction } from "./designerKeys";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +14,6 @@ import {
   copyLayersPayload,
   distributeLayers,
   duplicateLayers,
-  isEditableTarget,
   moveLayersZ,
   nudgeForKey,
   nudgeLayers,
@@ -330,7 +330,7 @@ function DesignPageInner() {
       const a = keyActionsRef.current;
       const meta = e.metaKey || e.ctrlKey;
       // ⌘S is SaveBar's (it works from inside inputs too).
-      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      if (isShortcutBlocked(e.target as TargetLike, document.activeElement as TargetLike)) return;
       const st = useEditor.getState();
       if (meta && e.code === "KeyZ" && !e.shiftKey) {
         e.preventDefault();
@@ -394,7 +394,7 @@ function DesignPageInner() {
     }
     // Copy / cut / paste go through the clipboard events, which need no permission.
     function onCopy(e: ClipboardEvent, cut: boolean) {
-      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      if (isShortcutBlocked(e.target as TargetLike, document.activeElement as TargetLike)) return;
       const clip = copySelection();
       if (!clip) return;
       e.preventDefault();
@@ -402,7 +402,7 @@ function DesignPageInner() {
       if (cut) keyActionsRef.current.deleteSelection();
     }
     function onPaste(e: ClipboardEvent) {
-      if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return;
+      if (isShortcutBlocked(e.target as TargetLike, document.activeElement as TargetLike)) return;
       const text = e.clipboardData?.getData("text/plain") ?? "";
       const clip = (text && parseLayersPayload(text)) || layerClipboard;
       if (!clip) return;
@@ -413,7 +413,7 @@ function DesignPageInner() {
     const cut = (e: ClipboardEvent) => onCopy(e, true);
     function onKeyUp(e: KeyboardEvent) {
       if (e.code !== "Space") return;
-      const typing = isEditableTarget(e.target) || isEditableTarget(document.activeElement);
+      const typing = isShortcutBlocked(e.target as TargetLike, document.activeElement as TargetLike);
       if (spaceAction({ phase: "up", repeat: false, panned: spacePannedRef.current, typing }) !== "toggle-play") return;
       e.preventDefault();
       const a = keyActionsRef.current;
