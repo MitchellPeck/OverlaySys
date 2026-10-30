@@ -78,6 +78,28 @@ export function describeDesktopEvent(ev: DesktopEvent): DesktopToast {
   }
 }
 
+/**
+ * Which open toasts an event supersedes (`closes`) and which group its own
+ * toast joins (`opens`), so a later event can dismiss it: a server restart
+ * supersedes the "server is down" notices, and a window reloaded supersedes
+ * that window's sticky "keeps crashing" notice (as does a newer one).
+ */
+export function desktopToastKeys(ev: DesktopEvent): { opens: string | null; closes: string | null } {
+  switch (ev.kind) {
+    case "server-restarting":
+    case "server-failed":
+      return { opens: "server-down", closes: null };
+    case "server-restarted":
+      return { opens: null, closes: "server-down" };
+    case "window-reload-waiting":
+      return { opens: `reload-waiting:${ev.target}`, closes: `reload-waiting:${ev.target}` };
+    case "window-reloaded":
+      return { opens: null, closes: `reload-waiting:${ev.target}` };
+    default:
+      return { opens: null, closes: null };
+  }
+}
+
 // ── Cloud sync pill ────────────────────────────────────────────────────────
 
 export interface SyncView {

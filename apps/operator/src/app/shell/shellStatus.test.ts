@@ -4,6 +4,7 @@ import {
   buildChecklist,
   checklistProgress,
   describeDesktopEvent,
+  desktopToastKeys,
   shouldShowDisconnected,
   syncView,
 } from "./shellStatus";
@@ -44,6 +45,25 @@ describe("describeDesktopEvent", () => {
     expect(
       describeDesktopEvent({ kind: "server-restarting", attempt: 2, delayMs: 2000, reason: "exited code=1" }).text,
     ).toContain("Restarting in 2s");
+  });
+});
+
+describe("desktopToastKeys", () => {
+  it("a window reloaded clears that target's keeps-crashing toast, not another target's", () => {
+    const waiting = desktopToastKeys({ kind: "window-reload-waiting", target: "program", reason: "x", delayMs: 120_000 });
+    expect(waiting.opens).not.toBeNull();
+    expect(desktopToastKeys({ kind: "window-reloaded", target: "program", reason: "x" }).closes).toBe(waiting.opens);
+    expect(desktopToastKeys({ kind: "window-reloaded", target: "operator", reason: "x" }).closes).not.toBe(waiting.opens);
+  });
+  it("a new keeps-crashing toast replaces the target's previous one", () => {
+    const waiting = desktopToastKeys({ kind: "window-reload-waiting", target: "program", reason: "x", delayMs: 120_000 });
+    expect(waiting.closes).toBe(waiting.opens);
+  });
+  it("a server restart clears the server-down toasts", () => {
+    const down = desktopToastKeys({ kind: "server-restarting", attempt: 1, delayMs: 1000, reason: "x" });
+    expect(desktopToastKeys({ kind: "server-failed", reason: "x" }).opens).toBe(down.opens);
+    expect(desktopToastKeys({ kind: "server-failed", reason: "x" }).closes).toBeNull();
+    expect(desktopToastKeys({ kind: "server-restarted", port: 4000 }).closes).toBe(down.opens);
   });
 });
 

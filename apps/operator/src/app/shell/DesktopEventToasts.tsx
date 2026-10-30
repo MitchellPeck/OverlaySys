@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { dismissToast, toast, type ToastTone } from "@overlaysys/ui";
 import { getDesktopApi } from "@/lib/desktop";
-import { describeDesktopEvent, type Tone } from "./shellStatus";
+import { describeDesktopEvent, desktopToastKeys, type Tone } from "./shellStatus";
 
 const TONE: Record<Tone, ToastTone> = { good: "ok", warn: "warn", bad: "error", dim: "info" };
 
@@ -17,20 +17,22 @@ export function DesktopEventToasts(): null {
   useEffect(() => {
     const api = getDesktopApi();
     if (!api?.onDesktopEvent) return;
-    // Ids of "server is down" notices; a restart supersedes them.
-    let serverDown: string[] = [];
+    // Open toast ids by group ("server is down", one window's "keeps
+    // crashing"); a later event that supersedes a group dismisses them.
+    const open = new Map<string, string[]>();
     return api.onDesktopEvent((ev) => {
       // Starting/stopped are the operator's own actions; only news gets a toast.
       if (ev.kind === "decklink-status" && (ev.status.state === "starting" || ev.status.state === "stopped")) return;
       const t = describeDesktopEvent(ev);
-      const isDown = ev.kind === "server-restarting" || ev.kind === "server-failed";
-      if (ev.kind === "server-restarted") {
-        serverDown.forEach(dismissToast);
-        serverDown = [];
+      const { opens, closes } = desktopToastKeys(ev);
+      if (closes) {
+        open.get(closes)?.forEach(dismissToast);
+        open.delete(closes);
       }
       // Sticky notices (and "server is down") stay until dismissed or superseded.
+      const isDown = ev.kind === "server-restarting" || ev.kind === "server-failed";
       const id = toast({ message: t.text, tone: TONE[t.tone], ...(t.sticky || isDown ? { durationMs: null } : {}) });
-      if (isDown) serverDown.push(id);
+      if (opens) open.set(opens, [...(open.get(opens) ?? []), id]);
     });
   }, []);
   return null;
