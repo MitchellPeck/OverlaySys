@@ -122,7 +122,7 @@ describe("focus hand-back", () => {
 });
 
 describe("dblClickFromButton", () => {
-  const el = (inButton: boolean) => ({ closest: (sel: string) => (sel === "button" && inButton ? {} : null) });
+  const el = (inButton: boolean) => ({ closest: (sel: string) => (sel === "button, select" && inButton ? {} : null) });
 
   it("a double-click on Cue or Take is not a card double-click", () => {
     expect(dblClickFromButton(el(true))).toBe(true);

@@ -102,7 +102,7 @@ export function shouldReleaseFocus<T>(active: T | null, panel: { contains(node: 
 /** Keys in the search box that hand the keyboard back to the show. */
 export const searchKeyReleasesFocus = (key: string): boolean => key === "Escape" || key === "Enter";
 
-/** A double-click that landed on Cue or Take: never a card double-click (which may take to program). */
+/** A double-click that landed on Cue, Take or a size/position control: never a card double-click (which may take to program). */
 export function dblClickFromButton(target: { closest?(selector: string): unknown } | null): boolean {
-  return !!target?.closest?.("button");
+  return !!target?.closest?.("button, select");
 }
