@@ -3,6 +3,7 @@ import * as songSession from "./songSession";
 import type { Song, DeckLicensing, ResolvedSlide, Template } from "@overlaysys/core";
 import * as channels from "./channels";
 import * as slidesSession from "./slidesSession";
+import * as scriptureSession from "./scriptureSession";
 import { recordSongUse } from "./songUsage";
 
 vi.mock("./songUsage", () => ({ recordSongUse: vi.fn(async () => false) }));
@@ -537,6 +538,20 @@ describe("mixed deck: media slides air in the media slot", () => {
     expect(slidesSession.getSession("preview")).toBeNull();
   });
 
+  it("a deck starting on a media slide replaces live scripture, as a design slide would", () => {
+    const row = {
+      kind: "scripture", id: "row-s", reference: "John 3:16", translation: "KJV", templateId: "body",
+      slides: [{ id: "s0", verses: [{ book: "JHN", chapter: 3, verse: 16, text: "For God" }] }],
+    } as never;
+    scriptureSession.takeSlide("program", "show", row, 0);
+    expect(channels.getState("program").scriptureSession).toBeDefined();
+    slidesSession.start("program", args({ slides: mixed }), 1);
+    expect(scriptureSession.getLive("program")).toBeUndefined();
+    expect(channels.getState("program").scriptureSession).toBeUndefined();
+    expect(channels.getState("program").queuedScripture).toBeUndefined();
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/assets/p.png", owner });
+  });
+
   it("blank hides the media slide; unblank shows it again", () => {
     slidesSession.start("program", args({ slides: mixed }), 1);
     slidesSession.blank("program");
@@ -598,6 +613,44 @@ describe("mixed deck: media slides air in the media slot", () => {
       slidesSession.mediaEnded("program", m.takenAt);
       slidesSession.mediaEnded("program", m.takenAt);
       expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1 });
+      slidesSession.end("program");
+    });
+
+    it("an advance-on-end video that fails to play is skipped (once), and not retaken on the wrap", () => {
+      const failed = () => {
+        const m = channels.getState("program").media!;
+        channels.mediaStatus("program", m.takenAt, { status: "error", currentTime: 0, duration: 0, error: "decode" });
+      };
+      slidesSession.start(
+        "program",
+        { ...args({ slides: withVideo }), timing: { holdSecs: [5, undefined, 5], loop: true, advanceOnEnd: [false, true, false] } },
+        1,
+      );
+      const takenAt = channels.getState("program").media!.takenAt;
+      failed();
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      // A late error for the same take does nothing more.
+      channels.mediaStatus("program", takenAt, { status: "error", currentTime: 0, duration: 0 });
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 0 });
+      // The wrap skips the failed video.
+      vi.advanceTimersByTime(5000);
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 2 });
+      slidesSession.end("program");
+    });
+
+    it("a failed video with nothing playable after it holds and stops", () => {
+      slidesSession.start(
+        "program",
+        { ...args({ slides: [rs(0, "a", "T1", "Line A"), video] }), timing: { holdSecs: [5, undefined], loop: false, advanceOnEnd: [false, true] } },
+        1,
+      );
+      const m = channels.getState("program").media!;
+      channels.mediaStatus("program", m.takenAt, { status: "error", currentTime: 0, duration: 0 });
+      expect(channels.getState("program").slidesSession).toMatchObject({ slideIdx: 1, atEnd: true });
+      expect(channels.getState("program").slidesSession!.nextAdvanceAt).toBeUndefined();
+      expect(slidesSession.getSession("program")).not.toBeNull();
       slidesSession.end("program");
     });
 

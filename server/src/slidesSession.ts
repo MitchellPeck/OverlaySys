@@ -35,6 +35,8 @@ interface Session {
   mediaTakenAt?: number;
   /** This playthrough already advanced; cleared by a new take or a "playing" report. */
   playthroughEnded?: boolean;
+  /** Keys of advance-on-end videos that couldn't play: auto-advance skips them for the rest of the session. */
+  failed?: Set<string>;
 }
 
 const PREVIEW = "preview";
@@ -117,18 +119,28 @@ function guardedAutoAdvance(s: Session): void {
   }
 }
 
-/** The hold ran out: next slide, wrap when the deck loops, else hold the last slide at the end. */
+/** The next slide auto-advance plays (wrapping when the deck loops), skipping failed videos; null when none. */
+function nextPlayable(s: Session): number | null {
+  const n = s.args.slides.length;
+  for (let k = 1; k <= n; k++) {
+    const i = s.idx + k;
+    if (i >= n && !loops(s)) return null;
+    if (!s.failed?.has(s.args.slides[i % n]!.key)) return i % n;
+  }
+  return null;
+}
+
+/** The hold ran out (or a video ended): next slide, wrap when the deck loops, else hold the current slide at the end. */
 function autoAdvance(s: Session): void {
-  if (s.idx < s.args.slides.length - 1) {
-    s.idx += 1;
-  } else if (loops(s)) {
-    s.idx = 0;
-  } else {
+  const next = nextPlayable(s);
+  if (next === null) {
     s.atEnd = true;
     s.autoEnded = true;
+    stopTimer(s);
     channels.setSlidesSessionSummary(s.channel, summarize(s));
     return;
   }
+  s.idx = next;
   arm(s);
   render(s, false);
 }
@@ -148,6 +160,7 @@ function releaseMedia(s: Session): void {
 
 /** A photo/video slide airs full-frame in the media slot (beneath graphics); the deck's graphic goes. */
 function renderMedia(s: Session, media: NonNullable<ResolvedSlide["media"]>, label: string | undefined): void {
+  channels.dropScripture(s.channel);
   channels.mediaTake(s.channel, {
     rowId: s.args.rowId,
     assetUrl: media.assetUrl,
@@ -263,6 +276,8 @@ export function goTo(channel: string, slideIdx: number): boolean {
   if (!s || !Number.isInteger(slideIdx) || slideIdx < 0 || slideIdx >= s.args.slides.length) return false;
   const wasBlanked = s.blanked;
   s.autoEnded = false;
+  // Going to a slide by hand retries it even if it failed before.
+  s.failed?.delete(s.args.slides[slideIdx]!.key);
   s.idx = slideIdx;
   s.atEnd = false;
   s.blanked = false;
@@ -314,6 +329,16 @@ export function mediaEnded(channel: string, takenAt: number): void {
   if (!s || channel === PREVIEW || s.blanked || s.atEnd || !advancesOnEnd(s)) return;
   if (s.mediaTakenAt !== takenAt || s.playthroughEnded) return;
   s.playthroughEnded = true;
+  guardedAutoAdvance(s);
+}
+
+/** The renderer couldn't play the channel's media: an advance-on-end video slide is skipped, now and on later wraps. */
+export function mediaFailed(channel: string, takenAt: number): void {
+  const s = sessions.get(channel);
+  if (!s || channel === PREVIEW || s.blanked || s.atEnd || !advancesOnEnd(s)) return;
+  if (s.mediaTakenAt !== takenAt || s.playthroughEnded) return;
+  s.playthroughEnded = true;
+  (s.failed ??= new Set()).add(s.args.slides[s.idx]!.key);
   guardedAutoAdvance(s);
 }
 

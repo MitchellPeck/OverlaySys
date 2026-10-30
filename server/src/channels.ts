@@ -272,6 +272,17 @@ export function restoreActive(channel: string, active: ActiveGraphic): void {
   emit(channel);
 }
 
+/**
+ * A slides deck's photo/video slide replaces scripture on the channel, as a
+ * take does. No emit: the media take that follows carries it.
+ */
+export function dropScripture(channel: string): void {
+  scriptureSession.dropAll(channel);
+  const s = getOrInit(channel);
+  delete s.scriptureSession;
+  delete s.queuedScripture;
+}
+
 export function takeInternal(channel: string, templateId: string, data: Record<string, string>): void {
   takeIsInternal = true;
   try {
@@ -758,7 +769,10 @@ export function mediaStatus(
   if (transition) emit(channel);
   else notifyPlayback({ channel, takenAt, playback: next });
   // A media deck skips a slide that can't play.
-  if (report.status === "error") mediaDeckSession.mediaFailed(channel, takenAt);
+  if (report.status === "error") {
+    mediaDeckSession.mediaFailed(channel, takenAt);
+    slidesSession.mediaFailed(channel, takenAt);
+  }
   else if (report.status === "playing") {
     mediaDeckSession.mediaPlaying(channel, takenAt);
     slidesSession.mediaPlaying(channel, takenAt);
