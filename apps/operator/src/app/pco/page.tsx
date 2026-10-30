@@ -575,14 +575,20 @@ export default function PcoPage() {
   }, [includedCount, importing, targetMode, existingShowId, items, cfgs, defaultTranslation]);
 
   /**
-   * Make the imported show the active one and jump to its editor. The server
-   * already broadcasts show_list/song_list after an import, so local mode only
-   * needs the get_show; cloud mode has no broadcast and refreshes explicitly.
+   * Jump to the imported show's editor. The server already broadcasts
+   * show_list/song_list after an import; cloud mode has no broadcast and
+   * refreshes explicitly. Locally, if Live has no show loaded, it loads the
+   * imported one (marked requested before the get_show). A show Live already
+   * has loaded is never replaced; the get_show then only refreshes it when
+   * the import went into that same show.
    */
   const openShow = useCallback(
     async (showId: string) => {
       if (cloud) await refreshShowMetasCloud();
-      else send({ type: "get_show", showId });
+      else {
+        useStore.getState().requestShowIfNoneLoaded(showId);
+        send({ type: "get_show", showId });
+      }
       router.push(`/shows/edit?id=${encodeURIComponent(showId)}`);
     },
     [cloud, send, router],

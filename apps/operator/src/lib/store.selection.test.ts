@@ -146,3 +146,19 @@ describe("selection follows a row taken elsewhere (e.g. Companion)", () => {
     expect(useStore.getState().selectedHotcardId).toBeNull();
   });
 });
+
+describe("requestShowIfNoneLoaded (after a PCO import)", () => {
+  it("makes the imported show the Live show when Live has none loaded", () => {
+    expect(useStore.getState().requestShowIfNoneLoaded("imported")).toBe(true);
+    useStore.getState().receiveShow(show("imported"));
+    expect(useStore.getState().show?.id).toBe("imported");
+  });
+
+  it("never replaces a show Live already has loaded", () => {
+    useStore.getState().setShow(show("a"));
+    expect(useStore.getState().requestShowIfNoneLoaded("imported")).toBe(false);
+    expect(useStore.getState().requestedShowId).toBeNull();
+    useStore.getState().receiveShow(show("imported"));
+    expect(useStore.getState().show?.id).toBe("a");
+  });
+});

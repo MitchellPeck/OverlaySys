@@ -156,6 +156,11 @@ type StoreState = {
   setShowMetas: (s: ShowMeta[]) => void;
   setShow: (s: Show | null) => void;
   setRequestedShowId: (id: string | null) => void;
+  /**
+   * Ask for `id` as the Live show only if Live has none loaded (after a PCO
+   * import); never replaces a loaded show. Returns whether it asked.
+   */
+  requestShowIfNoneLoaded: (id: string) => boolean;
   /** Adopt a broadcast show if it is the loaded show or the requested one. Returns whether it was adopted. */
   adoptRequestedShow: (s: Show) => boolean;
   /**
@@ -348,6 +353,11 @@ export const useStore = create<StoreState>((set) => ({
       };
     }),
   setRequestedShowId: (id) => set({ requestedShowId: id }),
+  requestShowIfNoneLoaded: (id) => {
+    if (useStore.getState().show) return false;
+    set({ requestedShowId: id });
+    return true;
+  },
   adoptRequestedShow: (s) => {
     const cur = useStore.getState();
     if (cur.show?.id === s.id || cur.requestedShowId !== s.id) return false;
