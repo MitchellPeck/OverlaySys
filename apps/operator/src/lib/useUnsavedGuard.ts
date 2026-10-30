@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { chooseAction } from "@overlaysys/ui";
-import { afterChoice, guardActions, leaveMethod, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
+import { afterChoice, guardActions, leaveMethod, registerLeaveGuard, type GuardChoice, type GuardOrigin } from "@/lib/unsavedGuardFlow";
 import { sentinelPopAction, shouldConfirmLinkNavigation, shouldDisarmSentinel } from "@/lib/stageDesigner";
 
 export const DEFAULT_UNSAVED_PROMPT = "You have unsaved changes.";
@@ -146,9 +146,21 @@ export function useUnsavedGuard(dirty: boolean, opts: UnsavedGuardOptions = {}):
         else routerRef.current.push(href);
       });
     };
+    // Programmatic navigation (command palette, global shortcuts) asks the
+    // same question a link click does, via `guardedNavigate`.
+    const unregister = registerLeaveGuard(async () => {
+      if (leavingRef.current || !getDirtyRef.current()) return { navigate: true, method: "push" };
+      if (askingRef.current) return { navigate: false, method: "push" };
+      const r = await askRef.current("link");
+      if (!r.navigate) return { navigate: false, method: "push" };
+      leavingRef.current = true;
+      armedHrefRef.current = null;
+      return { navigate: true, method: leaveMethod(onSentinelEntry()) };
+    });
     window.addEventListener("beforeunload", onBeforeUnload);
     document.addEventListener("click", onClick, true);
     return () => {
+      unregister();
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("click", onClick, true);
     };

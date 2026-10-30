@@ -36,3 +36,36 @@ export function afterChoice(
   if (!leave) return { navigate: false, historySteps: 0 };
   return { navigate: true, historySteps: origin === "pop" ? -2 : 0 };
 }
+
+/** What a page's guard decides when something other than a link click wants to leave. */
+export type LeaveDecision = { navigate: boolean; method: "push" | "replace" };
+
+type LeaveGuard = () => Promise<LeaveDecision>;
+
+// One guard per mounted dirty editor; the latest registered is the one in front.
+const leaveGuards: LeaveGuard[] = [];
+
+/** Register a page's guard while it has unsaved changes; returns the unregister function. */
+export function registerLeaveGuard(guard: LeaveGuard): () => void {
+  leaveGuards.push(guard);
+  return () => {
+    const i = leaveGuards.indexOf(guard);
+    if (i >= 0) leaveGuards.splice(i, 1);
+  };
+}
+
+/**
+ * Programmatic navigation (command palette, global shortcuts): asks the open
+ * editor's guard first, exactly as a link click would, then pushes or
+ * replaces as the guard says. With no dirty editor it is a plain push.
+ */
+export async function guardedNavigate(
+  href: string,
+  router: { push(href: string): void; replace(href: string): void },
+): Promise<void> {
+  const guard = leaveGuards[leaveGuards.length - 1];
+  const decision: LeaveDecision = guard ? await guard() : { navigate: true, method: "push" };
+  if (!decision.navigate) return;
+  if (decision.method === "replace") router.replace(href);
+  else router.push(href);
+}

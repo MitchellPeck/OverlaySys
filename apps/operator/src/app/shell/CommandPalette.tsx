@@ -7,6 +7,7 @@ import { isCloudMode } from "@/lib/mode";
 import { getDesktopApi } from "@/lib/desktop";
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
+import { guardedNavigate } from "@/lib/unsavedGuardFlow";
 import { liveCommands } from "@/lib/liveCommands";
 import { buildPaletteEntries, rankEntries, runPaletteEntry, toPaletteEntry, type PaletteEntry } from "./paletteEntries";
 import { useHotcardHydration } from "../hooks/useHotcardHydration";
@@ -50,7 +51,7 @@ export function CommandPalette() {
         setOpen(false);
         const cloud = isCloudMode();
         const last = typeof window !== "undefined" ? localStorage.getItem(LAST_NON_LIVE_KEY) : null;
-        router.push(liveToggleTarget(routeToArea(pathname), last, cloud));
+        void guardedNavigate(liveToggleTarget(routeToArea(pathname), last, cloud), router);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -85,7 +86,7 @@ export function CommandPalette() {
       id: `area:${id}`,
       label: `Go to ${AREAS[id].label}`,
       group: "Go to",
-      run: () => enterArea(router, id, cloud),
+      run: () => enterArea({ push: (href) => void guardedNavigate(href, router) }, id, cloud),
     }));
     const api = getDesktopApi();
     if (api) {
@@ -117,7 +118,7 @@ export function CommandPalette() {
     if (!entry) return;
     setOpen(false);
     // On-air verbs: nothing is read or sent until the operator confirms.
-    await runPaletteEntry(entry, { confirm, navigate: (href) => router.push(href) });
+    await runPaletteEntry(entry, { confirm, navigate: (href) => void guardedNavigate(href, router) });
   }
 
   return (
