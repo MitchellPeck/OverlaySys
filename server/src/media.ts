@@ -59,6 +59,9 @@ export async function saveMediaItem(item: MediaItem): Promise<MediaItem> {
   await ensureLoaded();
   // createdAt is stamped only for an id the registry has never seen.
   const existing = REGISTRY.get(item.id);
+  if (existing && isLive(existing) && existing.kind === "file" && item.kind === "file" && existing.mediaType !== item.mediaType) {
+    throw Object.assign(new Error("Replace a photo with a photo, or a video with a video."), { statusCode: 400 });
+  }
   const createdAt = existing ? existing.createdAt : item.createdAt || new Date().toISOString();
   const stamped = stampWrite({ ...item, createdAt });
   await store.writeMediaItem(stamped);

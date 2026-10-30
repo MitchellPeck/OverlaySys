@@ -124,4 +124,16 @@ describe("rewriteMediaRefs", () => {
     expect((await decks.getDeck("d1"))!.slides[0]!.media!.assetUrl).toBe("/assets/new.png");
     expect((await shows.getShow("s1"))!.rows.find((r) => r.id === "r1")).toMatchObject({ assetUrl: "/assets/new.png" });
   });
+
+  it("rejects a photo-to-video replacement and rewrites nothing", async () => {
+    await media.saveMediaItem(item());
+    await seed();
+    await expect(media.saveMediaItem(item({ mediaType: "video", assetUrl: "/assets/new.mp4" }))).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Replace a photo with a photo, or a video with a video.",
+    });
+    expect((await media.getMediaItem("m1"))!.assetUrl).toBe("/assets/old.png");
+    expect((await decks.getDeck("d1"))!.slides[0]!.media!.assetUrl).toBe("/assets/old.png");
+    expect((await shows.getShow("s1"))!.rows.find((r) => r.id === "r3")).toMatchObject({ assetUrl: "/assets/old.png" });
+  });
 });
