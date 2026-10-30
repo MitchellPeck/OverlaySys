@@ -147,6 +147,25 @@ describe("media_folder_take", () => {
     });
   });
 
+  it("a chosen fit/position overrides the deck default for every slide of that loop", async () => {
+    fx.items.set("lf1", folderItem("lf1"));
+    fx.files.set("lf1", [img("a.png"), img("b.png")]);
+    fx.decks = [
+      {
+        id: "d1", name: "Loop", tags: [], defaultTemplateId: "", licensing: { kind: "own" }, slides: [],
+        createdAt: "2026-10-30T00:00:00.000Z", liveFolderId: "lf1", mediaFit: "fill", mediaPosition: "top-left",
+      },
+    ];
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program", fit: "contain", position: "bottom-right" }, send);
+    expect(sent).toEqual([]);
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/a.png", fit: "contain", position: "bottom-right" });
+    sec(8);
+    expect(channels.getState("program").media).toMatchObject({ assetUrl: "/media-folders/lf1/b.png", fit: "contain", position: "bottom-right" });
+    // Only fit chosen: the deck's position still applies.
+    await handleMediaMessage({ type: "media_folder_take", id: "lf1", channel: "program", fit: "cover" }, send);
+    expect(channels.getState("program").media).toMatchObject({ fit: "cover", position: "top-left" });
+  });
+
   it("refuses an id that isn't a live folder", async () => {
     fx.items.set("m1", { id: "m1", name: "Photo", kind: "file", mediaType: "image", assetUrl: "/assets/p.png", createdAt: "" });
     await handleMediaMessage({ type: "media_folder_take", id: "m1", channel: "program" }, send);

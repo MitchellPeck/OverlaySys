@@ -388,7 +388,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("restore_media_item"), id: z.string() }),
   z.object({ type: z.literal("list_live_folder"), id: z.string() }),
   /** Live Media panel: loop a live folder on `channel` (8 s hold), outside any show. */
-  z.object({ type: z.literal("media_folder_take"), id: z.string(), channel: z.string() }),
+  z.object({
+    type: z.literal("media_folder_take"),
+    id: z.string(),
+    channel: z.string(),
+    /** Size/position for this loop; each overrides the linked deck's default. */
+    fit: MediaFitSchema.optional(),
+    position: MediaPositionSchema.optional(),
+  }),
   z.object({
     type: z.literal("slides_take"),
     showId: z.string(),

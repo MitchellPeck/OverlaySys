@@ -1,4 +1,4 @@
-import type { ChannelState, MediaItemMeta } from "@overlaysys/core";
+import { resolveMediaPlacement, type ChannelState, type MediaItemMeta, type MediaPlacement, type PartialMediaPlacement } from "@overlaysys/core";
 import { mediaRowTakeMessage, type ClientMessage } from "@overlaysys/ws-protocol";
 import { NO_FOLDER } from "../../media/libraryConfig";
 import { newMediaRowFromPick } from "../../media/pickerModel";
@@ -16,18 +16,52 @@ export const panelRowId = (m: Pick<MediaItemMeta, "id" | "kind">): string =>
  * frame. The item's own size/position go with it. No show id, so nothing in
  * the show changes.
  */
-export function mediaItemTakeMessage(item: MediaItemMeta, channel: PanelChannel): ClientMessage {
+export function mediaItemTakeMessage(item: MediaItemMeta, channel: PanelChannel, placement?: PartialMediaPlacement): ClientMessage {
   const row = newMediaRowFromPick(
-    { mediaItemId: item.id, assetUrl: item.assetUrl ?? "", mediaType: item.mediaType ?? "image", ...ownPlacement(item) },
+    { mediaItemId: item.id, assetUrl: item.assetUrl ?? "", mediaType: item.mediaType ?? "image", ...ownPlacement(item), ...ownPlacement(placement) },
     panelRowId(item),
   );
   const labelled = { ...row, label: item.name };
   return mediaRowTakeMessage(labelled.kind === "video" ? { ...labelled, loop: false, muted: false } : labelled, channel);
 }
 
-/** A live folder loops on the server (8 s hold); the server refuses an empty one. */
-export function mediaFolderTakeMessage(item: Pick<MediaItemMeta, "id">, channel: PanelChannel): ClientMessage {
-  return { type: "media_folder_take", id: item.id, channel };
+/**
+ * A live folder loops on the server (8 s hold); the server refuses an empty one.
+ * Only what was chosen goes along; the rest follows the linked deck.
+ */
+export function mediaFolderTakeMessage(
+  item: Pick<MediaItemMeta, "id">,
+  channel: PanelChannel,
+  placement?: PartialMediaPlacement,
+): ClientMessage {
+  return { type: "media_folder_take", id: item.id, channel, ...ownPlacement(placement) };
+}
+
+/** A card's size/position choices, tagged with the item (and its own placement) they were made for. */
+export type PanelPlacementState = { itemKey: string; chosen: PartialMediaPlacement };
+
+const placementKey = (item: Pick<MediaItemMeta, "id" | "fit" | "position">): string =>
+  `${item.id}|${item.fit ?? ""}|${item.position ?? ""}`;
+
+export const panelPlacementState = (item: Pick<MediaItemMeta, "id" | "fit" | "position">, chosen: PartialMediaPlacement): PanelPlacementState => ({
+  itemKey: placementKey(item),
+  chosen,
+});
+
+/** The choices that still apply: none once the item (or its own size/position) is no longer the one they were made for. */
+export function panelPlacement(
+  state: PanelPlacementState,
+  item: Pick<MediaItemMeta, "id" | "fit" | "position">,
+): PartialMediaPlacement {
+  return state.itemKey === placementKey(item) ? state.chosen : {};
+}
+
+/** What the controls show: the choice, else the item's own, else what plays today (Fill screen / centre for a photo or folder). */
+export function panelPlacementShown(
+  item: Pick<MediaItemMeta, "kind" | "mediaType" | "fit" | "position">,
+  chosen: PartialMediaPlacement,
+): MediaPlacement {
+  return resolveMediaPlacement(item.kind !== "live-folder" && item.mediaType === "video" ? "video" : "image", chosen, item);
 }
 
 /**

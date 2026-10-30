@@ -7,6 +7,9 @@ import {
   mediaFolderTakeMessage,
   mediaItemTakeMessage,
   panelAirState,
+  panelPlacement,
+  panelPlacementState,
+  panelPlacementShown,
   searchKeyReleasesFocus,
   shouldReleaseFocus,
 } from "./mediaPanelModel";
@@ -126,5 +129,37 @@ describe("dblClickFromButton", () => {
     expect(dblClickFromButton(el(false))).toBe(false);
     expect(dblClickFromButton(null)).toBe(false);
     expect(dblClickFromButton({})).toBe(false);
+  });
+});
+
+describe("panel placement", () => {
+  it("a chosen size and position win over the item's own, for this take only", () => {
+    const it = item({ fit: "scale-down", position: "bottom" });
+    expect(mediaItemTakeMessage(it, "program", { fit: "fill", position: "top-left" })).toMatchObject({ fit: "fill", position: "top-left" });
+    expect(mediaItemTakeMessage(it, "program", { position: "right" })).toMatchObject({ fit: "scale-down", position: "right" });
+    expect(mediaItemTakeMessage(it, "program")).toMatchObject({ fit: "scale-down", position: "bottom" });
+    expect(it).toMatchObject({ fit: "scale-down", position: "bottom" });
+  });
+
+  it("a live folder take carries only what was chosen, so the deck default applies otherwise", () => {
+    expect(mediaFolderTakeMessage({ id: "lf1" }, "program")).toEqual({ type: "media_folder_take", id: "lf1", channel: "program" });
+    expect(mediaFolderTakeMessage({ id: "lf1" }, "program", { fit: "contain" })).toEqual({
+      type: "media_folder_take", id: "lf1", channel: "program", fit: "contain",
+    });
+  });
+
+  it("shows the item's own placement until something is chosen", () => {
+    expect(panelPlacementShown(item({ fit: "fill" }), {})).toEqual({ fit: "fill", position: "center" });
+    expect(panelPlacementShown(item({ mediaType: "video" }), {})).toEqual({ fit: "contain", position: "center" });
+    expect(panelPlacementShown(item({ kind: "live-folder", mediaType: undefined }), { position: "top" })).toEqual({ fit: "cover", position: "top" });
+  });
+
+  it("choices reset to the item default when the item changes", () => {
+    const a = item({ id: "a" });
+    const chosen = { fit: "fill" as const };
+    const s1 = panelPlacementState(a, chosen);
+    expect(panelPlacement(s1, a)).toEqual(chosen);
+    expect(panelPlacement(s1, item({ id: "b" }))).toEqual({});
+    expect(panelPlacement(s1, item({ id: "a", fit: "contain" }))).toEqual({});
   });
 });

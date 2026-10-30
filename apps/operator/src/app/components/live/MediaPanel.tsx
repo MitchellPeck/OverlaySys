@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type { LiveFolderFile, MediaItemMeta } from "@overlaysys/core";
-import { Button, Input, OfflineState, Select, colors, fontSize, radius, useToast } from "@overlaysys/ui";
+import { MEDIA_POSITION_LABELS, MediaPositionSchema, type LiveFolderFile, type MediaItemMeta, type PartialMediaPlacement } from "@overlaysys/core";
+import { Button, Input, OfflineState, PositionGrid, Select, colors, fontSize, radius, useToast } from "@overlaysys/ui";
 import { useStore } from "@/lib/store";
 import { getClient, useWs } from "@/lib/useWs";
 import { useConnection } from "@/lib/useConnection";
 import { MediaThumb } from "../../media/MediaCard";
 import { NO_FOLDER, folderNames, liveFolderCountText } from "../../media/libraryConfig";
+import { MEDIA_FIT_OPTIONS } from "@/lib/mediaPlacement";
 import { useLivePrefs } from "../../hooks/useLivePrefs";
 import {
   dblClickFromButton,
@@ -16,10 +17,15 @@ import {
   mediaFolderTakeMessage,
   mediaItemTakeMessage,
   panelAirState,
+  panelPlacement,
+  panelPlacementShown,
+  panelPlacementState,
   searchKeyReleasesFocus,
   shouldReleaseFocus,
   type PanelChannel,
 } from "./mediaPanelModel";
+
+const POSITION_OPTIONS = MediaPositionSchema.options.map((value) => ({ value, label: MEDIA_POSITION_LABELS[value] }));
 
 /** Keeps clicks from leaving focus on the control, so Space/Enter still reach the console shortcuts. */
 const noFocus = (e: React.MouseEvent) => e.preventDefault();
@@ -68,12 +74,12 @@ export function MediaPanel() {
   const shown = filterPanelItems(items, query, folder);
   const hasAny = filterPanelItems(items, "", "").length > 0;
 
-  function fire(m: MediaItemMeta, channel: PanelChannel) {
+  function fire(m: MediaItemMeta, channel: PanelChannel, placement: PartialMediaPlacement) {
     // Cue/Take keep focus off the button, but it may still sit in the search or
     // folder box: hand the keyboard back so Space/Enter drive the show.
     const active = typeof document === "undefined" ? null : document.activeElement;
     if (shouldReleaseFocus(active, panelRef.current) && active instanceof HTMLElement) active.blur();
-    send(m.kind === "live-folder" ? mediaFolderTakeMessage(m, channel) : mediaItemTakeMessage(m, channel));
+    send(m.kind === "live-folder" ? mediaFolderTakeMessage(m, channel, placement) : mediaItemTakeMessage(m, channel, placement));
   }
 
   if (!hasAny) {
@@ -142,8 +148,8 @@ export function MediaPanel() {
               live={m.kind === "live-folder" ? liveFolderFiles[m.id] : undefined}
               air={panelAirState(m, channelStates)}
               disconnected={disconnected}
-              onFire={(ch) => fire(m, ch)}
-              onDouble={() => fire(m, doubleClickTakes ? "program" : "preview")}
+              onFire={(ch, p) => fire(m, ch, p)}
+              onDouble={(p) => fire(m, doubleClickTakes ? "program" : "preview", p)}
             />
           ))}
         </div>
@@ -164,9 +170,14 @@ function PanelCard({
   live: { files: LiveFolderFile[]; configured: boolean } | undefined;
   air: PanelChannel | null;
   disconnected: boolean;
-  onFire: (channel: PanelChannel) => void;
-  onDouble: () => void;
+  onFire: (channel: PanelChannel, placement: PartialMediaPlacement) => void;
+  onDouble: (placement: PartialMediaPlacement) => void;
 }) {
+  // Size/position for the next Cue/Take only; the library item is never changed.
+  const [placementSt, setPlacementSt] = useState(() => panelPlacementState(item, {}));
+  const chosen = panelPlacement(placementSt, item);
+  const shown = panelPlacementShown(item, chosen);
+  const choose = (patch: PartialMediaPlacement) => setPlacementSt(panelPlacementState(item, { ...chosen, ...patch }));
   // Known empty: nothing to take. Still loading: let the server decide.
   const empty = item.kind === "live-folder" && !!live && live.files.length === 0;
   const blocked = disconnected || empty;
@@ -177,7 +188,7 @@ function PanelCard({
       onDoubleClick={(e) => {
         // A double-click on Cue must never take to program.
         if (blocked || dblClickFromButton(e.target as Element)) return;
-        onDouble();
+        onDouble(chosen);
       }}
       aria-label={`${item.name}${air === "program" ? " (on air)" : air === "preview" ? " (on preview)" : ""}`}
       style={{
@@ -200,12 +211,39 @@ function PanelCard({
         {sub}
       </div>
       <div style={{ display: "flex", gap: 4 }} title={empty ? EMPTY_FOLDER : undefined}>
-        <Button onMouseDown={noFocus} onClick={() => onFire("preview")} size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
+        <Button onMouseDown={noFocus} onClick={() => onFire("preview", chosen)} size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
           Cue
         </Button>
-        <Button onMouseDown={noFocus} onClick={() => onFire("program")} variant="onair" size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
+        <Button onMouseDown={noFocus} onClick={() => onFire("program", chosen)} variant="onair" size="sm" disabled={blocked} style={{ flex: 1, fontSize: 11 }}>
           Take
         </Button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <Select
+          aria-label={`Size for ${item.name}`}
+          value={shown.fit}
+          onChange={(e) => {
+            // Hand the keyboard back to the show shortcuts once a size is picked.
+            e.currentTarget.blur();
+            choose({ fit: e.target.value as typeof shown.fit });
+          }}
+          style={{ flex: 1, minWidth: 0, fontSize: 11 }}
+        >
+          {MEDIA_FIT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value} title={o.title}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+        <div
+          onClick={(e) => {
+            // The grid's cell keeps focus after a click: give the keyboard back.
+            const active = e.currentTarget.ownerDocument.activeElement;
+            if (active instanceof HTMLElement && e.currentTarget.contains(active)) active.blur();
+          }}
+        >
+          <PositionGrid aria-label={`Position for ${item.name}`} value={shown.position} options={POSITION_OPTIONS} onChange={(position) => choose({ position })} />
+        </div>
       </div>
     </div>
   );

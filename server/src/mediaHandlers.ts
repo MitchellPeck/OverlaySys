@@ -48,8 +48,9 @@ async function takeFolder(msg: Extract<MediaMessage, { type: "media_folder_take"
     folderId: msg.id,
     name: item.name,
     ...(linked?.folderOrder ? { folderOrder: linked.folderOrder } : {}),
-    ...(linked?.mediaFit ? { mediaFit: linked.mediaFit } : {}),
-    ...(linked?.mediaPosition ? { mediaPosition: linked.mediaPosition } : {}),
+    // A size/position chosen at the panel beats the deck's default.
+    ...((msg.fit ?? linked?.mediaFit) ? { mediaFit: msg.fit ?? linked?.mediaFit } : {}),
+    ...((msg.position ?? linked?.mediaPosition) ? { mediaPosition: msg.position ?? linked?.mediaPosition } : {}),
   });
   // The only refusal for a folder started at its first file: nothing to play.
   if (!res.ok) refuse("empty", res.error);
