@@ -90,7 +90,7 @@ function onChannel(
         live?.subTakeContext?.songRowId === row.id
       );
     case "media": {
-      // A photo never ends: it stays up until cleared.
+      // A photo never ends, and an "error" status doesn't hide it: it stays on air so Clear stays reachable.
       const m = st?.media;
       return !!m && m.rowId === row.id;
     }

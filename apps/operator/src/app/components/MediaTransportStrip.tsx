@@ -7,7 +7,7 @@ import { Button, StatusDot, colors, radius, type PillTone } from "@overlaysys/ui
 import { useStore } from "@/lib/store";
 import { useWs } from "@/lib/useWs";
 import { formatClock, seekTargetForKey } from "@/lib/mediaTake";
-import { displayStatus, displayTime, remainingTone, type MediaDisplayStatus, type RemainingTone } from "@/lib/mediaTime";
+import { displayStatus, displayTime, isPhotoMedia, remainingTone, type MediaDisplayStatus, type RemainingTone } from "@/lib/mediaTime";
 
 const STATUS_LABEL: Record<MediaDisplayStatus, string> = {
   loading: "Loading",
@@ -47,9 +47,13 @@ export function MediaTransportStrip({ inline = false, size = "sm" }: { inline?: 
   if (inline) {
     return (
       <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: "0 1 auto", overflowX: "auto" }}>
-        {entries.map((s) => (
-          <CompactTransport key={s.channel} channel={s.channel} media={s.media} size={size} />
-        ))}
+        {entries.map((s) =>
+          isPhotoMedia(s.media) ? (
+            <PhotoCompact key={s.channel} channel={s.channel} media={s.media} size={size} />
+          ) : (
+            <CompactTransport key={s.channel} channel={s.channel} media={s.media} size={size} />
+          ),
+        )}
       </div>
     );
   }
@@ -57,7 +61,11 @@ export function MediaTransportStrip({ inline = false, size = "sm" }: { inline?: 
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
       {entries.map((s) => (
         <div key={s.channel}>
-          <ChannelTransport channel={s.channel} media={s.media} size={size} />
+          {isPhotoMedia(s.media) ? (
+            <PhotoCompact channel={s.channel} media={s.media} size={size} />
+          ) : (
+            <ChannelTransport channel={s.channel} media={s.media} size={size} />
+          )}
         </div>
       ))}
     </div>
@@ -212,6 +220,32 @@ function CompactTransport({ channel, media, size }: { channel: string; media: Ch
         -{tr.duration > 0 ? formatClock(tr.t.remaining) : "–:––"}
       </span>
       <TransportButtons tr={tr} media={media} size={size} />
+    </div>
+  );
+}
+
+/** A photo on air: its label and Fade out / Cut only. No clock, status or seek bar. */
+function PhotoCompact({ channel, media, size }: { channel: string; media: ChannelMedia; size: "sm" | "lg" }) {
+  const { send } = useWs();
+  const hasOutTransition = media.transitionOut.style !== "cut";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 28, maxHeight: 32, flex: "0 1 auto", minWidth: 0, whiteSpace: "nowrap" }}>
+      {size !== "lg" && (
+        <span
+          title={`${media.label || "Photo"} · ${channel}`}
+          style={{ fontWeight: 600, fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", flexShrink: 0 }}
+        >
+          {media.label || "Photo"}
+        </span>
+      )}
+      {hasOutTransition && (
+        <Button size={size} variant="secondary" onMouseDown={noFocus} onClick={() => send({ type: "media_clear", channel })} title={`Fade out (${media.transitionOut.style})`}>
+          <Square size={14} aria-hidden style={ICON_STYLE} /> Fade out
+        </Button>
+      )}
+      <Button size={size} variant="danger" onMouseDown={noFocus} onClick={() => send({ type: "media_clear", channel, cut: true })} title="Clear instantly">
+        <Scissors size={14} aria-hidden style={ICON_STYLE} /> Cut
+      </Button>
     </div>
   );
 }

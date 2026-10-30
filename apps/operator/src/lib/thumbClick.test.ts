@@ -324,11 +324,9 @@ describe("thumbActivate", () => {
     expect(thumbActivate(v as never, 0, mkCtx())).toEqual({ messages: [], toast: "Videos play straight to their output: use Take" });
   });
 
-  it("clicking an image row takes it to the media slot", () => {
+  it("an image row never sends from a thumbnail; Take does", () => {
     const p = { kind: "media", mediaType: "image", id: "p", assetUrl: "/assets/p.png", fit: "cover" };
-    expect(thumbActivate(p as never, 0, mkCtx()).messages).toEqual([
-      expect.objectContaining({ type: "media_take", channel: "program", rowId: "p", mediaType: "image" }),
-    ]);
+    expect(thumbActivate(p as never, 0, mkCtx())).toEqual({ messages: [], toast: "Photos go straight to their output: use Take" });
     const live = mkCtx({ channelStates: { program: { media: { rowId: "p", playback: { status: "loading" } } } as unknown as ChannelState } });
     expect(thumbActivate(p as never, 0, live)).toEqual({ messages: [] });
   });

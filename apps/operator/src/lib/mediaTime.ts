@@ -79,3 +79,11 @@ export function previewVideoSync(
 export function previewNeedsSeek(current: number, target: number | null): boolean {
   return target !== null && Math.abs(current - target) > PREVIEW_DRIFT_S;
 }
+
+/**
+ * A photo on air has no playback: it reports once and never heartbeats, so the
+ * transport must not show video controls or run the "no renderer" check.
+ */
+export function isPhotoMedia(m: Pick<ChannelMedia, "mediaType">): boolean {
+  return m.mediaType === "image";
+}

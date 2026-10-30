@@ -11,7 +11,7 @@ type Ctx = {
   templates: Pick<TemplateMeta, "id" | "name">[];
 };
 
-/** A photo stays up until cleared and never "ends"; a video is showing until it ends or errors. */
+/** A photo stays up until cleared and never "ends" or "errors" (so Clear stays reachable); a video is showing until it ends or errors. */
 function mediaIsShowing(media: NonNullable<ChannelState["media"]>): boolean {
   return media.mediaType === "image" || (media.playback.status !== "ended" && media.playback.status !== "error");
 }

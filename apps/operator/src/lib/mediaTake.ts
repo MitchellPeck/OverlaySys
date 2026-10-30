@@ -20,7 +20,7 @@ export function onAirMediaFor(
 ): ChannelMedia | null {
   const media = channelStates[row.channelHint ?? "program"]?.media;
   if (!media || media.rowId !== row.id) return null;
-  // A photo has no playback, so it never counts as ended or errored.
+  // A photo has no playback, so it never counts as ended or errored: that keeps Clear reachable.
   if (row.kind === "media") return media;
   if (media.playback.status === "ended" || media.playback.status === "error") return null;
   return media;

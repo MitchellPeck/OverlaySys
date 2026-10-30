@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChannelMedia } from "@overlaysys/core";
-import { displayStatus, displayTime, NO_RENDERER_MS, previewNeedsSeek, previewVideoSync, remainingTone } from "./mediaTime";
+import { displayStatus, displayTime, isPhotoMedia, NO_RENDERER_MS, previewNeedsSeek, previewVideoSync, remainingTone } from "./mediaTime";
 
 const m = (over: Partial<ChannelMedia["playback"]> = {}, rest: Partial<ChannelMedia> = {}): ChannelMedia => ({
   rowId: "r", assetUrl: "/a.mp4", volume: 1, endAction: "clear", mediaType: "video", fit: "contain", loop: false, muted: false, transitionIn: { style: "fade", durationMs: 500 } as const, transitionOut: { style: "fade", durationMs: 500 } as const, takenAt: 1, paused: false,
@@ -90,5 +90,12 @@ describe("previewNeedsSeek", () => {
     expect(previewNeedsSeek(10, 10.6)).toBe(true);
     expect(previewNeedsSeek(11, 10)).toBe(true);
     expect(previewNeedsSeek(10, null)).toBe(false);
+  });
+});
+
+describe("isPhotoMedia", () => {
+  it("is true only for image media", () => {
+    expect(isPhotoMedia({ mediaType: "image" })).toBe(true);
+    expect(isPhotoMedia({ mediaType: "video" })).toBe(false);
   });
 });

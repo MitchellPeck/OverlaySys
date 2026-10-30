@@ -2,7 +2,7 @@ import type { ChannelState, SectionKind, Song, SongRow, SongSessionSummary } fro
 import { resolveArrangement, slideAirData } from "@overlaysys/core";
 import { scriptureSlideData } from "@overlaysys/scripture";
 import type { ClientMessage } from "@overlaysys/ws-protocol";
-import { mediaRowTakeMessage, posterPathFor } from "./mediaTake";
+import { posterPathFor } from "./mediaTake";
 import { effectiveRowData, graphicRowMessage } from "./rowData";
 import { rowAirState, sessionPlaysRow, songRowIsUnique, type AirContext } from "./rowAirState";
 import type { RowLike } from "./rowLike";
@@ -333,10 +333,10 @@ export function thumbActivate(row: RowLike, index: number, ctx: ThumbCtx): Thumb
         return { messages: [], toast: "Videos play straight to their output: use Take" };
       }
       case "media": {
-        // A photo has no cue or playback: a click takes it, unless it is already up.
-        const p = row as Extract<RowLike, { kind: "media" }>;
-        if (rowAirState(p, ctx.channelStates, ctx.songSessions) === "program") return { messages: [] };
-        return { messages: [mediaRowTakeMessage(p, ctx.show.id)] };
+        // Like a video: a click never takes it, Take does.
+        const live = rowAirState(row as Extract<RowLike, { kind: "media" }>, ctx.channelStates, ctx.songSessions) === "program";
+        if (live) return { messages: [] };
+        return { messages: [], toast: "Photos go straight to their output: use Take" };
       }
       case "slides": {
         // Live on any output (program or the row's routed one): jump that session.
