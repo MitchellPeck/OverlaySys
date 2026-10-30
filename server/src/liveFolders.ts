@@ -1,7 +1,7 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LiveFolderFile } from "@overlaysys/core";
 import { dataRoot } from "./storage";
 import { mimeFromFilename } from "./assets";
@@ -141,7 +141,11 @@ export async function setLiveFolderPath(id: string, dir: string | null): Promise
   else paths[id] = { path: dir };
   await fs.mkdir(path.dirname(settingsFile()), { recursive: true });
   await fs.writeFile(settingsFile(), JSON.stringify(paths, null, 2));
+  // Tell every console that `configured` changed — once: if the re-sync
+  // already emitted for this folder, that emit carries the new state.
+  const before = emitSeq.get(id) ?? 0;
   await syncLiveFolderWatchers();
+  if ((emitSeq.get(id) ?? 0) === before) emit(id, listLiveFolderFiles(id));
 }
 
 // ── Safe file resolution ────────────────────────────────────────────────────
@@ -155,8 +159,8 @@ export async function resolveLiveFolderFile(id: string, name: string): Promise<s
   try {
     const realDir = await fs.realpath(dir);
     const real = await fs.realpath(path.join(dir, name));
-    const rel = path.relative(realDir, real);
-    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+    // Top level only: a symlink into a subfolder (or out of the folder) is refused.
+    if (path.dirname(real) !== realDir) return null;
     if (!(await fs.stat(real)).isFile()) return null;
     return real;
   } catch {
@@ -226,7 +230,11 @@ export function onLiveFolderChange(cb: (id: string, files: LiveFolderFile[]) => 
   };
 }
 
+/** Per-folder emit counter, so setLiveFolderPath can tell whether a re-sync already announced it. */
+const emitSeq = new Map<string, number>();
+
 function emit(id: string, files: LiveFolderFile[]): void {
+  emitSeq.set(id, (emitSeq.get(id) ?? 0) + 1);
   for (const cb of listeners) {
     try {
       cb(id, files);
@@ -338,15 +346,21 @@ function parseRange(header: string | undefined, size: number): [number, number] 
   return start <= end && start < size ? [start, end] : null;
 }
 
+/** The folder path is per machine and never leaves it: refuse (403) any peer that is not this machine. Returns true when refused. */
+function requireLocal(req: FastifyRequest, reply: FastifyReply): boolean {
+  if (isLocalAddress(remoteAddressOf(req.raw), securityContext().ownAddresses)) return false;
+  void reply.code(403).send({ error: "only allowed from this machine" });
+  return true;
+}
+
 export async function registerLiveFolderRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Params: { id: string } }>("/api/media-folders/:id/path", async (req) => ({
-    path: await getLiveFolderPath(req.params.id),
-  }));
+  app.get<{ Params: { id: string } }>("/api/media-folders/:id/path", async (req, reply) => {
+    if (requireLocal(req, reply)) return reply;
+    return { path: await getLiveFolderPath(req.params.id) };
+  });
 
   app.put<{ Params: { id: string }; Body: { path?: unknown } }>("/api/media-folders/:id/path", async (req, reply) => {
-    if (!isLocalAddress(remoteAddressOf(req.raw), securityContext().ownAddresses)) {
-      return reply.code(403).send({ error: "only allowed from this machine" });
-    }
+    if (requireLocal(req, reply)) return reply;
     const p = req.body?.path ?? null;
     if (p !== null && typeof p !== "string") return reply.code(400).send({ message: "path must be a string or null" });
     try {
@@ -360,7 +374,9 @@ export async function registerLiveFolderRoutes(app: FastifyInstance): Promise<vo
   });
 
   app.get<{ Params: { id: string; file: string } }>("/media-folders/:id/:file", async (req, reply) => {
-    const real = await resolveLiveFolderFile(req.params.id, req.params.file);
+    // Only settled files: a half-copied file requested by name is not served.
+    const settled = listLiveFolderFiles(req.params.id).some((f) => f.name === req.params.file);
+    const real = settled ? await resolveLiveFolderFile(req.params.id, req.params.file) : null;
     if (!real) return reply.code(404).send({ error: "not found" });
     const st = await fs.stat(real).catch(() => null);
     if (!st) return reply.code(404).send({ error: "not found" });

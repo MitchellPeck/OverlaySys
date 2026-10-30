@@ -145,13 +145,24 @@ describe("live folders", () => {
     await fs.writeFile(path.join(folder, "ok.png"), "png-bytes");
     await fs.writeFile(path.join(tmp, "secret.png"), "secret");
     await fs.symlink(path.join(tmp, "secret.png"), path.join(folder, "link.png"));
+    await fs.mkdir(path.join(folder, "sub"));
+    await fs.writeFile(path.join(folder, "sub", "deep.png"), "deep");
+    await fs.symlink(path.join(folder, "sub", "deep.png"), path.join(folder, "sublink.png"));
     await setLiveFolderPath("f1", folder);
 
     expect(await resolveLiveFolderFile("f1", "ok.png")).toBe(path.join(folder, "ok.png"));
-    for (const bad of ["../secret.png", "..", "a/b.png", "a\\b.png", ".hidden.png", "x\0.png", "link.png", "missing.png"]) {
+    for (const bad of ["../secret.png", "..", "a/b.png", "a\\b.png", ".hidden.png", "x\0.png", "link.png", "sublink.png", "missing.png"]) {
       expect(await resolveLiveFolderFile("f1", bad)).toBeNull();
     }
     expect(await resolveLiveFolderFile("unset", "ok.png")).toBeNull();
+
+    // Settle ok.png through the watcher (serving needs a settled file), then serve with real timers.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    restoreDeps = setLiveFolderDeps({ watch: () => () => {}, folderIds: async () => ["f1"] });
+    await startLiveFolderWatchers();
+    await vi.advanceTimersByTimeAsync(LIVE_FOLDER_SETTLE_MS);
+    vi.useRealTimers();
+    expect(listLiveFolderFiles("f1").map((f) => f.name)).toEqual(["ok.png"]);
 
     const app = Fastify();
     await registerLiveFolderRoutes(app);
@@ -162,8 +173,62 @@ describe("live folders", () => {
     expect(ok.headers["x-content-type-options"]).toBe("nosniff");
     expect(ok.body).toBe("png-bytes");
     expect((await app.inject({ method: "GET", url: "/media-folders/f1/link.png" })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: "/media-folders/f1/sublink.png" })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: "/media-folders/f1/..%2Fsecret.png" })).statusCode).toBe(404);
     await app.close();
+  });
+
+  it("serves only settled files: a half-copied file requested by name is 404", async () => {
+    await fs.writeFile(path.join(folder, "ok.png"), "png-bytes");
+    await setLiveFolderPath("f1", folder);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    restoreDeps = setLiveFolderDeps({ watch: () => () => {}, folderIds: async () => ["f1"] });
+    await startLiveFolderWatchers();
+    await vi.advanceTimersByTimeAsync(LIVE_FOLDER_SETTLE_MS);
+    vi.useRealTimers();
+    await fs.writeFile(path.join(folder, "copying.mp4"), "partial"); // not yet seen settled
+
+    expect(await resolveLiveFolderFile("f1", "copying.mp4")).not.toBeNull();
+    const app = Fastify();
+    await registerLiveFolderRoutes(app);
+    await app.ready();
+    expect((await app.inject({ method: "GET", url: "/media-folders/f1/ok.png" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/media-folders/f1/copying.mp4" })).statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("path routes refuse other machines with 403", async () => {
+    const app = Fastify();
+    await registerLiveFolderRoutes(app);
+    await app.ready();
+    const remote = "192.168.1.50";
+    expect((await app.inject({ method: "GET", url: "/api/media-folders/f1/path", remoteAddress: remote })).statusCode).toBe(403);
+    const put = await app.inject({ method: "PUT", url: "/api/media-folders/f1/path", remoteAddress: remote, payload: { path: folder } });
+    expect(put.statusCode).toBe(403);
+    expect(await getLiveFolderPath("f1")).toBeNull();
+    await app.close();
+  });
+
+  it("changing the configured path announces the folder once", async () => {
+    const seen: Array<[string, string[]]> = [];
+    const off = onLiveFolderChange((id, files) => seen.push([id, files.map((f) => f.name)]));
+    // No watcher running: an empty-folder configure still announces once.
+    await setLiveFolderPath("f1", folder);
+    expect(seen).toEqual([["f1", []]]);
+    await setLiveFolderPath("f1", null);
+    expect(seen).toEqual([["f1", []], ["f1", []]]);
+
+    // With a watched folder that has files, clearing the path emits exactly once (the watcher stop).
+    await fs.writeFile(path.join(folder, "a.png"), "x");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+    restoreDeps = setLiveFolderDeps({ watch: () => () => {}, folderIds: async () => ["f1"] });
+    await startLiveFolderWatchers();
+    await setLiveFolderPath("f1", folder);
+    await vi.advanceTimersByTimeAsync(LIVE_FOLDER_SETTLE_MS);
+    seen.length = 0;
+    await setLiveFolderPath("f1", null);
+    expect(seen).toEqual([["f1", []]]);
+    off();
   });
 
   it("PUT path rejects a relative path and a non-directory with 400", async () => {
