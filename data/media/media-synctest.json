@@ -1,0 +1,9 @@
+{
+  "id": "media-synctest",
+  "name": "[SYNC TEST] media",
+  "kind": "live-folder",
+  "folder": "/tmp/synctest",
+  "createdAt": "2026-10-30T19:43:15.651Z",
+  "updatedAt": "2026-10-30T19:43:23.764Z",
+  "deletedAt": "2026-10-30T19:43:23.764Z"
+}

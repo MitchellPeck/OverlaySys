@@ -1,0 +1,11 @@
+{
+  "id": "hotcard-9787587b",
+  "name": "Online Check-In",
+  "projectId": "default",
+  "templateId": "template-e449ecd9",
+  "data": {
+    "graphic": "/assets/03f7efb0df424cf22562052cfb288818ad4f70df44236ab77473d36359f8ffa3.png"
+  },
+  "hotkey": null,
+  "updatedAt": "2026-10-30T19:33:36.225Z"
+}
